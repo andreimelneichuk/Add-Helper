@@ -1,0 +1,210 @@
+"""Команды оператора: `adhelper check` и `adhelper emergency-stop`."""
+
+import base64
+import uuid
+from datetime import UTC, datetime
+
+import pytest
+from pydantic import SecretStr
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+
+from adhelper.budget.domain.limits import CampaignBudget
+from adhelper.config import Settings
+from adhelper.ledger.adapters.sql import SqlChangeRepository
+from adhelper.ledger.domain.model import ChangeKind, ChangeSource, ChangeStatus
+from adhelper.worker.cli import CheckStatus, main, run_checks, run_emergency_stop
+from adhelper.worker.runtime import Runtime
+from tests.budget.fake_platform import FakePlatform, Fault
+from tests.seed import seed_account
+
+NOW = datetime(2026, 11, 2, 9, 0, tzinfo=UTC)
+BUSINESS = uuid.uuid4()
+OTHER = uuid.uuid4()
+KEY = base64.b64encode(b"k" * 32).decode()
+Sessions = async_sessionmaker[AsyncSession]
+
+
+def _secret(settings: Settings, value: str) -> Settings:
+    return settings.model_copy(update={"token_encryption_keys": SecretStr(value)})
+
+
+def statuses(results: list) -> dict[str, CheckStatus]:  # type: ignore[type-arg]
+    return {result.name: result.status for result in results}
+
+
+async def test_configured_service_passes(migrated: Settings, engine: AsyncEngine) -> None:
+    configured = _secret(migrated, f"main:{KEY}").model_copy(
+        update={"public_base_url": "https://ads.example.ru"}
+    )
+    results = await run_checks(configured)
+    assert all(result.status is CheckStatus.OK for result in results), results
+
+
+async def test_missing_keys_fail_check(migrated: Settings, engine: AsyncEngine) -> None:
+    results = statuses(await run_checks(migrated))
+    assert results["encryption_keys"] is CheckStatus.FAIL
+
+
+async def test_bad_key_is_reported_without_its_value(
+    migrated: Settings, engine: AsyncEngine
+) -> None:
+    results = await run_checks(_secret(migrated, "main:секретное-значение"))
+    assert statuses(results)["encryption_keys"] is CheckStatus.FAIL
+    assert "секретное-значение" not in repr(results)
+
+
+async def test_plain_http_is_a_warning_not_a_failure(
+    migrated: Settings, engine: AsyncEngine
+) -> None:
+    results = statuses(await run_checks(_secret(migrated, f"main:{KEY}")))
+    assert results["public_url"] is CheckStatus.WARN
+
+
+async def test_unapplied_migrations_fail_check(
+    migrated: Settings, engine: AsyncEngine, sessions: Sessions
+) -> None:
+    async with sessions.begin() as session:
+        await session.execute(text("UPDATE alembic_version SET version_num = '0001'"))
+    assert statuses(await run_checks(migrated))["migrations"] is CheckStatus.FAIL
+
+
+async def test_unreachable_database_hides_password(migrated: Settings) -> None:
+    broken = migrated.model_copy(update={"postgres_port": 1})
+    results = await run_checks(broken)
+    assert statuses(results)["database"] is CheckStatus.FAIL
+    assert broken.postgres_password.get_secret_value() not in repr(results)
+
+
+def test_check_exit_code_reflects_failure(
+    migrated: Settings, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["check"]) == 1
+    assert "encryption_keys" in capsys.readouterr().out
+
+
+def platform() -> FakePlatform:
+    return FakePlatform(
+        [
+            CampaignBudget("c1", 500, 0, True, None),
+            CampaignBudget("c2", 500, 0, True, None),
+            CampaignBudget("c3", 500, 0, False, None),
+        ],
+        NOW,
+    )
+
+
+def runtime(sessions: Sessions, engine: AsyncEngine, fake: FakePlatform | None) -> Runtime:
+    return Runtime(sessions, engine, lambda business, account: fake, lambda: NOW)
+
+
+async def test_stop_pauses_every_active_campaign_through_ledger(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    await seed_account(sessions, BUSINESS, "acc")
+    fake = platform()
+
+    report = await run_emergency_stop(runtime(sessions, engine, fake), BUSINESS)
+
+    assert report.complete
+    assert sorted(report.stopped) == ["acc:c1", "acc:c2"]
+    assert not any(campaign.active for campaign in fake.campaigns.values())
+    rows = await SqlChangeRepository(sessions, BUSINESS).all()
+    assert [(r.kind, r.source, r.status) for r in rows] == [
+        (ChangeKind.PAUSE, ChangeSource.USER, ChangeStatus.APPLIED)
+    ] * 2
+    assert all(r.before == {"limit": 500, "active": True} for r in rows)
+
+
+async def test_repeated_stop_changes_nothing(sessions: Sessions, engine: AsyncEngine) -> None:
+    await seed_account(sessions, BUSINESS, "acc")
+    fake = platform()
+    await run_emergency_stop(runtime(sessions, engine, fake), BUSINESS)
+
+    report = await run_emergency_stop(runtime(sessions, engine, fake), BUSINESS)
+
+    assert report.complete and not report.stopped
+    assert len(await SqlChangeRepository(sessions, BUSINESS).all()) == 2
+
+
+async def test_stop_touches_only_this_business(sessions: Sessions, engine: AsyncEngine) -> None:
+    await seed_account(sessions, BUSINESS, "acc")
+    await seed_account(sessions, OTHER, "foreign")
+    seen: list[tuple[uuid.UUID, str]] = []
+    fake = platform()
+
+    def platform_for(business: uuid.UUID, account: str) -> FakePlatform:
+        seen.append((business, account))
+        return fake
+
+    await run_emergency_stop(Runtime(sessions, engine, platform_for, lambda: NOW), BUSINESS)
+
+    assert {item for item in seen} == {(BUSINESS, "acc")}
+
+
+async def test_one_failed_campaign_does_not_stop_the_others_and_is_reported(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    await seed_account(sessions, BUSINESS, "acc")
+    fake = platform()
+    # Все попытки первой кампании падают; вторая обязана остановиться.
+    fake.faults.extend(Fault("pause_campaigns") for _ in range(3))
+
+    report = await run_emergency_stop(runtime(sessions, engine, fake), BUSINESS)
+
+    assert not report.complete
+    assert fake.campaigns["c1"].active is True
+    assert fake.campaigns["c2"].active is False
+    assert report.stopped == ["acc:c2"]
+    assert report.failed == [("acc:c1", "still_active")]
+
+
+async def test_failure_after_apply_is_seen_as_stopped_by_reading(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    await seed_account(sessions, BUSINESS, "acc")
+    fake = platform()
+    fake.faults.append(Fault("pause_campaigns", after_apply=True))
+
+    report = await run_emergency_stop(runtime(sessions, engine, fake), BUSINESS)
+
+    assert not any(campaign.active for campaign in fake.campaigns.values())
+    assert report.complete
+
+
+async def test_without_platform_says_it_stopped_nothing(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    await seed_account(sessions, BUSINESS, "acc")
+
+    report = await run_emergency_stop(runtime(sessions, engine, None), BUSINESS)
+
+    assert not report.complete
+    assert report.failed == [("acc", "platform_not_connected")]
+
+
+async def test_business_without_accounts_is_not_reported_as_success(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    report = await run_emergency_stop(runtime(sessions, engine, platform()), uuid.uuid4())
+    assert not report.complete
+    assert report.failed == [("*", "no_accounts")]
+
+
+def test_stop_rejects_malformed_business_id(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as error:
+        main(["emergency-stop", "--business", "не-uuid"])
+    assert error.value.code == 2
+
+
+def test_stop_with_unreachable_database_tells_to_stop_by_hand(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("POSTGRES_PORT", "1")
+
+    code = main(["emergency-stop", "--business", str(uuid.uuid4())])
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "вручную" in out
+    assert settings.postgres_password.get_secret_value() not in out

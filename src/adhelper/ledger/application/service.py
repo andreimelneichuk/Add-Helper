@@ -69,6 +69,10 @@ class Ledger:
         """Изменение вне сервиса: только фиксируем, на площадке уже всё произошло."""
         return await self._repository.add(observed, expected, ChangeStatus.APPLIED)
 
+    @property
+    def max_attempts(self) -> int:
+        return self._max_attempts
+
     async def execute_pending(self, account: str) -> None:
         """На аккаунт одновременно работает один исполнитель; занято — выполнит тот, кто держит."""
         async with self._lock.hold(account) as acquired:

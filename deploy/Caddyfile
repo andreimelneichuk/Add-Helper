@@ -1,0 +1,11 @@
+# Сертификат выпускается автоматически; нужна A-запись домена и открытые порты 80 и 443.
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy app:8000
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+}
