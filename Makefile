@@ -1,4 +1,4 @@
-.PHONY: setup check down
+.PHONY: setup check check-web prototype down
 
 # Поднимает окружение на чистом клоне; повторный запуск безопасен.
 setup: .env
@@ -16,6 +16,16 @@ check:
 	uv run mypy
 	uv run lint-imports
 	uv run pytest
+	$(MAKE) check-web
+
+check-web:
+	npm --prefix frontend ci --no-audit --no-fund
+	npm --prefix frontend run check
+
+# Прототип на тестовых данных: http://localhost:5173
+prototype:
+	npm --prefix frontend ci --no-audit --no-fund
+	npm --prefix frontend run dev
 
 down:
 	docker compose down
