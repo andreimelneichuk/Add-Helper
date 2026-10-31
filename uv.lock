@@ -15,6 +15,7 @@ dependencies = [
     { name = "cryptography" },
     { name = "fastapi" },
     { name = "font-roboto" },
+    { name = "httpx" },
     { name = "pillow" },
     { name = "procrastinate" },
     { name = "psycopg", extra = ["binary"] },
@@ -27,7 +28,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "hypothesis" },
     { name = "import-linter" },
     { name = "mypy" },
@@ -42,6 +42,7 @@ requires-dist = [
     { name = "cryptography", specifier = ">=50.0.2" },
     { name = "fastapi", specifier = ">=0.162.0" },
     { name = "font-roboto", specifier = ">=0.0.1" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "pillow", specifier = ">=13.0.0" },
     { name = "procrastinate", specifier = ">=3.10.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.6" },
@@ -54,7 +55,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "httpx", specifier = ">=0.28.1" },
     { name = "hypothesis", specifier = ">=6.170.14" },
     { name = "import-linter", specifier = ">=2.15" },
     { name = "mypy", specifier = ">=2.4.1" },
