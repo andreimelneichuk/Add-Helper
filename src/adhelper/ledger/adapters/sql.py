@@ -69,6 +69,7 @@ def _to_change(row: ChangeRow) -> Change:
         attempts=row.attempts,
         failure_reason=row.failure_reason,
         decision_id=row.decision_id,
+        reverts_change_id=row.reverts_change_id,
     )
 
 
@@ -145,6 +146,27 @@ class SqlChangeRepository:
         async with self._sessions() as session:
             status = await session.scalar(statement)
         return ChangeStatus(status) if status else None
+
+    async def get(self, change_id: int) -> Change | None:
+        statement = select(ChangeRow).where(
+            ChangeRow.id == change_id, ChangeRow.business_id == self._business_id
+        )
+        async with self._sessions() as session:
+            row = (await session.scalars(statement)).one_or_none()
+        return _to_change(row) if row else None
+
+    async def on_target(self, account: str, target_ref: str) -> Sequence[Change]:
+        statement = (
+            select(ChangeRow)
+            .where(
+                ChangeRow.business_id == self._business_id,
+                ChangeRow.account == account,
+                ChangeRow.target_ref == target_ref,
+            )
+            .order_by(ChangeRow.id)
+        )
+        async with self._sessions() as session:
+            return [_to_change(row) for row in await session.scalars(statement)]
 
     async def all(self) -> Sequence[Change]:
         statement = (

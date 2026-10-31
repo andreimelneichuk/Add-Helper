@@ -16,6 +16,8 @@ class ChangeSource(StrEnum):
     USER = "user"
     ROLLBACK = "rollback"
     BUDGET_GUARD = "budget_guard"
+    EXPERIMENT = "experiment"
+    EXTERNAL = "external"
 
 
 class ChangeStatus(StrEnum):
@@ -55,6 +57,7 @@ class Change:
     attempts: int
     failure_reason: str | None
     decision_id: str | None = None
+    reverts_change_id: int | None = None
 
 
 class ExecutionStep(StrEnum):
