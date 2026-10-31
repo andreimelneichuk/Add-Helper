@@ -31,6 +31,7 @@
 
 - Поднять окружение на чистом клоне: `make setup` (нужны `uv` и Docker).
 - Все проверки, как в CI: `make check` (`ruff`, `mypy`, `lint-imports`, `pytest`; нужна запущенная база).
+- Прототип интерфейса на тестовых данных: `make prototype` (нужен Node 22 или новее). Только интерфейс: `make check-web`.
 - Один тест: `uv run pytest tests/test_healthz.py`.
 - Новая миграция: `uv run alembic revision -m "описание"`.
 
