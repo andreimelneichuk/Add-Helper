@@ -1,0 +1,18 @@
+# Стартовые значения, см. docs/04-autopilot.md §2. Изменение порогов = новая версия файла.
+version = "budget-1"
+
+# Доли в базисных пунктах: 10000 = 100%.
+reserve_bp = 1000
+stop_threshold_bp = 9700
+alert_threshold_bp = 9000
+
+# Худший дополнительный расход при изменении лимита: консервативная оценка до опыта S2.
+change_spike_old_bp = 3500
+change_spike_new_bp = 3500
+
+max_increase_bp = 2000
+min_increase_interval_days = 7
+
+check_interval_seconds = 900
+alert_check_interval_seconds = 300
+stop_latency_seconds = 120
