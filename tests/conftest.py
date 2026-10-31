@@ -6,6 +6,7 @@ import psycopg
 import pytest
 from alembic.command import upgrade
 from alembic.config import Config
+from hypothesis import settings as hypothesis_settings
 from psycopg import sql
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -14,6 +15,10 @@ from adhelper.config import Settings
 from adhelper.db import create_engine
 
 ALEMBIC_INI = Path(__file__).parent.parent / "alembic.ini"
+
+# На медленной машине CI ограничение времени на пример даёт ложные падения.
+hypothesis_settings.register_profile("default_no_deadline", deadline=None)
+hypothesis_settings.load_profile("default_no_deadline")
 
 
 def _admin_dsn(settings: Settings) -> str:
