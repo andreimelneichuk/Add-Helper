@@ -5,11 +5,14 @@ description = "Сервис, который сам ведёт рекламу м�
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.20.1",
+    "cryptography>=50.0.2",
     "fastapi>=0.162.0",
+    "procrastinate>=3.10.0",
     "psycopg[binary]>=3.3.6",
     "pydantic>=2.14.2",
     "pydantic-settings>=2.16.2",
     "sqlalchemy[asyncio]>=2.1.6",
+    "tzdata>=2026.6",
     "uvicorn[standard]>=0.54.0",
 ]
 
