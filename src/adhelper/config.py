@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     # Пусто: вход отключён. Токены без шифрования хранить нельзя.
     token_encryption_keys: SecretStr | None = None
 
+    # Без ключа объявления собираются из шаблонов профиля.
+    text_model_provider: str = "yandex"
+    text_model_api_key: SecretStr | None = None
+    text_model_folder: str = ""
+    text_model_name: str = "yandexgpt-5.1"
+
     @property
     def postgres_dsn(self) -> str:
         url = self.database_url.set(drivername="postgresql")

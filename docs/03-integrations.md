@@ -126,3 +126,5 @@
 | `VideoModel` (необязателен) | Короткие сцены, если они прошли сравнение качества |
 
 Требования: структурированный ответ с проверкой схемы, ограничения времени и стоимости, журнал стоимости. В модель не передаём ФИО, ИНН и токены. Провайдеры переключаются конфигурацией; при отказе показываем шаблон на реальных фото владельца, а не останавливаем запуск.
+
+**Yandex AI Studio [Док, проверено 2026-10-31, реальным вызовом нет].** `POST https://ai.api.cloud.yandex.net/foundationModels/v1/completion`, `modelUri` вида `gpt://<каталог>/yandexgpt-5.1`, поле `jsonSchema` для структурированного ответа, в ответе `alternatives[].status` и `usage.totalTokens`. Источники: [метод](https://aistudio.yandex.ru/ru/docs/ai-studio/text-generation/api-ref/TextGeneration/completion), [модели](https://aistudio.yandex.ru/ru/docs/ai-studio/concepts/generation/models). Заголовки `Authorization: Api-Key` и `x-folder-id` указаны по памяти и проверяются первым вызовом. Документация переехала с `yandex.cloud` на `aistudio.yandex.ru`, старые адреса ненадёжны.
