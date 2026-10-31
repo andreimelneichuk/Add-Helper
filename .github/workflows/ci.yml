@@ -23,3 +23,5 @@ jobs:
         run: curl --fail --silent --show-error http://127.0.0.1:8000/healthz
       - name: Проверки
         run: make check
+      - name: Копия базы восстанавливается
+        run: make backup restore-check

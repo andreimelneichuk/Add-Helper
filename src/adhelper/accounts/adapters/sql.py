@@ -348,3 +348,15 @@ class SqlAccountTokens:
                 )
                 .values(state=AccountState.NEEDS_RECONNECT.value)
             )
+
+
+async def logins_of_business(
+    sessions: async_sessionmaker[AsyncSession], business_id: UUID
+) -> list[str]:
+    statement = (
+        select(AdAccountRow.external_login)
+        .where(AdAccountRow.business_id == business_id)
+        .order_by(AdAccountRow.external_login)
+    )
+    async with sessions() as session:
+        return list(await session.scalars(statement))

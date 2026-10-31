@@ -1,4 +1,4 @@
-.PHONY: setup check check-web prototype down
+.PHONY: setup check check-web prototype backup restore-check down
 
 # Поднимает окружение на чистом клоне; повторный запуск безопасен.
 setup: .env
@@ -26,6 +26,13 @@ check-web:
 prototype:
 	npm --prefix frontend ci --no-audit --no-fund
 	npm --prefix frontend run dev
+
+# Резервная копия в backups/ и проверка восстановления во временную базу.
+backup:
+	scripts/backup.sh
+
+restore-check:
+	scripts/restore-check.sh
 
 down:
 	docker compose down

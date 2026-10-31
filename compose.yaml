@@ -71,5 +71,25 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  # Только для сервера: docker compose --profile production up -d
+  caddy:
+    image: caddy:2.8-alpine
+    profiles: [production]
+    environment:
+      DOMAIN: ${DOMAIN:-}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   db-data:
+  caddy-data:
+  caddy-config:
