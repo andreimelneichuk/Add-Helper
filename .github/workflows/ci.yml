@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.6"
+      - name: Поднять окружение с нуля
+        run: make setup
+      - name: Сервис отвечает
+        run: curl --fail --silent --show-error http://127.0.0.1:8000/healthz
+      - name: Проверки
+        run: make check
