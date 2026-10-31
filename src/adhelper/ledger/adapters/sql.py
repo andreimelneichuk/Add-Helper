@@ -68,6 +68,7 @@ def _to_change(row: ChangeRow) -> Change:
         explanation=row.explanation,
         attempts=row.attempts,
         failure_reason=row.failure_reason,
+        decision_id=row.decision_id,
     )
 
 
@@ -136,6 +137,14 @@ class SqlChangeRepository:
         )
         async with self._sessions() as session:
             return [_to_change(row) for row in await session.scalars(statement)]
+
+    async def status_of(self, change_id: int) -> ChangeStatus | None:
+        statement = select(ChangeRow.status).where(
+            ChangeRow.id == change_id, ChangeRow.business_id == self._business_id
+        )
+        async with self._sessions() as session:
+            status = await session.scalar(statement)
+        return ChangeStatus(status) if status else None
 
     async def all(self) -> Sequence[Change]:
         statement = (

@@ -4,6 +4,7 @@ from alembic import context
 from sqlalchemy import create_engine
 
 from adhelper.accounts.adapters import sql as _account_models  # noqa: F401
+from adhelper.autopilot.adapters import sql as _autopilot_models  # noqa: F401
 from adhelper.budget.adapters import sql as _budget_models  # noqa: F401
 from adhelper.config import Settings
 from adhelper.db import Base
@@ -14,6 +15,7 @@ CROSS_MODULE_KEYS = {
     "fk_alerts_business",
     "fk_budget_periods_business_account",
     "fk_changes_business_account",
+    "fk_decisions_business",
 }
 
 

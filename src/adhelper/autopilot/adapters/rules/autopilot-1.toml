@@ -1,0 +1,23 @@
+# Стартовые значения, см. docs/04-autopilot.md §3–4. Изменение порогов = новая версия файла.
+# Значения не откалиброваны: калибровка на пилоте (T7).
+version = "autopilot-1"
+
+# Доли и вероятности в базисных пунктах: 10000 = 100%.
+maturity_days = 2
+learning_days = 7
+learning_target_multiple = 2
+prior_weight = 1
+
+good_probability_bp = 8000
+bad_probability_bp = 9000
+bad_cpl_multiple_bp = 13000
+bad_min_spend_multiple = 2
+
+min_change_gap_days = 3
+budget_increase_bp = 2000
+
+health_recent_days = 7
+health_min_clicks = 50
+health_min_visit_share_bp = 5000
+health_min_expected_leads = 5
+health_gap_share_bp = 3000

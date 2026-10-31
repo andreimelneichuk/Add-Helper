@@ -32,6 +32,7 @@ class FakePlatform:
         self.unavailable = False
         self.stats_frozen_at: datetime | None = None
         self.faults: list[Fault] = []
+        self.ads: dict[str, bool] = {}
         self.set_limit_calls: list[LimitChange] = []
         self.rejections: list[LimitDecision] = []
         self.limit_sums = [self.limit_sum]
@@ -66,6 +67,14 @@ class FakePlatform:
             if fault.operation == operation and fault.after_apply == after_apply:
                 self.faults.remove(fault)
                 raise PlatformUnavailable(operation)
+
+    async def read_ad(self, account: str, ad_ref: str) -> dict[str, bool]:
+        self._check_fault("read_ad", after_apply=False)
+        return {"active": self.ads[ad_ref]} if ad_ref in self.ads else {}
+
+    async def set_ad_active(self, account: str, ad_ref: str, active: bool) -> None:
+        self._check_fault("set_ad_active", after_apply=False)
+        self.ads[ad_ref] = active
 
     async def read_campaigns(self, account: str) -> list[CampaignBudget]:
         self._check_fault("read_campaigns", after_apply=False)

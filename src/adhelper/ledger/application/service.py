@@ -50,6 +50,9 @@ class Ledger:
             before = {}
         return await self._repository.add(proposed, before, ChangeStatus.REJECTED, reason)
 
+    async def status_of(self, change_id: int) -> ChangeStatus | None:
+        return await self._repository.status_of(change_id)
+
     async def execute_pending(self, account: str) -> None:
         """На аккаунт одновременно работает один исполнитель; занято — выполнит тот, кто держит."""
         async with self._lock.hold(account) as acquired:
