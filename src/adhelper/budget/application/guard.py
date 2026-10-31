@@ -39,7 +39,7 @@ class ChangeOutcome:
     decision: LimitDecision | None = None
 
 
-async def _check(
+async def check_change(
     platform: BudgetPlatform,
     account: str,
     period: BudgetPeriod,
@@ -71,8 +71,9 @@ async def apply_limit_change(
     try:
         if (await _read_limits(platform, account)).get(change.campaign_id) == change.new_limit:
             return ChangeOutcome(ChangeStatus.ALREADY_APPLIED)
-        decision = await _check(platform, account, period, change, burn, now, rules)
+        decision = await check_change(platform, account, period, change, burn, now, rules)
         if not decision.allowed:
+            await platform.record_rejection(account, change, decision)
             return ChangeOutcome(ChangeStatus.REJECTED, decision)
         await platform.set_limit(account, change)
         applied = (await _read_limits(platform, account)).get(
@@ -105,8 +106,9 @@ async def drive_transfer(
             step = next_step(plan, await _read_limits(platform, account))
             if step is None:
                 return TransferStatus.DONE
-            decision = await _check(platform, account, period, step, burn, now, rules)
+            decision = await check_change(platform, account, period, step, burn, now, rules)
             if not decision.allowed:
+                await platform.record_rejection(account, step, decision)
                 return TransferStatus.REJECTED
             await platform.set_limit(account, step)
     except PlatformUnavailable:
