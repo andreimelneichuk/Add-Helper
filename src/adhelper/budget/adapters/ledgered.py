@@ -55,6 +55,9 @@ class LedgeredBudgetPlatform:
     async def fetch_spend(self, account: str) -> SpendSnapshot:
         return await self._platform.fetch_spend(account)
 
+    async def fetch_balance(self, account: str) -> int:
+        return await self._platform.fetch_balance(account)
+
     def _proposal(self, account: str, change: LimitChange) -> ProposedChange:
         return ProposedChange(
             account=account,

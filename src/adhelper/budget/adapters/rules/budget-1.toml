@@ -10,6 +10,9 @@ alert_threshold_bp = 9000
 change_spike_old_bp = 3500
 change_spike_new_bp = 3500
 
+# Допуск сверки со счётом от лимита периода; основу сравнения уточнит опыт S3.
+balance_tolerance_bp = 200
+
 max_increase_bp = 2000
 min_increase_interval_days = 7
 

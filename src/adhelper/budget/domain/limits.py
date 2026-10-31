@@ -16,6 +16,8 @@ from adhelper.budget.domain.rules import (
 class BudgetPeriod:
     hard_limit: int
     reserve_bp: int
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
 
     def __post_init__(self) -> None:
         require_int(hard_limit=self.hard_limit, reserve_bp=self.reserve_bp)
@@ -53,6 +55,7 @@ class RejectionReason(StrEnum):
     BELOW_SPENT = "below_spent"
     STEP_TOO_LARGE = "step_too_large"
     TOO_SOON = "too_soon"
+    PERIOD_ENDED = "period_ended"
     EXCEEDS_OPERATING_BUDGET = "exceeds_operating_budget"
     WORST_CASE_EXCEEDS_HARD_LIMIT = "worst_case_exceeds_hard_limit"
 
@@ -137,6 +140,8 @@ def _increase_rejection(
     now: datetime,
     rules: BudgetRules,
 ) -> RejectionReason | None:
+    if period.ends_at is not None and now >= period.ends_at:
+        return RejectionReason.PERIOD_ENDED
     if (change.new_limit - target.limit) * BASIS_POINTS > target.limit * rules.max_increase_bp:
         return RejectionReason.STEP_TOO_LARGE
     interval = timedelta(days=rules.min_increase_interval_days)

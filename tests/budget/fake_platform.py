@@ -21,11 +21,14 @@ class FakePlatform:
         now: datetime,
         stats_lag: timedelta = timedelta(0),
         enforces_limits: bool = True,
+        balance: int = 10**15,
     ) -> None:
         self.campaigns = {campaign.campaign_id: campaign for campaign in campaigns}
         self.now = now
         self.stats_lag = stats_lag
         self.enforces_limits = enforces_limits
+        self.balance = balance
+        self.faults_for_balance = False
         self.unavailable = False
         self.faults: list[Fault] = []
         self.set_limit_calls: list[LimitChange] = []
@@ -48,9 +51,10 @@ class FakePlatform:
             for campaign_id, campaign in self.campaigns.items():
                 if not campaign.active:
                     continue
-                spent = campaign.spent + per_minute
+                spent = campaign.spent + min(per_minute, self.balance)
                 if self.enforces_limits:
                     spent = min(spent, max(campaign.limit, campaign.spent))
+                self.balance -= spent - campaign.spent
                 self.campaigns[campaign_id] = replace(campaign, spent=spent)
             self._history.append((self.now, self.total_spent))
 
@@ -74,6 +78,12 @@ class FakePlatform:
             if moment_candidate <= visible_until:
                 moment, reported = moment_candidate, value
         return SpendSnapshot(reported=reported, data_as_of=moment)
+
+    async def fetch_balance(self, account: str) -> int:
+        self._check_fault("fetch_balance", after_apply=False)
+        if self.faults_for_balance:
+            raise PlatformUnavailable("fetch_balance")
+        return self.balance
 
     async def set_limit(self, account: str, change: LimitChange) -> None:
         self._check_fault("set_limit", after_apply=False)

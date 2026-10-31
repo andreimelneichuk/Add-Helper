@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
+from adhelper.budget.domain.balance import BalanceState, check_balance
 from adhelper.budget.domain.limits import (
     BudgetPeriod,
     LimitChange,
@@ -134,6 +135,7 @@ class WatchResult:
     stopped: bool = False
     stop_pending: bool = False
     platform_unavailable: bool = False
+    balance_state: BalanceState | None = None
 
 
 async def _stop_all(platform: BudgetPlatform, account: str) -> bool:
@@ -147,6 +149,23 @@ async def _stop_all(platform: BudgetPlatform, account: str) -> bool:
         return False
 
 
+async def _balance_state(
+    platform: BudgetPlatform,
+    account: str,
+    period: BudgetPeriod,
+    opening_balance: int | None,
+    spent: int,
+    rules: BudgetRules,
+) -> BalanceState | None:
+    if opening_balance is None:
+        return None
+    try:
+        current = await platform.fetch_balance(account)
+    except PlatformUnavailable:
+        return None
+    return check_balance(opening_balance, current, spent, period.hard_limit, rules)
+
+
 async def watch_once(
     platform: BudgetPlatform,
     account: str,
@@ -154,6 +173,7 @@ async def watch_once(
     state: WatchState,
     now: datetime,
     rules: BudgetRules,
+    opening_balance: int | None = None,
 ) -> WatchResult:
     try:
         snapshot = await platform.fetch_spend(account)
@@ -169,7 +189,14 @@ async def watch_once(
         )
     burn = BurnRate.between(state.snapshot, snapshot, state.burn) if state.snapshot else state.burn
     verdict = evaluate_watch(period, snapshot, burn, now, rules)
-    must_stop = state.stop_pending or verdict.action is WatchAction.STOP
+    balance_state = await _balance_state(
+        platform, account, period, opening_balance, corrected_spend(snapshot, burn, now), rules
+    )
+    must_stop = (
+        state.stop_pending
+        or verdict.action is WatchAction.STOP
+        or balance_state is BalanceState.MISMATCH
+    )
     stopped = must_stop and await _stop_all(platform, account)
     pending = must_stop and not stopped
     return WatchResult(
@@ -177,4 +204,5 @@ async def watch_once(
         verdict=verdict,
         stopped=stopped,
         stop_pending=pending,
+        balance_state=balance_state,
     )

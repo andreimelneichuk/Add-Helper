@@ -26,6 +26,7 @@ class BudgetRules:
     alert_threshold_bp: int
     change_spike_old_bp: int
     change_spike_new_bp: int
+    balance_tolerance_bp: int
     max_increase_bp: int
     min_increase_interval_days: int
     check_interval_seconds: int
