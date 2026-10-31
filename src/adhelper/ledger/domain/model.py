@@ -7,6 +7,8 @@ from typing import Any
 class ChangeKind(StrEnum):
     SET_LIMIT = "set_limit"
     PAUSE = "pause"
+    PAUSE_AD = "pause_ad"
+    RESUME_AD = "resume_ad"
 
 
 class ChangeSource(StrEnum):
@@ -52,6 +54,7 @@ class Change:
     explanation: str
     attempts: int
     failure_reason: str | None
+    decision_id: str | None = None
 
 
 class ExecutionStep(StrEnum):

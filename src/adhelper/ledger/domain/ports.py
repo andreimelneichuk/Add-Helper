@@ -17,6 +17,7 @@ class PlatformGateway(Protocol):
 
 
 class ChangeRepository(Protocol):
+    async def status_of(self, change_id: int) -> ChangeStatus | None: ...
     async def add(
         self,
         proposed: ProposedChange,
