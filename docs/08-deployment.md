@@ -51,7 +51,6 @@ cp .env.example .env
 | Переменная | Назначение |
 |---|---|
 | `PUBLIC_BASE_URL` | Адрес сервиса, например `https://ads.example.ru` |
-| `SECRET_KEY` | Подпись сессий |
 | `TOKEN_ENCRYPTION_KEYS` | Ключи шифрования токенов и реквизитов; **потеря делает их нечитаемыми** |
 | `POSTGRES_PASSWORD` | Пароль базы |
 | `YANDEX_CLIENT_ID`, `YANDEX_CLIENT_SECRET` | Приложение Яндекса |

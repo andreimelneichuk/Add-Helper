@@ -1,19 +1,50 @@
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from adhelper.accounts.adapters.crypto import AesGcmCipher
+from adhelper.accounts.adapters.sql import SqlAccountTokens, SqlIdentityStore, SqlUserScope
+from adhelper.accounts.application.service import AccountsService, OAuthProvider
+from adhelper.api.accounts import accounts_router
 from adhelper.config import Settings
 from adhelper.db import create_engine, ping
 
 logger = logging.getLogger(__name__)
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
-    engine = create_engine(settings or Settings())
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def _accounts_service(
+    settings: Settings, engine: AsyncEngine, provider: OAuthProvider | None
+) -> AccountsService | None:
+    keys = settings.token_encryption_keys
+    if provider is None or keys is None or not keys.get_secret_value():
+        return None
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    return AccountsService(
+        SqlIdentityStore(sessions),
+        lambda user_id: SqlUserScope(sessions, user_id),
+        lambda business_id: SqlAccountTokens(sessions, business_id),
+        provider,
+        AesGcmCipher.from_config(keys.get_secret_value()),
+        _utc_now,
+        settings.public_base_url,
+    )
+
+
+def create_app(
+    settings: Settings | None = None, oauth_provider: OAuthProvider | None = None
+) -> FastAPI:
+    settings = settings or Settings()
+    engine = create_engine(settings)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -22,6 +53,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Ad Helper", lifespan=lifespan)
     app.state.engine = engine
+    # Провайдер Яндекса появится после реального вызова (V1); до этого вход отвечает 503.
+    app.state.accounts = _accounts_service(settings, engine, oauth_provider)
+    app.include_router(accounts_router(settings))
 
     @app.get("/healthz")
     async def healthz(request: Request) -> JSONResponse:

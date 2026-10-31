@@ -22,9 +22,18 @@ from adhelper.ledger.domain.model import (
     ProposedChange,
 )
 from tests.ledger.conftest import FakeGateway
+from tests.seed import seed_account
 
 BUSINESS = uuid.uuid4()
 OTHER_BUSINESS = uuid.uuid4()
+
+
+@pytest.fixture(autouse=True)
+async def _owners(sessions: async_sessionmaker[AsyncSession]) -> None:
+    await seed_account(sessions, BUSINESS, "acc", "acc-2", "other")
+    await seed_account(sessions, OTHER_BUSINESS, "acc", "acc-2", "other")
+
+
 Sessions = async_sessionmaker[AsyncSession]
 
 

@@ -4,6 +4,7 @@ import uuid
 from dataclasses import replace
 from datetime import UTC, datetime
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from adhelper.budget.adapters.ledgered import LedgeredBudgetPlatform, PlatformChangeGateway
@@ -26,6 +27,7 @@ from adhelper.ledger.adapters.sql import PostgresAccountLock, SqlChangeRepositor
 from adhelper.ledger.application.service import Ledger
 from adhelper.ledger.domain.model import ChangeKind, ChangeSource, ChangeStatus, ProposedChange
 from tests.budget.fake_platform import FakePlatform, Fault
+from tests.seed import seed_account
 
 NOW = datetime(2026, 11, 2, 9, 0, tzinfo=UTC)
 RULES = replace(
@@ -38,6 +40,13 @@ RULES = replace(
 PERIOD = BudgetPeriod(hard_limit=1_000_000, reserve_bp=1000)
 ZERO = BurnRate.zero()
 BUSINESS = uuid.uuid4()
+
+
+@pytest.fixture(autouse=True)
+async def _owners(sessions: async_sessionmaker[AsyncSession]) -> None:
+    await seed_account(sessions, BUSINESS, "acc")
+
+
 Sessions = async_sessionmaker[AsyncSession]
 
 
