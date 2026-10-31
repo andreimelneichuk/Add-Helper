@@ -3,6 +3,7 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from adhelper.budget.adapters.rules_file import load_rules
@@ -15,11 +16,20 @@ from adhelper.ledger.domain.model import ChangeKind, ChangeStatus
 from adhelper.notifications.adapters.sql import SqlAlerts
 from adhelper.worker.runtime import Runtime
 from tests.budget.fake_platform import FakePlatform, Fault
+from tests.seed import seed_account
 
 NOW = datetime(2026, 11, 2, 9, 0, tzinfo=UTC)
 HARD = 1_000_000_000
 BUSINESS = uuid.uuid4()
 OTHER = uuid.uuid4()
+
+
+@pytest.fixture(autouse=True)
+async def _owners(sessions: async_sessionmaker[AsyncSession]) -> None:
+    await seed_account(sessions, BUSINESS, "acc", "bad", "good", "other")
+    await seed_account(sessions, OTHER, "acc", "bad", "good", "other")
+
+
 Sessions = async_sessionmaker[AsyncSession]
 
 

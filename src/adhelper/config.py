@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     postgres_password: SecretStr
     postgres_db: str = "adhelper"
 
+    public_base_url: str = "http://localhost:8000"
+    cookie_secure: bool = True
+    # Пусто: вход отключён. Токены без шифрования хранить нельзя.
+    token_encryption_keys: SecretStr | None = None
+
     @property
     def postgres_dsn(self) -> str:
         url = self.database_url.set(drivername="postgresql")
