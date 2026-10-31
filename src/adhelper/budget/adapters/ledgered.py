@@ -13,6 +13,24 @@ from adhelper.ledger.domain.model import ChangeKind, ChangeSource, ProposedChang
 from adhelper.ledger.domain.ports import GatewayUnavailable
 
 
+def guard_source() -> ChangeSource:
+    return ChangeSource.BUDGET_GUARD
+
+
+def limit_proposal(
+    account: str, source: ChangeSource, campaign_id: str, new_limit: int
+) -> ProposedChange:
+    return ProposedChange(
+        account=account,
+        source=source,
+        kind=ChangeKind.SET_LIMIT,
+        target_ref=campaign_id,
+        planned={"limit": new_limit},
+        explanation=f"Лимит кампании {campaign_id}: {new_limit}",
+        idempotency_key=f"set_limit:{campaign_id}:{new_limit}",
+    )
+
+
 class PlatformChangeGateway:
     """Исполнитель журнала поверх площадки: единственное место, где она реально меняется."""
 
@@ -59,15 +77,7 @@ class LedgeredBudgetPlatform:
         return await self._platform.fetch_balance(account)
 
     def _proposal(self, account: str, change: LimitChange) -> ProposedChange:
-        return ProposedChange(
-            account=account,
-            source=self._source,
-            kind=ChangeKind.SET_LIMIT,
-            target_ref=change.campaign_id,
-            planned={"limit": change.new_limit},
-            explanation=f"Лимит кампании {change.campaign_id}: {change.new_limit}",
-            idempotency_key=f"set_limit:{change.campaign_id}:{change.new_limit}",
-        )
+        return limit_proposal(account, self._source, change.campaign_id, change.new_limit)
 
     async def _run(self, proposed: ProposedChange) -> None:
         try:

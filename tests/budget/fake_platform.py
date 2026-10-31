@@ -30,6 +30,7 @@ class FakePlatform:
         self.balance = balance
         self.faults_for_balance = False
         self.unavailable = False
+        self.stats_frozen_at: datetime | None = None
         self.faults: list[Fault] = []
         self.set_limit_calls: list[LimitChange] = []
         self.rejections: list[LimitDecision] = []
@@ -73,6 +74,8 @@ class FakePlatform:
     async def fetch_spend(self, account: str) -> SpendSnapshot:
         self._check_fault("fetch_spend", after_apply=False)
         visible_until = self.now - self.stats_lag
+        if self.stats_frozen_at is not None:
+            visible_until = min(visible_until, self.stats_frozen_at)
         moment, reported = self._history[0]
         for moment_candidate, value in self._history:
             if moment_candidate <= visible_until:

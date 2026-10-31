@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -96,3 +97,10 @@ def evaluate_watch(
         ),
         rules_version=rules.version,
     )
+
+
+def burn_from_history(snapshots: Sequence[SpendSnapshot]) -> BurnRate:
+    """Скорость расхода по двум последним снимкам, от старого к новому."""
+    if len(snapshots) < 2:
+        return BurnRate.zero()
+    return BurnRate.between(snapshots[-2], snapshots[-1], BurnRate.zero())

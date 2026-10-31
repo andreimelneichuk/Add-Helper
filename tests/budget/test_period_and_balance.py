@@ -17,7 +17,7 @@ from adhelper.budget.domain.limits import (
     RejectionReason,
     check_limit_change,
 )
-from adhelper.budget.domain.watch import WatchAction
+from adhelper.budget.domain.watch import BurnRate, SpendSnapshot, WatchAction
 from tests.budget.fake_platform import FakePlatform
 
 RULES = load_rules("budget-1")
@@ -172,3 +172,23 @@ async def test_balance_unavailable_does_not_block_spend_check() -> None:
 
 def test_rules_field_exists_in_file() -> None:
     assert replace(RULES).balance_tolerance_bp == 200
+
+
+async def test_older_statistics_do_not_replace_newer_snapshot() -> None:
+    now = datetime(2026, 11, 10, 12, 0, tzinfo=UTC)
+    platform = FakePlatform([campaign()], now)
+    seen = SpendSnapshot(400_000_000, now - timedelta(minutes=30))
+    platform.stats_frozen_at = now - timedelta(hours=5)
+
+    result = await watch_once(
+        platform,
+        "acc",
+        BudgetPeriod(HARD, 1000),
+        WatchState(seen, BurnRate.zero(), False),
+        now,
+        RULES,
+    )
+
+    assert result.state.snapshot == seen
+    assert result.verdict is not None
+    assert result.verdict.projected >= seen.reported

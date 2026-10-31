@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     postgres_db: str = "adhelper"
 
     @property
+    def postgres_dsn(self) -> str:
+        url = self.database_url.set(drivername="postgresql")
+        return url.render_as_string(hide_password=False)
+
+    @property
     def database_url(self) -> URL:
         return URL.create(
             "postgresql+psycopg",
