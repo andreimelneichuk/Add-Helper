@@ -1,5 +1,6 @@
 import logging
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from typing import Any
 from uuid import UUID
 
 from adhelper.ledger.domain.model import (
@@ -52,6 +53,21 @@ class Ledger:
 
     async def status_of(self, change_id: int) -> ChangeStatus | None:
         return await self._repository.status_of(change_id)
+
+    async def get_change(self, change_id: int) -> Change | None:
+        return await self._repository.get(change_id)
+
+    async def changes_on_target(self, account: str, target_ref: str) -> Sequence[Change]:
+        return await self._repository.on_target(account, target_ref)
+
+    async def read_target(self, account: str, target_ref: str) -> Mapping[str, Any]:
+        return await self._gateway.read(account, target_ref)
+
+    async def record_external(
+        self, observed: ProposedChange, expected: Mapping[str, Any]
+    ) -> Change:
+        """Изменение вне сервиса: только фиксируем, на площадке уже всё произошло."""
+        return await self._repository.add(observed, expected, ChangeStatus.APPLIED)
 
     async def execute_pending(self, account: str) -> None:
         """На аккаунт одновременно работает один исполнитель; занято — выполнит тот, кто держит."""

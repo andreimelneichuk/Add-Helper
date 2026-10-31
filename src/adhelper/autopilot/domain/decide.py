@@ -27,6 +27,7 @@ class BlockReason(StrEnum):
     CHANGED_RECENTLY = "changed_recently"
     ONE_CHANGE_PER_CYCLE = "one_change_per_cycle"
     TEST_RUNNING = "test_running"
+    ROLLED_BACK = "rolled_back"
 
 
 @dataclass(frozen=True)
@@ -82,7 +83,10 @@ def _plan_campaign(
     running = Counter(ad.group_id for ad in ads)
     chosen: Action | None = None
     for ad in sorted(bad, key=lambda item: (-item.spend, item.ref)):
-        if running[ad.group_id] <= 1:
+        if ad.rollback_hold:
+            # Пользователь отменил это решение: автопилот не повторяет его сам.
+            blocked[ad.ref] = BlockReason.ROLLED_BACK
+        elif running[ad.group_id] <= 1:
             blocked[ad.ref] = BlockReason.LAST_AD_IN_GROUP
         elif chosen is not None:
             blocked[ad.ref] = BlockReason.ONE_CHANGE_PER_CYCLE

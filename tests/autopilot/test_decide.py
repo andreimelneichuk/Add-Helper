@@ -163,3 +163,10 @@ def test_same_input_gives_same_plan() -> None:
     ads = [bad(), good()]
     first = plan_cycle(ads, [limited()], TARGET, TRUSTED, Mode.AUTO, NOW, RULES)
     assert plan_cycle(ads, [limited()], TARGET, TRUSTED, Mode.AUTO, NOW, RULES) == first
+
+
+def test_action_undone_by_user_is_not_repeated() -> None:
+    held = AdStats("ad:bad", "c1", "g1", BAD_SPEND, 0, 30, active=True, rollback_hold=True)
+    plan = plan_cycle([held, good()], [], TARGET, TRUSTED, Mode.AUTO, NOW, RULES)
+    assert not [a for a in plan.actions if a.ref == "ad:bad"]
+    assert plan.blocked["ad:bad"] is BlockReason.ROLLED_BACK

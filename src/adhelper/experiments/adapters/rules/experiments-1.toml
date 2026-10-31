@@ -1,0 +1,12 @@
+# Стартовые значения, см. docs/04-autopilot.md §5. Изменение порогов = новая версия файла.
+version = "experiments-1"
+
+win_probability_bp = 9000
+lose_probability_bp = 1000
+min_days = 7
+max_days = 21
+min_clicks_per_variant = 100
+# Предел трат на тест, микроединицы: калибруется на пилоте.
+max_test_spend = 30000000000
+# Исключающий интервал после смены варианта учитывает источник статистики.
+exclusion_hours = 6

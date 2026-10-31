@@ -42,6 +42,7 @@ class AdStats:
     leads: int
     age_days: int
     active: bool
+    rollback_hold: bool = False
 
 
 @dataclass(frozen=True)
