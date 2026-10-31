@@ -1,0 +1,119 @@
+[project]
+name = "adhelper"
+version = "0.1.0"
+description = "Сервис, который сам ведёт рекламу малого бизнеса"
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.20.1",
+    "fastapi>=0.162.0",
+    "psycopg[binary]>=3.3.6",
+    "pydantic>=2.14.2",
+    "pydantic-settings>=2.16.2",
+    "sqlalchemy[asyncio]>=2.1.6",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12,<0.13"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "import-linter>=2.15",
+    "mypy>=2.4.1",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.4.1",
+    "ruff>=0.17.3",
+]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+extend-exclude = ["*.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "ASYNC", "DTZ", "T20", "SIM", "RUF"]
+# Кириллица в комментариях и строках — норма для проекта.
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.mypy]
+strict = true
+files = ["src", "tests", "migrations"]
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "--strict-markers"
+
+[tool.importlinter]
+root_package = "adhelper"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Домен не знает HTTP, SDK, ORM и внешние слои"
+type = "forbidden"
+source_modules = ["adhelper.*.domain"]
+forbidden_modules = [
+    "adhelper.*.application",
+    "adhelper.*.adapters",
+    "adhelper.api",
+    "adhelper.worker",
+    "adhelper.db",
+    "fastapi",
+    "starlette",
+    "httpx",
+    "sqlalchemy",
+    "alembic",
+    "psycopg",
+    "uvicorn",
+]
+
+[[tool.importlinter.contracts]]
+name = "Внутри модуля: адаптеры и сценарии зависят от домена, но не друг от друга"
+type = "layers"
+layers = ["adapters | application", "domain"]
+containers = [
+    "adhelper.accounts",
+    "adhelper.business",
+    "adhelper.platforms",
+    "adhelper.analytics",
+    "adhelper.campaigns",
+    "adhelper.creatives",
+    "adhelper.budget",
+    "adhelper.autopilot",
+    "adhelper.experiments",
+    "adhelper.ledger",
+    "adhelper.stats",
+    "adhelper.commands",
+    "adhelper.notifications",
+]
+
+[[tool.importlinter.contracts]]
+name = "HTTP-слой и воркер работают через сценарии, а не напрямую с доменом"
+type = "forbidden"
+source_modules = ["adhelper.api", "adhelper.worker"]
+forbidden_modules = ["adhelper.*.domain"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Модули не зависят от HTTP-слоя и воркера"
+type = "forbidden"
+source_modules = [
+    "adhelper.accounts",
+    "adhelper.business",
+    "adhelper.platforms",
+    "adhelper.analytics",
+    "adhelper.campaigns",
+    "adhelper.creatives",
+    "adhelper.budget",
+    "adhelper.autopilot",
+    "adhelper.experiments",
+    "adhelper.ledger",
+    "adhelper.stats",
+    "adhelper.commands",
+    "adhelper.notifications",
+]
+forbidden_modules = ["adhelper.api", "adhelper.worker"]
