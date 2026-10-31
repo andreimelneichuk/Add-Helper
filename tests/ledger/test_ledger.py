@@ -399,10 +399,13 @@ async def test_silently_ignored_decrease_blocks_the_increase(
     await service.submit(proposal("recipient", 200))
     real_apply = gateway.apply
 
-    async def ignore(*_: Any) -> None:
-        return None
+    async def ignore_donor(
+        account: str, kind: ChangeKind, target_ref: str, planned: Mapping[str, Any]
+    ) -> None:
+        if target_ref != "donor":
+            await real_apply(account, kind, target_ref, planned)
 
-    gateway.apply = ignore  # type: ignore[method-assign,assignment]
+    gateway.apply = ignore_donor  # type: ignore[method-assign]
     await service.execute_pending("acc")
     assert gateway.state["recipient"] == {"limit": 100}
 
