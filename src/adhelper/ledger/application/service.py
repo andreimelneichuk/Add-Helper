@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable, Iterable
 from uuid import UUID
 
@@ -16,6 +17,8 @@ from adhelper.ledger.domain.ports import (
     PlatformGateway,
     Preflight,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class Ledger:
@@ -94,8 +97,14 @@ class Ledger:
 
 
 async def reconcile_open_changes(
-    accounts: Iterable[tuple[UUID, str]], ledger_for: Callable[[UUID], Ledger]
+    accounts: Iterable[tuple[UUID, str]], ledger_for: Callable[[UUID, str], Ledger | None]
 ) -> None:
-    """Завершает всё незавершённое после перезапуска."""
+    """Завершает всё незавершённое после перезапуска; сбой одного кабинета не держит остальные."""
     for business_id, account in accounts:
-        await ledger_for(business_id).execute_pending(account)
+        try:
+            ledger = ledger_for(business_id, account)
+            if ledger is not None:
+                await ledger.execute_pending(account)
+        except Exception as error:
+            # В логе только тип: текст ошибки может содержать токен или адрес.
+            logger.error("Согласование журнала: %s", type(error).__name__)

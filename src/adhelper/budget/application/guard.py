@@ -187,6 +187,9 @@ async def watch_once(
             stop_pending=new_state.stop_pending,
             platform_unavailable=True,
         )
+    # Площадка вернула более старые данные, чем мы видели: прежние свежее и не меньше.
+    if state.snapshot is not None and snapshot.data_as_of < state.snapshot.data_as_of:
+        snapshot = state.snapshot
     burn = BurnRate.between(state.snapshot, snapshot, state.burn) if state.snapshot else state.burn
     verdict = evaluate_watch(period, snapshot, burn, now, rules)
     balance_state = await _balance_state(

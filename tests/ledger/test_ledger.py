@@ -153,7 +153,7 @@ async def test_crash_after_submit_commit_is_recovered_by_reconcile(
     assert await accounts_with_open_changes(sessions) == [(BUSINESS, "acc")]
     await reconcile_open_changes(
         await accounts_with_open_changes(sessions),
-        lambda business_id: ledger(sessions, engine, gateway),
+        lambda business_id, account: ledger(sessions, engine, gateway),
     )
 
     assert gateway.state["a"] == {"limit": 400}
