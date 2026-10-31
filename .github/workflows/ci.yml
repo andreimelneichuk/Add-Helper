@@ -21,6 +21,8 @@ jobs:
         run: make setup
       - name: Сервис отвечает
         run: curl --fail --silent --show-error http://127.0.0.1:8000/healthz
+      - name: Команды оператора работают в образе
+        run: docker compose exec -T app adhelper check || test $? -eq 1
       - name: Проверки
         run: make check
       - name: Копия базы восстанавливается
