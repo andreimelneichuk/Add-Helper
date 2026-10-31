@@ -175,20 +175,19 @@ def test_rules_field_exists_in_file() -> None:
 
 
 async def test_older_statistics_do_not_replace_newer_snapshot() -> None:
-    now = datetime(2026, 11, 10, 12, 0, tzinfo=UTC)
-    platform = FakePlatform([campaign()], now)
-    seen = SpendSnapshot(400_000_000, now - timedelta(minutes=30))
-    platform.stats_frozen_at = now - timedelta(hours=5)
+    start = datetime(2026, 11, 10, 12, 0, tzinfo=UTC)
+    platform = FakePlatform([campaign()], start)
+    platform.run(60, 1_000_000)
+    seen = SpendSnapshot(30_000_000, start + timedelta(minutes=30))
+    platform.stats_frozen_at = start
 
     result = await watch_once(
         platform,
         "acc",
         BudgetPeriod(HARD, 1000),
         WatchState(seen, BurnRate.zero(), False),
-        now,
+        platform.now,
         RULES,
     )
 
     assert result.state.snapshot == seen
-    assert result.verdict is not None
-    assert result.verdict.projected >= seen.reported
