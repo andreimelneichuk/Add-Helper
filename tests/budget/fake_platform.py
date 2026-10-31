@@ -1,7 +1,7 @@
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 
-from adhelper.budget.domain.limits import CampaignBudget, LimitChange
+from adhelper.budget.domain.limits import CampaignBudget, LimitChange, LimitDecision
 from adhelper.budget.domain.ports import PlatformUnavailable
 from adhelper.budget.domain.watch import SpendSnapshot
 
@@ -29,6 +29,7 @@ class FakePlatform:
         self.unavailable = False
         self.faults: list[Fault] = []
         self.set_limit_calls: list[LimitChange] = []
+        self.rejections: list[LimitDecision] = []
         self.limit_sums = [self.limit_sum]
         self._history = [(now, self.total_spent)]
 
@@ -92,3 +93,8 @@ class FakePlatform:
         for campaign_id in campaign_ids:
             self.campaigns[campaign_id] = replace(self.campaigns[campaign_id], active=False)
         self._check_fault("pause_campaigns", after_apply=True)
+
+    async def record_rejection(
+        self, account: str, change: LimitChange, decision: LimitDecision
+    ) -> None:
+        self.rejections.append(decision)

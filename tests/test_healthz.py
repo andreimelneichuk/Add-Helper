@@ -2,7 +2,7 @@ from pathlib import Path
 
 import httpx
 import psycopg
-from alembic.command import upgrade
+from alembic.command import check, upgrade
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from fastapi import FastAPI
@@ -48,3 +48,10 @@ async def test_healthz_unavailable_when_database_is_down(settings: Settings) -> 
 
     assert response.status_code == 503
     assert response.json() == {"status": "unavailable"}
+
+
+def test_models_match_migrations(settings: Settings) -> None:
+    config = Config(ALEMBIC_INI)
+    upgrade(config, "head")
+
+    check(config)
