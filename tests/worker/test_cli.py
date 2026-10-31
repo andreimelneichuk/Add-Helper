@@ -35,7 +35,11 @@ def statuses(results: list) -> dict[str, CheckStatus]:  # type: ignore[type-arg]
 
 async def test_configured_service_passes(migrated: Settings, engine: AsyncEngine) -> None:
     configured = _secret(migrated, f"main:{KEY}").model_copy(
-        update={"public_base_url": "https://ads.example.ru"}
+        update={
+            "public_base_url": "https://ads.example.ru",
+            "text_model_api_key": SecretStr("key"),
+            "text_model_folder": "folder",
+        }
     )
     results = await run_checks(configured)
     assert all(result.status is CheckStatus.OK for result in results), results
@@ -74,6 +78,15 @@ async def test_unreachable_database_hides_password(migrated: Settings) -> None:
     results = await run_checks(broken)
     assert statuses(results)["database"] is CheckStatus.FAIL
     assert broken.postgres_password.get_secret_value() not in repr(results)
+
+
+async def test_unknown_model_provider_fails_check(migrated: Settings, engine: AsyncEngine) -> None:
+    broken = migrated.model_copy(update={"text_model_provider": "other"})
+    assert statuses(await run_checks(broken))["text_model"] is CheckStatus.FAIL
+
+
+async def test_missing_model_key_is_a_warning(migrated: Settings, engine: AsyncEngine) -> None:
+    assert statuses(await run_checks(migrated))["text_model"] is CheckStatus.WARN
 
 
 def test_check_exit_code_reflects_failure(

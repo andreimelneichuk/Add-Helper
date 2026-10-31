@@ -18,6 +18,8 @@ from adhelper.autopilot.adapters.rules_file import load_rules as load_autopilot_
 from adhelper.budget.adapters.rules_file import load_rules as load_budget_rules
 from adhelper.budget.application.emergency import StopReport, stop_account
 from adhelper.config import Settings
+from adhelper.creatives.adapters.factory import build_text_model
+from adhelper.creatives.adapters.rules_file import load_rules as load_creative_rules
 from adhelper.db import create_engine
 from adhelper.experiments.adapters.rules_file import load_rules as load_experiment_rules
 from adhelper.worker.runtime import Runtime, open_runtime
@@ -26,6 +28,7 @@ RULE_LOADERS = (
     (load_budget_rules, "budget-1"),
     (load_autopilot_rules, "autopilot-1"),
     (load_experiment_rules, "experiments-1"),
+    (load_creative_rules, "creatives-1"),
 )
 
 
@@ -99,6 +102,23 @@ def _url_check(settings: Settings) -> CheckResult:
     return CheckResult("public_url", CheckStatus.WARN, detail)
 
 
+def _text_model_check(settings: Settings) -> CheckResult:
+    try:
+        model = build_text_model(
+            settings.text_model_provider,
+            settings.text_model_api_key,
+            settings.text_model_folder,
+            settings.text_model_name,
+        )
+    except ValueError as error:
+        return CheckResult("text_model", CheckStatus.FAIL, str(error))
+    if model is None:
+        return CheckResult(
+            "text_model", CheckStatus.WARN, "Модель не задана: объявления из шаблонов"
+        )
+    return CheckResult("text_model", CheckStatus.OK, settings.text_model_provider)
+
+
 def _rules_check() -> CheckResult:
     try:
         for load, version in RULE_LOADERS:
@@ -113,6 +133,7 @@ async def run_checks(settings: Settings) -> list[CheckResult]:
         *await _database_checks(settings),
         _keys_check(settings),
         _url_check(settings),
+        _text_model_check(settings),
         _rules_check(),
     ]
 
