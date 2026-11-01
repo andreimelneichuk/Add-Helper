@@ -34,6 +34,12 @@ def settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[Settings]:
     with psycopg.connect(admin_dsn, autocommit=True) as admin:
         admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
     monkeypatch.setenv("POSTGRES_DB", name)
+    # Модель не зависит от .env разработчика: тесты задают её сами, где она нужна.
+    monkeypatch.setenv("TEXT_MODEL_BASE_URL", "https://ai.api.cloud.yandex.net/v1")
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "")
+    monkeypatch.setenv("TEXT_MODEL_PROJECT", "")
+    monkeypatch.setenv("TEXT_MODEL_NAME", "")
+    monkeypatch.setenv("JUDGE_MODEL_NAME", "")
     yield Settings()
     with psycopg.connect(admin_dsn, autocommit=True) as admin:
         admin.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name)))

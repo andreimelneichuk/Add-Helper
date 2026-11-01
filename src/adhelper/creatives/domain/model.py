@@ -8,6 +8,7 @@ class ViolationKind(StrEnum):
     EMPTY = "empty"
     UNCONFIRMED_NUMBER = "unconfirmed_number"
     UNCONFIRMED_CLAIM = "unconfirmed_claim"
+    UNCONFIRMED_BY_JUDGE = "unconfirmed_by_judge"
     FORBIDDEN_WORD = "forbidden_word"
     FOREIGN_WORD = "foreign_word"
     TOO_SIMILAR = "too_similar"
@@ -67,9 +68,12 @@ class CreativeRules:
     similarity_max_bp: int
     max_tokens_per_set: int
     max_model_attempts: int
+    judge_max_tokens: int
     min_contrast_x100: int
     forbidden_words: tuple[str, ...]
     fact_words: tuple[str, ...]
+    # Начала слов-обещаний: «скидк» ловит «скидкой», «бесплатн» узнаёт «бесплатно» в профиле.
+    fact_stems: tuple[str, ...]
     sensitive_niches: tuple[str, ...]
 
 

@@ -55,7 +55,8 @@ cp .env.example .env
 | `POSTGRES_PASSWORD` | Пароль базы |
 | `YANDEX_CLIENT_ID`, `YANDEX_CLIENT_SECRET` | Приложение Яндекса |
 | `VK_ENABLED`, `VK_CLIENT_ID`, `VK_CLIENT_SECRET` | VK Реклама |
-| `TEXT_MODEL_PROVIDER`, `TEXT_MODEL_API_KEY`, `TEXT_MODEL_FOLDER`, `TEXT_MODEL_NAME` | Текстовая модель. По умолчанию Yandex AI Studio, `yandexgpt-5.1`. Без ключа объявления собираются из шаблонов |
+| `TEXT_MODEL_BASE_URL`, `TEXT_MODEL_API_KEY`, `TEXT_MODEL_PROJECT`, `TEXT_MODEL_NAME` | Текстовая модель через любой OpenAI-совместимый API. По умолчанию адрес Yandex AI Studio; для него `TEXT_MODEL_PROJECT` — каталог, модель `gpt://<каталог>/yandexgpt/latest`. Без ключа или модели объявления собираются из шаблонов |
+| `JUDGE_MODEL_NAME` | Модель судьи смысла объявлений на том же API. Пусто — судья выключен |
 | `IMAGE_MODEL_PROVIDER`, `IMAGE_MODEL_API_KEY` | Изображения |
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | Файлы |
 | `SMTP_URL`, `MAIL_FROM` | Почта |

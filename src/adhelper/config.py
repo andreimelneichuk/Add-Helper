@@ -17,11 +17,14 @@ class Settings(BaseSettings):
     # Пусто: вход отключён. Токены без шифрования хранить нельзя.
     token_encryption_keys: SecretStr | None = None
 
-    # Без ключа объявления собираются из шаблонов профиля.
-    text_model_provider: str = "yandex"
+    # Любой OpenAI-совместимый API. Без ключа или модели объявления собираются из шаблонов.
+    text_model_base_url: str = "https://ai.api.cloud.yandex.net/v1"
     text_model_api_key: SecretStr | None = None
-    text_model_folder: str = ""
-    text_model_name: str = "yandexgpt-5.1"
+    # Заголовок OpenAI-Project; для Yandex AI Studio это каталог.
+    text_model_project: str = ""
+    text_model_name: str = ""
+    # Семантическая проверка объявлений тем же API. Пусто — судья выключен, остаётся код.
+    judge_model_name: str = ""
 
     @property
     def postgres_dsn(self) -> str:
