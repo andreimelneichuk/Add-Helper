@@ -29,7 +29,14 @@ from adhelper.ledger.adapters.sql import (
     accounts_with_open_changes,
 )
 from adhelper.ledger.application.service import Ledger, reconcile_open_changes
-from adhelper.notifications.adapters.sql import SqlAlerts
+from adhelper.notifications.adapters.money import DashboardMoney
+from adhelper.notifications.adapters.smtp import SmtpSender
+from adhelper.notifications.adapters.sql import SqlAlerts, SqlOutbox, SqlTelegramLinks
+from adhelper.notifications.adapters.telegram import TelegramApi
+from adhelper.notifications.application.service import (
+    deliver_pending,
+    handle_telegram_updates,
+)
 
 MAX_CHANGE_ATTEMPTS = 3
 
@@ -50,6 +57,10 @@ class Runtime:
     # Без ключа или модели генерация отдаёт шаблоны из профиля, без судьи — только проверку кодом.
     text_model: Any = None
     judge_model: Any = None
+    # Каналы тревог; без настроек канала отправки ждут в очереди.
+    email: Any = None
+    telegram: Any = None
+    cabinet_url: str = "http://localhost:8000"
 
     def ledger_for(self, business_id: UUID, account: str) -> Ledger:
         platform = self.platform_for(business_id, account)
@@ -105,6 +116,26 @@ class Runtime:
             self.clock,
         )
 
+    async def notifications_send(self) -> None:
+        senders = {
+            channel: sender
+            for channel, sender in (("email", self.email), ("telegram", self.telegram))
+            if sender is not None
+        }
+        await deliver_pending(
+            SqlOutbox(self.sessions),
+            senders,
+            DashboardMoney(self.sessions),
+            self.clock(),
+            self.cabinet_url,
+        )
+
+    async def telegram_poll(self) -> None:
+        if self.telegram is not None:
+            await handle_telegram_updates(
+                self.telegram, SqlTelegramLinks(self.sessions), self.clock()
+            )
+
 
 def _no_platform(business_id: UUID, account: str) -> None:
     return None
@@ -119,6 +150,27 @@ def _model(settings: Settings, name: str) -> Any:
     )
 
 
+def _email(settings: Settings) -> SmtpSender | None:
+    if not settings.smtp_host or not settings.smtp_from:
+        return None
+    password = settings.smtp_password.get_secret_value() if settings.smtp_password else ""
+    return SmtpSender(
+        settings.smtp_host,
+        settings.smtp_port,
+        settings.smtp_from,
+        settings.smtp_username,
+        password,
+        settings.smtp_starttls,
+    )
+
+
+def _telegram(settings: Settings) -> TelegramApi | None:
+    token = settings.telegram_bot_token
+    if token is None or not token.get_secret_value():
+        return None
+    return TelegramApi(token.get_secret_value())
+
+
 @asynccontextmanager
 async def open_runtime(settings: Settings) -> AsyncIterator[Runtime]:
     engine = create_engine(settings)
@@ -129,6 +181,9 @@ async def open_runtime(settings: Settings) -> AsyncIterator[Runtime]:
             platform_for=_no_platform,
             text_model=_model(settings, settings.text_model_name),
             judge_model=_model(settings, settings.judge_model_name),
+            email=_email(settings),
+            telegram=_telegram(settings),
+            cabinet_url=settings.public_base_url,
         )
     finally:
         await engine.dispose()

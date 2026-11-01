@@ -13,6 +13,14 @@ x-app: &app
     TEXT_MODEL_PROJECT: ${TEXT_MODEL_PROJECT:-}
     TEXT_MODEL_NAME: ${TEXT_MODEL_NAME:-}
     JUDGE_MODEL_NAME: ${JUDGE_MODEL_NAME:-}
+    SMTP_HOST: ${SMTP_HOST:-}
+    SMTP_PORT: ${SMTP_PORT:-465}
+    SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+    SMTP_USERNAME: ${SMTP_USERNAME:-}
+    SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+    SMTP_FROM: ${SMTP_FROM:-}
+    TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+    TELEGRAM_BOT_NAME: ${TELEGRAM_BOT_NAME:-}
 
 services:
   db:
@@ -70,7 +78,7 @@ services:
       - procrastinate
       - --app=adhelper.worker.app.app
       - worker
-      - --queues=budget,creatives
+      - --queues=budget,creatives,notifications
     depends_on:
       migrate:
         condition: service_completed_successfully

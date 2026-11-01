@@ -115,8 +115,14 @@ async function request<T>(path: string, init: RequestInit = {}, csrf?: string): 
     }
     throw new ApiError(response.status, detail);
   }
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
+
+export type Channels = {
+  email: string | null;
+  telegram: { available: boolean; linked: boolean };
+};
 
 export function createApi(businessId: string, csrf: string) {
   const base = `/api/businesses/${businessId}`;
@@ -134,6 +140,9 @@ export function createApi(businessId: string, csrf: string) {
         { method: "POST", body: JSON.stringify({ decision }) },
         csrf,
       ),
+    channels: () => request<Channels>("/api/me/notifications"),
+    linkTelegram: () => request<{ url: string }>("/api/me/telegram", { method: "POST" }, csrf),
+    unlinkTelegram: () => request<void>("/api/me/telegram", { method: "DELETE" }, csrf),
     confirmBalance: (account: string) =>
       request<{ confirmed: boolean }>(
         `${base}/balance/confirm`,

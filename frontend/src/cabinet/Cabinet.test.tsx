@@ -127,6 +127,27 @@ describe("кабинет", () => {
     expect(screen.getByText("Наращивание — поиск")).toBeInTheDocument();
   });
 
+  it("уведомления: почта, подключение Telegram с CSRF и отключение", async () => {
+    let linked = false;
+    const open = vi.fn();
+    vi.stubGlobal("open", open);
+    const calls = serve({
+      "GET /overview": overview(140),
+      "GET /api/me/notifications": () => ({ email: "owner@example.test", telegram: { available: true, linked } }),
+      "POST /api/me/telegram": () => { linked = true; return { url: "https://t.me/adhelper_bot?start=abc" }; },
+    });
+    window.location.hash = "notify";
+    render(<Cabinet me={ME} business={BUSINESS} />);
+
+    expect(await screen.findByText("owner@example.test")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Подключить" }));
+    const post = calls.find((c) => c.init?.method === "POST");
+    expect((post?.init?.headers as Record<string, string>)["X-CSRF-Token"]).toBe("csrf-1");
+    expect(open).toHaveBeenCalledWith("https://t.me/adhelper_bot?start=abc", "_blank", "noopener");
+    expect(screen.getByText(/нажмите «Запустить»/)).toBeInTheDocument();
+    expect(screen.getByText("Счёт не сходится со статистикой")).toBeInTheDocument();
+  });
+
   it("объявления: превью, решение владельца и причины снятия", async () => {
     const calls = serve({
       "GET /overview": overview(140),

@@ -26,6 +26,18 @@ class Settings(BaseSettings):
     # Семантическая проверка объявлений тем же API. Пусто — судья выключен, остаётся код.
     judge_model_name: str = ""
 
+    # Письма о тревогах через любой SMTP. Пустой адрес сервера: письма ждут настройки.
+    smtp_host: str = ""
+    # 465 — сразу TLS; 587 — с SMTP_STARTTLS=true.
+    smtp_port: int = 465
+    smtp_starttls: bool = False
+    smtp_username: str = ""
+    smtp_password: SecretStr | None = None
+    smtp_from: str = ""
+    # Бот Telegram от @BotFather. Без токена владелец не может привязать Telegram.
+    telegram_bot_token: SecretStr | None = None
+    telegram_bot_name: str = ""
+
     @property
     def postgres_dsn(self) -> str:
         url = self.database_url.set(drivername="postgresql")

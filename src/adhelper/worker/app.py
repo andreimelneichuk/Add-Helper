@@ -6,7 +6,15 @@ from adhelper.worker.runtime import open_runtime
 BUDGET_QUEUE = "budget"
 # Отдельная очередь: долгий вызов модели не задерживает задачи бюджета.
 CREATIVES_QUEUE = "creatives"
-PERIODIC_TASKS = ("budget.watch", "state.reconcile", "creatives.generate")
+# Тревоги владельцу не ждут ни генерации, ни задач бюджета.
+NOTIFICATIONS_QUEUE = "notifications"
+PERIODIC_TASKS = (
+    "budget.watch",
+    "state.reconcile",
+    "creatives.generate",
+    "notifications.send",
+    "telegram.poll",
+)
 
 
 def connector_for(settings: Settings) -> PsycopgConnector:
@@ -37,3 +45,18 @@ async def state_reconcile(timestamp: int) -> None:
 async def creatives_generate(timestamp: int) -> None:
     async with open_runtime(Settings()) as runtime:
         await runtime.creatives_generate()
+
+
+# Отправки тревог — строки notification_deliveries, их создаёт тревога в той же транзакции.
+@app.periodic(cron="* * * * *")
+@app.task(name="notifications.send", queue=NOTIFICATIONS_QUEUE, queueing_lock="notifications.send")
+async def notifications_send(timestamp: int) -> None:
+    async with open_runtime(Settings()) as runtime:
+        await runtime.notifications_send()
+
+
+@app.periodic(cron="* * * * *")
+@app.task(name="telegram.poll", queue=NOTIFICATIONS_QUEUE, queueing_lock="telegram.poll")
+async def telegram_poll(timestamp: int) -> None:
+    async with open_runtime(Settings()) as runtime:
+        await runtime.telegram_poll()

@@ -14,12 +14,20 @@ from adhelper.worker.app import (
     budget_watch,
     connector_for,
     creatives_generate,
+    notifications_send,
     state_reconcile,
+    telegram_poll,
 )
 
 
 def test_money_tasks_are_scheduled() -> None:
-    expected = {"budget.watch", "state.reconcile", "creatives.generate"}
+    expected = {
+        "budget.watch",
+        "state.reconcile",
+        "creatives.generate",
+        "notifications.send",
+        "telegram.poll",
+    }
     assert expected <= set(PERIODIC_TASKS)
     assert set(app.tasks) >= expected
     scheduled = {periodic.task.name for periodic in app.periodic_registry.periodic_tasks.values()}
@@ -28,7 +36,7 @@ def test_money_tasks_are_scheduled() -> None:
 
 def test_compose_worker_listens_to_every_queue() -> None:
     compose = (Path(__file__).parents[2] / "compose.yaml").read_text()
-    assert "--queues=budget,creatives" in compose
+    assert "--queues=budget,creatives,notifications" in compose
 
 
 async def test_worker_runs_money_tasks_from_real_database(
@@ -42,8 +50,12 @@ async def test_worker_runs_money_tasks_from_real_database(
             await budget_watch.defer_async(**periodic_arguments)
             await state_reconcile.defer_async(**periodic_arguments)
             await creatives_generate.defer_async(**periodic_arguments)
+            await notifications_send.defer_async(**periodic_arguments)
+            await telegram_poll.defer_async(**periodic_arguments)
             await test_app.run_worker_async(
-                queues=["budget", "creatives"], wait=False, install_signal_handlers=False
+                queues=["budget", "creatives", "notifications"],
+                wait=False,
+                install_signal_handlers=False,
             )
 
     async with engine.connect() as connection:
@@ -55,4 +67,6 @@ async def test_worker_runs_money_tasks_from_real_database(
         "budget.watch": "succeeded",
         "state.reconcile": "succeeded",
         "creatives.generate": "succeeded",
+        "notifications.send": "succeeded",
+        "telegram.poll": "succeeded",
     }

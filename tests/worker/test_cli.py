@@ -41,6 +41,10 @@ async def test_configured_service_passes(migrated: Settings, engine: AsyncEngine
             "text_model_project": "folder",
             "text_model_name": "gpt://folder/yandexgpt/latest",
             "judge_model_name": "gpt://folder/yandexgpt-lite/latest",
+            "smtp_host": "smtp.yandex.ru",
+            "smtp_from": "alerts@ads.example.ru",
+            "telegram_bot_token": SecretStr("1:token"),
+            "telegram_bot_name": "adhelper_bot",
         }
     )
     results = await run_checks(configured)
@@ -96,6 +100,23 @@ async def test_judge_off_by_default_is_a_warning(migrated: Settings, engine: Asy
         update={"text_model_api_key": SecretStr("key"), "text_model_name": "m"}
     )
     assert statuses(await run_checks(configured))["judge"] is CheckStatus.WARN
+
+
+async def test_channels_off_by_default_are_warnings(
+    migrated: Settings, engine: AsyncEngine
+) -> None:
+    results = statuses(await run_checks(migrated))
+    assert results["email"] is CheckStatus.WARN
+    assert results["telegram"] is CheckStatus.WARN
+
+
+async def test_bot_without_name_fails_and_hides_token(
+    migrated: Settings, engine: AsyncEngine
+) -> None:
+    broken = migrated.model_copy(update={"telegram_bot_token": SecretStr("1:secret-bot")})
+    results = await run_checks(broken)
+    assert statuses(results)["telegram"] is CheckStatus.FAIL
+    assert "secret-bot" not in repr(results)
 
 
 def test_check_exit_code_reflects_failure(

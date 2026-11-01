@@ -21,6 +21,8 @@ CROSS_MODULE_KEYS = {
     "fk_changes_business_account",
     "fk_decisions_business",
     "fk_experiments_business",
+    "fk_notification_deliveries_business",
+    "fk_telegram_links_user",
 }
 
 
