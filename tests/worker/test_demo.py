@@ -12,6 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from adhelper.api.app import create_app
 from adhelper.config import Settings
+from adhelper.creatives.adapters.rules_file import load_rules, load_slot_rules
+from adhelper.creatives.adapters.sql import SqlAdSlots, SqlProfileSource
+from adhelper.creatives.application.service import CURRENT_RULES, CURRENT_SLOT_RULES
+from adhelper.creatives.domain.lifecycle import plan_slots
 from adhelper.worker.demo import (
     ENV_FILE,
     SESSION_FILE,
@@ -57,7 +61,11 @@ async def test_demo_cabinet_is_readable_through_api(
         base = f"/api/businesses/{demo['business_id']}"
         overview = (await client.get(base + "/overview", headers=headers)).json()
         history = (await client.get(base + "/history", headers=headers)).json()
-        sets = (await client.get(base + "/creative-sets", headers=headers)).json()
+        creatives = (await client.get(base + "/creatives", headers=headers)).json()
+        month = {"since": "2026-10-22"}
+        campaign = (
+            await client.get(base + "/campaigns/lak-studio-2/101", headers=headers, params=month)
+        ).json()
     await app.state.engine.dispose()
 
     money = overview["money"][0]
@@ -68,4 +76,32 @@ async def test_demo_cabinet_is_readable_through_api(
     assert {c["state"] for c in overview["campaigns"]} == {"suspended"}
     assert len(overview["days"]) == 14
     assert {line["source"] for line in history} >= {"autopilot", "budget_guard", "user"}
-    assert sets[0]["status"] == "ready"
+    assert {c["state"] for c in creatives["creatives"]} >= {"needs_owner", "launch_pending"}
+    assert [w["campaign_name"] for w in creatives["writing"]] == ["Маникюр — сайты и приложения"]
+    # Объявления делят день направления без остатка: суммы сходятся с отчётом кампании.
+    for key in ("impressions", "clicks", "cost", "conversions"):
+        assert (
+            sum(ad["totals"][key] for ad in campaign["ads"]) == campaign["campaign"]["totals"][key]
+        )
+    assert [ad["state"] for ad in campaign["ads"]] == ["on", "on", "suspended"]
+
+
+async def test_demo_ads_are_already_where_the_keeper_would_put_them(
+    sessions: async_sessionmaker[AsyncSession], tmp_path: Path
+) -> None:
+    demo = await seed_demo(sessions, NOW, tmp_path)
+    slots = SqlAdSlots(sessions, demo.business_id)
+    profile = await SqlProfileSource(sessions).profile(demo.business_id)
+    assert profile is not None
+    plan = plan_slots(
+        profile,
+        await slots.campaigns(),
+        await slots.candidates(),
+        load_slot_rules(CURRENT_SLOT_RULES),
+        await slots.open_sets(),
+        load_rules(CURRENT_RULES).max_sets_per_day,
+        False,
+    )
+    # Иначе первый же цикл хранителя переставит демо и закажет тексты у модели.
+    assert plan.moves == () and plan.requests == ()
+    assert plan.attention == ("ads_need_confirmation",)

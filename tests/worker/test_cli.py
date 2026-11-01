@@ -51,6 +51,25 @@ async def test_configured_service_passes(migrated: Settings, engine: AsyncEngine
     assert all(result.status is CheckStatus.OK for result in results), results
 
 
+async def test_ads_waiting_over_an_hour_are_reported(
+    migrated: Settings, sessions: Sessions, engine: AsyncEngine
+) -> None:
+    await seed_account(sessions, BUSINESS)
+    async with sessions.begin() as session:
+        await session.execute(
+            text(
+                "INSERT INTO creative_sets (business_id, status, rules_version, attempts, drafts,"
+                " rejected, notes, tokens_used, needs_review, created_at)"
+                " VALUES (:b, 'queued', 'creatives-2', 0, '[]', '[]', '[]', 0, false,"
+                " now() - interval '2 hours')"
+            ),
+            {"b": BUSINESS},
+        )
+    results = await run_checks(migrated)
+    stuck = next(r for r in results if r.name == "ads_writing")
+    assert stuck.status is CheckStatus.WARN and ": 1." in stuck.detail
+
+
 async def test_missing_keys_fail_check(migrated: Settings, engine: AsyncEngine) -> None:
     results = statuses(await run_checks(migrated))
     assert results["encryption_keys"] is CheckStatus.FAIL

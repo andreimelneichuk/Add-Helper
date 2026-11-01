@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
 from uuid import UUID
@@ -90,6 +89,8 @@ class CreativeSet:
     rules_version: str
     needs_review: bool = False
     notes: tuple[str, ...] = field(default_factory=tuple)
+    # Текст модели прошёл судью: только такой можно запускать без владельца.
+    judged: bool = False
 
 
 @dataclass(frozen=True)
@@ -111,45 +112,12 @@ class SetStatus(StrEnum):
     FAILED = "failed"
 
 
-class DraftDecision(StrEnum):
-    PROPOSED = "proposed"
-    APPROVED = "approved"
-    DECLINED = "declined"
-
-
-@dataclass(frozen=True)
-class StoredDraft:
-    headline: str
-    text: str
-    decision: DraftDecision
-
-
-@dataclass(frozen=True)
-class StoredRejection:
-    headline: str
-    text: str
-    reasons: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class StoredSet:
-    """Набор объявлений в том виде, в каком его видит владелец."""
-
-    id: int
-    status: SetStatus
-    rules_version: str
-    source: CreativeSource | None
-    drafts: tuple[StoredDraft, ...]
-    rejected: tuple[StoredRejection, ...]
-    notes: tuple[str, ...]
-    tokens_used: int
-    needs_review: bool
-    created_at: datetime
-    finished_at: datetime | None
-
-
 @dataclass(frozen=True)
 class ClaimedSet:
     id: int
     business_id: UUID
     rules_version: str
+    # Место, для которого пишем. У наборов до §8 его нет.
+    account: str | None = None
+    campaign_id: str | None = None
+    campaign_name: str | None = None

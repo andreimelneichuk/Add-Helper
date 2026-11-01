@@ -45,6 +45,29 @@ class CampaignLine:
 
 
 @dataclass(frozen=True)
+class AdLine:
+    """Объявление и его показатели за выбранные дни."""
+
+    account: str
+    ad_id: str
+    campaign_id: str
+    title: str
+    text: str
+    href: str
+    state: str
+    totals: Totals
+
+
+@dataclass(frozen=True)
+class Scope:
+    """Чьи дни показать: всего бизнеса, одного направления или одного объявления."""
+
+    account: str | None = None
+    campaign_id: str | None = None
+    ad_id: str | None = None
+
+
+@dataclass(frozen=True)
 class DayLine:
     day: date
     totals: Totals
@@ -79,5 +102,6 @@ class Dashboard(Protocol):
     async def periods(self, now: datetime) -> list[PeriodLine]: ...
     async def alerts(self) -> list[AlertLine]: ...
     async def campaigns(self, since: date, until: date) -> list[CampaignLine]: ...
-    async def days(self, since: date, until: date) -> list[DayLine]: ...
+    async def ads(self, since: date, until: date, scope: Scope) -> list[AdLine]: ...
+    async def days(self, since: date, until: date, scope: Scope) -> list[DayLine]: ...
     async def history(self, limit: int) -> list[HistoryLine]: ...

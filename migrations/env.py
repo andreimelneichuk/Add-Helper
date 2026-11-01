@@ -18,6 +18,7 @@ CROSS_MODULE_KEYS = {
     "fk_budget_periods_business_account",
     "fk_business_profiles_business",
     "fk_creative_sets_business",
+    "fk_creatives_business",
     "fk_changes_business_account",
     "fk_decisions_business",
     "fk_experiments_business",

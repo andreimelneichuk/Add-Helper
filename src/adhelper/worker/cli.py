@@ -21,6 +21,7 @@ from adhelper.budget.application.emergency import StopReport, stop_account
 from adhelper.config import Settings
 from adhelper.creatives.adapters.factory import build_text_model
 from adhelper.creatives.adapters.rules_file import load_rules as load_creative_rules
+from adhelper.creatives.adapters.rules_file import load_slot_rules
 from adhelper.db import create_engine
 from adhelper.experiments.adapters.rules_file import load_rules as load_experiment_rules
 from adhelper.worker.demo import (
@@ -39,8 +40,15 @@ RULE_LOADERS = (
     (load_experiment_rules, "experiments-1"),
     (load_creative_rules, "creatives-1"),
     (load_creative_rules, "creatives-2"),
+    (load_slot_rules, "ads-1"),
 )
 
+
+# Набор пишется минуты. Час в очереди — воркер не берёт очередь creatives или падает.
+STUCK_SETS = text(
+    "SELECT count(*) FROM creative_sets"
+    " WHERE status IN ('queued', 'running') AND created_at < now() - interval '1 hour'"
+)
 
 MANUAL_STOP = "Остановка не завершена: остановите рекламу вручную в кабинете площадки."
 
@@ -73,6 +81,7 @@ async def _database_checks(settings: Settings) -> list[CheckResult]:
         async with engine.connect() as connection:
             version = await connection.scalar(text("SELECT version_num FROM alembic_version"))
             queue = await connection.scalar(text("SELECT to_regclass('procrastinate_jobs')"))
+            stuck = await connection.scalar(STUCK_SETS) if version == _alembic_head() else 0
     except (SQLAlchemyError, OSError) as error:
         # Только тип ошибки: текст может содержать адрес и пароль подключения.
         name = type(error).__name__
@@ -88,6 +97,13 @@ async def _database_checks(settings: Settings) -> list[CheckResult]:
         results.append(CheckResult("migrations", CheckStatus.FAIL, detail))
     queue_status = CheckStatus.OK if queue else CheckStatus.FAIL
     results.append(CheckResult("queue", queue_status, "Таблицы очереди задач"))
+    if stuck:
+        detail = (
+            f"Наборов объявлений ждут дольше часа: {stuck}. Слушает ли воркер очередь creatives?"
+        )
+        results.append(CheckResult("ads_writing", CheckStatus.WARN, detail))
+    else:
+        results.append(CheckResult("ads_writing", CheckStatus.OK, "Тексты объявлений не застряли"))
     return results
 
 

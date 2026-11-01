@@ -130,6 +130,98 @@ async def test_overview_shows_money_reconciliation_and_campaigns(
     assert [d["day"] for d in body["days"]] == ["2026-11-09", "2026-11-10"]
 
 
+async def _seed_ads(sessions: Sessions, business_id: uuid.UUID) -> None:
+    async with sessions.begin() as session:
+        await session.execute(
+            text(
+                "INSERT INTO ads"
+                " (business_id, account, ad_id, campaign_id, title, text, href, state)"
+                " VALUES (:b, 'anna-direct', '11', '1', 'Маникюр 1500 ₽', 'У метро',"
+                " 'https://a.example', 'on'),"
+                " (:b, 'anna-direct', '12', '1', 'Маникюр рядом', 'Онлайн-запись', '',"
+                " 'suspended')"
+            ),
+            {"b": business_id},
+        )
+        for ad_id, offset, clicks in (("11", 0, 30), ("11", 1, 10), ("12", 0, 0), ("11", 20, 5)):
+            await session.execute(
+                text(
+                    "INSERT INTO ad_stats (business_id, account, ad_id, day,"
+                    " impressions, clicks, cost_micros, conversions)"
+                    " VALUES (:b, 'anna-direct', :a, :d, 500, :k, :c, 1)"
+                ),
+                {
+                    "b": business_id,
+                    "a": ad_id,
+                    "d": date(2026, 11, 10) - timedelta(days=offset),
+                    "k": clicks,
+                    "c": clicks * 10 * RUB,
+                },
+            )
+
+
+async def test_overview_for_chosen_period_compares_with_previous(
+    anna: tuple[httpx.AsyncClient, str, uuid.UUID], sessions: Sessions
+) -> None:
+    client, _, business_id = anna
+    await _seed_money(sessions, business_id)
+    base = f"/api/businesses/{business_id}/overview"
+
+    body = (await client.get(base, params={"since": "2026-11-10", "until": "2026-11-10"})).json()
+    assert (body["since"], body["until"]) == ("2026-11-10", "2026-11-10")
+    assert body["totals"]["cost"] == 600 * RUB
+    # Предыдущий день того же размера — 9 ноября.
+    assert body["previous"]["cost"] == 400 * RUB
+    assert [d["day"] for d in body["days"]] == ["2026-11-10"]
+
+    month = (await client.get(base, params={"since": "2026-10-01", "until": "2026-11-10"})).json()
+    assert month["totals"]["cost"] == 1_999 * RUB
+
+    for params in (
+        {"since": "2026-11-10", "until": "2026-11-09"},
+        {"until": "2026-11-11"},
+        {"since": "2025-11-01", "until": "2026-11-10"},
+    ):
+        assert (await client.get(base, params=params)).status_code == 422, params
+
+
+async def test_campaign_and_ad_dashboards(
+    anna: tuple[httpx.AsyncClient, str, uuid.UUID], sessions: Sessions
+) -> None:
+    client, _, business_id = anna
+    await _seed_money(sessions, business_id)
+    await _seed_ads(sessions, business_id)
+    base = f"/api/businesses/{business_id}"
+
+    campaign = (await client.get(base + "/campaigns/anna-direct/1")).json()
+    assert campaign["campaign"]["name"] == "Маникюр — поиск"
+    assert campaign["campaign"]["totals"]["cost"] == 1_000 * RUB
+    assert campaign["ratios"]["cpa"] == 250 * RUB
+    assert [d["day"] for d in campaign["days"]] == ["2026-11-09", "2026-11-10"]
+    assert [(a["ad_id"], a["totals"]["clicks"]) for a in campaign["ads"]] == [
+        ("11", 40),
+        ("12", 0),
+    ]
+    assert campaign["ads"][1]["ratios"]["ctr_bp"] == 0
+
+    ad = (await client.get(base + "/ads/anna-direct/11", params={"since": "2026-11-10"})).json()
+    assert ad["ad"]["title"] == "Маникюр 1500 ₽"
+    assert ad["campaign_name"] == "Маникюр — поиск"
+    assert ad["ad"]["totals"]["clicks"] == 30
+    assert ad["previous"]["clicks"] == 10
+    assert [d["day"] for d in ad["days"]] == ["2026-11-10"]
+    # Профиля нет: число из объявления подтвердить нечем, и экран это покажет.
+    assert ad["basis"] == {"sources": [], "unconfirmed": ["1500"]}
+    assert ad["audience"]["regions"] == []
+
+    every = (await client.get(base + "/ads")).json()
+    assert [a["ad_id"] for a in every] == ["11", "12"]
+    assert every[0]["ratios"]["cpc"] == 10 * RUB
+
+    assert (await client.get(base + "/campaigns/anna-direct/404")).status_code == 404
+    assert (await client.get(base + "/ads/other-login/11")).status_code == 404
+
+
 async def test_owner_confirms_balance_and_alert_closes(
     anna: tuple[httpx.AsyncClient, str, uuid.UUID], sessions: Sessions
 ) -> None:
@@ -152,7 +244,9 @@ async def test_owner_confirms_balance_and_alert_closes(
     assert body["money"][0]["balance_gap"] == 0
 
 
-async def test_profile_and_creative_sets(anna: tuple[httpx.AsyncClient, str, uuid.UUID]) -> None:
+async def test_profile_and_creatives(
+    anna: tuple[httpx.AsyncClient, str, uuid.UUID], sessions: Sessions
+) -> None:
     client, csrf, business_id = anna
     base = f"/api/businesses/{business_id}"
     headers = {"X-CSRF-Token": csrf}
@@ -168,18 +262,61 @@ async def test_profile_and_creative_sets(anna: tuple[httpx.AsyncClient, str, uui
     assert saved["services"] == [{"name": "Маникюр", "price": 1500}]
     assert saved["features"] == ["Стерильные инструменты"]
 
-    for _ in range(5):
-        assert (await client.post(f"{base}/creative-sets", headers=headers)).status_code == 202
-    assert (await client.post(f"{base}/creative-sets", headers=headers)).status_code == 429
-    listed = (await client.get(f"{base}/creative-sets")).json()
-    assert [s["status"] for s in listed] == ["queued"] * 5
-    # Черновиков у набора в очереди нет: решать не по чему.
-    decision = await client.post(
-        f"{base}/creative-sets/{listed[0]['id']}/drafts/0",
-        json={"decision": "approved"},
-        headers=headers,
-    )
-    assert decision.status_code == 404
+    creative_id = await _seed_creative(sessions, business_id, "needs_owner")
+    listed = (await client.get(f"{base}/creatives")).json()
+    assert [(c["id"], c["campaign_name"]) for c in listed["creatives"]] == [
+        (creative_id, "Маникюр — поиск")
+    ]
+    assert listed["writing"][0]["reason"] == "refill"
+
+    report = (await client.get(f"{base}/creatives/{creative_id}")).json()
+    assert report["audience"]["regions"] == ["Казань"]
+    assert report["basis"]["unconfirmed"] == []
+    assert "цена услуги «Маникюр»" in [s["label"] for s in report["basis"]["sources"]]
+
+    without_csrf = await client.post(f"{base}/creatives/{creative_id}/launch")
+    assert without_csrf.status_code == 403
+    launched = await client.post(f"{base}/creatives/{creative_id}/launch", headers=headers)
+    assert launched.json()["creative"]["state"] == "launch_pending"
+    again = await client.post(f"{base}/creatives/{creative_id}/launch", headers=headers)
+    assert again.status_code == 409
+    withdrawn = await client.post(f"{base}/creatives/{creative_id}/withdraw", headers=headers)
+    assert withdrawn.json()["creative"]["state_reason"] == "owner"
+    assert (await client.get(f"{base}/creatives/999999")).status_code == 404
+
+
+async def _seed_creative(sessions: Sessions, business_id: uuid.UUID, state: str) -> int:
+    async with sessions.begin() as session:
+        await session.execute(
+            text(
+                "INSERT INTO campaigns (business_id, account, campaign_id, name, state, targeting)"
+                " VALUES (:b, 'anna-direct', '1', 'Маникюр — поиск', 'on',"
+                ' \'{"regions": ["Казань"]}\')'
+            ),
+            {"b": business_id},
+        )
+        await session.execute(
+            text(
+                "INSERT INTO creative_sets (business_id, status, rules_version, attempts,"
+                " drafts, rejected, notes, tokens_used, needs_review, created_at,"
+                " account, campaign_id, reason, wanted)"
+                " VALUES (:b, 'queued', 'creatives-2', 0, '[]', '[]', '[]', 0, false, :now,"
+                " 'anna-direct', '1', 'refill', 1)"
+            ),
+            {"b": business_id, "now": NOW},
+        )
+        found = await session.scalar(
+            text(
+                "INSERT INTO creatives (business_id, account, campaign_id, headline, text,"
+                " source, auto_ok, reason, facts, sources, state, state_reason, history,"
+                " created_at, updated_at)"
+                " VALUES (:b, 'anna-direct', '1', 'Маникюр за 1500 ₽', 'Ул. Ленина, 5.',"
+                " 'model', false, 'new_campaign', '[]', '[]', :state, 'place_free', '[]',"
+                " :now, :now) RETURNING id"
+            ),
+            {"b": business_id, "state": state, "now": NOW},
+        )
+    return int(found)
 
 
 async def test_other_owner_sees_nothing(
@@ -194,8 +331,13 @@ async def test_other_owner_sees_nothing(
         ("GET", "/overview"),
         ("GET", "/history"),
         ("GET", "/profile"),
-        ("GET", "/creative-sets"),
-        ("POST", "/creative-sets"),
+        ("GET", "/creatives"),
+        ("GET", "/creatives/1"),
+        ("GET", "/ads"),
+        ("GET", "/campaigns/anna-direct/1"),
+        ("GET", "/ads/anna-direct/11"),
+        ("POST", "/creatives/1/launch"),
+        ("POST", "/creatives/1/withdraw"),
         ("POST", "/balance/confirm"),
     ):
         response = await boris.request(

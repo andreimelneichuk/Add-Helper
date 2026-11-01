@@ -1,7 +1,7 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Overview } from "../api";
+import type { AdDetail, CampaignDetail, Overview } from "../api";
 import { percent, rub, rubExact } from "../format";
 import { Cabinet } from "./Cabinet";
 
@@ -12,6 +12,8 @@ function overview(gap: number, alerts: Overview["alerts"] = []): Overview {
   return {
     today: "2026-11-10",
     since: "2026-10-28",
+    until: "2026-11-10",
+    previous: totals(1800, 60, 900, 2),
     money: [
       {
         period: {
@@ -50,7 +52,8 @@ function serve(routes: Record<string, unknown>) {
   const calls: { url: string; init?: RequestInit }[] = [];
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     calls.push({ url, init });
-    const key = `${init?.method ?? "GET"} ${url.replace("/api/businesses/b1", "")}`;
+    // Период приходит в строке запроса: маршрут ищем по пути, а адрес проверяем в calls.
+    const key = `${init?.method ?? "GET"} ${url.replace("/api/businesses/b1", "").split("?")[0]}`;
     const body = typeof routes[key] === "function" ? (routes[key] as () => unknown)() : routes[key];
     return new Response(JSON.stringify(body ?? []), { status: body === undefined ? 404 : 200 });
   }));
@@ -148,28 +151,181 @@ describe("кабинет", () => {
     expect(screen.getByText("Счёт не сходится со статистикой")).toBeInTheDocument();
   });
 
-  it("объявления: превью, решение владельца и причины снятия", async () => {
+  it("объявления: система работает сама, владелец решает только спорное", async () => {
+    const waiting = {
+  id: 5, account: "lak-studio", campaign_id: "102", headline: "Педикюр в студии «Лак»", text: "Педикюр за 2200 ₽.",
+  source: "model", state: "needs_owner", reason: "refill", state_reason: "place_free", sources: [],
+  history: [
+    { at: "2026-11-09T07:00:00Z", state: "ready", reason: "written" },
+    { at: "2026-11-09T07:05:00Z", state: "needs_owner", reason: "place_free" },
+  ],
+  created_at: "2026-11-09T07:00:00Z", updated_at: "2026-11-09T07:05:00Z", campaign_name: "Педикюр — поиск",
+};
+    const board = {
+      creatives: [
+        waiting,
+        { ...waiting, id: 6, headline: "Маникюр у Профсоюзной", state: "launch_pending", campaign_name: "Маникюр — поиск" },
+        { ...waiting, id: 7, headline: "Педикюр за 2000 ₽", state: "stopped", state_reason: "fact_changed" },
+      ],
+      writing: [
+        { id: 3, account: "lak-studio", campaign_id: "103", reason: "refill", wanted: 2, status: "running", created_at: "2026-11-10T08:58:00Z", campaign_name: "Маникюр — сайты" },
+      ],
+    };
+    const live = {
+      account: "lak-studio", ad_id: "1011", campaign_id: "101", title: "Маникюр с покрытием 1500 ₽", text: "Стерильные инструменты.",
+      href: "https://lak.example/", state: "on", totals: totals(2000, 80, 1000, 4), ratios: overview(140).ratios,
+    };
     const calls = serve({
       "GET /overview": overview(140),
-      "GET /profile": { services: [], address: "", features: [], niche: "", website: "https://lak.example" },
-      "GET /creative-sets": [
-        {
-          id: 7, status: "ready", rules_version: "creatives-2", source: "model", notes: [], tokens_used: 10,
-          needs_review: false, created_at: "2026-11-09T07:00:00Z", finished_at: "2026-11-09T07:01:00Z",
-          drafts: [{ headline: "Маникюр с покрытием 1500 ₽", text: "Стерильные инструменты.", decision: "proposed" }],
-          rejected: [{ headline: "Лучший маникюр", text: "Скидка 30%!", reasons: ["unconfirmed_number"] }],
-        },
-      ],
-      "POST /creative-sets/7/drafts/0": { decision: "approved" },
+      "GET /creatives": board,
+      "GET /ads": [live, { ...live, ad_id: "1013", title: "Отключённое", state: "suspended" }],
+      "POST /creatives/5/launch": { creative: { ...waiting, state: "launch_pending" }, campaign_name: null, audience: { placement: "", regions: [], phrases: [], schedule: "" }, basis: { sources: [], unconfirmed: [] } },
     });
     window.location.hash = "ads";
     render(<Cabinet me={ME} business={BUSINESS} />);
 
-    expect(await screen.findByText("Маникюр с покрытием 1500 ₽")).toBeInTheDocument();
-    expect(await screen.findByText("lak.example")).toBeInTheDocument();
-    expect(screen.getByText("Число не из вашего профиля")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Одобрить" }));
-    const post = calls.find((c) => c.url.endsWith("/drafts/0"));
-    expect(JSON.parse(String(post?.init?.body))).toEqual({ decision: "approved" });
+    expect(await screen.findByText(/Сейчас 1 объявление работает, 1 готовим к запуску, пишем новые для 1 направления. 1 ждёт вашего решения./)).toBeInTheDocument();
+    const decide = screen.getByRole("region", { name: "Нужно ваше решение" });
+    expect(within(decide).getByText("Педикюр в студии «Лак»")).toBeInTheDocument();
+    expect(screen.queryByText("Отключённое")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Маникюр с покрытием 1500 ₽/ })).toHaveAttribute("href", expect.stringMatching(/^#ad\/lak-studio\/1011/));
+    expect(screen.getByText(/Пишем 2 объявления на освободившееся место в «Маникюр — сайты»/)).toBeInTheDocument();
+    expect(screen.getByText("Сняты: 1")).toBeInTheDocument();
+    // Внутренняя кухня владельцу не нужна: ни «модели», ни «судьи», ни версий правил.
+    expect(document.body.textContent).not.toMatch(/модел|судь|creatives-/i);
+
+    await userEvent.click(within(decide).getByRole("button", { name: "Запустить" }));
+    const post = calls.find((c) => c.init?.method === "POST");
+    expect(post?.url).toBe("/api/businesses/b1/creatives/5/launch");
+    expect((post?.init?.headers as Record<string, string>)["X-CSRF-Token"]).toBe("csrf-1");
+  });
+
+  it("отчёт объявления: что происходит, кому показываем и откуда факты", async () => {
+    const waiting = {
+  id: 5, account: "lak-studio", campaign_id: "102", headline: "Педикюр в студии «Лак»", text: "Педикюр за 2200 ₽.",
+  source: "model", state: "needs_owner", reason: "refill", state_reason: "place_free", sources: [],
+  history: [
+    { at: "2026-11-09T07:00:00Z", state: "ready", reason: "written" },
+    { at: "2026-11-09T07:05:00Z", state: "needs_owner", reason: "place_free" },
+  ],
+  created_at: "2026-11-09T07:00:00Z", updated_at: "2026-11-09T07:05:00Z", campaign_name: "Педикюр — поиск",
+};
+    serve({
+      "GET /overview": overview(140),
+      "GET /creatives/5": {
+        creative: waiting, campaign_name: "Педикюр — поиск",
+        audience: { placement: "search", regions: ["Москва"], phrases: ["педикюр профсоюзная"], schedule: "каждый день, 9:00–21:00" },
+        basis: { sources: [{ fragment: "2200 ₽", label: "цена услуги «Педикюр»", key: "price:Педикюр:2200" }], unconfirmed: [] },
+      },
+      "POST /creatives/5/withdraw": {
+        creative: { ...waiting, state: "withdrawn", state_reason: "owner" }, campaign_name: "Педикюр — поиск",
+        audience: { placement: "", regions: [], phrases: [], schedule: "" }, basis: { sources: [], unconfirmed: [] },
+      },
+    });
+    window.location.hash = "creative/5";
+    render(<Cabinet me={ME} business={BUSINESS} />);
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Педикюр в студии «Лак»" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Объявления" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByText(/Без вас не запускаем/)).toBeInTheDocument();
+    expect(screen.getByText("Тем, кто в регионе: Москва")).toBeInTheDocument();
+    expect(screen.getByText("✓ Все факты — из вашего профиля")).toBeInTheDocument();
+    expect(screen.getByText("цена услуги «Педикюр»")).toBeInTheDocument();
+    expect(screen.getByText(/Писали на освободившееся место/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Не запускать" }));
+    expect(await screen.findByText("Вы решили его не запускать.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Запустить" })).not.toBeInTheDocument();
+  });
+
+  it("период: быстрый выбор и свои даты меняют запрос и адрес", async () => {
+    const calls = serve({ "GET /overview": overview(140) });
+    window.location.hash = "stats";
+    render(<Cabinet me={ME} business={BUSINESS} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "7 дней" }));
+    await waitFor(() => expect(calls.at(-1)?.url).toBe("/api/businesses/b1/overview?since=2026-11-04&until=2026-11-10"));
+    expect(window.location.hash).toBe("#stats?since=2026-11-04&until=2026-11-10");
+    expect(screen.getByRole("button", { name: "7 дней" })).toHaveAttribute("aria-pressed", "true");
+
+    await userEvent.click(screen.getByRole("button", { name: /7 дней: / }));
+    const dialog = screen.getByRole("dialog", { name: "Период отчёта" });
+    const [since, until] = within(dialog).getAllByDisplayValue(/2026-/) as HTMLInputElement[];
+    fireEvent.change(since!, { target: { value: "2026-11-10" } });
+    fireEvent.change(until!, { target: { value: "2026-11-01" } });
+    expect(within(dialog).getByText("Начало позже конца")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Показать" })).toBeDisabled();
+    fireEvent.change(since!, { target: { value: "2026-10-01" } });
+    fireEvent.change(until!, { target: { value: "2026-10-31" } });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Показать" }));
+    await waitFor(() => expect(calls.at(-1)?.url).toBe("/api/businesses/b1/overview?since=2026-10-01&until=2026-10-31"));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("график: стрелки показывают все показатели дня", async () => {
+    serve({ "GET /overview": overview(140) });
+    window.location.hash = "stats";
+    render(<Cabinet me={ME} business={BUSINESS} />);
+
+    const chart = await screen.findByLabelText(/График по дням/);
+    chart.focus();
+    await userEvent.keyboard("{End}");
+    const tip = within(chart).getByRole("status");
+    expect(tip).toHaveTextContent("10 ноя, вт");
+    expect(tip).toHaveTextContent("Расход600 ₽");
+    expect(tip).toHaveTextContent("Цена обращения300 ₽");
+    await userEvent.keyboard("{ArrowLeft}");
+    expect(within(chart).getByRole("status")).toHaveTextContent("400 ₽");
+    await userEvent.keyboard("{Escape}");
+    expect(within(chart).queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("таблица сортируется щелчком по заголовку", async () => {
+    serve({ "GET /overview": overview(140) });
+    window.location.hash = "campaigns";
+    render(<Cabinet me={ME} business={BUSINESS} />);
+
+    const table = await screen.findByRole("table");
+    const names = () => within(table).getAllByRole("link").map((a) => a.textContent);
+    await userEvent.click(within(table).getByRole("button", { name: /Расход/ }));
+    expect(names()).toEqual(["Маникюр — поиск", "Наращивание — поиск"]);
+    expect(within(table).getByRole("columnheader", { name: /Расход/ })).toHaveAttribute("aria-sort", "descending");
+    await userEvent.click(within(table).getByRole("button", { name: /Расход/ }));
+    expect(names()).toEqual(["Наращивание — поиск", "Маникюр — поиск"]);
+  });
+
+  it("отчёт направления и объявления открываются из таблицы с тем же периодом", async () => {
+    const view = overview(140);
+    const ad = {
+      account: "lak-studio", ad_id: "1011", campaign_id: "101", title: "Маникюр с покрытием 1500 ₽",
+      text: "Стерильные инструменты.", href: "https://lak.example/", state: "on", totals: totals(2000, 80, 1000, 4),
+    };
+    const campaign: CampaignDetail = {
+      since: "2026-11-04", until: "2026-11-10", campaign: view.campaigns[0]!, ratios: view.ratios, previous: view.previous,
+      days: view.days, ads: [{ ...ad, ratios: view.ratios }],
+    };
+    const detail: AdDetail = {
+      since: "2026-11-04", until: "2026-11-10", ad, campaign_name: "Маникюр — поиск", ratios: view.ratios, previous: view.previous, days: view.days,
+      audience: { placement: "search", regions: ["Москва"], phrases: ["маникюр профсоюзная"], schedule: "" },
+      basis: { sources: [{ fragment: "Стерильные инструменты", label: "особенность из профиля", key: "feature:x" }], unconfirmed: ["1500"] },
+    };
+    const calls = serve({ "GET /overview": view, "GET /campaigns/lak-studio/101": campaign, "GET /ads/lak-studio/1011": detail });
+    window.location.hash = "campaigns?since=2026-11-04&until=2026-11-10";
+    render(<Cabinet me={ME} business={BUSINESS} />);
+
+    await userEvent.click(await screen.findByText("Маникюр — поиск"));
+    expect(await screen.findByRole("heading", { level: 1, name: "Маникюр — поиск" })).toBeInTheDocument();
+    expect(window.location.hash).toBe("#campaigns/lak-studio/101?since=2026-11-04&until=2026-11-10");
+    expect(calls.at(-1)?.url).toBe("/api/businesses/b1/campaigns/lak-studio/101?since=2026-11-04&until=2026-11-10");
+    expect(screen.getByRole("heading", { name: "Объявления направления" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("link", { name: "Маникюр с покрытием 1500 ₽" }));
+    expect(await screen.findByRole("heading", { name: "Как видят в поиске" })).toBeInTheDocument();
+    expect(calls.at(-1)?.url).toBe("/api/businesses/b1/ads/lak-studio/1011?since=2026-11-04&until=2026-11-10");
+    expect(screen.getByText("lak.example")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Маникюр — поиск" })).toHaveAttribute("href", "#campaigns/lak-studio/101?since=2026-11-04&until=2026-11-10");
+    expect(screen.getByText("В поиске Яндекса")).toBeInTheDocument();
+    expect(screen.getByText("маникюр профсоюзная")).toBeInTheDocument();
+    expect(screen.getByText(/Числа 1500 нет в вашем профиле/)).toHaveTextContent("обновите профиль");
   });
 });
