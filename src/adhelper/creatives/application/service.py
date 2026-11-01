@@ -1,38 +1,52 @@
 import logging
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import datetime, timedelta
+from uuid import UUID
 
 from adhelper.creatives.application.generate import generate_ads
+from adhelper.creatives.domain.lifecycle import (
+    WAITING,
+    AdBasis,
+    Audience,
+    CreativeState,
+    FactSource,
+    SlotRules,
+    StoredCreative,
+    WritingSet,
+    ad_basis,
+    fact_sources,
+    new_creatives,
+    plan_slots,
+)
 from adhelper.creatives.domain.model import (
+    AdDraft,
     BusinessProfile,
     CreativeRules,
-    DraftDecision,
+    CreativeSource,
     Service,
     TextModel,
 )
-from adhelper.creatives.domain.ports import CreativeQueue, CreativeSets, ProfileSource
+from adhelper.creatives.domain.ports import (
+    AdSlots,
+    Attention,
+    CreativeQueue,
+    Creatives,
+    ProfileSource,
+)
 
 logger = logging.getLogger(__name__)
 
 # Правила для новых наборов. creatives-2 на наборе оценки реже снимает чистые объявления,
 # чем creatives-1, при той же доле пойманного: docs/05-creatives.md §7.
 CURRENT_RULES = "creatives-2"
+CURRENT_SLOT_RULES = "ads-1"
 # Генерация с судьёй укладывается в минуты; дольше — воркер упал посреди набора.
 STALE_AFTER = timedelta(minutes=15)
 # Каждая попытка тратит вызовы модели, поэтому повторов немного.
 MAX_ATTEMPTS = 2
 DAY = timedelta(hours=24)
-
-
-class TooManySets(Exception):
-    """Суточный лимит наборов исчерпан."""
-
-
-async def request_set(sets: CreativeSets, rules: CreativeRules, now: datetime) -> int:
-    """Ставит набор в очередь. Строка «в очереди» и есть задача: она в той же транзакции."""
-    if await sets.count_since(now - DAY) >= rules.max_sets_per_day:
-        raise TooManySets
-    return await sets.request(rules.version, now)
+ATTENTION_KINDS = ("ads_no_profile", "ads_need_confirmation")
 
 
 def profile_from(
@@ -52,10 +66,8 @@ def profile_from(
     )
 
 
-async def decide_draft(sets: CreativeSets, set_id: int, index: int, approve: bool) -> bool:
-    """Решение владельца по черновику. На площадку отсюда ничего не уходит."""
-    decision = DraftDecision.APPROVED if approve else DraftDecision.DECLINED
-    return await sets.decide(set_id, index, decision)
+def cited_facts(profile: BusinessProfile, headline: str, text: str) -> tuple[FactSource, ...]:
+    return fact_sources(AdDraft(headline, text), profile)
 
 
 async def run_queued(
@@ -81,12 +93,122 @@ async def run_queued(
             await queue.fail(claimed.id, "no_profile", clock())
             continue
         try:
-            result = await generate_ads(profile, model, load_rules(claimed.rules_version), judge)
+            result = await generate_ads(
+                profile, model, load_rules(claimed.rules_version), judge, claimed.campaign_name
+            )
         except Exception as error:
             # В логе только тип: текст ошибки может содержать ответ модели или ключ.
             logger.error("Генерация набора %s: %s", claimed.id, type(error).__name__)
             await queue.fail(claimed.id, type(error).__name__, clock())
             continue
-        await queue.finish(claimed.id, result, clock())
+        # Без владельца запускаем шаблоны из профиля и тексты, прошедшие судью.
+        auto_ok = result.source is CreativeSource.TEMPLATE or result.judged
+        await queue.finish(
+            claimed.id, result, clock(), new_creatives(result.drafts, profile, auto_ok)
+        )
         done += 1
     return done
+
+
+async def keep_ads(
+    business_id: UUID,
+    slots: AdSlots,
+    profiles: ProfileSource,
+    attention: Attention,
+    slot_rules: SlotRules,
+    creative_rules: CreativeRules,
+    now: datetime,
+) -> None:
+    """Один цикл хранителя: снять устаревшее, занять места, заказать тексты.
+
+    Повтор безопасен: план строится из текущих строк, переходы проверяют исходное состояние.
+    """
+    profile = await profiles.profile(business_id) or BusinessProfile("", ())
+    sets_left = creative_rules.max_sets_per_day - await slots.sets_since(now - DAY)
+    plan = plan_slots(
+        profile,
+        await slots.campaigns(),
+        await slots.candidates(),
+        slot_rules,
+        await slots.open_sets(),
+        sets_left,
+        profile.niche.strip().lower() in creative_rules.sensitive_niches,
+    )
+    await slots.apply(plan, creative_rules.version, now)
+    for kind in ATTENTION_KINDS:
+        if kind in plan.attention:
+            await attention.raise_alert(kind, {})
+        else:
+            await attention.resolve(kind)
+
+
+class WrongState(Exception):
+    """Объявление уже не в том состоянии, в котором его видел владелец."""
+
+
+async def withdraw(creatives: Creatives, creative_id: int, now: datetime) -> None:
+    """Владелец снимает объявление до запуска. На площадке ещё ничего нет, журнал не нужен."""
+    if not await creatives.move(creative_id, WAITING, CreativeState.WITHDRAWN, "owner", now):
+        raise WrongState
+
+
+async def confirm(creatives: Creatives, creative_id: int, now: datetime) -> None:
+    """Владелец подтверждает объявление, которое без него запускать нельзя."""
+    allowed = (CreativeState.NEEDS_OWNER,)
+    if not await creatives.move(
+        creative_id, allowed, CreativeState.LAUNCH_PENDING, "owner_confirmed", now
+    ):
+        raise WrongState
+
+
+@dataclass(frozen=True)
+class Board:
+    """Экран «Объявления»: что готовится, ждёт владельца или снято, и что пишется сейчас."""
+
+    creatives: list[tuple[StoredCreative, str | None]]
+    writing: list[tuple[WritingSet, str | None]]
+
+
+@dataclass(frozen=True)
+class CreativeReport:
+    creative: StoredCreative
+    campaign_name: str | None
+    audience: Audience
+    basis: AdBasis
+
+
+async def board(creatives: Creatives) -> Board:
+    names = {key: info.name for key, info in (await creatives.campaigns()).items()}
+    return Board(
+        [(c, names.get((c.account, c.campaign_id))) for c in await creatives.all()],
+        [(w, names.get((w.account, w.campaign_id))) for w in await creatives.writing()],
+    )
+
+
+async def creative_report(
+    creatives: Creatives, profile: BusinessProfile | None, creative_id: int
+) -> CreativeReport | None:
+    found = await creatives.get(creative_id)
+    if found is None:
+        return None
+    info = (await creatives.campaigns()).get((found.account, found.campaign_id))
+    return CreativeReport(
+        found,
+        info.name if info else None,
+        info.audience if info else Audience(),
+        # Сверяем с профилем сейчас: так видно, что факт с тех пор изменился.
+        ad_basis(AdDraft(found.headline, found.text), profile),
+    )
+
+
+async def live_ad_context(
+    creatives: Creatives,
+    profile: BusinessProfile | None,
+    account: str,
+    campaign_id: str,
+    headline: str,
+    text: str,
+) -> tuple[Audience, AdBasis]:
+    """Кому показываем объявление с площадки и на какие поля профиля оно опирается."""
+    info = (await creatives.campaigns()).get((account, campaign_id))
+    return (info.audience if info else Audience()), ad_basis(AdDraft(headline, text), profile)

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from adhelper.config import Settings
 from adhelper.worker.app import (
     PERIODIC_TASKS,
+    ads_keep,
     app,
     budget_watch,
     connector_for,
@@ -25,6 +26,7 @@ def test_money_tasks_are_scheduled() -> None:
         "budget.watch",
         "state.reconcile",
         "creatives.generate",
+        "ads.keep",
         "notifications.send",
         "telegram.poll",
     }
@@ -50,6 +52,7 @@ async def test_worker_runs_money_tasks_from_real_database(
             await budget_watch.defer_async(**periodic_arguments)
             await state_reconcile.defer_async(**periodic_arguments)
             await creatives_generate.defer_async(**periodic_arguments)
+            await ads_keep.defer_async(**periodic_arguments)
             await notifications_send.defer_async(**periodic_arguments)
             await telegram_poll.defer_async(**periodic_arguments)
             await test_app.run_worker_async(
@@ -67,6 +70,7 @@ async def test_worker_runs_money_tasks_from_real_database(
         "budget.watch": "succeeded",
         "state.reconcile": "succeeded",
         "creatives.generate": "succeeded",
+        "ads.keep": "succeeded",
         "notifications.send": "succeeded",
         "telegram.poll": "succeeded",
     }

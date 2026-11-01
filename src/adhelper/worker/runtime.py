@@ -20,8 +20,19 @@ from adhelper.budget.application.watch_cycle import run_watch_cycle
 from adhelper.config import Settings
 from adhelper.creatives.adapters.factory import build_text_model
 from adhelper.creatives.adapters.rules_file import load_rules as load_creative_rules
-from adhelper.creatives.adapters.sql import SqlCreativeQueue, SqlProfileSource
-from adhelper.creatives.application.service import run_queued
+from adhelper.creatives.adapters.rules_file import load_slot_rules
+from adhelper.creatives.adapters.sql import (
+    SqlAdSlots,
+    SqlCreativeQueue,
+    SqlKeeperBusinesses,
+    SqlProfileSource,
+)
+from adhelper.creatives.application.service import (
+    CURRENT_RULES,
+    CURRENT_SLOT_RULES,
+    keep_ads,
+    run_queued,
+)
 from adhelper.db import create_engine
 from adhelper.ledger.adapters.sql import (
     PostgresAccountLock,
@@ -115,6 +126,21 @@ class Runtime:
             load_creative_rules,
             self.clock,
         )
+
+    async def ads_keep(self) -> None:
+        profiles = SqlProfileSource(self.sessions)
+        slot_rules = load_slot_rules(CURRENT_SLOT_RULES)
+        creative_rules = load_creative_rules(CURRENT_RULES)
+        for business_id in await SqlKeeperBusinesses(self.sessions).business_ids():
+            await keep_ads(
+                business_id,
+                SqlAdSlots(self.sessions, business_id),
+                profiles,
+                SqlAlerts(self.sessions, business_id),
+                slot_rules,
+                creative_rules,
+                self.clock(),
+            )
 
     async def notifications_send(self) -> None:
         senders = {

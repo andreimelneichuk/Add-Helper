@@ -47,11 +47,18 @@ ADS_SCHEMA: dict[str, object] = {
 }
 
 
-def build_prompt(profile: BusinessProfile, rules: CreativeRules) -> str:
+def build_prompt(profile: BusinessProfile, rules: CreativeRules, focus: str | None = None) -> str:
     facts = profile_facts(profile)
+    # Название направления — только тема. Факты по-прежнему берутся из профиля.
+    topic = (
+        f"Объявления для направления {json.dumps(focus, ensure_ascii=False)}: "
+        "пиши об услугах, которые к нему относятся.\n"
+        if focus
+        else ""
+    )
     # Замер 2026-11-01: с лимитом без запаса 78% черновиков выходили длиннее и снимались.
     return (
-        f"Напиши 5 разных по смыслу объявлений. Заголовок до {rules.headline_max} символов. "
+        f"{topic}Напиши 5 разных по смыслу объявлений. Заголовок до {rules.headline_max} символов. "
         f"Текст — одно-два коротких предложения, {rules.text_max * 2 // 3}–"
         f"{rules.text_max - 10} символов с пробелами; длиннее {rules.text_max} — "
         "объявление отклонят.\n"
@@ -132,6 +139,7 @@ async def generate_ads(
     model: TextModel | None,
     rules: CreativeRules,
     judge: TextModel | None = None,
+    focus: str | None = None,
 ) -> CreativeSet:
     """Модель предлагает, код и судья проверяют. При любой неудаче остаётся шаблон из профиля."""
     tokens = 0
@@ -139,7 +147,7 @@ async def generate_ads(
     needs_review = profile.niche.strip().lower() in rules.sensitive_niches
     notes: list[str] = []
     if model is not None:
-        prompt = build_prompt(profile, rules)
+        prompt = build_prompt(profile, rules, focus)
         for _ in range(rules.max_model_attempts):
             left = rules.max_tokens_per_set - tokens
             if left <= 0:
@@ -173,6 +181,7 @@ async def generate_ads(
                     rules.version,
                     needs_review,
                     tuple(notes),
+                    judged=judge is not None,
                 )
             notes.append("all_drafts_rejected")
     return CreativeSet(

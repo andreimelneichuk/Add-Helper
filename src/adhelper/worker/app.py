@@ -12,6 +12,7 @@ PERIODIC_TASKS = (
     "budget.watch",
     "state.reconcile",
     "creatives.generate",
+    "ads.keep",
     "notifications.send",
     "telegram.poll",
 )
@@ -45,6 +46,14 @@ async def state_reconcile(timestamp: int) -> None:
 async def creatives_generate(timestamp: int) -> None:
     async with open_runtime(Settings()) as runtime:
         await runtime.creatives_generate()
+
+
+# Хранитель объявлений: сам решает, когда писать и что ставить на место (docs/05 §8).
+@app.periodic(cron="*/5 * * * *")
+@app.task(name="ads.keep", queue=CREATIVES_QUEUE, queueing_lock="ads.keep")
+async def ads_keep(timestamp: int) -> None:
+    async with open_runtime(Settings()) as runtime:
+        await runtime.ads_keep()
 
 
 # Отправки тревог — строки notification_deliveries, их создаёт тревога в той же транзакции.

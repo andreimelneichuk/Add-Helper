@@ -19,13 +19,16 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.sql import ColumnElement, TableClause
 
 from adhelper.stats.domain.model import (
+    AdLine,
     AlertLine,
     CampaignLine,
     DayLine,
     HistoryLine,
     PeriodLine,
+    Scope,
     Totals,
 )
 
@@ -80,6 +83,28 @@ STATS = table(
     column("cost_micros", BigInteger),
     column("conversions", BigInteger),
 )
+ADS = table(
+    "ads",
+    column("business_id", Uuid),
+    column("account", Text),
+    column("ad_id", Text),
+    column("campaign_id", Text),
+    column("title", Text),
+    column("text", Text),
+    column("href", Text),
+    column("state", Text),
+)
+AD_STATS = table(
+    "ad_stats",
+    column("business_id", Uuid),
+    column("account", Text),
+    column("ad_id", Text),
+    column("day", Date),
+    column("impressions", BigInteger),
+    column("clicks", BigInteger),
+    column("cost_micros", BigInteger),
+    column("conversions", BigInteger),
+)
 CHANGES = table(
     "changes",
     column("id", BigInteger),
@@ -109,12 +134,12 @@ DECISIONS = table(
 SHOW_CLOSED_FOR = timedelta(days=1)
 
 
-def _sums() -> list[object]:
+def _sums(source: TableClause = STATS) -> list[ColumnElement[int]]:
     return [
-        func.coalesce(func.sum(STATS.c.impressions), 0),
-        func.coalesce(func.sum(STATS.c.clicks), 0),
-        func.coalesce(func.sum(STATS.c.cost_micros), 0),
-        func.coalesce(func.sum(STATS.c.conversions), 0),
+        func.coalesce(func.sum(source.c.impressions), 0),
+        func.coalesce(func.sum(source.c.clicks), 0),
+        func.coalesce(func.sum(source.c.cost_micros), 0),
+        func.coalesce(func.sum(source.c.conversions), 0),
     ]
 
 
@@ -218,17 +243,74 @@ class SqlDashboard:
             for row in rows
         ]
 
-    async def days(self, since: date, until: date) -> list[DayLine]:
-        statement = (
-            select(STATS.c.day, *_sums())
+    async def ads(self, since: date, until: date, scope: Scope) -> list[AdLine]:
+        sums = (
+            select(AD_STATS.c.account, AD_STATS.c.ad_id, *_sums(AD_STATS))
             .where(
-                STATS.c.business_id == self._business_id,
-                STATS.c.day >= since,
-                STATS.c.day <= until,
+                AD_STATS.c.business_id == self._business_id,
+                AD_STATS.c.day >= since,
+                AD_STATS.c.day <= until,
             )
-            .group_by(STATS.c.day)
-            .order_by(STATS.c.day)
+            .group_by(AD_STATS.c.account, AD_STATS.c.ad_id)
+            .subquery()
         )
+        statement = (
+            select(
+                ADS.c.account,
+                ADS.c.ad_id,
+                ADS.c.campaign_id,
+                ADS.c.title,
+                ADS.c.text,
+                ADS.c.href,
+                ADS.c.state,
+                *[func.coalesce(c, 0) for c in list(sums.c)[2:]],
+            )
+            .outerjoin(sums, (sums.c.account == ADS.c.account) & (sums.c.ad_id == ADS.c.ad_id))
+            .where(ADS.c.business_id == self._business_id)
+            .order_by(ADS.c.campaign_id, ADS.c.ad_id)
+        )
+        if scope.account is not None:
+            statement = statement.where(ADS.c.account == scope.account)
+        if scope.campaign_id is not None:
+            statement = statement.where(ADS.c.campaign_id == scope.campaign_id)
+        if scope.ad_id is not None:
+            statement = statement.where(ADS.c.ad_id == scope.ad_id)
+        async with self._sessions() as session:
+            rows = (await session.execute(statement)).all()
+        return [
+            AdLine(
+                account=row[0],
+                ad_id=row[1],
+                campaign_id=row[2],
+                title=row[3],
+                text=row[4],
+                href=row[5],
+                state=row[6],
+                totals=_totals(row[7], row[8], row[9], row[10]),
+            )
+            for row in rows
+        ]
+
+    async def days(self, since: date, until: date, scope: Scope) -> list[DayLine]:
+        # Объявление — из его отчёта; бизнес и направление — из отчёта кампаний,
+        # потому что деньги берём из того же отчёта, что и сводку.
+        source = AD_STATS if scope.ad_id is not None else STATS
+        statement = (
+            select(source.c.day, *_sums(source))
+            .where(
+                source.c.business_id == self._business_id,
+                source.c.day >= since,
+                source.c.day <= until,
+            )
+            .group_by(source.c.day)
+            .order_by(source.c.day)
+        )
+        if scope.account is not None:
+            statement = statement.where(source.c.account == scope.account)
+        if scope.ad_id is not None:
+            statement = statement.where(source.c.ad_id == scope.ad_id)
+        elif scope.campaign_id is not None:
+            statement = statement.where(source.c.campaign_id == scope.campaign_id)
         async with self._sessions() as session:
             rows = (await session.execute(statement)).all()
         return [DayLine(row[0], _totals(*row[1:])) for row in rows]

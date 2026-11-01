@@ -4,11 +4,11 @@
 """
 
 from dataclasses import asdict
-from datetime import datetime
-from typing import Annotated, Any, Literal
+from datetime import date, datetime
+from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -17,20 +17,33 @@ from adhelper.api.accounts import CheckedSession, CurrentSession, Service
 from adhelper.budget.adapters.rules_file import load_rules as load_budget_rules
 from adhelper.budget.adapters.sql import SqlPeriodStore
 from adhelper.budget.application.watch_cycle import confirm_balance
-from adhelper.creatives.adapters.rules_file import load_rules
-from adhelper.creatives.adapters.sql import SqlCreativeSets, SqlProfiles
+from adhelper.creatives.adapters.sql import SqlCreatives, SqlProfiles
 from adhelper.creatives.application.service import (
-    CURRENT_RULES,
-    TooManySets,
-    decide_draft,
+    WrongState,
+    board,
+    confirm,
+    creative_report,
+    live_ad_context,
     profile_from,
-    request_set,
+    withdraw,
 )
 from adhelper.notifications.adapters.sql import SqlAlerts
 from adhelper.stats.adapters.sql import SqlDashboard
-from adhelper.stats.application.overview import history, overview
+from adhelper.stats.application.overview import (
+    BadPeriod,
+    Window,
+    ad_detail,
+    ads,
+    campaign_detail,
+    history,
+    overview,
+    platform_today,
+    window,
+)
 
 NOT_FOUND = "Бизнес не найден"
+# Объявление другого бизнеса тоже даёт 409, а не 404: состояние чужих строк не раскрываем.
+ALREADY_MOVED = "Объявление уже запущено, снято или его нет"
 
 
 class ServiceItem(BaseModel):
@@ -45,10 +58,6 @@ class ProfileBody(BaseModel):
     features: list[str] = Field(default_factory=list, max_length=20)
     niche: str = Field(default="", max_length=100)
     website: str = Field(default="", max_length=300)
-
-
-class DecisionBody(BaseModel):
-    decision: Literal["approved", "declined"]
 
 
 class ConfirmBody(BaseModel):
@@ -79,27 +88,79 @@ async def _owned_checked(business_id: UUID, service: Service, info: CheckedSessi
 
 Owned = Annotated[UUID, Depends(_owned)]
 OwnedChecked = Annotated[UUID, Depends(_owned_checked)]
+Day = Annotated[date | None, Query()]
+BAD_PERIOD = "Период задан неверно: начало позже конца, конец в будущем или дольше года"
 
 
-def _set_view(stored: Any) -> dict[str, Any]:
-    return asdict(stored)
+def _window(request: Request, since: Day = None, until: Day = None) -> Window:
+    try:
+        return window(platform_today(_now(request)), since, until)
+    except BadPeriod:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, BAD_PERIOD) from None
+
+
+Period = Annotated[Window, Depends(_window)]
+
+
+def _with_ratios(pairs: list[tuple[Any, Any]]) -> list[dict[str, Any]]:
+    return [{**asdict(line), "ratios": asdict(line_ratios)} for line, line_ratios in pairs]
+
+
+async def _profile(request: Request, business_id: UUID) -> Any:
+    found = await SqlProfiles(_sessions(request), business_id).get()
+    return found[0] if found else None
 
 
 def cabinet_router() -> APIRouter:
     router = APIRouter(prefix="/api/businesses/{business_id}")
 
     @router.get("/overview")
-    async def get_overview(request: Request, business_id: Owned) -> dict[str, Any]:
+    async def get_overview(request: Request, business_id: Owned, period: Period) -> dict[str, Any]:
         view = await overview(
             SqlDashboard(_sessions(request), business_id),
             _now(request),
             lambda version: load_budget_rules(version).balance_tolerance_bp,
+            since=period.since,
+            until=period.until,
         )
         result = asdict(view)
-        result["campaigns"] = [
-            {**asdict(line), "ratios": asdict(line_ratios)} for line, line_ratios in view.campaigns
-        ]
+        result["campaigns"] = _with_ratios(view.campaigns)
         return result
+
+    @router.get("/ads")
+    async def get_ads(request: Request, business_id: Owned, period: Period) -> list[dict[str, Any]]:
+        return _with_ratios(await ads(SqlDashboard(_sessions(request), business_id), period))
+
+    @router.get("/campaigns/{account}/{campaign_id}")
+    async def get_campaign(
+        request: Request, account: str, campaign_id: str, business_id: Owned, period: Period
+    ) -> dict[str, Any]:
+        dashboard = SqlDashboard(_sessions(request), business_id)
+        view = await campaign_detail(dashboard, period, account, campaign_id)
+        if view is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Направление не найдено")
+        result = asdict(view)
+        result["ads"] = _with_ratios(view.ads)
+        return result
+
+    @router.get("/ads/{account}/{ad_id}")
+    async def get_ad(
+        request: Request, account: str, ad_id: str, business_id: Owned, period: Period
+    ) -> dict[str, Any]:
+        view = await ad_detail(
+            SqlDashboard(_sessions(request), business_id), period, account, ad_id
+        )
+        if view is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
+        audience, basis = await live_ad_context(
+            SqlCreatives(_sessions(request), business_id),
+            await _profile(request, business_id),
+            account,
+            view.ad.campaign_id,
+            view.ad.title,
+            view.ad.text,
+        )
+        return {**asdict(view), "audience": asdict(audience), "basis": asdict(basis)}
 
     @router.get("/history")
     async def get_history(request: Request, business_id: Owned) -> list[dict[str, Any]]:
@@ -145,29 +206,47 @@ def cabinet_router() -> APIRouter:
         await profiles.save(profile, body.website.strip())
         return await get_profile(request, business_id)
 
-    @router.get("/creative-sets")
-    async def get_sets(request: Request, business_id: Owned) -> list[dict[str, Any]]:
-        sets = SqlCreativeSets(_sessions(request), business_id)
-        return [_set_view(stored) for stored in await sets.latest(20)]
+    @router.get("/creatives")
+    async def get_creatives(request: Request, business_id: Owned) -> dict[str, Any]:
+        view = await board(SqlCreatives(_sessions(request), business_id))
+        return {
+            "creatives": [{**asdict(c), "campaign_name": name} for c, name in view.creatives],
+            "writing": [{**asdict(w), "campaign_name": name} for w, name in view.writing],
+        }
 
-    @router.post("/creative-sets", status_code=status.HTTP_202_ACCEPTED)
-    async def post_set(request: Request, business_id: OwnedChecked) -> dict[str, int]:
-        sets = SqlCreativeSets(_sessions(request), business_id)
-        try:
-            set_id = await request_set(sets, load_rules(CURRENT_RULES), _now(request))
-        except TooManySets:
-            raise HTTPException(
-                status.HTTP_429_TOO_MANY_REQUESTS, "На сегодня наборов достаточно"
-            ) from None
-        return {"id": set_id}
-
-    @router.post("/creative-sets/{set_id}/drafts/{index}")
-    async def post_decision(
-        request: Request, set_id: int, index: int, body: DecisionBody, business_id: OwnedChecked
-    ) -> dict[str, str]:
-        sets = SqlCreativeSets(_sessions(request), business_id)
-        if not await decide_draft(sets, set_id, index, body.decision == "approved"):
+    @router.get("/creatives/{creative_id}")
+    async def get_creative(
+        request: Request, creative_id: int, business_id: Owned
+    ) -> dict[str, Any]:
+        report = await creative_report(
+            SqlCreatives(_sessions(request), business_id),
+            await _profile(request, business_id),
+            creative_id,
+        )
+        if report is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
-        return {"decision": body.decision}
+        return asdict(report)
+
+    @router.post("/creatives/{creative_id}/withdraw")
+    async def post_withdraw(
+        request: Request, creative_id: int, business_id: OwnedChecked
+    ) -> dict[str, Any]:
+        creatives = SqlCreatives(_sessions(request), business_id)
+        try:
+            await withdraw(creatives, creative_id, _now(request))
+        except WrongState:
+            raise HTTPException(status.HTTP_409_CONFLICT, ALREADY_MOVED) from None
+        return await get_creative(request, creative_id, business_id)
+
+    @router.post("/creatives/{creative_id}/launch")
+    async def post_launch(
+        request: Request, creative_id: int, business_id: OwnedChecked
+    ) -> dict[str, Any]:
+        creatives = SqlCreatives(_sessions(request), business_id)
+        try:
+            await confirm(creatives, creative_id, _now(request))
+        except WrongState:
+            raise HTTPException(status.HTTP_409_CONFLICT, ALREADY_MOVED) from None
+        return await get_creative(request, creative_id, business_id)
 
     return router

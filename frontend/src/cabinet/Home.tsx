@@ -1,11 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { Alert, Api, HistoryLine, Money, Overview } from "../api";
 import { count, dateTime, moscowDay, percent, rub, rubExact } from "../format";
-import type { Section } from "./Cabinet";
-import { PeriodNote } from "./Cabinet";
-import { DailyChart } from "./Chart";
 import { CampaignTable } from "./Campaigns";
+import { DailyChart } from "./Chart";
+import { Dim } from "./Details";
 import { describeChange } from "./HistoryScreen";
+import { cpa, Delta } from "./Metrics";
+import { length } from "./period";
+import { ReportHead, useReport } from "./report";
+import type { Section } from "./route";
 import { ALERT } from "./words";
 
 type Props = { api: Api; overview: Overview; onChanged: () => void; go: (s: Section) => void };
@@ -16,14 +19,13 @@ export function Home({ api, overview, onChanged, go }: Props) {
     api.history().then((lines) => setRecent(lines.slice(0, 4)), () => setRecent([]));
   }, [api, overview]);
   const money = overview.money[0];
-  const { totals, ratios } = overview;
+  const { totals, ratios, previous } = overview;
+  const { range, loading } = useReport();
+  const days = length(range);
 
   return (
     <>
-      <div className="cab-head">
-        <h1>Сводка</h1>
-        <PeriodNote overview={overview} />
-      </div>
+      <ReportHead title="Сводка" />
 
       <section aria-labelledby="status">
         <h2 id="status" className="cab-visually-hidden">Всё ли в порядке</h2>
@@ -39,17 +41,18 @@ export function Home({ api, overview, onChanged, go }: Props) {
       </section>
 
       <div className="cab-grid2">
+        <Dim loading={loading}>
         <div className="cab-col">
           <section className="cab-panel" aria-labelledby="results">
-            <h2 id="results">Что получено за 14 дней</h2>
+            <h2 id="results">Что получено за {days === 1 ? "день" : `${days} дн.`}</h2>
             <dl className="cab-kpis">
-              <Kpi label="Расход" value={rub(totals.cost)} hint="по отчётам Яндекса" />
-              <Kpi label="Клики" value={count(totals.clicks)} hint={`CTR ${percent(ratios.ctr_bp)}`} />
-              <Kpi label="Обращения" value={count(totals.conversions)} hint={`конверсия ${percent(ratios.conversion_bp)}`} />
-              <Kpi label="Цена обращения" value={rub(ratios.cpa)} hint={`клик ${rubExact(ratios.cpc)}`} />
+              <Kpi label="Расход" value={rub(totals.cost)} hint={<Delta now={totals.cost} before={previous.cost} kind="cost" />} />
+              <Kpi label="Клики" value={count(totals.clicks)} hint={<>CTR {percent(ratios.ctr_bp)} · <Delta now={totals.clicks} before={previous.clicks} kind="clicks" /></>} />
+              <Kpi label="Обращения" value={count(totals.conversions)} hint={<>конв. {percent(ratios.conversion_bp)} · <Delta now={totals.conversions} before={previous.conversions} kind="conversions" /></>} />
+              <Kpi label="Цена обращения" value={rub(ratios.cpa)} hint={<>клик {rubExact(ratios.cpc)} · <Delta now={ratios.cpa} before={cpa(previous)} kind="cpa" /></>} />
               <Kpi label="Клиенты" value="—" hint="подтвердите в пятницу" muted />
             </dl>
-            <DailyChart days={overview.days} metric="cost" />
+            <DailyChart days={overview.days} range={range} metric="cost" />
           </section>
 
           <section className="cab-panel" aria-labelledby="dirs">
@@ -57,9 +60,10 @@ export function Home({ api, overview, onChanged, go }: Props) {
               <h2 id="dirs">Направления</h2>
               <button type="button" className="cab-link" onClick={() => go("campaigns")}>Все показатели</button>
             </div>
-            <CampaignTable campaigns={overview.campaigns} compact />
+            <CampaignTable campaigns={overview.campaigns} range={range} compact />
           </section>
         </div>
+        </Dim>
 
         <aside className="cab-col">
           <section className="cab-panel" aria-labelledby="changes">
@@ -88,7 +92,7 @@ export function Home({ api, overview, onChanged, go }: Props) {
   );
 }
 
-function Kpi({ label, value, hint, muted }: { label: string; value: string; hint: string; muted?: boolean }) {
+function Kpi({ label, value, hint, muted }: { label: string; value: string; hint: ReactNode; muted?: boolean }) {
   return (
     <div className={muted ? "cab-kpi cab-kpi-muted" : "cab-kpi"}>
       <dt>{label}</dt>

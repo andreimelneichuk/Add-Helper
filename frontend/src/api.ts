@@ -43,15 +43,54 @@ export type Campaign = {
 
 export type Day = { day: string; totals: Totals };
 
+// Дни статистики по московскому времени, обе границы включены.
+export type Range = { since: string; until: string };
+
 export type Overview = {
   today: string;
   since: string;
+  until: string;
   money: Money[];
   alerts: Alert[];
   totals: Totals;
   ratios: Ratios;
+  previous: Totals;
   campaigns: Campaign[];
   days: Day[];
+};
+
+export type AdLine = {
+  account: string;
+  ad_id: string;
+  campaign_id: string;
+  title: string;
+  text: string;
+  href: string;
+  state: string;
+  totals: Totals;
+  ratios: Ratios;
+};
+
+export type CampaignDetail = {
+  since: string;
+  until: string;
+  campaign: Omit<Campaign, "ratios">;
+  ratios: Ratios;
+  previous: Totals;
+  days: Day[];
+  ads: AdLine[];
+};
+
+export type AdDetail = {
+  since: string;
+  until: string;
+  ad: Omit<AdLine, "ratios">;
+  campaign_name: string | null;
+  ratios: Ratios;
+  previous: Totals;
+  days: Day[];
+  audience: Audience;
+  basis: Basis;
 };
 
 export type HistoryLine = {
@@ -67,21 +106,40 @@ export type HistoryLine = {
   rules_version: string | null;
 };
 
-export type Draft = { headline: string; text: string; decision: "proposed" | "approved" | "declined" };
-export type Rejection = { headline: string; text: string; reasons: string[] };
-export type CreativeSet = {
+// Откуда в объявлении факт: фрагмент текста и поле профиля.
+export type FactSource = { fragment: string; label: string; key: string };
+export type Basis = { sources: FactSource[]; unconfirmed: string[] };
+// Кому показываем: настройки направления на площадке. Пустое поле — площадка не задала.
+export type Audience = { placement: string; regions: string[]; phrases: string[]; schedule: string };
+
+export type CreativeState = "ready" | "reserve" | "launch_pending" | "needs_owner" | "stopped" | "withdrawn";
+export type Creative = {
   id: number;
-  status: "queued" | "running" | "ready" | "failed";
-  rules_version: string;
-  source: "model" | "template" | null;
-  drafts: Draft[];
-  rejected: Rejection[];
-  notes: string[];
-  tokens_used: number;
-  needs_review: boolean;
+  account: string;
+  campaign_id: string;
+  headline: string;
+  text: string;
+  source: string;
+  state: CreativeState;
+  reason: string;
+  state_reason: string;
+  sources: FactSource[];
+  history: { at: string; state: CreativeState; reason: string }[];
   created_at: string;
-  finished_at: string | null;
+  updated_at: string;
 };
+export type WritingSet = {
+  id: number;
+  account: string;
+  campaign_id: string;
+  reason: string;
+  wanted: number;
+  status: string;
+  created_at: string;
+  campaign_name: string | null;
+};
+export type Board = { creatives: (Creative & { campaign_name: string | null })[]; writing: WritingSet[] };
+export type CreativeReport = { creative: Creative; campaign_name: string | null; audience: Audience; basis: Basis };
 
 export type Profile = {
   name?: string;
@@ -124,22 +182,29 @@ export type Channels = {
   telegram: { available: boolean; linked: boolean };
 };
 
+// Без периода сервис отдаёт последние 14 дней.
+function period(range?: Range | null): string {
+  return range ? `?since=${range.since}&until=${range.until}` : "";
+}
+
 export function createApi(businessId: string, csrf: string) {
   const base = `/api/businesses/${businessId}`;
+  const part = encodeURIComponent;
   return {
-    overview: () => request<Overview>(`${base}/overview`),
+    overview: (range?: Range | null) => request<Overview>(`${base}/overview${period(range)}`),
+    ads: (range?: Range | null) => request<AdLine[]>(`${base}/ads${period(range)}`),
+    campaign: (account: string, id: string, range?: Range | null) =>
+      request<CampaignDetail>(`${base}/campaigns/${part(account)}/${part(id)}${period(range)}`),
+    ad: (account: string, id: string, range?: Range | null) =>
+      request<AdDetail>(`${base}/ads/${part(account)}/${part(id)}${period(range)}`),
     history: () => request<HistoryLine[]>(`${base}/history`),
     profile: () => request<Profile>(`${base}/profile`),
     saveProfile: (profile: Profile) =>
       request<Profile>(`${base}/profile`, { method: "PUT", body: JSON.stringify(profile) }, csrf),
-    sets: () => request<CreativeSet[]>(`${base}/creative-sets`),
-    requestSet: () => request<{ id: number }>(`${base}/creative-sets`, { method: "POST" }, csrf),
-    decide: (setId: number, index: number, decision: "approved" | "declined") =>
-      request<{ decision: string }>(
-        `${base}/creative-sets/${setId}/drafts/${index}`,
-        { method: "POST", body: JSON.stringify({ decision }) },
-        csrf,
-      ),
+    creatives: () => request<Board>(`${base}/creatives`),
+    creative: (id: number) => request<CreativeReport>(`${base}/creatives/${id}`),
+    launch: (id: number) => request<CreativeReport>(`${base}/creatives/${id}/launch`, { method: "POST" }, csrf),
+    withdraw: (id: number) => request<CreativeReport>(`${base}/creatives/${id}/withdraw`, { method: "POST" }, csrf),
     channels: () => request<Channels>("/api/me/notifications"),
     linkTelegram: () => request<{ url: string }>("/api/me/telegram", { method: "POST" }, csrf),
     unlinkTelegram: () => request<void>("/api/me/telegram", { method: "DELETE" }, csrf),
