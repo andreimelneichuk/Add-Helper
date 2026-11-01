@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID
 
+from adhelper.budget.domain.balance import BalanceBaseline
 from adhelper.budget.domain.limits import BudgetPeriod, CampaignBudget, LimitChange, LimitDecision
 from adhelper.budget.domain.watch import SpendSnapshot
 
@@ -32,6 +33,10 @@ class PeriodRecord:
     rules_version: str
     opening_balance: int | None
     stop_pending: bool
+    # Расход по статистике в момент, когда снят opening_balance.
+    opening_spent: int | None = None
+    last_balance: int | None = None
+    balance_checked_at: datetime | None = None
 
 
 class PeriodStore(Protocol):
@@ -48,6 +53,14 @@ class PeriodStore(Protocol):
         next_check_at: datetime,
     ) -> None: ...
     async def reschedule(self, period_id: int, next_check_at: datetime) -> None: ...
+    async def save_balance(
+        self,
+        period_id: int,
+        balance: int,
+        checked_at: datetime,
+        baseline: BalanceBaseline | None,
+    ) -> None: ...
+    async def latest_spent(self, period_id: int) -> int | None: ...
 
 
 class AlertSink(Protocol):

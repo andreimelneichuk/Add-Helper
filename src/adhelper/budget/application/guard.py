@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
-from adhelper.budget.domain.balance import BalanceState, check_balance
+from adhelper.budget.domain.balance import BalanceBaseline, BalanceState, check_balance
 from adhelper.budget.domain.limits import (
     BudgetPeriod,
     LimitChange,
@@ -136,6 +136,10 @@ class WatchResult:
     stop_pending: bool = False
     platform_unavailable: bool = False
     balance_state: BalanceState | None = None
+    # Прочитанный баланс счёта; None — не читали или площадка не ответила.
+    balance: int | None = None
+    # Новая точка отсчёта сверки, если её ещё не было.
+    baseline: BalanceBaseline | None = None
 
 
 async def _stop_all(platform: BudgetPlatform, account: str) -> bool:
@@ -149,21 +153,35 @@ async def _stop_all(platform: BudgetPlatform, account: str) -> bool:
         return False
 
 
-async def _balance_state(
+@dataclass(frozen=True)
+class _BalanceReading:
+    balance: int | None = None
+    state: BalanceState | None = None
+    baseline: BalanceBaseline | None = None
+
+
+async def _read_balance(
     platform: BudgetPlatform,
     account: str,
     period: BudgetPeriod,
-    opening_balance: int | None,
+    opening: BalanceBaseline | None,
+    snapshot: SpendSnapshot,
     spent: int,
     rules: BudgetRules,
-) -> BalanceState | None:
-    if opening_balance is None:
-        return None
+) -> _BalanceReading:
     try:
         current = await platform.fetch_balance(account)
     except PlatformUnavailable:
-        return None
-    return check_balance(opening_balance, current, spent, period.hard_limit, rules)
+        return _BalanceReading()
+    if opening is None:
+        # Без точки отсчёта сверять не с чем: ставим её сейчас, а не пропускаем сверку молча.
+        baseline = BalanceBaseline(current, snapshot.reported)
+        state = BalanceState.ZERO if current <= 0 else BalanceState.OK
+        return _BalanceReading(current, state, baseline)
+    state = check_balance(
+        opening.balance, current, spent, period.hard_limit, rules, opening_spent=opening.spent
+    )
+    return _BalanceReading(current, state)
 
 
 async def watch_once(
@@ -174,6 +192,7 @@ async def watch_once(
     now: datetime,
     rules: BudgetRules,
     opening_balance: int | None = None,
+    opening_spent: int = 0,
 ) -> WatchResult:
     try:
         snapshot = await platform.fetch_spend(account)
@@ -192,9 +211,13 @@ async def watch_once(
         snapshot = state.snapshot
     burn = BurnRate.between(state.snapshot, snapshot, state.burn) if state.snapshot else state.burn
     verdict = evaluate_watch(period, snapshot, burn, now, rules)
-    balance_state = await _balance_state(
-        platform, account, period, opening_balance, corrected_spend(snapshot, burn, now), rules
+    opening = (
+        BalanceBaseline(opening_balance, opening_spent) if opening_balance is not None else None
     )
+    reading = await _read_balance(
+        platform, account, period, opening, snapshot, corrected_spend(snapshot, burn, now), rules
+    )
+    balance_state = reading.state
     must_stop = (
         state.stop_pending
         or verdict.action is WatchAction.STOP
@@ -208,4 +231,6 @@ async def watch_once(
         stopped=stopped,
         stop_pending=pending,
         balance_state=balance_state,
+        balance=reading.balance,
+        baseline=reading.baseline,
     )

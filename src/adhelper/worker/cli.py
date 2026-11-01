@@ -23,6 +23,14 @@ from adhelper.creatives.adapters.factory import build_text_model
 from adhelper.creatives.adapters.rules_file import load_rules as load_creative_rules
 from adhelper.db import create_engine
 from adhelper.experiments.adapters.rules_file import load_rules as load_experiment_rules
+from adhelper.worker.demo import (
+    ENV_FILE,
+    SESSION_FILE,
+    NotLocal,
+    require_local,
+    seed_demo,
+    write_demo_env,
+)
 from adhelper.worker.runtime import Runtime, open_runtime
 
 RULE_LOADERS = (
@@ -194,17 +202,38 @@ async def _emergency_stop(settings: Settings, business_id: uuid.UUID) -> int:
     return 1
 
 
+async def _demo_seed(settings: Settings, mismatch: bool) -> int:
+    try:
+        require_local(settings.public_base_url)
+    except NotLocal:
+        _say("Демо-данные только для локальной машины: PUBLIC_BASE_URL не localhost.")
+        return 1
+    root = Path.cwd()
+    write_demo_env(root)
+    async with open_runtime(settings) as runtime:
+        result = await seed_demo(runtime.sessions, runtime.clock(), root, mismatch)
+    state = "создан" if result.created else "уже был, выдана новая сессия"
+    _say(f"Демо-кабинет {state}. Сессия в {SESSION_FILE}, ключи в {ENV_FILE}.")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="adhelper")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("check", help="Проверить настройки и базу")
     stop = commands.add_parser("emergency-stop", help="Приостановить всю рекламу бизнеса")
     stop.add_argument("--business", type=uuid.UUID, required=True)
+    demo = commands.add_parser("demo-seed", help="Создать демо-кабинет для просмотра интерфейса")
+    demo.add_argument(
+        "--mismatch", action="store_true", help="Счёт не сходится со статистикой, реклама стоит"
+    )
     args = parser.parse_args(argv)
 
     settings = Settings()
     if args.command == "check":
         return _print_checks(asyncio.run(run_checks(settings)))
+    if args.command == "demo-seed":
+        return asyncio.run(_demo_seed(settings, args.mismatch))
     return asyncio.run(_emergency_stop(settings, args.business))
 
 

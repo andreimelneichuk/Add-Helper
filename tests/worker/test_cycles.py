@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from adhelper.budget.adapters.rules_file import load_rules
 from adhelper.budget.adapters.sql import SqlPeriodStore
-from adhelper.budget.application.watch_cycle import run_watch_cycle
+from adhelper.budget.application.watch_cycle import confirm_balance, run_watch_cycle
 from adhelper.budget.domain.limits import BudgetPeriod, CampaignBudget
 from adhelper.budget.domain.ports import PlatformUnavailable
 from adhelper.ledger.adapters.sql import SqlChangeRepository, accounts_with_open_changes
@@ -239,3 +239,60 @@ async def test_cycle_function_uses_injected_store_only(sessions: Sessions) -> No
 
 def test_platform_unavailable_is_public_error() -> None:
     assert issubclass(PlatformUnavailable, Exception)
+
+
+async def test_watch_stores_baseline_and_last_balance(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    platform = FakePlatform([campaign()], NOW, balance=900_000_000)
+    platform.run(minutes=10, per_minute=1_000_000)
+    store = SqlPeriodStore(sessions)
+    period_id = await add_period(store)
+    rt = runtime(sessions, engine, {(BUSINESS, "acc"): platform})
+
+    await rt.budget_watch()
+
+    record = await store.active_for(BUSINESS, "acc", platform.now)
+    assert record is not None and record.id == period_id
+    assert record.opening_balance == platform.balance
+    assert record.opening_spent == 10_000_000
+    assert record.last_balance == platform.balance
+    assert record.balance_checked_at == platform.now
+
+
+async def test_mismatch_stops_and_owner_confirmation_resets_baseline(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    platform = FakePlatform([campaign()], NOW, balance=900_000_000)
+    store = SqlPeriodStore(sessions)
+    await add_period(store)
+    rt = runtime(sessions, engine, {(BUSINESS, "acc"): platform})
+    await rt.budget_watch()
+
+    # Со счёта ушло больше, чем показывает статистика: например, кампания вне сервиса.
+    platform.balance -= 300_000_000
+    platform.now += timedelta(minutes=15)
+    await rt.budget_watch()
+    assert not platform.campaigns["a"].active
+    alerts = SqlAlerts(sessions, BUSINESS)
+    assert "balance_mismatch" in await alerts.open_kinds()
+
+    confirmed = await confirm_balance(store, alerts, BUSINESS, "acc", platform.now)
+
+    assert confirmed
+    record = await store.active_for(BUSINESS, "acc", platform.now)
+    assert record is not None
+    assert record.opening_balance == 600_000_000
+    assert "balance_mismatch" not in await alerts.open_kinds()
+    # Следующая проверка сверяет от новой точки и снова не останавливает.
+    platform.campaigns["a"] = campaign()
+    platform.now += timedelta(minutes=15)
+    await rt.budget_watch()
+    assert platform.campaigns["a"].active
+
+
+async def test_confirmation_without_reading_is_refused(sessions: Sessions) -> None:
+    store = SqlPeriodStore(sessions)
+    await add_period(store)
+
+    assert not await confirm_balance(store, SqlAlerts(sessions, BUSINESS), BUSINESS, "acc", NOW)

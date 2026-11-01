@@ -20,6 +20,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Mapped, mapped_column
 
+from adhelper.budget.domain.balance import BalanceBaseline
 from adhelper.budget.domain.limits import BudgetPeriod
 from adhelper.budget.domain.ports import PeriodRecord
 from adhelper.budget.domain.watch import SpendSnapshot
@@ -39,6 +40,9 @@ class BudgetPeriodRow(Base):
     reserve_bp: Mapped[int]
     rules_version: Mapped[str] = mapped_column(Text)
     opening_balance_micros: Mapped[int | None] = mapped_column(BigInteger)
+    opening_spent_micros: Mapped[int | None] = mapped_column(BigInteger)
+    last_balance_micros: Mapped[int | None] = mapped_column(BigInteger)
+    balance_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     state: Mapped[str] = mapped_column(Text, server_default=text("'active'"))
     stop_pending: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     next_check_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -66,6 +70,9 @@ def _to_record(row: BudgetPeriodRow) -> PeriodRecord:
         rules_version=row.rules_version,
         opening_balance=row.opening_balance_micros,
         stop_pending=row.stop_pending,
+        opening_spent=row.opening_spent_micros,
+        last_balance=row.last_balance_micros,
+        balance_checked_at=row.balance_checked_at,
     )
 
 
@@ -175,3 +182,26 @@ class SqlPeriodStore:
                 .where(BudgetPeriodRow.id == period_id)
                 .values(next_check_at=next_check_at)
             )
+
+    async def save_balance(
+        self,
+        period_id: int,
+        balance: int,
+        checked_at: datetime,
+        baseline: BalanceBaseline | None,
+    ) -> None:
+        values: dict[str, object] = {
+            "last_balance_micros": balance,
+            "balance_checked_at": checked_at,
+        }
+        if baseline is not None:
+            values["opening_balance_micros"] = baseline.balance
+            values["opening_spent_micros"] = baseline.spent
+        async with self._sessions.begin() as session:
+            await session.execute(
+                update(BudgetPeriodRow).where(BudgetPeriodRow.id == period_id).values(**values)
+            )
+
+    async def latest_spent(self, period_id: int) -> int | None:
+        snapshots = await self.recent_snapshots(period_id)
+        return snapshots[-1].reported if snapshots else None

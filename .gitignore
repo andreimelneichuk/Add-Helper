@@ -12,3 +12,5 @@ __pycache__/
 dist/
 .DS_Store
 evals/results/
+.demo-session
+.demo-env

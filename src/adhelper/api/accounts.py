@@ -104,7 +104,12 @@ def accounts_router(settings: Settings) -> APIRouter:
 
     @router.get("/auth/yandex/login")
     async def login(service: Service) -> RedirectResponse:
-        url, state = await service.begin_login()
+        try:
+            url, state = await service.begin_login()
+        except ProviderUnavailable:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE, "Вход пока не настроен"
+            ) from None
         return _flow_redirect(url, state, secure)
 
     @router.get("/auth/yandex/callback")
@@ -173,6 +178,10 @@ def accounts_router(settings: Settings) -> APIRouter:
             url, state = await service.begin_connect(info.user.id, business_id)
         except BusinessNotFound:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Бизнес не найден") from None
+        except ProviderUnavailable:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE, "Подключение кабинета пока не настроено"
+            ) from None
         response = JSONResponse({"authorize_url": url})
         response.set_cookie(
             FLOW_COOKIE,

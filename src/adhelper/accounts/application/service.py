@@ -164,6 +164,8 @@ class AccountsService:
     ) -> tuple[str, str]:
         state = secrets.token_urlsafe(32)
         verifier = secrets.token_urlsafe(48)
+        # Адрес раньше записи: без провайдера отказ не оставляет брошенных попыток входа.
+        url = self._provider.authorize_url(state, _challenge(verifier), redirect_uri, scopes)
         await self._store.save_flow(
             OAuthFlow(
                 hash_token(state),
@@ -174,7 +176,6 @@ class AccountsService:
                 business_id,
             )
         )
-        url = self._provider.authorize_url(state, _challenge(verifier), redirect_uri, scopes)
         return url, state
 
     async def _consume(self, state: str, purpose: FlowPurpose) -> OAuthFlow:
@@ -214,6 +215,13 @@ class AccountsService:
 
     async def businesses(self, user_id: UUID) -> Sequence[Business]:
         return await self._scope_for(user_id).businesses()
+
+    async def require_business(self, user_id: UUID, business_id: UUID) -> Business:
+        """Бизнес пользователя или BusinessNotFound: чужой и несуществующий неотличимы."""
+        business = await self._scope_for(user_id).business(business_id)
+        if business is None:
+            raise BusinessNotFound
+        return business
 
     async def accounts(self, user_id: UUID, business_id: UUID) -> Sequence[AdAccount]:
         scope = self._scope_for(user_id)

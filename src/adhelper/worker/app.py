@@ -4,7 +4,9 @@ from adhelper.config import Settings
 from adhelper.worker.runtime import open_runtime
 
 BUDGET_QUEUE = "budget"
-PERIODIC_TASKS = ("budget.watch", "state.reconcile")
+# Отдельная очередь: долгий вызов модели не задерживает задачи бюджета.
+CREATIVES_QUEUE = "creatives"
+PERIODIC_TASKS = ("budget.watch", "state.reconcile", "creatives.generate")
 
 
 def connector_for(settings: Settings) -> PsycopgConnector:
@@ -27,3 +29,11 @@ async def budget_watch(timestamp: int) -> None:
 async def state_reconcile(timestamp: int) -> None:
     async with open_runtime(Settings()) as runtime:
         await runtime.state_reconcile()
+
+
+# Очередь наборов — строки creative_sets; задача только разбирает их раз в минуту.
+@app.periodic(cron="* * * * *")
+@app.task(name="creatives.generate", queue=CREATIVES_QUEUE, queueing_lock="creatives.generate")
+async def creatives_generate(timestamp: int) -> None:
+    async with open_runtime(Settings()) as runtime:
+        await runtime.creatives_generate()

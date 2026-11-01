@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from uuid import UUID
 
 from adhelper.budget.application.guard import WatchResult, WatchState, watch_once
-from adhelper.budget.domain.balance import BalanceState
+from adhelper.budget.domain.balance import BalanceBaseline, BalanceState
 from adhelper.budget.domain.ports import AlertSink, BudgetPlatform, PeriodRecord, PeriodStore
 from adhelper.budget.domain.rules import BudgetRules
 from adhelper.budget.domain.watch import SpendSnapshot, WatchAction, burn_from_history
@@ -56,6 +56,7 @@ async def _watch_period(
         now,
         rules,
         opening_balance=record.opening_balance,
+        opening_spent=record.opening_spent or 0,
     )
     seconds = (
         result.verdict.next_check_seconds
@@ -66,6 +67,8 @@ async def _watch_period(
     await store.save_cycle(
         record.id, snapshot, result.stop_pending, now + timedelta(seconds=seconds)
     )
+    if result.balance is not None:
+        await store.save_balance(record.id, result.balance, now, result.baseline)
     await _publish(alerts, result, rules)
 
 
@@ -94,3 +97,25 @@ async def run_watch_cycle(
             logger.error("Страж бюджета: период %s, %s", record.id, type(error).__name__)
             await store.reschedule(record.id, retry_at)
     return len(records)
+
+
+async def confirm_balance(
+    store: PeriodStore, alerts: AlertSink, business_id: UUID, account: str, now: datetime
+) -> bool:
+    """Владелец подтвердил, что расхождение со счётом объяснимо: пополнение, кампания вне сервиса.
+
+    Сверка начинается заново от последних прочитанных баланса и расхода. Кампании сами
+    не включаются: это отдельное действие через журнал. Без прочитанных данных — отказ.
+    """
+    record = await store.active_for(business_id, account, now)
+    if record is None or record.last_balance is None:
+        return False
+    spent = await store.latest_spent(record.id)
+    if spent is None:
+        return False
+    checked_at = record.balance_checked_at or now
+    await store.save_balance(
+        record.id, record.last_balance, checked_at, BalanceBaseline(record.last_balance, spent)
+    )
+    await alerts.resolve("balance_mismatch")
+    return True

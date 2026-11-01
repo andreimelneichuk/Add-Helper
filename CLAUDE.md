@@ -32,6 +32,7 @@
 - Поднять окружение на чистом клоне: `make setup` (нужны `uv` и Docker).
 - Все проверки, как в CI: `make check` (`ruff`, `mypy`, `lint-imports`, `pytest`; нужна запущенная база).
 - Прототип интерфейса на тестовых данных: `make prototype` (нужен Node 22 или новее). Только интерфейс: `make check-web`.
+- Кабинет на демо-данных: `uv run adhelper demo-seed` (с `--mismatch` — расхождение со счётом), затем `uv run --env-file .demo-env uvicorn adhelper.api.app:create_app --factory --port 8010` и `npm --prefix frontend run dev`.
 - Настройки и база на сервере: `docker compose exec app adhelper check`.
 - Резервная копия и проверка восстановления: `make backup restore-check`.
 - Один тест: `uv run pytest tests/test_healthz.py`.
