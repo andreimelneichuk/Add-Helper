@@ -6,10 +6,11 @@ import { Campaigns } from "./Campaigns";
 import "./cabinet.css";
 import { HistoryScreen } from "./HistoryScreen";
 import { Home } from "./Home";
+import { NotificationsScreen } from "./NotificationsScreen";
 import { ProfileScreen } from "./ProfileScreen";
 import { Stats } from "./Stats";
 
-export type Section = "home" | "campaigns" | "stats" | "ads" | "history" | "profile";
+export type Section = "home" | "campaigns" | "stats" | "ads" | "history" | "profile" | "notify";
 
 const NAV: { id: Section; label: string; icon: string }[] = [
   { id: "home", label: "Сводка", icon: "M3 13h8V3H3zm10 8h8V11h-8zM3 21h8v-6H3zm10-18v6h8V3z" },
@@ -17,6 +18,7 @@ const NAV: { id: Section; label: string; icon: string }[] = [
   { id: "stats", label: "Статистика", icon: "M5 20V10h3v10zm5.5 0V4h3v16zM16 20v-7h3v7z" },
   { id: "ads", label: "Объявления", icon: "M4 4h16v12H7l-3 3zm3 4v2h10V8zm0 4v2h7v-2z" },
   { id: "history", label: "История", icon: "M12 4a8 8 0 1 1-8 8h2a6 6 0 1 0 1.8-4.3L10 10H4V4l2.3 2.3A8 8 0 0 1 12 4m-1 4h2v4.6l3 1.8-1 1.7-4-2.4z" },
+  { id: "notify", label: "Уведомления", icon: "M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2m6-6V11c0-3.1-1.6-5.6-4.5-6.3V4a1.5 1.5 0 0 0-3 0v.7C7.6 5.4 6 7.9 6 11v5l-2 2v1h16v-1z" },
   { id: "profile", label: "О бизнесе", icon: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8m0 2c-4 0-8 2-8 5v1h16v-1c0-3-4-5-8-5" },
 ];
 
@@ -97,6 +99,7 @@ export function Cabinet({ me, business }: { me: Me; business: Business }) {
           {section === "ads" && <Ads api={api} />}
           {section === "history" && <HistoryScreen api={api} overview={overview} />}
           {section === "profile" && <ProfileScreen api={api} />}
+          {section === "notify" && <NotificationsScreen api={api} />}
         </main>
       </div>
     </div>

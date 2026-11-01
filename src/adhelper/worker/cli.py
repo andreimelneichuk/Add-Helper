@@ -138,6 +138,25 @@ def _judge_check(settings: Settings) -> CheckResult:
     return _model_check("judge", settings, settings.judge_model_name, off)
 
 
+def _email_check(settings: Settings) -> CheckResult:
+    if not settings.smtp_host or not settings.smtp_from:
+        detail = "SMTP_HOST или SMTP_FROM не заданы: тревоги на почту ждут в очереди"
+        return CheckResult("email", CheckStatus.WARN, detail)
+    mode = "STARTTLS" if settings.smtp_starttls else "TLS"
+    detail = f"{settings.smtp_host}:{settings.smtp_port}, {mode}, от {settings.smtp_from}"
+    return CheckResult("email", CheckStatus.OK, detail)
+
+
+def _telegram_check(settings: Settings) -> CheckResult:
+    token = settings.telegram_bot_token
+    if token is None or not token.get_secret_value():
+        return CheckResult("telegram", CheckStatus.WARN, "Бот не задан: Telegram не подключить")
+    if not settings.telegram_bot_name:
+        detail = "TELEGRAM_BOT_NAME не задан: ссылку на бота не собрать"
+        return CheckResult("telegram", CheckStatus.FAIL, detail)
+    return CheckResult("telegram", CheckStatus.OK, f"@{settings.telegram_bot_name}")
+
+
 def _rules_check() -> CheckResult:
     try:
         for load, version in RULE_LOADERS:
@@ -154,6 +173,8 @@ async def run_checks(settings: Settings) -> list[CheckResult]:
         _url_check(settings),
         _text_model_check(settings),
         _judge_check(settings),
+        _email_check(settings),
+        _telegram_check(settings),
         _rules_check(),
     ]
 

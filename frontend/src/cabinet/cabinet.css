@@ -173,6 +173,11 @@
 /* Форма */
 .cab-form { max-width: 720px; }
 .cab-form h2 { margin-top: 20px; }
+.cab-channel { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--c-line); }
+.cab-channel p { margin: 4px 0 0; }
+.cab-channel > :first-child { min-width: 0; overflow-wrap: anywhere; }
+.cab-channel > :last-child { flex: none; }
+.cab-when { margin: 0 0 12px; padding-left: 20px; line-height: 1.7; }
 .cab-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
 .cab-field span { font-weight: 500; }
 .cab-textarea { resize: vertical; }

@@ -40,6 +40,9 @@ def settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[Settings]:
     monkeypatch.setenv("TEXT_MODEL_PROJECT", "")
     monkeypatch.setenv("TEXT_MODEL_NAME", "")
     monkeypatch.setenv("JUDGE_MODEL_NAME", "")
+    # Каналы тревог тоже: тест не должен отправить письмо через SMTP разработчика.
+    monkeypatch.setenv("SMTP_HOST", "")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "")
     yield Settings()
     with psycopg.connect(admin_dsn, autocommit=True) as admin:
         admin.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name)))

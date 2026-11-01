@@ -14,6 +14,7 @@ from adhelper.accounts.adapters.unconfigured import UnconfiguredProvider
 from adhelper.accounts.application.service import AccountsService, OAuthProvider
 from adhelper.api.accounts import accounts_router
 from adhelper.api.cabinet import cabinet_router
+from adhelper.api.notifications import notifications_router
 from adhelper.config import Settings
 from adhelper.db import create_engine, ping
 
@@ -63,6 +64,11 @@ def create_app(
     app.state.accounts = _accounts_service(settings, engine, oauth_provider)
     app.include_router(accounts_router(settings))
     app.include_router(cabinet_router())
+    app.include_router(notifications_router())
+    token = settings.telegram_bot_token
+    # Без токена бот не читает сообщения, и ссылка на привязку никуда бы не вела.
+    has_bot = token is not None and bool(token.get_secret_value())
+    app.state.telegram_bot = settings.telegram_bot_name if has_bot else ""
 
     @app.get("/healthz")
     async def healthz(request: Request) -> JSONResponse:
