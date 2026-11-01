@@ -7,6 +7,7 @@ from adhelper.accounts.adapters import sql as _account_models  # noqa: F401
 from adhelper.autopilot.adapters import sql as _autopilot_models  # noqa: F401
 from adhelper.budget.adapters import sql as _budget_models  # noqa: F401
 from adhelper.config import Settings
+from adhelper.creatives.adapters import sql as _creative_models  # noqa: F401
 from adhelper.db import Base
 from adhelper.experiments.adapters import sql as _experiment_models  # noqa: F401
 from adhelper.ledger.adapters import sql as _ledger_models  # noqa: F401
@@ -15,6 +16,8 @@ from adhelper.notifications.adapters import sql as _notification_models  # noqa:
 CROSS_MODULE_KEYS = {
     "fk_alerts_business",
     "fk_budget_periods_business_account",
+    "fk_business_profiles_business",
+    "fk_creative_sets_business",
     "fk_changes_business_account",
     "fk_decisions_business",
     "fk_experiments_business",
