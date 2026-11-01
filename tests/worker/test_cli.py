@@ -38,7 +38,9 @@ async def test_configured_service_passes(migrated: Settings, engine: AsyncEngine
         update={
             "public_base_url": "https://ads.example.ru",
             "text_model_api_key": SecretStr("key"),
-            "text_model_folder": "folder",
+            "text_model_project": "folder",
+            "text_model_name": "gpt://folder/yandexgpt/latest",
+            "judge_model_name": "gpt://folder/yandexgpt-lite/latest",
         }
     )
     results = await run_checks(configured)
@@ -80,13 +82,20 @@ async def test_unreachable_database_hides_password(migrated: Settings) -> None:
     assert broken.postgres_password.get_secret_value() not in repr(results)
 
 
-async def test_unknown_model_provider_fails_check(migrated: Settings, engine: AsyncEngine) -> None:
-    broken = migrated.model_copy(update={"text_model_provider": "other"})
+async def test_bad_model_address_fails_check(migrated: Settings, engine: AsyncEngine) -> None:
+    broken = migrated.model_copy(update={"text_model_base_url": "openrouter"})
     assert statuses(await run_checks(broken))["text_model"] is CheckStatus.FAIL
 
 
 async def test_missing_model_key_is_a_warning(migrated: Settings, engine: AsyncEngine) -> None:
     assert statuses(await run_checks(migrated))["text_model"] is CheckStatus.WARN
+
+
+async def test_judge_off_by_default_is_a_warning(migrated: Settings, engine: AsyncEngine) -> None:
+    configured = _secret(migrated, f"main:{KEY}").model_copy(
+        update={"text_model_api_key": SecretStr("key"), "text_model_name": "m"}
+    )
+    assert statuses(await run_checks(configured))["judge"] is CheckStatus.WARN
 
 
 def test_check_exit_code_reflects_failure(

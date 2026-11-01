@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
@@ -29,6 +30,7 @@ RULE_LOADERS = (
     (load_autopilot_rules, "autopilot-1"),
     (load_experiment_rules, "experiments-1"),
     (load_creative_rules, "creatives-1"),
+    (load_creative_rules, "creatives-2"),
 )
 
 
@@ -102,21 +104,30 @@ def _url_check(settings: Settings) -> CheckResult:
     return CheckResult("public_url", CheckStatus.WARN, detail)
 
 
-def _text_model_check(settings: Settings) -> CheckResult:
+def _model_check(name: str, settings: Settings, model_name: str, off: str) -> CheckResult:
     try:
         model = build_text_model(
-            settings.text_model_provider,
+            settings.text_model_base_url,
             settings.text_model_api_key,
-            settings.text_model_folder,
-            settings.text_model_name,
+            model_name,
+            settings.text_model_project,
         )
     except ValueError as error:
-        return CheckResult("text_model", CheckStatus.FAIL, str(error))
+        return CheckResult(name, CheckStatus.FAIL, str(error))
     if model is None:
-        return CheckResult(
-            "text_model", CheckStatus.WARN, "Модель не задана: объявления из шаблонов"
-        )
-    return CheckResult("text_model", CheckStatus.OK, settings.text_model_provider)
+        return CheckResult(name, CheckStatus.WARN, off)
+    host = urlsplit(settings.text_model_base_url).hostname
+    return CheckResult(name, CheckStatus.OK, f"{model_name} на {host}")
+
+
+def _text_model_check(settings: Settings) -> CheckResult:
+    off = "Модель не задана: объявления из шаблонов"
+    return _model_check("text_model", settings, settings.text_model_name, off)
+
+
+def _judge_check(settings: Settings) -> CheckResult:
+    off = "Судья выключен: смысл объявлений проверяет только код"
+    return _model_check("judge", settings, settings.judge_model_name, off)
 
 
 def _rules_check() -> CheckResult:
@@ -134,6 +145,7 @@ async def run_checks(settings: Settings) -> list[CheckResult]:
         _keys_check(settings),
         _url_check(settings),
         _text_model_check(settings),
+        _judge_check(settings),
         _rules_check(),
     ]
 

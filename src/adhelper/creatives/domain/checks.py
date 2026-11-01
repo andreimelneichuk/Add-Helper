@@ -19,6 +19,16 @@ def _numbers(text: str) -> set[str]:
     return {re.sub(r"\D", "", match) for match in NUMBER.findall(text)}
 
 
+def profile_facts(profile: BusinessProfile) -> dict[str, object]:
+    """Поля профиля для модели и судьи. Только то, что можно показать в рекламе."""
+    return {
+        "название": profile.name,
+        "услуги": [{"услуга": s.name, "цена_руб": s.price} for s in profile.services],
+        "адрес": profile.address,
+        "особенности": list(profile.features),
+    }
+
+
 def profile_text(profile: BusinessProfile) -> str:
     parts = [profile.name, profile.address, *profile.features]
     for service in profile.services:
@@ -36,6 +46,10 @@ def _visible_length(text: str, rules: CreativeRules) -> int:
 
 def _contains_phrase(text: str, phrase: str) -> bool:
     return re.search(rf"(?<![а-яёa-z0-9]){re.escape(phrase)}(?![а-яёa-z0-9])", text) is not None
+
+
+def _has_stem(text: str, stem: str) -> bool:
+    return any(word.startswith(stem) for word in WORD.findall(text))
 
 
 def check_draft(
@@ -63,6 +77,9 @@ def check_draft(
     for word in rules.fact_words:
         if _contains_phrase(lowered, word) and not _contains_phrase(source_lowered, word):
             found.append(Violation(ViolationKind.UNCONFIRMED_CLAIM, word))
+    for stem in rules.fact_stems:
+        if _has_stem(lowered, stem) and not _has_stem(source_lowered, stem):
+            found.append(Violation(ViolationKind.UNCONFIRMED_CLAIM, stem))
     known_latin = {word.lower() for word in LATIN.findall(source)}
     for word in sorted({word.lower() for word in LATIN.findall(full)} - known_latin):
         found.append(Violation(ViolationKind.FOREIGN_WORD, word))

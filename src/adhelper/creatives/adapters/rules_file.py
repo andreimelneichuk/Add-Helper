@@ -7,6 +7,6 @@ from adhelper.creatives.domain.model import CreativeRules
 def load_rules(version: str) -> CreativeRules:
     resource = files("adhelper.creatives.adapters") / "rules" / f"{version}.toml"
     data = tomllib.loads(resource.read_text(encoding="utf-8"))
-    for key in ("forbidden_words", "fact_words", "sensitive_niches"):
+    for key in ("forbidden_words", "fact_words", "fact_stems", "sensitive_niches"):
         data[key] = tuple(data[key])
     return CreativeRules(**data)

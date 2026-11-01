@@ -38,7 +38,7 @@ dev = [
 
 [tool.ruff]
 line-length = 100
-src = ["src", "tests"]
+src = ["src", "tests", "evals"]
 extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
@@ -48,11 +48,12 @@ ignore = ["RUF001", "RUF002", "RUF003"]
 
 [tool.mypy]
 strict = true
-files = ["src", "tests", "migrations"]
+files = ["src", "tests", "migrations", "evals"]
 plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "--strict-markers"

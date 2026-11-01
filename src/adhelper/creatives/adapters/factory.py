@@ -1,17 +1,15 @@
 from pydantic import SecretStr
 
-from adhelper.creatives.adapters.yandex import YandexAiStudioModel
+from adhelper.creatives.adapters.openai_compatible import OpenAiCompatibleModel
 from adhelper.creatives.domain.model import TextModel
 
 
 def build_text_model(
-    provider: str, api_key: SecretStr | None, folder: str, model: str
+    base_url: str, api_key: SecretStr | None, model: str, project: str = ""
 ) -> TextModel | None:
-    """Провайдер задаётся конфигурацией. Без ключа работаем на шаблонах из профиля."""
-    if provider == "none":
+    """Провайдер задаётся адресом OpenAI-совместимого API. Без ключа или модели — шаблоны."""
+    if not base_url.startswith(("https://", "http://")):
+        raise ValueError(f"Адрес модели должен начинаться с https://: {base_url!r}")
+    if api_key is None or not api_key.get_secret_value() or not model:
         return None
-    if provider != "yandex":
-        raise ValueError(f"Неизвестный провайдер модели: {provider}")
-    if api_key is None or not api_key.get_secret_value() or not folder:
-        return None
-    return YandexAiStudioModel(api_key, folder, model)
+    return OpenAiCompatibleModel(base_url, api_key, model, project)

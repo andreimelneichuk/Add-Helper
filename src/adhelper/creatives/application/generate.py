@@ -2,8 +2,15 @@ import json
 
 from adhelper.creatives.domain.checks import (
     check_draft,
+    profile_facts,
     template_drafts,
     too_similar_to_any,
+)
+from adhelper.creatives.domain.judge import (
+    JUDGE_SCHEMA,
+    JUDGE_SYSTEM,
+    build_judge_user,
+    read_verdict,
 )
 from adhelper.creatives.domain.model import (
     AdDraft,
@@ -41,15 +48,15 @@ ADS_SCHEMA: dict[str, object] = {
 
 
 def build_prompt(profile: BusinessProfile, rules: CreativeRules) -> str:
-    facts = {
-        "название": profile.name,
-        "услуги": [{"услуга": s.name, "цена_руб": s.price} for s in profile.services],
-        "адрес": profile.address,
-        "особенности": list(profile.features),
-    }
+    facts = profile_facts(profile)
+    # Замер 2026-11-01: с лимитом без запаса 78% черновиков выходили длиннее и снимались.
     return (
-        f"Напиши 5 разных по смыслу объявлений. Заголовок до {rules.headline_max} символов, "
-        f"текст до {rules.text_max} символов.\n"
+        f"Напиши 5 разных по смыслу объявлений. Заголовок до {rules.headline_max} символов. "
+        f"Текст — одно-два коротких предложения, {rules.text_max * 2 // 3}–"
+        f"{rules.text_max - 10} символов с пробелами; длиннее {rules.text_max} — "
+        "объявление отклонят.\n"
+        "Не добавляй оценок, которых нет в профиле: «качественный», «доступная цена», "
+        "«быстро», «удобно», «профессиональный».\n"
         f"ПРОФИЛЬ:\n{json.dumps(facts, ensure_ascii=False)}"
     )
 
@@ -78,10 +85,55 @@ def _select(
     return kept, rejected
 
 
+async def _judge_kept(
+    judge: TextModel,
+    kept: list[AdDraft],
+    profile: BusinessProfile,
+    rules: CreativeRules,
+    used: int,
+) -> tuple[list[AdDraft], int, list[RejectedDraft]]:
+    """Судья только убирает: объявление остаётся, если смысл подтверждён профилем.
+
+    Непонятный ответ, сбой и нехватка токенов — тоже снятие. Одобрить он ничего не может.
+    """
+    passed: list[AdDraft] = []
+    dropped: list[RejectedDraft] = []
+    spent = 0
+    for draft in kept:
+        left = rules.max_tokens_per_set - used - spent
+        if left <= 0:
+            dropped.append(_judge_rejection(draft, "judge_token_limit"))
+            continue
+        try:
+            reply = await judge.complete_json(
+                JUDGE_SYSTEM,
+                build_judge_user(draft, profile),
+                JUDGE_SCHEMA,
+                min(left, rules.judge_max_tokens),
+            )
+        except ModelUnavailable:
+            dropped.append(_judge_rejection(draft, "judge_unavailable"))
+            continue
+        spent += reply.tokens
+        verdict = read_verdict(reply.text, draft)
+        if verdict.blocked:
+            dropped.append(_judge_rejection(draft, verdict.reason))
+        else:
+            passed.append(draft)
+    return passed, spent, dropped
+
+
+def _judge_rejection(draft: AdDraft, detail: str) -> RejectedDraft:
+    return RejectedDraft(draft, (Violation(ViolationKind.UNCONFIRMED_BY_JUDGE, detail),))
+
+
 async def generate_ads(
-    profile: BusinessProfile, model: TextModel | None, rules: CreativeRules
+    profile: BusinessProfile,
+    model: TextModel | None,
+    rules: CreativeRules,
+    judge: TextModel | None = None,
 ) -> CreativeSet:
-    """Модель предлагает, код проверяет. При любой неудаче остаётся шаблон из профиля."""
+    """Модель предлагает, код и судья проверяют. При любой неудаче остаётся шаблон из профиля."""
     tokens = 0
     rejected: list[RejectedDraft] = []
     needs_review = profile.niche.strip().lower() in rules.sensitive_niches
@@ -105,6 +157,13 @@ async def generate_ads(
                 continue
             kept, dropped = _select(candidates, profile, rules)
             rejected.extend(dropped)
+            # Судья смотрит только то, что прошло детерминированную проверку, и может лишь снять.
+            if kept and judge is not None:
+                kept, spent, judge_dropped = await _judge_kept(judge, kept, profile, rules, tokens)
+                tokens += spent
+                rejected.extend(judge_dropped)
+                if not kept:
+                    notes.append("judge_rejected_all")
             if kept:
                 return CreativeSet(
                     tuple(kept),

@@ -118,3 +118,28 @@ def test_templates_never_fail_checks_for_any_profile(
     profile = BusinessProfile(name, (Service(service, price),))
     for draft in template_drafts(profile, RULES):
         assert not check_draft(draft, profile, RULES)
+
+
+STEMS = load_rules("creatives-2")
+
+
+def stem_kinds(draft: AdDraft, profile: BusinessProfile = PROFILE) -> set[ViolationKind]:
+    return {violation.kind for violation in check_draft(draft, profile, STEMS)}
+
+
+def test_stems_catch_other_word_forms() -> None:
+    # creatives-1 знает только «скидка», «скидку», «скидки»: «скидкой» проходило.
+    plain = BusinessProfile("Лак", (Service("Педикюр", 2000),))
+    draft = AdDraft("Педикюр со скидкой", "Запишитесь онлайн.")
+    assert ViolationKind.UNCONFIRMED_CLAIM not in kinds(draft, plain)
+    assert ViolationKind.UNCONFIRMED_CLAIM in stem_kinds(draft, plain)
+
+
+def test_stems_accept_other_form_from_profile() -> None:
+    # В профиле «бесплатно», в объявлении «бесплатная»: creatives-1 снимал зря.
+    cafe = BusinessProfile(
+        "Пышка", (Service("Бизнес-ланч", 390),), features=("Доставка бесплатно",)
+    )
+    draft = AdDraft("Бесплатная доставка", "Кафе «Пышка».")
+    assert ViolationKind.UNCONFIRMED_CLAIM in kinds(draft, cafe)
+    assert ViolationKind.UNCONFIRMED_CLAIM not in stem_kinds(draft, cafe)
