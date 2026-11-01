@@ -191,3 +191,75 @@ async def test_older_statistics_do_not_replace_newer_snapshot() -> None:
     )
 
     assert result.state.snapshot == seen
+
+
+def test_spend_before_baseline_does_not_hide_mismatch() -> None:
+    """Точку сверки сняли посреди периода: расход до неё не должен покрывать новую пропажу."""
+    spent_before = 400_000_000
+    opening = 900_000_000
+    current = opening - 300_000_000
+
+    hidden = check_balance(opening, current, spent_before, HARD, RULES)
+    counted = check_balance(opening, current, spent_before, HARD, RULES, opening_spent=spent_before)
+
+    assert hidden is BalanceState.OK
+    assert counted is BalanceState.MISMATCH
+
+
+async def test_first_watch_takes_baseline_instead_of_checking() -> None:
+    """Начального баланса нет: сверку не пропускаем молча, а ставим точку отсчёта."""
+    platform = FakePlatform([campaign()], NOW, balance=900_000_000)
+    platform.run(minutes=10, per_minute=1_000_000)
+
+    result = await watch_once(platform, "acc", PERIOD, WatchState.initial(), platform.now, RULES)
+
+    assert result.balance == platform.balance
+    assert result.baseline is not None
+    assert result.baseline.balance == platform.balance
+    assert result.baseline.spent == 10_000_000
+    assert result.balance_state is BalanceState.OK
+    assert not result.stopped
+
+
+async def test_zero_balance_is_reported_without_baseline() -> None:
+    platform = FakePlatform([campaign()], NOW, balance=5_000_000)
+    platform.run(minutes=60, per_minute=1_000_000)
+
+    result = await watch_once(platform, "acc", PERIOD, WatchState.initial(), platform.now, RULES)
+
+    assert result.balance_state is BalanceState.ZERO
+    assert not result.stopped
+
+
+async def test_known_baseline_is_kept() -> None:
+    platform = FakePlatform([campaign()], NOW, balance=900_000_000)
+
+    result = await watch_once(
+        platform,
+        "acc",
+        PERIOD,
+        WatchState.initial(),
+        platform.now,
+        RULES,
+        opening_balance=900_000_000,
+    )
+
+    assert result.baseline is None
+    assert result.balance == 900_000_000
+
+
+@given(
+    st.integers(1, 10**12),
+    st.integers(1, 10**12),
+    st.integers(0, 10**12),
+    st.integers(0, 10**12),
+    st.integers(1, 10**13),
+)
+def test_spend_before_baseline_never_hides_mismatch(
+    opening: int, current: int, reported: int, before: int, hard: int
+) -> None:
+    without = check_balance(opening, current, reported, hard, RULES)
+    counted = check_balance(opening, current, reported, hard, RULES, opening_spent=before)
+
+    if without is BalanceState.MISMATCH:
+        assert counted is BalanceState.MISMATCH

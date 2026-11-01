@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
+from uuid import UUID
 
 
 class ViolationKind(StrEnum):
@@ -75,6 +77,8 @@ class CreativeRules:
     # Начала слов-обещаний: «скидк» ловит «скидкой», «бесплатн» узнаёт «бесплатно» в профиле.
     fact_stems: tuple[str, ...]
     sensitive_niches: tuple[str, ...]
+    # Сколько наборов бизнес может запросить за сутки: каждый стоит вызовов модели.
+    max_sets_per_day: int
 
 
 @dataclass(frozen=True)
@@ -98,3 +102,54 @@ class TextModel(Protocol):
     async def complete_json(
         self, system: str, user: str, schema: dict[str, object], max_tokens: int
     ) -> ModelReply: ...
+
+
+class SetStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    READY = "ready"
+    FAILED = "failed"
+
+
+class DraftDecision(StrEnum):
+    PROPOSED = "proposed"
+    APPROVED = "approved"
+    DECLINED = "declined"
+
+
+@dataclass(frozen=True)
+class StoredDraft:
+    headline: str
+    text: str
+    decision: DraftDecision
+
+
+@dataclass(frozen=True)
+class StoredRejection:
+    headline: str
+    text: str
+    reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class StoredSet:
+    """Набор объявлений в том виде, в каком его видит владелец."""
+
+    id: int
+    status: SetStatus
+    rules_version: str
+    source: CreativeSource | None
+    drafts: tuple[StoredDraft, ...]
+    rejected: tuple[StoredRejection, ...]
+    notes: tuple[str, ...]
+    tokens_used: int
+    needs_review: bool
+    created_at: datetime
+    finished_at: datetime | None
+
+
+@dataclass(frozen=True)
+class ClaimedSet:
+    id: int
+    business_id: UUID
+    rules_version: str

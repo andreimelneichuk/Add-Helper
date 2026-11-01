@@ -10,8 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from adhelper.accounts.adapters.crypto import AesGcmCipher
 from adhelper.accounts.adapters.sql import SqlAccountTokens, SqlIdentityStore, SqlUserScope
+from adhelper.accounts.adapters.unconfigured import UnconfiguredProvider
 from adhelper.accounts.application.service import AccountsService, OAuthProvider
 from adhelper.api.accounts import accounts_router
+from adhelper.api.cabinet import cabinet_router
 from adhelper.config import Settings
 from adhelper.db import create_engine, ping
 
@@ -26,14 +28,15 @@ def _accounts_service(
     settings: Settings, engine: AsyncEngine, provider: OAuthProvider | None
 ) -> AccountsService | None:
     keys = settings.token_encryption_keys
-    if provider is None or keys is None or not keys.get_secret_value():
+    if keys is None or not keys.get_secret_value():
         return None
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     return AccountsService(
         SqlIdentityStore(sessions),
         lambda user_id: SqlUserScope(sessions, user_id),
         lambda business_id: SqlAccountTokens(sessions, business_id),
-        provider,
+        # Без провайдера сессии работают, а новый вход и подключение кабинета отвечают 503.
+        provider or UnconfiguredProvider(),
         AesGcmCipher.from_config(keys.get_secret_value()),
         _utc_now,
         settings.public_base_url,
@@ -54,8 +57,12 @@ def create_app(
     app = FastAPI(title="Ad Helper", lifespan=lifespan)
     app.state.engine = engine
     # Провайдер Яндекса появится после реального вызова (V1); до этого вход отвечает 503.
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    app.state.sessions = sessions
+    app.state.clock = _utc_now
     app.state.accounts = _accounts_service(settings, engine, oauth_provider)
     app.include_router(accounts_router(settings))
+    app.include_router(cabinet_router())
 
     @app.get("/healthz")
     async def healthz(request: Request) -> JSONResponse:

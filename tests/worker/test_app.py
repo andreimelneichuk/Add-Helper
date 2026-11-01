@@ -1,5 +1,6 @@
 """Настоящий воркер Procrastinate: задания из базы выполняются и не теряются."""
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -7,14 +8,27 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from adhelper.config import Settings
-from adhelper.worker.app import PERIODIC_TASKS, app, budget_watch, connector_for, state_reconcile
+from adhelper.worker.app import (
+    PERIODIC_TASKS,
+    app,
+    budget_watch,
+    connector_for,
+    creatives_generate,
+    state_reconcile,
+)
 
 
 def test_money_tasks_are_scheduled() -> None:
-    assert {"budget.watch", "state.reconcile"} <= set(PERIODIC_TASKS)
-    assert set(app.tasks) >= {"budget.watch", "state.reconcile"}
+    expected = {"budget.watch", "state.reconcile", "creatives.generate"}
+    assert expected <= set(PERIODIC_TASKS)
+    assert set(app.tasks) >= expected
     scheduled = {periodic.task.name for periodic in app.periodic_registry.periodic_tasks.values()}
-    assert {"budget.watch", "state.reconcile"} <= scheduled
+    assert expected <= scheduled
+
+
+def test_compose_worker_listens_to_every_queue() -> None:
+    compose = (Path(__file__).parents[2] / "compose.yaml").read_text()
+    assert "--queues=budget,creatives" in compose
 
 
 async def test_worker_runs_money_tasks_from_real_database(
@@ -27,8 +41,9 @@ async def test_worker_runs_money_tasks_from_real_database(
         async with test_app.open_async():
             await budget_watch.defer_async(**periodic_arguments)
             await state_reconcile.defer_async(**periodic_arguments)
+            await creatives_generate.defer_async(**periodic_arguments)
             await test_app.run_worker_async(
-                queues=["budget"], wait=False, install_signal_handlers=False
+                queues=["budget", "creatives"], wait=False, install_signal_handlers=False
             )
 
     async with engine.connect() as connection:
@@ -36,4 +51,8 @@ async def test_worker_runs_money_tasks_from_real_database(
             text("SELECT task_name, status FROM procrastinate_jobs WHERE scheduled_at IS NULL")
         )
         statuses = {name: str(status) for name, status in rows}
-    assert statuses == {"budget.watch": "succeeded", "state.reconcile": "succeeded"}
+    assert statuses == {
+        "budget.watch": "succeeded",
+        "state.reconcile": "succeeded",
+        "creatives.generate": "succeeded",
+    }

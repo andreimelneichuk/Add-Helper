@@ -18,6 +18,10 @@ from adhelper.budget.adapters.sql import SqlPeriodStore
 from adhelper.budget.application.preflight import StoredPeriodPreflight
 from adhelper.budget.application.watch_cycle import run_watch_cycle
 from adhelper.config import Settings
+from adhelper.creatives.adapters.factory import build_text_model
+from adhelper.creatives.adapters.rules_file import load_rules as load_creative_rules
+from adhelper.creatives.adapters.sql import SqlCreativeQueue, SqlProfileSource
+from adhelper.creatives.application.service import run_queued
 from adhelper.db import create_engine
 from adhelper.ledger.adapters.sql import (
     PostgresAccountLock,
@@ -43,6 +47,9 @@ class Runtime:
     # Адаптер настоящей площадки появится в T5; пока площадки нет, бизнес получает тревогу.
     platform_for: Callable[[UUID, str], Any]
     clock: Callable[[], datetime] = _utc_now
+    # Без ключа или модели генерация отдаёт шаблоны из профиля, без судьи — только проверку кодом.
+    text_model: Any = None
+    judge_model: Any = None
 
     def ledger_for(self, business_id: UUID, account: str) -> Ledger:
         platform = self.platform_for(business_id, account)
@@ -88,9 +95,28 @@ class Runtime:
             await accounts_with_open_changes(self.sessions), ledger_or_none
         )
 
+    async def creatives_generate(self) -> None:
+        await run_queued(
+            SqlCreativeQueue(self.sessions),
+            SqlProfileSource(self.sessions),
+            self.text_model,
+            self.judge_model,
+            load_creative_rules,
+            self.clock,
+        )
+
 
 def _no_platform(business_id: UUID, account: str) -> None:
     return None
+
+
+def _model(settings: Settings, name: str) -> Any:
+    return build_text_model(
+        settings.text_model_base_url,
+        settings.text_model_api_key,
+        name,
+        settings.text_model_project,
+    )
 
 
 @asynccontextmanager
@@ -101,6 +127,8 @@ async def open_runtime(settings: Settings) -> AsyncIterator[Runtime]:
             sessions=async_sessionmaker(engine, expire_on_commit=False),
             engine=engine,
             platform_for=_no_platform,
+            text_model=_model(settings, settings.text_model_name),
+            judge_model=_model(settings, settings.judge_model_name),
         )
     finally:
         await engine.dispose()
