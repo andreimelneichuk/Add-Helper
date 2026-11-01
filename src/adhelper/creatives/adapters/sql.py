@@ -8,7 +8,6 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
-    ForeignKey,
     Identity,
     Index,
     Integer,
@@ -48,9 +47,7 @@ WAITING = (SetStatus.QUEUED.value, SetStatus.RUNNING.value)
 class BusinessProfileRow(Base):
     __tablename__ = "business_profiles"
 
-    business_id: Mapped[UUID] = mapped_column(
-        ForeignKey("businesses.id", name="fk_business_profiles_business"), primary_key=True
-    )
+    business_id: Mapped[UUID] = mapped_column(primary_key=True)
     # Цена услуги — факт профиля в целых рублях, а не деньги площадки.
     services: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
     address: Mapped[str] = mapped_column(Text)
@@ -73,9 +70,7 @@ class CreativeSetRow(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    business_id: Mapped[UUID] = mapped_column(
-        ForeignKey("businesses.id", name="fk_creative_sets_business")
-    )
+    business_id: Mapped[UUID]
     status: Mapped[str] = mapped_column(Text)
     rules_version: Mapped[str] = mapped_column(Text)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
