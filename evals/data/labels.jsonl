@@ -28,3 +28,63 @@
 {"id": "vet-01-03", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:41:28+00:00", "note": "наличие зоомагазина подтверждено профилем"}
 {"id": "yoga-00-01", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:41:28+00:00", "note": "занятия йогой подтверждены профилем студии"}
 {"id": "yoga-00-w0", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:41:28+00:00", "note": "занятия йогой подтверждены профилем студии"}
+{"id": "cosmetology-01-w3", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "tailor-01-04", "label": "block", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": "за 7 дней"}
+{"id": "cafe-01-w0", "label": "block", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": "«фирменную пиццу» — в профиле нет"}
+{"id": "flowers-00-06", "label": "block", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": "круглосуточно"}
+{"id": "cosmetology-00-05", "label": "block", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": "Расширенные поры видны всем"}
+{"id": "print-00-w4", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "phones-00-06", "label": "block", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": "Только оригинальные запчасти"}
+{"id": "photo-00-06", "label": "block", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": "Будете как на обложке журнала"}
+{"id": "yoga-01-01", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "keys-01-w4", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "drycleaning-00-05", "label": "block", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": "Выведем любое пятно"}
+{"id": "coffee-00-04", "label": "block", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": "из свежей обжарки"}
+{"id": "print-00-03", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "bakery-00-07", "label": "block", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": "на 50% дешевле"}
+{"id": "kids-00-w4", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "nails-00-w3", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "tutor-00-w3", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "auto-00-03", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "phones-00-02", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "furniture-00-01", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "fitness-00-02", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "tires-01-05", "label": "block", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": "Самые низкие цены"}
+{"id": "coffee-00-w4", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "hair-00-07", "label": "block", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": "Быстро и аккуратно"}
+{"id": "bakery-00-w2", "label": "block", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": "«Свежая выпечка каждый день» — дней в профиле нет"}
+{"id": "auto-01-w4", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "bakery-00-04", "label": "block", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": "как у бабушки"}
+{"id": "yoga-00-w3", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "sushi-00-w4", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "auto-00-w2", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "kids-00-02", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "drycleaning-00-w4", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "massage-01-w3", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "shoes-01-w2", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "drycleaning-01-06", "label": "block", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": "выдаёт неряшливых хозяев"}
+{"id": "nails-01-06", "label": "block", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": "Самый уютный"}
+{"id": "sushi-01-w4", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "fitness-00-06", "label": "block", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": "бассейн и сауна"}
+{"id": "handyman-00-w4", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "fitness-00-04", "label": "block", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": "Минус 5 кг за месяц"}
+{"id": "drycleaning-01-03", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "phones-01-04", "label": "block", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": "Ремонт планшетов и приставок"}
+{"id": "grooming-00-01", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "massage-01-05", "label": "block", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": "сауна"}
+{"id": "tailor-00-03", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "yoga-00-02", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "coffee-00-w2", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "driving-00-04", "label": "block", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": "Сдадите экзамен с первого раза"}
+{"id": "vet-00-w3", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "grooming-00-w0", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "cosmetology-00-w0", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "hair-01-w3", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "print-01-05", "label": "block", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": "за полцены"}
+{"id": "print-01-w4", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "driving-00-w0", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "grooming-01-03", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "furniture-01-07", "label": "block", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": "Сотни спасённых диванов и довольных хозяев"}
+{"id": "tires-01-01", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
+{"id": "print-01-04", "label": "block", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": "круглосуточно"}
+{"id": "print-01-w2", "label": "pass", "labeler": "andrei", "at": "2026-11-02T15:48:45+00:00", "note": ""}
