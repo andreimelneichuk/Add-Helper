@@ -1,0 +1,32 @@
+/* Экран одного объявления и форма просьбы. */
+.ad-screen { display: flex; flex-direction: column; gap: var(--gap); max-width: 980px; margin: 0 auto; }
+.ad-back { align-self: flex-start; }
+.ad-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ah .ad-name { font-size: var(--t-head); font-weight: 600; line-height: 1.25; letter-spacing: -0.01em; }
+
+.ad-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--gap); align-items: start; }
+.ad-side { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+.ad-show { display: flex; flex-direction: column; gap: 4px; }
+.ad-preview { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--r-field); background: var(--panel); }
+.ad-preview-label { margin: 8px var(--gap) 0; }
+.ad-preview-body { display: flex; flex-direction: column; gap: 4px; padding: var(--gap); }
+.ah-art-photo { background-position: center; background-size: cover; color: #fff; }
+
+.ad-facts, .ad-events, .ad-compose { display: flex; flex-direction: column; gap: var(--gap); }
+.ad-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ad-events ul { display: flex; flex-direction: column; gap: var(--gap); margin: 0; padding: 0; list-style: none; }
+.ad-events-when { color: var(--muted); font-size: var(--t-caption); }
+.ad-events .ah-btn { align-self: flex-start; }
+
+.ad-compose-ask { display: flex; align-items: flex-end; gap: 8px; }
+.ad-compose-field { flex: 1; min-width: 0; }
+/* Само поле скрыто только визуально: выбор файла работает с клавиатуры, вид задаёт подпись-кнопка. */
+.ad-compose-file { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.ad-compose-file:focus-visible + .ah-btn { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ad-compose-name { margin-left: 8px; overflow-wrap: anywhere; }
+.ad-compose-consent { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.ad-compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gap); }
+
+@media (max-width: 767px) {
+  .ad-grid, .ad-compare { grid-template-columns: minmax(0, 1fr); }
+}

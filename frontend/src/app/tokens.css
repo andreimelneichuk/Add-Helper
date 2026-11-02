@@ -1,0 +1,158 @@
+/* Система нового интерфейса: токены и общие детали. Экранные стили лежат рядом с экранами
+   и задают только раскладку; цвет, размеры и форму элементов берут отсюда. */
+/* Токены только внутри .ah: имена совпадают со старыми стилями кабинета.
+   Один насыщенный кобальт на нейтральном светло-сером: весь цвет идёт в действия и состояние. */
+.ah {
+  /* Глобальное правило полей из styles.css берёт фон отсюда, иначе в тёмной теме ОС поле темнеет. */
+  --surface: #ffffff;
+  --canvas: #f4f5f8;
+  --panel: #ffffff;
+  --line: #e6e8ef;
+  --line-strong: #cfd3df;
+  --ink: #141a2e;
+  --muted: #535a70;
+  --accent: #2340d9;
+  --accent-ink: #1c34b8;
+  --accent-soft: #dfe5ff;
+  --on-accent: #ffffff;
+  --bar-soft: #aab7f5;
+  --good: #0e5c37;
+  --good-soft: #ddf3e6;
+  --warn: #6e4700;
+  --warn-soft: #f8ebcf;
+  --bad: #a61f16;
+  --bad-soft: #fce4e1;
+  --font: "Onest Variable", system-ui, sans-serif;
+  /* Пять размеров текста на весь интерфейс. */
+  --t-caption: 12px;
+  --t-body: 14px;
+  --t-title: 16px;
+  --t-number: 28px;
+  --t-head: 22px;
+  /* Форма: всё, что нажимают, капсула; поля и вложенные блоки мягче; плоскости круглее всех. */
+  --r-control: 999px;
+  --r-field: 14px;
+  --r-surface: 20px;
+  /* Лепесток: острый угол внизу слева значит «это говорит сервис». Только вывод, подтверждение и реплики чата. */
+  --r-voice: var(--r-surface) var(--r-surface) var(--r-surface) 6px;
+  --control: 40px;
+  --gap: 12px;
+  --pad: 20px;
+  --gutter: 24px;
+}
+@media (max-width: 767px) {
+  .ah { --gutter: 12px; --control: 44px; --t-number: 22px; }
+}
+
+.ah {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--canvas);
+  color: var(--ink);
+  font: var(--t-body)/1.45 var(--font);
+  font-variant-numeric: tabular-nums;
+}
+:where(.ah button, .ah input) { font: inherit; color: inherit; }
+.ah :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ah h1, .ah h2, .ah h3, .ah p { margin: 0; }
+.ah-main { position: relative; flex: 1; min-height: 0; min-width: 0; overflow-y: auto; padding: var(--pad) var(--gutter) 20px; }
+
+/* Плоскость и текст */
+.ah-panel { min-width: 0; padding: var(--pad); border-radius: var(--r-surface); background: var(--panel); }
+.ah .ah-panel-title { font-size: var(--t-title); font-weight: 700; }
+.ah-muted { color: var(--muted); font-size: var(--t-body); }
+.ah-label { display: block; margin-bottom: 4px; color: var(--muted); font-size: var(--t-caption); }
+.ah-error { color: var(--bad); }
+
+/* Кнопки: обычная, главная, текстовая */
+.ah-btn { display: inline-flex; align-items: center; justify-content: center; flex: none; max-width: 100%; min-height: var(--control); padding: 4px 18px; border: 1px solid var(--line-strong); border-radius: var(--r-control); background: var(--panel); color: var(--ink); font-size: var(--t-body); font-weight: 500; cursor: pointer; }
+.ah-btn:hover { border-color: var(--muted); }
+.ah-btn:disabled { border-color: var(--line); color: var(--muted); cursor: default; }
+.ah-btn-primary { border-color: var(--accent); background: var(--accent); color: var(--on-accent); font-weight: 600; }
+.ah-btn-primary:hover { border-color: var(--accent-ink); background: var(--accent-ink); }
+.ah-btn-primary:disabled { border-color: var(--line); background: var(--line); color: var(--muted); }
+.ah-btn-icon { width: var(--control); padding: 0; }
+.ah-btn-icon[aria-current="page"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+
+/* Название, которое открывает свой экран: строка таблицы или списка */
+.ah-link { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; cursor: pointer; }
+.ah-link:hover { color: var(--accent-ink); text-decoration-color: currentColor; }
+
+/* Выбор одного из нескольких: один вид во всех экранах */
+.ah-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.ah-chip { display: inline-flex; align-items: center; max-width: 100%; min-height: var(--control); padding: 4px 16px; border: 1px solid var(--line-strong); border-radius: var(--r-control); background: var(--panel); color: var(--ink); font-size: var(--t-body); cursor: pointer; }
+.ah-chip:hover { border-color: var(--muted); }
+.ah-chip[aria-pressed="true"], .ah-chip[aria-current="true"] { border-color: var(--accent); background: var(--accent); color: var(--on-accent); font-weight: 500; }
+
+/* Поле: двойной класс сильнее глобального input:not(...) из styles.css */
+.ah .ah-input { box-sizing: border-box; width: 100%; min-width: 0; min-height: var(--control); padding: 0 16px; border: 1px solid var(--line-strong); border-radius: var(--r-field); background: var(--panel); color: var(--ink); }
+.ah .ah-input::placeholder { color: var(--muted); opacity: 1; }
+
+.ah-tag { display: inline-block; padding: 1px 10px; border-radius: var(--r-control); font-size: var(--t-caption); font-weight: 500; white-space: nowrap; }
+.ah-tag-good { background: var(--good-soft); color: var(--good); }
+.ah-tag-accent { background: var(--accent-soft); color: var(--accent-ink); }
+.ah-tag-neutral { background: var(--canvas); color: var(--muted); }
+
+/* Таблица: цифры в одну строку, название может переноситься */
+.ah-table-wrap { overflow-x: auto; }
+.ah-table { width: 100%; border-collapse: collapse; }
+.ah-table th, .ah-table td { padding: 8px; text-align: right; white-space: nowrap; }
+.ah-table th { color: var(--muted); font-size: var(--t-caption); font-weight: 400; }
+.ah-table td { border-top: 1px solid var(--line); }
+.ah-table th:first-child, .ah-table td:first-child { padding-left: 0; text-align: left; white-space: normal; }
+.ah-table th:last-child, .ah-table td:last-child { padding-right: 0; }
+
+/* Заглушка изображения объявления: на настоящих данных здесь картинка */
+.ah-art { display: flex; align-items: flex-end; box-sizing: border-box; height: 96px; margin: 8px 8px 0; padding: var(--gap) var(--pad); border-radius: 20px; background: var(--accent-soft); color: var(--accent-ink); font-size: var(--t-title); font-weight: 600; line-height: 1.2; }
+
+/* Верхняя полоса парит над страницей */
+.ah-bar { display: flex; align-items: center; gap: var(--gap); flex: none; min-height: 56px; box-sizing: border-box; margin: var(--gap) var(--gutter) 0; padding: 8px 10px 8px 22px; border-radius: var(--r-control); background: var(--panel); color: var(--ink); }
+.ah-brand { flex: 0 1 auto; min-width: 0; overflow: hidden; font-size: var(--t-title); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.ah-status { display: inline-flex; align-items: center; flex: none; gap: 6px; padding: 3px 10px; border-radius: var(--r-control); font-size: var(--t-caption); font-weight: 500; white-space: nowrap; }
+.ah-status i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.ah-bar .ah-bar-pause { margin-left: auto; }
+
+/* Боковое меню: на широком экране значок и подпись в строку, на среднем значок над подписью */
+.ah-icon { flex: none; }
+.ah-body { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.ah-content { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.ah-rail { display: flex; flex: none; flex-direction: column; gap: 2px; width: 200px; padding: var(--pad) 0 0 var(--gutter); box-sizing: content-box; }
+.ah-rail button { display: flex; align-items: center; gap: 12px; min-height: var(--control); padding: 0 12px; border: 0; border-radius: var(--r-field); background: none; color: var(--muted); font-weight: 500; text-align: left; cursor: pointer; }
+.ah-rail button:hover { background: var(--line); color: var(--ink); }
+.ah-rail button[aria-current="page"] { background: var(--accent-soft); color: var(--accent-ink); }
+@media (max-width: 1099px) {
+  .ah-rail { width: 76px; padding-left: 8px; }
+  .ah-rail button { flex-direction: column; justify-content: center; gap: 2px; padding: 8px 2px; font-size: 11px; text-align: center; }
+}
+
+/* Служебная полоса прототипа: на настоящем сервисе её не будет */
+.ah-proto { --control: 28px; display: flex; align-items: center; gap: 4px; flex: none; padding: 6px var(--gutter); overflow-x: auto; scrollbar-width: none; font-size: var(--t-caption); }
+.ah-proto span { flex: none; color: var(--muted); }
+.ah-proto .ah-chip { flex: none; padding: 0 8px; font-size: var(--t-caption); }
+
+/* Итог действия и подтверждение прилипают к краям: действие часто вызвано из глубины страницы */
+.ah-notice { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: var(--gap); margin-bottom: var(--gap); padding: 4px var(--pad); border-radius: var(--r-field); background: var(--accent-soft); color: var(--accent-ink); }
+.ah-confirm { position: sticky; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gap); margin-top: var(--gap); padding: var(--gap) var(--pad); border: 1px solid var(--accent); border-radius: var(--r-voice); box-shadow: 0 8px 24px rgb(28 24 48 / 14%); background: var(--panel); }
+.ah-confirm p { flex: 1 1 280px; min-width: 0; font-weight: 500; }
+.ah-confirm-actions { display: flex; gap: 8px; }
+
+/* Меню телефона */
+.ah-nav { display: none; flex: none; gap: 2px; margin: 0 var(--gutter) var(--gap); padding: 4px; border-radius: var(--r-surface); background: var(--panel); }
+.ah-nav button { display: flex; flex: 1 1 0; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-width: 0; min-height: 48px; padding: 0 2px; border: 0; border-radius: var(--r-field); background: none; color: var(--muted); font-size: var(--t-caption); cursor: pointer; }
+.ah-nav button[aria-current="page"] { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
+@media (max-width: 767px) {
+  .ah-rail { display: none; }
+  .ah-nav { display: flex; }
+  .ah-bar { gap: 4px; padding: 6px 6px 6px 12px; }
+  .ah-bar .ah-bar-pause { padding-inline: 10px; }
+  /* 16 px: иначе iOS увеличивает страницу при фокусе на поле. */
+  .ah .ah-input { font-size: 16px; }
+}
+
+/* На узком телефоне название салона не помещается целиком, а состояние рекламы важнее. */
+@media (max-width: 479px) {
+  .ah-brand:has(+ .ah-status) { display: none; }
+}

@@ -1,0 +1,88 @@
+/* Экран «Обзор». */
+.ov { display: flex; flex-direction: column; gap: var(--gap); }
+.ov-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--gap); }
+
+/* Вывод: главный элемент экрана, его цвет показывает состояние дел */
+.ov-attention { display: flex; align-items: center; flex-wrap: wrap; gap: var(--pad); padding: var(--pad); border-radius: var(--r-voice); background: var(--tone); color: var(--on-accent); }
+.ov-attention-info { --tone: var(--accent-ink); --tone-soft: var(--accent-soft); }
+.ov-attention-bad { --tone: var(--bad); --tone-soft: var(--bad-soft); }
+.ov-attention-warn { --tone: var(--warn); --tone-soft: var(--warn-soft); }
+.ov-attention-good { --tone: var(--good); --tone-soft: var(--good-soft); }
+.ov-attention-body { flex: 1 1 280px; min-width: 0; }
+.ov-attention-body h2 { font-size: var(--t-head); font-weight: 700; line-height: 1.25; letter-spacing: -0.01em; }
+.ov-attention-body p { margin-top: 4px; color: var(--on-accent); }
+.ov-attention-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.ov-attention-do { border-color: var(--on-accent); background: var(--on-accent); color: var(--tone); font-weight: 600; }
+.ov-attention-do:hover { border-color: var(--on-accent); }
+
+/* Вопрос о клиентах */
+.ov-clients { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gap) var(--pad); }
+.ov-clients-text { flex: 1 1 280px; min-width: 0; }
+.ov-clients-row { display: flex; flex: 0 1 260px; gap: 8px; min-width: 0; }
+
+/* Показатели */
+.ov-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--gap); }
+.ov-kpi { display: flex; flex-direction: column; gap: 2px; }
+.ov-kpi-label, .ov-kpi-sub { font-size: var(--t-caption); }
+.ov-kpi-label { color: var(--muted); }
+.ov-kpi-value { font-size: var(--t-number); font-weight: 700; line-height: 1.2; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.ov-ink-muted { color: var(--muted); }
+.ov-ink-good { color: var(--good); }
+.ov-ink-bad { color: var(--bad); }
+.ov-spark { display: block; margin-top: 6px; }
+.ov-meter { position: relative; height: 6px; margin: 17px 0 5px; border-radius: 3px; background: var(--line); }
+.ov-meter-fill { height: 100%; border-radius: 3px; background: var(--accent); }
+.ov-meter-now { position: absolute; top: -3px; bottom: -3px; width: 2px; border-radius: 1px; background: var(--ink); }
+
+/* Столбики за месяц */
+.ov-chart-panel { display: flex; flex-direction: column; gap: var(--gap); }
+.ov-chart-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.ov-chart { position: relative; display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); gap: 2px; height: 190px; border-bottom: 1px solid var(--line-strong); }
+.ov-chart-top { position: absolute; top: 0; left: 0; z-index: 1; color: var(--muted); font-size: var(--t-caption); pointer-events: none; }
+.ov-chart-limit { position: absolute; left: 0; right: 0; z-index: 1; border-top: 1px dashed var(--muted); pointer-events: none; }
+/* Кнопка на всю высоту: по низкому столбику легко попасть. */
+.ov-bar { display: flex; align-items: flex-end; justify-content: center; min-width: 0; height: 100%; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.ov-bar:disabled { cursor: default; }
+.ov-bar span { box-sizing: border-box; width: 100%; max-width: 14px; border-radius: 999px; }
+.ov-bar-past { background: var(--bar-soft); }
+.ov-bar:hover .ov-bar-past { background: var(--accent); }
+.ov-bar-picked { background: var(--accent); }
+.ov-bar-plan { background: var(--canvas); }
+.ov-chart-ticks { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); gap: 2px; margin-top: -8px; color: var(--muted); font-size: var(--t-caption); }
+.ov-chart-ticks span { justify-self: center; }
+
+/* ИИ сейчас */
+.ov-now { display: flex; flex-direction: column; gap: var(--gap); }
+.ov-test-title { font-weight: 500; }
+.ov-test-row { margin-top: 8px; }
+.ov-test-line { display: flex; justify-content: space-between; gap: 8px; }
+.ov-test-line strong { font-weight: 600; }
+.ov-test-track { height: 6px; margin: 4px 0 8px; border-radius: 3px; background: var(--line); }
+.ov-test-fill { height: 100%; border-radius: 3px; background: var(--accent); }
+.ov-test-fill-soft { background: var(--bar-soft); }
+.ov-check { margin-top: auto; padding-top: var(--gap); border-top: 1px solid var(--line); color: var(--muted); }
+.ov-now .ah-panel-title + .ov-check { margin-top: 0; padding-top: 0; border-top: 0; }
+
+/* Объявления */
+.ov-ads-title { margin-bottom: 8px; }
+.ov-ad-name { font-weight: 500; }
+.ov-row-off { color: var(--muted); }
+
+/* Последние действия */
+.ov-feed { display: flex; flex-direction: column; gap: 8px; }
+.ov-feed ul { display: flex; flex-direction: column; gap: var(--gap); margin: 0; padding: 0; list-style: none; }
+.ov-feed-when { color: var(--muted); font-size: var(--t-caption); }
+.ov-feed-all { align-self: flex-start; }
+
+@media (max-width: 767px) {
+  .ov-row { grid-template-columns: minmax(0, 1fr); }
+  .ov-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ov-chart { height: 110px; }
+  .ov-clients-row { flex: 1 1 100%; }
+}
+
+/* Маленькое превью в строке, как в списке роликов; на узком экране места под него нет. */
+.ov-thumb { display: inline-block; width: 48px; height: 27px; margin-right: 8px; border-radius: 6px; background: var(--accent-soft) center / cover; vertical-align: middle; }
+@media (max-width: 479px) {
+  .ov-thumb { display: none; }
+}
