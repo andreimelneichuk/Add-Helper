@@ -2,6 +2,10 @@
 
     uv run python -m evals.run judge --models qwen/qwen3-30b-a3b-instruct-2507 --repeats 3
     uv run python -m evals.run generate --models qwen/qwen3-30b-a3b-instruct-2507
+    uv run python -m evals.run judge --models openai/gpt-oss-120b --dataset val --labels proposed
+
+`--dataset` берёт выборку из evals/data (см. evals/dataset). Для замера по §2 нужны метки
+человека (`--labels human`), предварительные метки генератора годятся только для подгонки.
 
 Адрес и ключ берутся из .env (TEXT_MODEL_BASE_URL, TEXT_MODEL_API_KEY, TEXT_MODEL_PROJECT).
 Результаты пишутся в evals/results/ как JSON.
@@ -11,7 +15,7 @@ import argparse
 import asyncio
 import json
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from pathlib import Path
 
@@ -22,8 +26,10 @@ from adhelper.creatives.adapters.factory import build_text_model
 from adhelper.creatives.adapters.rules_file import load_rules
 from adhelper.creatives.application.generate import generate_ads
 from adhelper.creatives.domain.checks import check_draft
-from adhelper.creatives.domain.model import ModelUnavailable, TextModel
+from adhelper.creatives.domain.model import BusinessProfile, ModelUnavailable, TextModel
 from evals.cases import CASES, PROFILES, Case
+from evals.dataset.build import load as load_dataset
+from evals.dataset.build import to_cases
 from evals.prompts import PROMPTS, JudgeVariant
 from evals.score import CaseRun, metrics, misses_by_category, single_call_average
 
@@ -56,13 +62,17 @@ async def _spent(settings: Settings) -> float | None:
 
 
 async def _judge_once(
-    model: TextModel, variant: JudgeVariant, case: Case, gate: asyncio.Semaphore
+    model: TextModel,
+    variant: JudgeVariant,
+    case: Case,
+    profile: BusinessProfile,
+    gate: asyncio.Semaphore,
 ) -> tuple[bool, str, int]:
     async with gate:
         try:
             reply = await model.complete_json(
                 variant.system,
-                variant.build(case.draft, PROFILES[case.profile]),
+                variant.build(case.draft, profile),
                 variant.schema,
                 RULES.judge_max_tokens,
             )
@@ -73,17 +83,26 @@ async def _judge_once(
 
 
 async def judge_eval(
-    settings: Settings, model_name: str, prompt: str, repeats: int, cases: Sequence[Case]
+    settings: Settings,
+    model_name: str,
+    prompt: str,
+    repeats: int,
+    cases: Sequence[Case],
+    profiles: Mapping[str, BusinessProfile] = PROFILES,
 ) -> list[CaseRun]:
     model = _model(settings, model_name)
     gate = asyncio.Semaphore(PARALLEL)
     tasks = [
-        [_judge_once(model, PROMPTS[prompt], case, gate) for _ in range(repeats)] for case in cases
+        [
+            _judge_once(model, PROMPTS[prompt], case, profiles[case.profile], gate)
+            for _ in range(repeats)
+        ]
+        for case in cases
     ]
     answers = [await asyncio.gather(*row) for row in tasks]
     runs = []
     for case, row in zip(cases, answers, strict=True):
-        code = bool(check_draft(case.draft, PROFILES[case.profile], RULES))
+        code = bool(check_draft(case.draft, profiles[case.profile], RULES))
         runs.append(CaseRun(case, tuple(a[0] for a in row), code, tuple(a[1] for a in row)))
     return runs
 
@@ -119,15 +138,22 @@ def report_judge(runs: Sequence[CaseRun], title: str) -> dict[str, object]:
 
 async def run_judge(args: argparse.Namespace) -> None:
     settings = Settings()
-    cases = [c for c in CASES if args.split == "all" or c.split == args.split]
+    if args.dataset:
+        cases, profiles = to_cases(load_dataset(), args.dataset, args.labels)
+        part = f"{args.dataset}-{args.labels}"
+        if not cases:
+            raise SystemExit(f"В выборке {part} нет размеченных объявлений")
+    else:
+        cases = [c for c in CASES if args.split == "all" or c.split == args.split]
+        profiles, part = PROFILES, args.split
     before = await _spent(settings)
     for model_name in args.models:
         for prompt in args.prompts:
-            runs = await judge_eval(settings, model_name, prompt, args.repeats, cases)
-            title = f"{model_name} · {prompt} · {args.split} · повторов {args.repeats}"
+            runs = await judge_eval(settings, model_name, prompt, args.repeats, cases, profiles)
+            title = f"{model_name} · {prompt} · {part} · повторов {args.repeats}"
             summary = report_judge(runs, title)
             _save(
-                f"judge--{_slug(model_name)}--{prompt}--{args.split}",
+                f"judge--{_slug(model_name)}--{prompt}--{part}",
                 {
                     "summary": summary,
                     "cases": [
@@ -224,6 +250,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     judge.add_argument("--prompts", nargs="+", default=["v1"], choices=sorted(PROMPTS))
     judge.add_argument("--repeats", type=int, default=3)
     judge.add_argument("--split", default="all", choices=["all", "dev", "holdout", "fresh"])
+    judge.add_argument("--dataset", default="", choices=["", "train", "val", "test", "all"])
+    judge.add_argument("--labels", default="human", choices=["human", "proposed"])
     generate = sub.add_parser("generate")
     generate.add_argument("--models", nargs="+", required=True)
     generate.add_argument("--judge", default="")
