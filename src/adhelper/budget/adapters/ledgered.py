@@ -53,6 +53,8 @@ class PlatformChangeGateway:
         try:
             if kind is ChangeKind.SET_LIMIT:
                 await self._platform.set_limit(account, LimitChange(target_ref, planned["limit"]))
+            elif kind is ChangeKind.RESUME:
+                await self._platform.resume_campaigns(account, [target_ref])
             else:
                 await self._platform.pause_campaigns(account, [target_ref])
         except PlatformUnavailable as error:
@@ -100,6 +102,20 @@ class LedgeredBudgetPlatform:
                     planned={"active": False},
                     explanation=f"Кампания {campaign_id} приостановлена ради бюджета",
                     idempotency_key=f"pause:{campaign_id}",
+                )
+            )
+
+    async def resume_campaigns(self, account: str, campaign_ids: list[str]) -> None:
+        for campaign_id in campaign_ids:
+            await self._run(
+                ProposedChange(
+                    account=account,
+                    source=self._source,
+                    kind=ChangeKind.RESUME,
+                    target_ref=campaign_id,
+                    planned={"active": True},
+                    explanation=f"Кампания {campaign_id} снова показывается",
+                    idempotency_key=f"resume:{campaign_id}",
                 )
             )
 

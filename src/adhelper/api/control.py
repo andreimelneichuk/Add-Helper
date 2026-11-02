@@ -10,6 +10,13 @@ from adhelper.budget.adapters.ledgered import PlatformChangeGateway
 from adhelper.budget.adapters.rules_file import load_rules
 from adhelper.budget.adapters.sql import SqlPeriodStore
 from adhelper.budget.application.emergency import StopReport, stop_account
+from adhelper.budget.application.owner import (
+    NOT_OWNER_PAUSE,
+    BudgetStatus,
+    ResumeReport,
+    change_budget,
+    resume_account,
+)
 from adhelper.budget.application.preflight import StoredPeriodPreflight
 from adhelper.ledger.adapters.sql import PostgresAccountLock, SqlChangeRepository
 from adhelper.ledger.application.owner import AD_PREFIX, set_ad_active
@@ -23,6 +30,30 @@ MAX_CHANGE_ATTEMPTS = 3
 NOT_CONNECTED = "Кабинет Яндекса пока не подключён, поэтому ничего не изменилось"
 NO_ANSWER = "Яндекс не ответил. Ничего не изменилось, попробуйте позже"
 PAUSED = "Поставил рекламу на паузу: вы попросили. Настройки сохранены."
+RESUMED = "Снял паузу: вы попросили. Перед включением проверил, что бюджет выдержит."
+MICROS_PER_RUB = 1_000_000
+# Остановки, которые снимает не кнопка владельца, а решение после разбора причины.
+GUARD_STOPS = {
+    "budget_stopped": "Показы остановлены, потому что бюджет месяца заканчивается."
+    " Снять эту остановку кнопкой нельзя: иначе деньги уйдут сверх бюджета",
+    "budget_stop_pending": "Я пытаюсь остановить показы из-за бюджета."
+    " Пока это не сделано, включать их нельзя",
+    "balance_mismatch": "Показы остановлены, потому что счёт не сходится со статистикой."
+    " Сначала подтвердите баланс, потом можно включать",
+}
+RESUME_REFUSAL = {
+    NOT_OWNER_PAUSE: "Эти показы остановил не вы, а защита бюджета. Кнопка их не включит",
+    "worst_case_exceeds_hard_limit": "Если включить, расход может выйти за бюджет месяца."
+    " Увеличьте бюджет или дождитесь следующего месяца",
+    "exceeds_operating_budget": "Лимиты направлений уже больше рабочей части бюджета."
+    " Увеличьте бюджет, тогда можно включать",
+    "period_ended": "Месяц бюджета закончился. Новый начнётся с первого числа",
+    "no_active_period": "Бюджет месяца не задан. Задайте его, тогда можно включать",
+    "budget_stop_pending": GUARD_STOPS["budget_stop_pending"],
+}
+BUDGET_UNCONFIRMED = (
+    "Яндекс не подтвердил снижение лимитов. Бюджет пока прежний, попробуйте ещё раз"
+)
 FINAL_REFUSAL = {
     RollbackStatus.NOT_APPLIED: "Это изменение не было применено, отменять нечего",
     RollbackStatus.NOT_REVERSIBLE: "Это действие нельзя отменить",
@@ -42,6 +73,17 @@ class AdState(BaseModel):
 
 class PauseBody(BaseModel):
     request_id: str = Field(min_length=1, max_length=100)
+
+
+class BudgetBody(BaseModel):
+    # Бюджет месяца в целых рублях: так его вводит владелец.
+    rubles: int = Field(ge=0, le=100_000_000)
+    request_id: str = Field(min_length=1, max_length=100)
+
+
+def _rubles(micros: int) -> str:
+    whole = -(-micros // MICROS_PER_RUB)
+    return f"{whole:,}".replace(",", "\u00a0") + "\u00a0₽"
 
 
 def _ledger(request: Request, business_id: UUID, platform: Any) -> Ledger:
@@ -135,6 +177,91 @@ def control_router() -> APIRouter:
         if not report.complete:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NO_ANSWER)
         return {"stopped": report.stopped}
+
+    @router.post("/resume")
+    async def post_resume(
+        request: Request,
+        body: PauseBody,
+        business_id: OwnedChecked,
+        service: Service,
+        info: CheckedSession,
+    ) -> dict[str, list[str]]:
+        accounts = await service.accounts(info.user.id, business_id)
+        if not accounts:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NOT_CONNECTED)
+        dashboard = SqlDashboard(_sessions(request), business_id)
+        for alert in await dashboard.alerts():
+            if alert.kind in GUARD_STOPS:
+                raise HTTPException(status.HTTP_409_CONFLICT, GUARD_STOPS[alert.kind])
+        report = ResumeReport()
+        for account in accounts:
+            platform = _platform(request, business_id, account.login)
+            already = len(report.resumed)
+            await resume_account(
+                account.login,
+                platform,
+                _ledger(request, business_id, platform),
+                report,
+                RESUMED,
+                f"owner-resume:{body.request_id}",
+            )
+            for resumed in report.resumed[already:]:
+                campaign_id = resumed.removeprefix(f"{account.login}:")
+                await dashboard.note_campaign_state(account.login, campaign_id, "on")
+        if report.failed and not report.resumed:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NO_ANSWER)
+        if report.refused and not report.resumed:
+            reason = report.refused[0][1]
+            text = RESUME_REFUSAL.get(reason, "Включить не получилось: проверка бюджета не прошла")
+            raise HTTPException(status.HTTP_409_CONFLICT, text)
+        return {
+            "resumed": report.resumed,
+            "refused": [ref for ref, _ in report.refused],
+            "failed": [ref for ref, _ in report.failed],
+        }
+
+    @router.post("/budget")
+    async def post_budget(
+        request: Request,
+        body: BudgetBody,
+        business_id: OwnedChecked,
+        service: Service,
+        info: CheckedSession,
+    ) -> dict[str, str | int]:
+        accounts = await service.accounts(info.user.id, business_id)
+        if not accounts:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NOT_CONNECTED)
+        if len(accounts) > 1:
+            # Как делить бюджет между кабинетами, владелец ещё не решал: не угадываем.
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "Подключено несколько кабинетов. Бюджет каждого пока меняется в Яндексе",
+            )
+        login = accounts[0].login
+        platform = _platform(request, business_id, login)
+        result = await change_budget(
+            SqlPeriodStore(_sessions(request)),
+            platform,
+            _ledger(request, business_id, platform),
+            business_id,
+            login,
+            body.rubles * MICROS_PER_RUB,
+            _now(request),
+        )
+        if result.status is BudgetStatus.NO_PERIOD:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "Бюджет месяца ещё не задан при запуске. Сначала запустите рекламу",
+            )
+        if result.status is BudgetStatus.BELOW_SPENT:
+            minimum = _rubles(result.minimum or 0)
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"В этом месяце уже потрачено больше. Бюджет можно снизить до {minimum}, не ниже",
+            )
+        if result.status is BudgetStatus.UNCONFIRMED:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, BUDGET_UNCONFIRMED)
+        return {"status": result.status.value, "cuts": result.cuts}
 
     @router.post("/changes/{change_id}/rollback")
     async def post_rollback(

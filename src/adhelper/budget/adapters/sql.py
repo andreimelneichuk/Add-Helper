@@ -202,6 +202,14 @@ class SqlPeriodStore:
                 update(BudgetPeriodRow).where(BudgetPeriodRow.id == period_id).values(**values)
             )
 
+    async def set_hard_limit(self, period_id: int, hard_limit: int) -> None:
+        async with self._sessions.begin() as session:
+            await session.execute(
+                update(BudgetPeriodRow)
+                .where(BudgetPeriodRow.id == period_id)
+                .values(hard_limit_micros=hard_limit)
+            )
+
     async def latest_spent(self, period_id: int) -> int | None:
         snapshots = await self.recent_snapshots(period_id)
         return snapshots[-1].reported if snapshots else None
