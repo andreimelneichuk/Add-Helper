@@ -1,9 +1,10 @@
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { createApi, openSession } from "./api";
+import { createApi, createGuestApi, openSession } from "./api";
 import { App } from "./App";
 import { AppShell } from "./app/AppShell";
 import { LiveStore, loadLive } from "./app/live";
+import { initialState, Store } from "./app/store";
 import { CONNECT_RESULT } from "./app/screens/LiveSettings";
 import { Cabinet } from "./cabinet/Cabinet";
 import "./styles.css";
@@ -16,9 +17,19 @@ function Root() {
   // Старый кабинет остаётся до конца этапа R7. Подключение кабинета начинают только в новом интерфейсе,
   // а Яндекс возвращает на `/?connect=…`, поэтому итог показываем там же.
   if (!params.has("new") && !params.has("connect")) return <Current />;
-  // Запуск ещё не подключён к сервису, поэтому он всегда на подставных данных.
-  if (params.has("start") || params.has("mock")) return <AppShell />;
+  if (params.has("mock")) return <AppShell />;
+  // Шаги 1–2 запуска читают настоящий сайт до входа; дальше пока подставные данные.
+  if (params.has("start")) return <GuestStart />;
   return <Live />;
+}
+
+function GuestStart() {
+  const store = useMemo(() => {
+    const created = new Store(initialState("start"));
+    created.reader = createGuestApi();
+    return created;
+  }, []);
+  return <AppShell store={store} />;
 }
 
 // Есть вход и бизнес: настоящие данные. Нет: прототип с видимой полосой ситуаций, спутать нельзя.

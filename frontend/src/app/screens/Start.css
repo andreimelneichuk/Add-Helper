@@ -24,6 +24,9 @@
 .st-fact { min-width: 0; padding: var(--gap); border: 1px solid var(--line); border-radius: var(--r-field); }
 .st-fact-head { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: var(--t-caption); }
 .st-fact-value { margin: 0; font-weight: 500; overflow-wrap: anywhere; }
+.st-fact-quote { margin: 6px 0 0; color: var(--muted); font-size: var(--t-caption); overflow-wrap: anywhere; }
+.st-reading { margin: 0; color: var(--muted); }
+.st-by-hand { justify-self: start; }
 .st-fact-editing { border-color: var(--accent); }
 .st-fact-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
 .st-fact-edit { display: flex; margin-bottom: -8px; }

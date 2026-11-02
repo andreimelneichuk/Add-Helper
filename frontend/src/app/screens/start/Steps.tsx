@@ -12,13 +12,22 @@ export const adsLeft = (s: State) => s.ads.filter((a) => !s.draftOff[a.id]).leng
 export const innReady = (s: State) => s.inn.length === 10 || s.inn.length === 12;
 
 function AboutStep({ store, s }: StepProps) {
+  const reading = s.reading !== null;
   return (
     <>
       <label className="st-field">
         <span className="ah-label">Ссылка на сайт или страницу</span>
-        <input className="ah-input st-input-big" inputMode="url" autoComplete="url" value={s.site} placeholder="salon-primer.ru" onChange={(e) => store.set({ site: e.target.value, block: "" })} />
+        <input className="ah-input st-input-big" inputMode="url" autoComplete="url" value={s.site} placeholder="salon-primer.ru" readOnly={reading} onChange={(e) => store.set({ site: e.target.value, block: "" })} />
       </label>
-      <p className="ah-muted">Сайта нет? Подойдёт соцсеть или карточка на картах, либо расскажите о бизнесе в чате. Регистрироваться пока не нужно.</p>
+      {reading && <p role="status" className="st-reading">Читаю сайт: главную и страницы с ценами и контактами. Обычно это занимает одну-две минуты.</p>}
+      {store.reader ? (
+        <>
+          <p className="ah-muted">Регистрироваться пока не нужно. Сайта нет или он не читается? Заполните профиль сами.</p>
+          <button type="button" className="ah-btn st-by-hand" onClick={store.fillByHand}>Заполнить вручную</button>
+        </>
+      ) : (
+        <p className="ah-muted">Сайта нет? Подойдёт соцсеть или карточка на картах, либо расскажите о бизнесе в чате. Регистрироваться пока не нужно.</p>
+      )}
     </>
   );
 }
@@ -50,6 +59,7 @@ function ProfileStep({ store, s }: StepProps) {
           <div key={f.id} className="st-fact">
             <div className="st-fact-head"><span>{f.label}</span><span>{f.source}</span></div>
             <div className="st-fact-value">{f.value}</div>
+            {f.quote && <blockquote className="st-fact-quote">«{f.quote}»</blockquote>}
             <button type="button" className="ah-btn st-fact-edit" aria-label={`Изменить: ${f.label}`} onClick={() => store.set({ factEdit: { id: f.id, value: f.value }, block: "" })}>Изменить</button>
           </div>
         )))}
