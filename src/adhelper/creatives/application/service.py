@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from uuid import UUID
 
 from adhelper.creatives.application.generate import generate_ads
+from adhelper.creatives.application.rework import rework_ad
 from adhelper.creatives.domain.lifecycle import (
     WAITING,
     AdBasis,
@@ -34,6 +35,7 @@ from adhelper.creatives.domain.ports import (
     Creatives,
     ProfileSource,
 )
+from adhelper.creatives.domain.rework import ReworkRules
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +80,7 @@ async def run_queued(
     load_rules: Callable[[str], CreativeRules],
     clock: Callable[[], datetime],
     limit: int = 5,
+    load_rework: Callable[[str], ReworkRules] | None = None,
 ) -> int:
     """Разбирает очередь. Повтор безопасен: набор, зависший в работе, берётся заново,
     пока не исчерпаны попытки, а готовый набор второй раз не генерируется.
@@ -95,9 +98,13 @@ async def run_queued(
             await queue.fail(claimed.id, "no_profile", clock())
             continue
         try:
-            result = await generate_ads(
-                profile, model, load_rules(claimed.rules_version), judge, claimed.campaign_name
-            )
+            rules = load_rules(claimed.rules_version)
+            if claimed.rework is not None and claimed.rework_rules and load_rework is not None:
+                result = await rework_ad(
+                    profile, claimed.rework, model, rules, load_rework(claimed.rework_rules), judge
+                )
+            else:
+                result = await generate_ads(profile, model, rules, judge, claimed.campaign_name)
         except Exception as error:
             # В логе только тип: текст ошибки может содержать ответ модели или ключ.
             logger.error("Генерация набора %s: %s", claimed.id, type(error).__name__)

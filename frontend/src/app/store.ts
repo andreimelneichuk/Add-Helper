@@ -80,6 +80,7 @@ export type State = {
 
 export type BudgetOptions = { min: number; max: number; presets: number[] };
 /** Шаги мастера после входа работают с бизнесом через эти методы. */
+export type ReworkApi = Pick<Api, "rework" | "reworkSet" | "chooseRework">;
 export type WizardApi = Pick<Api, "accounts" | "connect" | "marking" | "saveMarking" | "tagCheck" | "requestTagCheck" | "launchCheck" | "startLaunch" | "wizardAds">;
 export type WizardDeps = {
   session: () => Promise<{ me: Me; businesses: Business[] } | null>;
@@ -272,6 +273,8 @@ export class Store {
   private resumed = false;
   /** Бизнес мастера после входа; null — вход не состоялся или у владельца уже был бизнес. */
   wizard: WizardApi | null = null;
+  /** Есть — «Переделать» на экране объявления просит настоящего писателя. */
+  rework: ReworkApi | null = null;
   /** Есть — шаг «Объявления» пишет настоящий писатель; нет — подставные объявления прототипа. */
   writer: GuestWriter | null = null;
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };

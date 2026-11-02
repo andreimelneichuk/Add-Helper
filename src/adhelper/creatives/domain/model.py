@@ -113,6 +113,15 @@ class SetStatus(StrEnum):
 
 
 @dataclass(frozen=True)
+class Rework:
+    """Что переделываем: объявление площадки, его текст сейчас и просьба владельца."""
+
+    ad_id: str
+    base: AdDraft
+    wish: str
+
+
+@dataclass(frozen=True)
 class ClaimedSet:
     id: int
     # У набора мастера до входа бизнеса ещё нет.
@@ -124,6 +133,9 @@ class ClaimedSet:
     campaign_name: str | None = None
     # Факты черновика мастера: пишем по ним, а не по профилю бизнеса.
     profile: BusinessProfile | None = None
+    # Переделка одного объявления по просьбе владельца.
+    rework: Rework | None = None
+    rework_rules: str | None = None
 
 
 @dataclass(frozen=True)

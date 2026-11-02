@@ -13,7 +13,13 @@ from adhelper.creatives.domain.lifecycle import (
     StoredCreative,
     WritingSet,
 )
-from adhelper.creatives.domain.model import BusinessProfile, ClaimedSet, CreativeSet
+from adhelper.creatives.domain.model import (
+    AdDraft,
+    BusinessProfile,
+    ClaimedSet,
+    CreativeSet,
+    Rework,
+)
 
 
 class ProfileSource(Protocol):
@@ -64,3 +70,19 @@ class Creatives(Protocol):
         reason: str,
         now: datetime,
     ) -> bool: ...
+
+
+class ReworkStore(Protocol):
+    """Переделки одного бизнеса: объявление площадки и заказ вариантов."""
+
+    async def live_ad(self, account: str, ad_id: str) -> tuple[str, AdDraft] | None: ...
+    async def request(
+        self,
+        account: str,
+        campaign_id: str,
+        rework: Rework,
+        rules_version: str,
+        rework_version: str,
+        variants: int,
+        now: datetime,
+    ) -> int: ...

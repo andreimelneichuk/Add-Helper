@@ -25,8 +25,8 @@ from adhelper.business.application.site import run_site_reads
 from adhelper.business.application.tag import run_tag_checks
 from adhelper.config import Settings
 from adhelper.creatives.adapters.factory import build_text_model
+from adhelper.creatives.adapters.rules_file import load_rework_rules, load_slot_rules
 from adhelper.creatives.adapters.rules_file import load_rules as load_creative_rules
-from adhelper.creatives.adapters.rules_file import load_slot_rules
 from adhelper.creatives.adapters.sql import (
     SqlAdSlots,
     SqlCreativeQueue,
@@ -135,6 +135,7 @@ class Runtime:
             self.judge_model,
             load_creative_rules,
             self.clock,
+            load_rework=load_rework_rules,
         )
 
     async def site_read(self) -> None:
