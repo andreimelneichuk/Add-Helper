@@ -145,6 +145,10 @@ export type WritingSet = {
 export type Board = { creatives: (Creative & { campaign_name: string | null })[]; writing: WritingSet[] };
 export type CreativeReport = { creative: Creative; campaign_name: string | null; audience: Audience; basis: Basis };
 
+/** Работающее объявление с числом, которого в профиле больше нет. */
+export type OutdatedAd = { account: string; ad_id: string; headline: string; text: string; numbers: string[]; replacing: boolean };
+export type SavedProfile = Profile & { outdated?: OutdatedAd[] };
+
 export type Profile = {
   name?: string;
   services: { name: string; price: number | null }[];
@@ -264,7 +268,7 @@ export function createApi(businessId: string, csrf: string) {
     history: () => request<HistoryLine[]>(`${base}/history`),
     profile: () => request<Profile>(`${base}/profile`),
     saveProfile: (profile: Profile) =>
-      request<Profile>(`${base}/profile`, { method: "PUT", body: JSON.stringify(profile) }, csrf),
+      request<SavedProfile>(`${base}/profile`, { method: "PUT", body: JSON.stringify(profile) }, csrf),
     creatives: () => request<Board>(`${base}/creatives`),
     creative: (id: number) => request<CreativeReport>(`${base}/creatives/${id}`),
     launch: (id: number) => request<CreativeReport>(`${base}/creatives/${id}/launch`, { method: "POST" }, csrf),

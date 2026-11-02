@@ -36,11 +36,15 @@ from adhelper.creatives.domain.lifecycle import (
     CampaignSlots,
     Candidate,
     CreativeState,
+    FactPlan,
     FactSource,
     HistoryEntry,
+    LiveAd,
     NewCreative,
+    Replacement,
     SlotPlan,
     StoredCreative,
+    WriteReason,
     WritingSet,
 )
 from adhelper.creatives.domain.model import (
@@ -52,6 +56,7 @@ from adhelper.creatives.domain.model import (
     Service,
     SetStatus,
 )
+from adhelper.creatives.domain.rework import FACT_WISH
 from adhelper.db import Base
 
 # Название берём из businesses: профиль хранит только то, что относится к рекламе.
@@ -328,8 +333,8 @@ class SqlAdSlots:
         statement = select(CreativeRow).where(
             CreativeRow.business_id == self._business_id,
             CreativeRow.state.in_([s.value for s in WAITING_CREATIVES]),
-            # Варианты переделки ждут выбора владельца: хранитель их на место не ставит.
-            ~and_(CreativeRow.reason == REWORK_REASON, CreativeRow.state == "ready"),
+            # Замены объявлений площадки не занимают новых мест: у каждой своё старое объявление.
+            CreativeRow.replaces.is_(None),
         )
         async with self._sessions() as session:
             rows = list(await session.scalars(statement))
@@ -393,6 +398,81 @@ class SqlAdSlots:
                         campaign_id=request.campaign_id,
                         reason=request.reason.value,
                         wanted=request.wanted,
+                    )
+                )
+
+    async def live_ads(self) -> Sequence[LiveAd]:
+        statement = (
+            select(ADS.c.account, ADS.c.campaign_id, ADS.c.ad_id, ADS.c.title, ADS.c.text)
+            .where(ADS.c.business_id == self._business_id, ADS.c.state == "on")
+            .order_by(ADS.c.account, ADS.c.campaign_id, ADS.c.ad_id)
+        )
+        async with self._sessions() as session:
+            rows = (await session.execute(statement)).all()
+        return [LiveAd(str(a), str(c), str(i), AdDraft(t, x)) for a, c, i, t, x in rows]
+
+    async def replacements(self) -> Sequence[Replacement]:
+        statement = select(CreativeRow).where(
+            CreativeRow.business_id == self._business_id,
+            CreativeRow.state.in_([s.value for s in WAITING_CREATIVES]),
+            CreativeRow.replaces.is_not(None),
+        )
+        async with self._sessions() as session:
+            rows = list(await session.scalars(statement))
+        return [
+            Replacement(
+                row.id, str(row.replaces), CreativeState(row.state), AdDraft(row.headline, row.text)
+            )
+            for row in rows
+        ]
+
+    async def rewriting(self) -> frozenset[str]:
+        """Объявления площадки, для которых набор переделки ещё пишется."""
+        statement = select(CreativeSetRow.rework).where(
+            CreativeSetRow.business_id == self._business_id,
+            CreativeSetRow.status.in_(WAITING),
+            CreativeSetRow.rework.is_not(None),
+        )
+        async with self._sessions() as session:
+            return frozenset(str(r["ad_id"]) for r in await session.scalars(statement) if r)
+
+    async def apply_facts(
+        self, plan: FactPlan, creative_rules: str, rework_rules: str, now: datetime
+    ) -> None:
+        """Снятие устаревших замен и заказ новых в одной транзакции."""
+        reason = WriteReason.FACT_CHANGED.value
+        async with self._sessions.begin() as session:
+            for creative_id in plan.stop:
+                row = await session.scalar(
+                    select(CreativeRow)
+                    .where(
+                        CreativeRow.id == creative_id,
+                        CreativeRow.business_id == self._business_id,
+                        CreativeRow.state.in_([s.value for s in WAITING_CREATIVES]),
+                    )
+                    .with_for_update()
+                )
+                if row is not None:
+                    _set_state(row, CreativeState.STOPPED, reason, now)
+            for ad in plan.rewrite:
+                session.add(
+                    CreativeSetRow(
+                        business_id=self._business_id,
+                        status=SetStatus.QUEUED.value,
+                        rules_version=creative_rules,
+                        created_at=now,
+                        account=ad.account,
+                        campaign_id=ad.campaign_id,
+                        reason=reason,
+                        wanted=1,
+                        rework={
+                            "ad_id": ad.ad_id,
+                            "headline": ad.draft.headline,
+                            "text": ad.draft.text,
+                            "wish": FACT_WISH,
+                            "rules": rework_rules,
+                            "auto": True,
+                        },
                     )
                 )
 
@@ -510,8 +590,9 @@ class SqlCreatives:
             return True
 
 
-def _rework(raw: dict[str, str]) -> Rework:
-    return Rework(raw["ad_id"], AdDraft(raw["headline"], raw["text"]), raw["wish"])
+def _rework(raw: dict[str, Any]) -> Rework:
+    draft = AdDraft(raw["headline"], raw["text"])
+    return Rework(raw["ad_id"], draft, raw["wish"], auto=bool(raw.get("auto")))
 
 
 class ReworkStatus(StrEnum):
@@ -730,7 +811,18 @@ class SqlCreativeQueue:
             if row.account is None or row.campaign_id is None:
                 return
             replaces = row.rework["ad_id"] if row.rework else None
-            for item in new:
+            auto = bool(row.rework and row.rework.get("auto"))
+            for item in new[:1] if auto else new:
+                state, why = CreativeState.READY, "written"
+                if auto:
+                    # Замена после правки факта: проверенный текст встаёт сам, иначе ждёт владельца.
+                    state = (
+                        CreativeState.LAUNCH_PENDING if item.auto_ok else CreativeState.NEEDS_OWNER
+                    )
+                    why = WriteReason.FACT_CHANGED.value
+                history = [_event(now, CreativeState.READY, "written")]
+                if state is not CreativeState.READY:
+                    history.append(_event(now, state, why))
                 session.add(
                     CreativeRow(
                         business_id=row.business_id,
@@ -740,15 +832,15 @@ class SqlCreativeQueue:
                         headline=item.draft.headline,
                         text=item.draft.text,
                         source=result.source.value,
-                        # Вариант переделки ставит в показы только владелец.
-                        auto_ok=item.auto_ok and replaces is None,
+                        # Вариант переделки по просьбе ставит в показы только владелец.
+                        auto_ok=item.auto_ok and (replaces is None or auto),
                         replaces=replaces,
                         reason=row.reason or "refill",
                         facts=[s.key for s in item.sources],
                         sources=[asdict(s) for s in item.sources],
-                        state=CreativeState.READY.value,
-                        state_reason="written",
-                        history=[_event(now, CreativeState.READY, "written")],
+                        state=state.value,
+                        state_reason=why,
+                        history=history,
                         created_at=now,
                         updated_at=now,
                     )

@@ -2,9 +2,9 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../api";
-import type { Api } from "../../api";
+import type { Api, Profile } from "../../api";
 import { fakeApi, open, overview, settled } from "../testLive";
-import { mergeFacts } from "./LiveSettings";
+import { mergeFacts, savedText } from "./LiveSettings";
 import { Settings } from "./Settings";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -24,6 +24,27 @@ describe("настройки на настоящих данных", () => {
     expect(api.saveProfile).toHaveBeenCalledWith(expect.objectContaining({ services: [{ name: "Маникюр", price: 1400 }, { name: "Педикюр", price: null }] }));
     // Профиль перечитан вместе с остальными данными: два раза при открытии экрана и загрузке, ещё раз после сохранения.
     expect(vi.mocked(api.profile).mock.calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("после правки цены называет объявления со старыми цифрами и что с ними будет", async () => {
+    const outdated = [{ account: "lak", ad_id: "11", headline: "Маникюр 1200 ₽", text: "У метро", numbers: ["1200"], replacing: true }];
+    const api = fakeApi({ saveProfile: vi.fn(async (p: Profile) => ({ ...p, outdated })) });
+    render(<Settings store={await open(api)} />);
+    const price = await screen.findByLabelText("Цена услуги 1, ₽");
+    await userEvent.clear(price);
+    await userEvent.type(price, "1400");
+    await userEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+    const status = await screen.findByRole("status");
+    expect(status).toHaveTextContent("«Маникюр 1200 ₽» (1200)");
+    expect(status).toHaveTextContent("Пишу замену");
+    expect(status).toHaveTextContent("старое объявление показывается");
+  });
+
+  it("текст после сохранения: без устаревших и при исчерпанном лимите", () => {
+    expect(savedText([])).toContain("старых цифр нет");
+    const later = savedText([{ account: "lak", ad_id: "11", headline: "Маникюр 1200 ₽", text: "", numbers: ["1200"], replacing: false }]);
+    expect(later).toContain("замену напишу завтра");
+    expect(later).not.toContain("Пишу замену");
   });
 
   it("пустую услугу не сохраняет, отказ сервиса показывает как есть", async () => {

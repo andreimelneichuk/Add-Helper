@@ -1,7 +1,7 @@
 // Настройки на настоящих данных: профиль, уведомления, кабинет Яндекса и выход.
 // Правка профиля не трогает площадку, поэтому идёт прямо в API, а не через журнал.
 import { useCallback, useEffect, useState } from "react";
-import type { AdAccount, Api, Channels as ChannelsData, Display, Profile, SiteFact, SiteRead } from "../../api";
+import type { AdAccount, Api, Channels as ChannelsData, Display, OutdatedAd, Profile, SiteFact, SiteRead } from "../../api";
 import { rub } from "../data";
 import { liveApi } from "../live";
 import type { LiveStore } from "../live";
@@ -95,6 +95,20 @@ function BudgetForm({ store }: { store: LiveStore }) {
 const DAY_NAMES = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
 const HOURS = Array.from({ length: 25 }, (_, h) => h);
 /** Те же слова, что пишет сервис в историю: «пн–сб, 10:00–21:00». */
+const quote = (ad: OutdatedAd) => `«${ad.headline}» (${ad.numbers.join(", ")})`;
+
+/** Что стало с объявлениями после правки фактов: цифры подставляет код, а не модель. */
+export function savedText(outdated: OutdatedAd[]): string {
+  if (outdated.length === 0) return "Сохранил. Объявления пишутся по этим фактам, в идущих старых цифр нет.";
+  const now = outdated.filter((a) => a.replacing);
+  const later = outdated.filter((a) => !a.replacing);
+  const parts = [`Сохранил. В идущих объявлениях остались старые цифры: ${outdated.map(quote).join(", ")}.`];
+  if (now.length) parts.push(`Пишу замену по новым фактам (${now.length}), она встанет в очередь на запуск или попросит вашего решения в разделе «Реклама».`);
+  if (later.length) parts.push(`Для ${later.length} лимит текстов на сегодня исчерпан, замену напишу завтра.`);
+  parts.push("Пока Яндекс не проверил замену, старое объявление показывается. Если цена уже не действует, отключите его на экране объявления.");
+  return parts.join(" ");
+}
+
 export function describeSchedule(days: number[], [start, end]: [number, number]): string {
   if (days.length === 7 && start === 0 && end === 24) return "круглосуточно";
   const first = days[0] ?? 0;
@@ -310,9 +324,10 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
     setBusy(true);
     try {
       const services = profile.services.filter((x) => x.name.trim());
-      setProfile(await api.saveProfile({ ...profile, services, features: profile.features.map((f) => f.trim()).filter(Boolean) }));
+      const { outdated = [], ...saved } = await api.saveProfile({ ...profile, services, features: profile.features.map((f) => f.trim()).filter(Boolean) });
+      setProfile(saved);
       await store.refresh();
-      setStatus("Сохранил. Новые объявления будут писаться по этим фактам, уже идущие не меняются.");
+      setStatus(savedText(outdated));
     } catch (e) {
       setStatus(message(e));
     } finally {

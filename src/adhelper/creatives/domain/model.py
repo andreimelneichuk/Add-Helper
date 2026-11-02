@@ -119,6 +119,8 @@ class Rework:
     ad_id: str
     base: AdDraft
     wish: str
+    # Замена после правки факта: просьба наша, малая правка допустима, нужен один вариант.
+    auto: bool = False
 
 
 @dataclass(frozen=True)

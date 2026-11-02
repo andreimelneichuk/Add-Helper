@@ -59,3 +59,10 @@ def check_wish(
     found = check_draft(AdDraft("-", text), profile, rules)
     items = tuple(dict.fromkeys(v.detail for v in found if v.kind in FACT_KINDS))
     return WishRefusal(WishProblem.UNCONFIRMED, items) if items else None
+
+
+# Просьба сервиса к писателю, когда факт в профиле изменился. Её пишет код, не владелец.
+FACT_WISH = (
+    "Факты в профиле изменились. Перепиши объявление так, чтобы цены, числа и адрес"
+    " были только из профиля; смысл и акцент оставь прежними."
+)

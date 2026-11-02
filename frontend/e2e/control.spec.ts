@@ -361,3 +361,41 @@ test("переделка объявления: выдумка отклонена
   const board = await (await request.get(`/api/businesses/${businesses[0].id}/creatives`)).json();
   expect(board.creatives.some((c: { state: string; text: string }) => c.state === "launch_pending" && c.text === "Ждём вас: Москва, ул. Профсоюзная, 12.")).toBe(true);
 });
+
+test("правка цены: объявления со старой ценой названы, замену пишет писатель и ждёт решения", async ({ page, request }) => {
+  const settings = page.locator(".ah-bar").getByRole("button", { name: "Настройки" });
+  await page.goto("/?new");
+  await settings.click();
+  const price = page.getByLabel("Цена услуги 1, ₽");
+  await expect(price).toHaveValue("1500");
+  await price.fill("1600");
+  await page.getByRole("button", { name: "Сохранить" }).click();
+  const status = page.getByRole("status").filter({ hasText: "Сохранил" });
+  await expect(status).toContainText("«Маникюр с покрытием 1500 ₽» (1500)");
+  await expect(status).toContainText("Пишу замену");
+
+  // Замену пишет воркер стенда: цена в ней из нового профиля, без судьи её запускает владелец.
+  const businesses = await (await request.get("/api/businesses")).json();
+  const base = `/api/businesses/${businesses[0].id}`;
+  type Row = { headline: string; text: string; state: string; reason: string };
+  await expect(async () => {
+    const board = await (await request.get(`${base}/creatives`)).json();
+    const fresh = board.creatives.filter((c: Row) => c.reason === "fact_changed" && c.state === "needs_owner");
+    expect(fresh.length).toBeGreaterThan(0);
+    for (const c of fresh) expect(`${c.headline} ${c.text}`).not.toContain("1500");
+    expect(fresh.some((c: Row) => c.headline.includes("1600"))).toBe(true);
+  }).toPass({ timeout: 20_000 });
+
+  await page.reload();
+  await page.locator(".ah-rail").getByRole("button", { name: "Реклама" }).click();
+  await expect(page.getByRole("region", { name: "Нужно ваше решение" })).toContainText("1600");
+
+  // Вернуть цену: замена с 1600 сама устарела и снимается, остальные сценарии видят прежний профиль.
+  await settings.click();
+  await expect(page.getByLabel("Цена услуги 1, ₽")).toHaveValue("1600");
+  await page.getByLabel("Цена услуги 1, ₽").fill("1500");
+  await page.getByRole("button", { name: "Сохранить" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Сохранил" })).toContainText("старых цифр нет");
+  const board = await (await request.get(`${base}/creatives`)).json();
+  expect(board.creatives.filter((c: Row) => c.reason === "fact_changed" && c.state === "needs_owner" && c.headline.includes("1600"))).toHaveLength(0);
+});

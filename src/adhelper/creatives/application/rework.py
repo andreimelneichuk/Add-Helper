@@ -1,7 +1,7 @@
 """Варианты одного объявления по просьбе владельца. Модель пишет, код и судья проверяют."""
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import StrEnum
 
@@ -11,6 +11,7 @@ from adhelper.creatives.application.generate import (
     _judge_kept,
     _parse,
     _select,
+    generate_ads,
 )
 from adhelper.creatives.domain.checks import profile_facts, similarity_bp
 from adhelper.creatives.domain.model import (
@@ -81,7 +82,8 @@ async def rework_ad(
                 continue
             fresh = []
             for draft in candidates:
-                if similarity_bp(draft, rework.base) > SAME_BP:
+                # После правки факта малая правка и нужна: сравнение со старым не применяем.
+                if not rework.auto and similarity_bp(draft, rework.base) > SAME_BP:
                     violation = Violation(ViolationKind.TOO_SIMILAR, "как сейчас")
                     rejected.append(RejectedDraft(draft, (violation,)))
                 else:
@@ -94,7 +96,7 @@ async def rework_ad(
                 rejected.extend(judge_dropped)
             if kept:
                 return CreativeSet(
-                    tuple(kept[: limits.variants]),
+                    tuple(kept[: 1 if rework.auto else limits.variants]),
                     tuple(rejected),
                     CreativeSource.MODEL,
                     tokens,
@@ -104,6 +106,16 @@ async def rework_ad(
                     judged=judge is not None,
                 )
             notes.append("all_drafts_rejected")
+    if rework.auto:
+        # Замена после правки факта не ждёт модель: шаблон из профиля верен по фактам.
+        template = await generate_ads(profile, None, rules)
+        return replace(
+            template,
+            drafts=template.drafts[:1],
+            rejected=tuple(rejected) + template.rejected,
+            tokens_used=tokens,
+            notes=tuple(notes) + template.notes,
+        )
     return CreativeSet(
         (), tuple(rejected), CreativeSource.MODEL, tokens, rules.version, needs_review, tuple(notes)
     )
