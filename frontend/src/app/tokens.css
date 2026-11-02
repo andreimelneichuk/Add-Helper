@@ -95,6 +95,7 @@
 .ah-tag-good { background: var(--good-soft); color: var(--good); }
 .ah-tag-accent { background: var(--accent-soft); color: var(--accent-ink); }
 .ah-tag-neutral { background: var(--canvas); color: var(--muted); }
+.ah-tag-bad { background: var(--bad-soft); color: var(--bad); }
 
 /* Таблица: цифры в одну строку, название может переноситься */
 .ah-table-wrap { overflow-x: auto; }

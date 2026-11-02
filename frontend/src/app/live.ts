@@ -93,9 +93,9 @@ function alertOf(alert: Alert, money: Money | undefined): LiveAlert {
     budget_stop_pending: "Яндекс пока не принял остановку, продолжаю пробовать. Лимиты стоят в самом кабинете.",
     budget_near_limit: "Когда бюджет закончится, показы остановятся сами. Перерасхода не будет.",
     platform_unavailable: "Пока Яндекс не отвечает, я ничего не меняю. Лимиты стоят в самом кабинете.",
-    platform_not_connected: "Пока кабинет не подключён, изменения не дойдут до Яндекса.",
-    ads_no_profile: "Добавьте услуги в профиль: в рекламу попадают только факты из него.",
-    ads_need_confirmation: "Посмотреть их можно в прежнем кабинете.",
+    platform_not_connected: "Пока кабинет не подключён, изменения не дойдут до Яндекса. Подключить его можно в настройках.",
+    ads_no_profile: "Добавьте услуги в профиль в настройках: в рекламу попадают только факты из него.",
+    ads_need_confirmation: "Посмотрите их в разделе «Реклама» и решите, запускать ли.",
   };
   return { kind: alert.kind, title: known.title, text: texts[alert.kind] ?? "Подробности в истории.", tone: known.tone === "error" ? "bad" : "warn" };
 }
@@ -167,12 +167,13 @@ function summary(s: State): string {
 }
 
 export class LiveStore extends Store {
-  constructor(private readonly api: Api, loaded: Partial<State>) {
+  constructor(readonly api: Api, loaded: Partial<State>) {
     super({ ...initialState(), msgs: [], ...loaded });
     this.state = { ...this.state, msgs: [msg("ai", summary(this.state))] };
   }
 
-  private async refresh() {
+  /** Перечитать данные после действия, которое прошло мимо журнала: профиль, решения по объявлениям. */
+  async refresh() {
     this.set(await loadLive(this.api, this.state.live?.name ?? ""));
   }
 
@@ -261,3 +262,6 @@ export class LiveStore extends Store {
     this.reply(text, COMMANDS);
   }
 }
+
+/** API сервиса, если экран открыт на настоящих данных; в прототипе null. */
+export const liveApi = (store: Store): Api | null => (store instanceof LiveStore ? store.api : null);

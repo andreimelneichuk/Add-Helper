@@ -2,7 +2,10 @@ import { useState } from "react";
 import type { Ad } from "../data";
 import { adName, adShown, adStat, useStoreState } from "../store";
 import type { State, Store } from "../store";
+import { liveApi } from "../live";
+import type { LiveStore } from "../live";
 import { AdArt, AdDetail, AdMaker } from "./AdDetail";
+import { Decisions } from "./Decisions";
 import "./Ads.css";
 
 function Card({ store, s, ad }: { store: Store; s: State; ad: Ad }) {
@@ -39,9 +42,10 @@ export function Ads({ store }: { store: Store }) {
   if (s.openAd && s.ads.some((a) => a.id === s.openAd)) return <AdDetail store={store} id={s.openAd} />;
   const groups: Record<Filter, Ad[]> = { all: s.ads, on: s.ads.filter((a) => !s.adsOff[a.id]), off: s.ads.filter((a) => s.adsOff[a.id]) };
   const filters: [Filter, string][] = [["all", "Все"], ["on", "Работают"], ["off", "Отключены"]];
+  const api = liveApi(store);
 
-  return (
-    <section className="ads" aria-labelledby="ads-list-title">
+  const list = (
+    <>
       <div className="ads-list-head">
         <h2 id="ads-list-title" className="ah-panel-title">Объявления</h2>
         {!s.live && <button type="button" className="ah-btn" onClick={() => store.openAdScreen("new")}>Новое объявление</button>}
@@ -51,10 +55,15 @@ export function Ads({ store }: { store: Store }) {
           <button key={id} type="button" className="ah-chip" aria-pressed={filter === id} onClick={() => setFilter(id)}>{label} {groups[id].length}</button>
         ))}
       </div>
-      {groups[filter].length === 0 && <p className="ah-muted">Отключённых объявлений нет.</p>}
+      {groups[filter].length === 0 && <p className="ah-muted">{filter === "off" ? "Отключённых объявлений нет." : "Сейчас ни одно объявление не показывается."}</p>}
       <div className="ads-cards">
         {groups[filter].map((ad) => <Card key={ad.id} store={store} s={s} ad={ad} />)}
       </div>
+    </>
+  );
+  return (
+    <section className="ads" aria-labelledby="ads-list-title">
+      {api ? <Decisions api={api} store={store as LiveStore}>{list}</Decisions> : list}
     </section>
   );
 }
