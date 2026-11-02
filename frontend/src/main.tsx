@@ -18,7 +18,7 @@ function Root() {
   // а Яндекс возвращает на `/?connect=…`, поэтому итог показываем там же.
   if (!params.has("new") && !params.has("connect")) return <Current />;
   if (params.has("mock")) return <AppShell />;
-  // Шаги 1–2 запуска читают настоящий сайт до входа; дальше пока подставные данные.
+  // Шаги 1–4 запуска до входа идут через сервис: разбор сайта, бюджет, писатель объявлений.
   if (params.has("start")) return <GuestStart />;
   return <Live />;
 }
@@ -27,6 +27,7 @@ function GuestStart() {
   const store = useMemo(() => {
     const created = new Store(initialState("start"));
     created.reader = createGuestApi();
+    created.writer = created.reader as ReturnType<typeof createGuestApi>;
     return created;
   }, []);
   useEffect(() => {

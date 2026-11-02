@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { ApiError } from "../api";
 import type { Fact } from "./data";
 import { businessName, clearDraft, draftProfile, loadDraft, loadWizard, saveDraft, transferDraft } from "./draft";
 import type { StartDraft, TransferDeps } from "./draft";
@@ -74,6 +75,18 @@ describe("черновик запуска", () => {
     expect(saved.profile).toHaveBeenCalledWith(draftProfile(draft));
     expect(saved.plan).toHaveBeenCalledWith(20000);
     expect(loadDraft()).toBeNull();
+  });
+
+  it("переносит выбранные объявления мастера; пропавший набор вход не ломает", async () => {
+    const ads = { id: 7, token: "k", kept: [1] };
+    const adoptAds = vi.fn(async () => ({ kept: 1 }));
+    const { full } = deps({ business: vi.fn(() => ({ saveProfile: vi.fn(async () => ({})), saveBudgetPlan: vi.fn(async () => ({})), adoptAds })) });
+    expect(await transferDraft(full, { ...draft, ads })).toMatchObject({ status: "done" });
+    expect(adoptAds).toHaveBeenCalledWith(ads);
+
+    const gone = vi.fn(async () => { throw new ApiError(404, "Объявления не найдены"); });
+    const second = deps({ business: vi.fn(() => ({ saveProfile: vi.fn(async () => ({})), saveBudgetPlan: vi.fn(async () => ({})), adoptAds: gone })) });
+    expect(await transferDraft(second.full, { ...draft, ads })).toMatchObject({ status: "done" });
   });
 
   it("чужой бизнес у владельца не затирает", async () => {

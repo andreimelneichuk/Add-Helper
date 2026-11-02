@@ -24,7 +24,9 @@ export function Start({ store }: { store: Store }) {
   // В настоящем запуске сводка честно показывает, что готово: создание кампаний ещё не подключено.
   const step = store.reader && s.step === STEPS.length - 1
     ? { ...base, title: "Что готово к запуску", lead: "Сервис проверил всё, что нужно для запуска рекламы." }
-    : base;
+    : store.writer && s.step === 3
+      ? { ...base, lead: "Тексты пишет ИИ только по вашим фактам, код проверяет каждое. Изображения добавлю позже." }
+      : base;
   const Body = STEP_BODIES[s.step] ?? STEP_BODIES[0]!;
   const title = useRef<HTMLHeadingElement>(null);
   const first = useRef(true);
@@ -37,7 +39,6 @@ export function Start({ store }: { store: Store }) {
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (s.step >= 3 && adsLeft(s) === 0) { store.set({ block: "Оставьте хотя бы одно объявление." }); return; }
     store.next();
   };
 

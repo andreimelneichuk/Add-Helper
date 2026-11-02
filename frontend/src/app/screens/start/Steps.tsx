@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { ComponentType } from "react";
 import { ACCOUNT, MIN_BUDGET, rub } from "../../data";
 import { AdArt, Compose } from "../AdDetail";
-import { RealCode, RealLaunch, RealMarking, RealYandex } from "./RealSteps";
+import { RealAds, RealCode, RealLaunch, RealMarking, RealYandex } from "./RealSteps";
 import type { State, Store } from "../../store";
 
 type StepProps = { store: Store; s: State };
@@ -103,6 +103,11 @@ function BudgetStep({ store, s }: StepProps) {
 }
 
 function AdsStep({ store, s }: StepProps) {
+  if (store.writer) return <RealAds store={store} s={s} />;
+  return <MockAds store={store} s={s} />;
+}
+
+function MockAds({ store, s }: StepProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const target = s.ads.find((a) => a.id === editing);
   return (
