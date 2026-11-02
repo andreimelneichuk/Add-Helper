@@ -81,6 +81,21 @@ class AlertLine:
 
 
 @dataclass(frozen=True)
+class ClientAnswer:
+    """Сколько обращений за окно дат стали клиентами, со слов владельца."""
+
+    since: date
+    until: date
+    leads: int
+    clients: int
+
+
+class ClientAnswers(Protocol):
+    async def leads(self, since: date, until: date) -> int: ...
+    async def save_clients(self, answer: ClientAnswer) -> None: ...
+
+
+@dataclass(frozen=True)
 class HistoryLine:
     """Изменение площадки из журнала или решение автопилота."""
 

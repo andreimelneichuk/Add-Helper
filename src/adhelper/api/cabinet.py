@@ -29,7 +29,9 @@ from adhelper.creatives.application.service import (
 )
 from adhelper.notifications.adapters.sql import SqlAlerts
 from adhelper.stats.adapters.sql import SqlDashboard
+from adhelper.stats.application.clients import NoLeads, TooManyClients, record_clients
 from adhelper.stats.application.overview import (
+    PLATFORM_ZONE,
     BadPeriod,
     Window,
     ad_detail,
@@ -58,6 +60,16 @@ class ProfileBody(BaseModel):
     features: list[str] = Field(default_factory=list, max_length=20)
     niche: str = Field(default="", max_length=100)
     website: str = Field(default="", max_length=300)
+
+
+class ClientsBody(BaseModel):
+    since: date
+    until: date
+    clients: int = Field(ge=0, le=1_000_000)
+
+
+# Владелец отвечает по журналу записи за неделю-другую, не за год.
+MAX_CLIENT_DAYS = 31
 
 
 class ConfirmBody(BaseModel):
@@ -125,7 +137,33 @@ def cabinet_router() -> APIRouter:
         )
         result = asdict(view)
         result["campaigns"] = _with_ratios(view.campaigns)
+        answer = await SqlDashboard(_sessions(request), business_id).latest_clients()
+        result["clients"] = asdict(answer) if answer else None
         return result
+
+    @router.post("/clients")
+    async def post_clients(
+        request: Request, body: ClientsBody, business_id: OwnedChecked
+    ) -> dict[str, Any]:
+        """Ответ владельца — данные, а не решение о деньгах: площадку он не меняет."""
+        today = _now(request).astimezone(PLATFORM_ZONE).date()
+        days = (body.until - body.since).days + 1
+        if days < 1 or days > MAX_CLIENT_DAYS or body.until > today:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Неверные даты")
+        dashboard = SqlDashboard(_sessions(request), business_id)
+        try:
+            answer = await record_clients(dashboard, body.since, body.until, body.clients)
+        except NoLeads:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "За эти дни обращений не было, клиентов считать не из чего",
+            ) from None
+        except TooManyClients as error:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"Обращений было {error.leads}, поэтому клиентов не больше {error.leads}",
+            ) from None
+        return asdict(answer)
 
     @router.get("/ads")
     async def get_ads(request: Request, business_id: Owned, period: Period) -> list[dict[str, Any]]:

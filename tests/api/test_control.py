@@ -288,3 +288,28 @@ async def test_lowering_budget_cuts_limits_through_ledger_first(
     assert await _hard_limit(sessions, business) == 10_000 * RUB
     assert await _rows(sessions, business) == [("user", "set_limit", "applied")]
 
+
+async def test_clients_answer_is_checked_against_leads_and_shown(anna: Anna) -> None:
+    client, csrf, business = anna
+    base = f"/api/businesses/{business}"
+    week = {"since": "2026-11-04", "until": "2026-11-10"}
+    too_many = await client.post(f"{base}/clients", json={**week, "clients": 5}, headers=csrf)
+    assert too_many.status_code == 409
+    assert too_many.json()["detail"] == "Обращений было 4, поэтому клиентов не больше 4"
+
+    saved = await client.post(f"{base}/clients", json={**week, "clients": 3}, headers=csrf)
+    assert saved.status_code == 200
+    # Повторный ответ за то же окно заменяет прежний.
+    await client.post(f"{base}/clients", json={**week, "clients": 2}, headers=csrf)
+    overview = (await client.get(f"{base}/overview")).json()
+    assert overview["clients"] == {**week, "leads": 4, "clients": 2}
+
+
+async def test_clients_answer_needs_leads_and_past_dates(anna: Anna) -> None:
+    client, csrf, business = anna
+    base = f"/api/businesses/{business}"
+    empty = {"since": "2026-10-01", "until": "2026-10-05", "clients": 1}
+    assert (await client.post(f"{base}/clients", json=empty, headers=csrf)).status_code == 409
+    future = {"since": "2026-11-10", "until": "2026-11-12", "clients": 1}
+    assert (await client.post(f"{base}/clients", json=future, headers=csrf)).status_code == 422
+    assert (await client.post(f"{base}/clients", json=empty)).status_code == 403
