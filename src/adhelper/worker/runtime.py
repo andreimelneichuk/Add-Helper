@@ -17,6 +17,10 @@ from adhelper.budget.adapters.rules_file import load_rules
 from adhelper.budget.adapters.sql import SqlPeriodStore
 from adhelper.budget.application.preflight import StoredPeriodPreflight
 from adhelper.budget.application.watch_cycle import run_watch_cycle
+from adhelper.business.adapters.fetcher import SafeFetcher
+from adhelper.business.adapters.rules_file import load_site_rules
+from adhelper.business.adapters.site_reads import SqlSiteReadQueue
+from adhelper.business.application.site import run_site_reads
 from adhelper.config import Settings
 from adhelper.creatives.adapters.factory import build_text_model
 from adhelper.creatives.adapters.rules_file import load_rules as load_creative_rules
@@ -69,6 +73,8 @@ class Runtime:
     # Без ключа или модели генерация отдаёт шаблоны из профиля, без судьи — только проверку кодом.
     text_model: Any = None
     judge_model: Any = None
+    # Имя модели пишется в каждый разбор сайта: по нему сравниваем извлекатели.
+    text_model_name: str = ""
     # Каналы тревог; без настроек канала отправки ждут в очереди.
     email: Any = None
     telegram: Any = None
@@ -126,6 +132,18 @@ class Runtime:
             self.text_model,
             self.judge_model,
             load_creative_rules,
+            self.clock,
+        )
+
+    async def site_read(self) -> None:
+        rules = load_site_rules()
+        await run_site_reads(
+            SqlSiteReadQueue(self.sessions),
+            SafeFetcher(rules),
+            self.text_model,
+            self.text_model_name,
+            rules,
+            load_site_rules,
             self.clock,
         )
 
@@ -208,6 +226,7 @@ async def open_runtime(settings: Settings) -> AsyncIterator[Runtime]:
             engine=engine,
             platform_for=_no_platform,
             text_model=_model(settings, settings.text_model_name),
+            text_model_name=settings.text_model_name,
             judge_model=_model(settings, settings.judge_model_name),
             email=_email(settings),
             telegram=_telegram(settings),
