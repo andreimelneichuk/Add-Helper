@@ -1,138 +1,144 @@
-"""Выборки для агентов: разбор ответов, фильтры, разбиение и хранение. Модель не вызывается."""
+"""Выборки для агентов: написанные объявления, голоса, согласие и хранение. Модель не вызывается."""
 
 import json
+from collections import Counter
 from pathlib import Path
 
 import pytest
 from evals.dataset.build import (
     BadReply,
+    Dataset,
     ItemRow,
     LabelRow,
-    ProfileRow,
+    VoteRow,
     append_jsonl,
+    gold,
     load,
     parse_ads,
-    parse_profile,
-    pick_kinds,
+    parse_votes,
     split_of,
     to_cases,
+    upper_bound,
     usable,
 )
-from evals.dataset.spec import AD_KINDS, NICHES, SPLITS
+from evals.dataset.spec import AD_KINDS, AUTHOR, KINDS_BY_CATEGORY, NICHES, PANEL, SPLITS
 
-PROFILE = {
-    "name": "Лотос",
-    "services": [{"name": "Маникюр", "price": 800}, {"name": "Дизайн ногтей", "price": None}],
-    "address": "ул. Солнечная, 12",
-    "features": ["Работаем без выходных", "Парковка рядом"],
-}
+from adhelper.creatives.domain.model import ViolationKind
 
-
-def _item(item_id: str, split: str, label: str | None, violations: tuple[str, ...] = ()) -> ItemRow:
-    return ItemRow(
-        item_id, "b1", split, "nails-00", "injected", "exact_fact", label,  # type: ignore[arg-type]
-        "Маникюр за 800 ₽", "ул. Солнечная, 12", "", violations, "m", "v",
-    )  # fmt: skip
+AUTHORED = load(Path("/nonexistent"))
+# Код склеивает число из названия услуги с ценой (R13–R15 + 1600): известная ошибка проверки.
+KNOWN_CODE_FALSE_BLOCKS = {"tires-00-01", "tires-00-03", "photo-01-03"}
 
 
 def test_spec_is_consistent() -> None:
     assert sum(share for _, share in SPLITS) == 100
     assert len({n.slug for n in NICHES}) == len(NICHES)
-    labels = {kind.label for kind in AD_KINDS}
-    assert labels == {"pass", "block"}
-    assert len({kind.category for kind in AD_KINDS}) == len(AD_KINDS)
+    assert {kind.label for kind in AD_KINDS} == {"pass", "block"}
+    assert PANEL[0] == AUTHOR and len(set(PANEL)) == len(PANEL)
 
 
-def test_parse_profile_accepts_valid_reply() -> None:
-    name, services, address, features = parse_profile(json.dumps(PROFILE, ensure_ascii=False))
-    assert name == "Лотос"
-    assert services == (("Маникюр", 800), ("Дизайн ногтей", None))
-    assert address and len(features) == 2
+def test_authored_profiles_cover_every_niche_and_split() -> None:
+    niches = {profile.niche for profile in AUTHORED.profiles.values()}
+    assert niches == {niche.name for niche in NICHES}
+    splits = Counter(item.split for item in AUTHORED.items.values())
+    assert all(splits[name] >= 60 for name, _ in SPLITS), splits
 
 
-@pytest.mark.parametrize(
-    "change",
-    [
-        {"services": [{"name": "Маникюр", "price": 800}]},
-        {"services": [{"name": "Маникюр", "price": 80.5}, {"name": "Педикюр", "price": 900}]},
-        {"services": [{"name": "Маникюр", "price": None}, {"name": "Педикюр", "price": None}]},
-        {"services": [{"name": "Маникюр", "price": True}, {"name": "Педикюр", "price": 900}]},
-        {"features": ["Одна"]},
-        {"name": "Nail Bar"},
-        {"name": ""},
-    ],
-)
-def test_parse_profile_rejects_bad_reply(change: dict[str, object]) -> None:
+def test_authored_ads_cover_every_kind() -> None:
+    kinds = Counter(item.category for item in AUTHORED.items.values())
+    assert set(kinds) == set(KINDS_BY_CATEGORY)
+    assert min(kinds.values()) >= 10, kinds
+
+
+def test_authored_ads_fit_platform_and_mark_violation() -> None:
+    seen = set()
+    for item in AUTHORED.items.values():
+        assert usable(item.code_violations), item.id
+        key = (item.headline, item.text)
+        assert key not in seen, item.id
+        seen.add(key)
+        label = AUTHORED.votes[item.id][AUTHOR].label
+        if KINDS_BY_CATEGORY[item.category].label == "block":
+            assert item.span and item.span in f"{item.headline} {item.text}", item.id
+            assert label == "block", item.id
+        else:
+            assert label in {"pass", "ambiguous"}, item.id
+
+
+def test_authored_clean_ads_have_only_profile_numbers() -> None:
+    # Код надёжно сверяет числа, поэтому допустимое объявление с чужим числом — ошибка автора.
+    for item in AUTHORED.items.values():
+        if AUTHORED.votes[item.id][AUTHOR].label == "block":
+            continue
+        if item.id in KNOWN_CODE_FALSE_BLOCKS:
+            continue
+        assert ViolationKind.UNCONFIRMED_NUMBER.value not in item.code_violations, item.id
+
+
+def test_parse_ads_and_votes() -> None:
+    assert parse_ads(json.dumps({"ads": [{"headline": " А ", "text": "Б"}, "x"]})) == [("А", "Б")]
     with pytest.raises(BadReply):
-        parse_profile(json.dumps(PROFILE | change, ensure_ascii=False))
-
-
-def test_parse_ads_drops_unknown_categories() -> None:
+        parse_ads("[]")
     reply = json.dumps(
         {
-            "ads": [
-                {"category": "superlative", "headline": "Лучший", "text": "т", "span": "Лучший"},
-                {"category": "nonsense", "headline": "x", "text": "y"},
-                "мусор",
+            "votes": [
+                {"n": 1, "label": "block", "reason": "скидка"},
+                {"n": 2, "label": "maybe"},
+                {"n": 9, "label": "pass"},
+                {"n": "3", "label": "pass"},
             ]
         }
     )
-    assert parse_ads(reply, with_category=True) == [("superlative", "Лучший", "т", "Лучший")]
-    with pytest.raises(BadReply):
-        parse_ads("[]", with_category=True)
+    assert parse_votes(reply, 3) == {1: ("block", "скидка")}
 
 
 def test_split_depends_only_on_profile() -> None:
     ids = [f"nails-{i:02d}" for i in range(400)]
     first = [split_of("seed", i) for i in ids]
     assert first == [split_of("seed", i) for i in ids]
-    counts = {name: first.count(name) for name, _ in SPLITS}
+    counts = Counter(first)
     for name, share in SPLITS:
         assert abs(counts[name] - 4 * share) < 40, counts
 
 
-def test_pick_kinds_is_stable_subset() -> None:
-    categories = [kind.category for kind in AD_KINDS]
-    picked = pick_kinds("seed", "nails-00", categories, 8)
-    assert picked == pick_kinds("seed", "nails-00", list(reversed(categories)), 8)
-    assert len(picked) == 8 and set(picked) <= set(categories)
+def _vote(item_id: str, labeler: str, label: str) -> VoteRow:
+    return VoteRow(item_id, labeler, label, "", "v", "t")  # type: ignore[arg-type]
 
 
-def test_unusable_drafts_are_filtered() -> None:
-    assert usable(["forbidden_word"])
-    assert not usable(["too_long"])
+def test_gold_needs_full_agreement_or_human() -> None:
+    data = Dataset()
+    for labeler in PANEL:
+        data.add_vote(_vote("a", labeler, "block"))
+        data.add_vote(_vote("b", labeler, "pass" if labeler == AUTHOR else "block"))
+    data.add_vote(_vote("c", AUTHOR, "pass"))
+    assert gold(data, "a") == ("block", "consensus")
+    assert gold(data, "b") == (None, "disputed")
+    assert gold(data, "c") == (None, "incomplete")
+    data.labels["b"] = LabelRow("b", "pass", "человек", "t")
+    assert gold(data, "b") == ("pass", "human")
 
 
-def test_store_roundtrip_and_human_labels_win(tmp_path: Path) -> None:
-    profile = ProfileRow(
-        "nails-00", "b1", "маникюр", "эконом", "Лотос", (("Маникюр", 800),),
-        "ул. Солнечная, 12", ("Парковка рядом",), "m",
+def test_upper_bound_matches_docs() -> None:
+    # Цифры из docs/12-agents.md §2.
+    assert round(upper_bound(1, 49) * 100, 1) == 9.3
+    assert round(upper_bound(0, 299) * 100, 2) == pytest.approx(1.0, abs=0.01)
+    assert upper_bound(0, 0) == 1.0
+
+
+def test_store_roundtrip_and_cases(tmp_path: Path) -> None:
+    profile_id = next(iter(AUTHORED.profiles))
+    writer = ItemRow(
+        f"{profile_id}-w0", "a1", "test", profile_id, "writer", "writer",
+        "Заголовок", "Текст", "", (), "m", "v",
     )  # fmt: skip
-    append_jsonl(tmp_path / "profiles.jsonl", [profile])
-    append_jsonl(
-        tmp_path / "items.jsonl",
-        [
-            _item("a", "test", "pass"),
-            _item("b", "test", "block"),
-            _item("c", "train", "block"),
-            _item("d", "test", None),
-            _item("e", "test", "pass", ("too_long",)),
-        ],
-    )
-    append_jsonl(
-        tmp_path / "labels.jsonl",
-        [
-            LabelRow("a", "pass", "человек", "t"),
-            LabelRow("a", "block", "человек", "t2", "передумал"),
-            LabelRow("d", "pass", "человек", "t"),
-        ],
-    )
+    append_jsonl(tmp_path / "writer.jsonl", [writer])
+    append_jsonl(tmp_path / "votes.jsonl", [_vote(writer.id, name, "pass") for name in PANEL])
+    append_jsonl(tmp_path / "labels.jsonl", [LabelRow(writer.id, "block", "человек", "t")])
     data = load(tmp_path)
-    assert data.profiles["nails-00"] == profile
-    human, profiles = to_cases(data, "test")
-    assert [(c.id, c.label) for c in human] == [("a", "block"), ("d", "pass")]
-    assert profiles["nails-00"].services[0].price == 800
-    proposed, _ = to_cases(data, "test", labels="proposed")
-    assert [(c.id, c.label) for c in proposed] == [("a", "block"), ("b", "block"), ("d", "pass")]
-    everything, _ = to_cases(data, "all", labels="proposed")
-    assert "c" in {c.id for c in everything}
+    assert data.items[writer.id] == writer
+    assert gold(data, writer.id) == ("block", "human")
+    cases, profiles = to_cases(data, "test", "human")
+    assert [(c.id, c.label) for c in cases] == [(writer.id, "block")]
+    assert profile_id in profiles
+    authored_cases, _ = to_cases(data, "train", "author")
+    assert len(authored_cases) == sum(1 for i in AUTHORED.items.values() if i.split == "train")

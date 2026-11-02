@@ -1,19 +1,21 @@
-"""Чистые функции набора: разбор ответов, фильтры, выборки, хранение. Сеть не нужна.
+"""Чистые функции набора: сборка, выборки, голоса, согласие, хранение. Сеть не нужна.
 
-Файлы в evals/data/:
-- profiles.jsonl — выдуманные профили бизнесов;
-- items.jsonl — объявления с предварительной меткой генератора;
-- labels.jsonl — метки человека, только дополняется, последняя запись по id побеждает;
-- manifest.json — версии, модели и счётчики каждого прогона.
+Источник истины:
+- evals/dataset/authored/ — профили и объявления, написанные вручную, с меткой автора;
+- evals/data/writer.jsonl — объявления настоящего писателя сервиса по этим профилям;
+- evals/data/votes.jsonl — голоса разметчиков-моделей и автора по объявлениям писателя;
+- evals/data/labels.jsonl — метки человека.
+Файлы в evals/data только дополняются, последняя запись по паре (id, разметчик) побеждает.
 """
 
 import hashlib
 import json
+import math
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from adhelper.creatives.domain.checks import check_draft
 from adhelper.creatives.domain.model import (
@@ -24,13 +26,13 @@ from adhelper.creatives.domain.model import (
     ViolationKind,
 )
 from evals.cases import Case
-from evals.dataset.spec import KINDS_BY_CATEGORY, SPLITS, Label, SplitName
+from evals.dataset.spec import AUTHOR, PANEL, SPLITS, Label, SplitName
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 LABELS: tuple[Label, ...] = ("pass", "block", "ambiguous")
 # Такие черновики площадка не примет, до судьи они не доходят.
 UNUSABLE = frozenset({ViolationKind.TOO_LONG, ViolationKind.EMPTY})
-LATIN_WORD = re.compile(r"[a-z]{3,}", re.IGNORECASE)
+GoldSource = Literal["human", "consensus", "disputed", "incomplete"]
 
 
 class BadReply(ValueError):
@@ -47,7 +49,6 @@ class ProfileRow:
     services: tuple[tuple[str, int | None], ...]
     address: str
     features: tuple[str, ...]
-    model: str
 
     def business(self) -> BusinessProfile:
         return BusinessProfile(
@@ -65,18 +66,27 @@ class ItemRow:
     batch: str
     split: SplitName
     profile_id: str
-    # writer — настоящий промпт писателя из сервиса, метки нет до разметки человеком;
-    # injected — генератор писал объявление заданного вида, метка предварительная.
+    # authored — написано вручную под заданный вид, метка автора известна;
+    # writer — настоящий промпт писателя из сервиса, метку дают разметчики.
     origin: str
     category: str
-    proposed_label: Label | None
     headline: str
     text: str
-    # Фрагмент, который генератор считает нарушением. Подсказка для разметчика.
+    # Фрагмент с нарушением по замыслу автора. Разметчикам не показывается.
     span: str
     code_violations: tuple[str, ...]
     model: str
     prompt_version: str
+
+
+@dataclass(frozen=True)
+class VoteRow:
+    id: str
+    labeler: str
+    label: Label
+    reason: str
+    prompt_version: str
+    at: str
 
 
 @dataclass(frozen=True)
@@ -92,7 +102,11 @@ class LabelRow:
 class Dataset:
     profiles: dict[str, ProfileRow] = field(default_factory=dict)
     items: dict[str, ItemRow] = field(default_factory=dict)
+    votes: dict[str, dict[str, VoteRow]] = field(default_factory=dict)
     labels: dict[str, LabelRow] = field(default_factory=dict)
+
+    def add_vote(self, vote: VoteRow) -> None:
+        self.votes.setdefault(vote.id, {})[vote.labeler] = vote
 
 
 # --- разбор ответов модели ---
@@ -108,61 +122,30 @@ def _loads_object(text: str) -> dict[str, Any]:
     return cast(dict[str, Any], data)
 
 
-def _clean(value: object, limit: int) -> str:
-    text = re.sub(r"\s+", " ", str(value)).strip()
-    if not text or len(text) > limit:
-        raise BadReply("bad_string")
-    return text
-
-
-def parse_profile(
-    text: str,
-) -> tuple[str, tuple[tuple[str, int | None], ...], str, tuple[str, ...]]:
-    """Профиль от модели проверяет код: цены целые и разумные, полей не больше нужного."""
-    data = _loads_object(text)
-    name = _clean(data.get("name", ""), 40)
-    raw_services = data.get("services")
-    if not isinstance(raw_services, list) or not 2 <= len(raw_services) <= 5:
-        raise BadReply("services_count")
-    services: list[tuple[str, int | None]] = []
-    for raw in raw_services:
-        if not isinstance(raw, dict):
-            raise BadReply("service_shape")
-        price = raw.get("price")
-        if price is not None and (
-            isinstance(price, bool) or not isinstance(price, int) or not 50 <= price <= 500_000
-        ):
-            raise BadReply("price")
-        services.append((_clean(raw.get("name", ""), 50), price))
-    if all(price is None for _, price in services):
-        raise BadReply("no_prices")
-    raw_features = data.get("features")
-    if not isinstance(raw_features, list) or not 2 <= len(raw_features) <= 4:
-        raise BadReply("features_count")
-    features = tuple(_clean(feature, 80) for feature in raw_features)
-    address = str(data.get("address") or "").strip()[:60]
-    if LATIN_WORD.search(" ".join([name, *features, *(s for s, _ in services)])):
-        raise BadReply("latin")
-    return name, tuple(services), address, features
-
-
-def parse_ads(text: str, with_category: bool) -> list[tuple[str, str, str, str]]:
-    """Возвращает (вид, заголовок, текст, фрагмент). Неизвестный вид отбрасывается."""
-    data = _loads_object(text)
-    ads = data.get("ads")
+def parse_ads(text: str) -> list[tuple[str, str]]:
+    """Ответ писателя: (заголовок, текст)."""
+    ads = _loads_object(text).get("ads")
     if not isinstance(ads, list):
         raise BadReply("no_ads")
-    result: list[tuple[str, str, str, str]] = []
-    for ad in ads:
-        if not isinstance(ad, dict):
+    return [
+        (str(ad.get("headline", "")).strip(), str(ad.get("text", "")).strip())
+        for ad in ads
+        if isinstance(ad, dict)
+    ]
+
+
+def parse_votes(text: str, count: int) -> dict[int, tuple[Label, str]]:
+    """Ответ разметчика: номер объявления → метка и причина. Чужие номера отбрасываются."""
+    votes = _loads_object(text).get("votes")
+    if not isinstance(votes, list):
+        raise BadReply("no_votes")
+    result: dict[int, tuple[Label, str]] = {}
+    for vote in votes:
+        if not isinstance(vote, dict):
             continue
-        category = str(ad.get("category", "")) if with_category else "writer"
-        if with_category and category not in KINDS_BY_CATEGORY:
-            continue
-        headline = str(ad.get("headline", "")).strip()
-        body = str(ad.get("text", "")).strip()
-        span = str(ad.get("span", "") or "").strip()[:120]
-        result.append((category, headline, body, span))
+        number, label = vote.get("n"), vote.get("label")
+        if isinstance(number, int) and 1 <= number <= count and label in LABELS:
+            result[number] = (cast(Label, label), str(vote.get("reason", ""))[:200])
     return result
 
 
@@ -187,7 +170,7 @@ def bucket(seed: str, key: str) -> int:
 
 
 def split_of(seed: str, profile_id: str) -> SplitName:
-    """Выборка зависит только от профиля и зерна: новый прогон не двигает старые записи."""
+    """Выборка зависит только от профиля и зерна: новые партии не двигают старые записи."""
     value = bucket(seed, profile_id)
     edge = 0
     for name, share in SPLITS:
@@ -197,14 +180,46 @@ def split_of(seed: str, profile_id: str) -> SplitName:
     raise AssertionError("доли выборок должны давать 100")
 
 
-def pick_kinds(seed: str, profile_id: str, categories: Sequence[str], count: int) -> list[str]:
-    """Детерминированное подмножество видов, чтобы не платить за все виды на каждом профиле."""
-    ranked = sorted(categories, key=lambda c: bucket(seed, f"{profile_id}:{c}"))
-    return sorted(ranked[:count])
-
-
 def prompt_version(*parts: str) -> str:
     return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:10]
+
+
+# --- согласие разметчиков ---
+
+
+def gold(
+    data: Dataset, item_id: str, panel: Sequence[str] = PANEL
+) -> tuple[Label | None, GoldSource]:
+    """Метка человека главнее всего. Без неё правдой считаем только единогласие всей панели:
+    модели ошибаются похоже, поэтому любое расхождение уходит человеку."""
+    human = data.labels.get(item_id)
+    if human:
+        return human.label, "human"
+    votes = data.votes.get(item_id, {})
+    if any(labeler not in votes for labeler in panel):
+        return None, "incomplete"
+    labels = {votes[labeler].label for labeler in panel}
+    if len(labels) == 1:
+        return labels.pop(), "consensus"
+    return None, "disputed"
+
+
+def upper_bound(errors: int, total: int, confidence: float = 0.95) -> float:
+    """Односторонняя верхняя граница Клоппера — Пирсона для доли ошибок, как в docs/12 §2."""
+    if total == 0 or errors >= total:
+        return 1.0
+
+    def cdf(p: float) -> float:
+        return sum(math.comb(total, k) * p**k * (1 - p) ** (total - k) for k in range(errors + 1))
+
+    low, high = errors / total, 1.0
+    for _ in range(60):
+        middle = (low + high) / 2
+        if cdf(middle) > 1 - confidence:
+            low = middle
+        else:
+            high = middle
+    return high
 
 
 # --- хранение ---
@@ -213,36 +228,30 @@ def prompt_version(*parts: str) -> str:
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
-    rows = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if line.strip():
-            rows.append(cast(dict[str, Any], json.loads(line)))
-    return rows
+    return [
+        cast(dict[str, Any], json.loads(line))
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
 
 
-def _profile(row: Mapping[str, Any]) -> ProfileRow:
-    services = tuple((str(name), price) for name, price in row["services"])
-    return ProfileRow(**{**row, "services": services, "features": tuple(row["features"])})
-
-
-def _item(row: Mapping[str, Any]) -> ItemRow:
-    return ItemRow(**{**row, "code_violations": tuple(row["code_violations"])})
-
-
-def load(root: Path = DATA) -> Dataset:
+def load(root: Path = DATA, authored: bool = True) -> Dataset:
     data = Dataset()
-    for row in _read_jsonl(root / "profiles.jsonl"):
-        profile = _profile(row)
-        data.profiles[profile.id] = profile
-    for row in _read_jsonl(root / "items.jsonl"):
-        item = _item(row)
+    if authored:
+        from evals.dataset.authored import build_authored
+
+        build_authored(data)
+    for row in _read_jsonl(root / "writer.jsonl"):
+        item = ItemRow(**{**row, "code_violations": tuple(row["code_violations"])})
         data.items[item.id] = item
+    for row in _read_jsonl(root / "votes.jsonl"):
+        data.add_vote(VoteRow(**row))
     for row in _read_jsonl(root / "labels.jsonl"):
         data.labels[str(row["id"])] = LabelRow(**row)
     return data
 
 
-def append_jsonl(path: Path, rows: Iterable[ProfileRow | ItemRow | LabelRow]) -> None:
+def append_jsonl(path: Path, rows: Iterable[ItemRow | VoteRow | LabelRow]) -> None:
     """Только дополняем: прерванный прогон продолжается с того же места."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as file:
@@ -251,20 +260,34 @@ def append_jsonl(path: Path, rows: Iterable[ProfileRow | ItemRow | LabelRow]) ->
 
 
 def to_cases(
-    data: Dataset, split: str, labels: str = "human"
+    data: Dataset, split: str, labels: str = "gold"
 ) -> tuple[list[Case], dict[str, BusinessProfile]]:
-    """Набор для evals.run. labels: human — только размеченное человеком (для замера);
-    proposed — метка человека, а без неё предварительная (для подгонки на train)."""
+    """Набор для evals.run. labels: gold — человек или единогласие панели (для замера);
+    human — только человек; author — метка автора (для подгонки на train)."""
     cases: list[Case] = []
     for item in sorted(data.items.values(), key=lambda i: i.id):
         if split != "all" and item.split != split:
             continue
         if not usable(item.code_violations):
             continue
-        human = data.labels.get(item.id)
-        label = human.label if human else (item.proposed_label if labels == "proposed" else None)
+        label: Label | None
+        if labels == "gold":
+            label, _ = gold(data, item.id)
+        elif labels == "human":
+            human = data.labels.get(item.id)
+            label = human.label if human else None
+        else:
+            vote = data.votes.get(item.id, {}).get(AUTHOR)
+            label = vote.label if vote else None
         if label is None:
             continue
         cases.append(Case(item.id, item.profile_id, item.headline, item.text, label, item.category))
     profiles = {case.profile: data.profiles[case.profile].business() for case in cases}
     return cases, profiles
+
+
+def by_profile(items: Mapping[str, ItemRow]) -> dict[str, list[ItemRow]]:
+    grouped: dict[str, list[ItemRow]] = {}
+    for item in sorted(items.values(), key=lambda i: i.id):
+        grouped.setdefault(item.profile_id, []).append(item)
+    return grouped
