@@ -1,4 +1,4 @@
-.PHONY: setup check check-web prototype backup restore-check down
+.PHONY: setup check check-web e2e prototype backup restore-check down
 
 # Поднимает окружение на чистом клоне; повторный запуск безопасен.
 setup: .env
@@ -17,6 +17,10 @@ check:
 	uv run lint-imports
 	uv run pytest
 	$(MAKE) check-web
+
+# Весь путь в браузере: настоящие API и база, поддельная площадка из tests/e2e. Нужен запущенный PostgreSQL.
+e2e:
+	npm --prefix frontend run e2e
 
 check-web:
 	npm --prefix frontend ci --no-audit --no-fund

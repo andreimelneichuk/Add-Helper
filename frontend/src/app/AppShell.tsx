@@ -39,12 +39,12 @@ export function AppShell({ store: given }: { store?: Store }) {
   return (
     <div className="ah">
       <header className="ah-bar">
-        <strong className="ah-brand">{starting ? "Ad Helper" : "Салон «Пример»"}</strong>
+        <strong className="ah-brand">{starting ? "Ad Helper" : s.live?.name ?? "Салон «Пример»"}</strong>
         {!starting && <span className="ah-status" style={tone}><i aria-hidden="true" />{statusText(s)}</span>}
         {!starting && <button type="button" className="ah-btn ah-bar-pause" onClick={() => store.run({ action: "pause" })}>{s.paused ? "Включить" : "Пауза"}</button>}
         {!starting && <button type="button" className="ah-btn ah-btn-icon" aria-label="Настройки" aria-current={!chat && s.view === "settings" ? "page" : undefined} onClick={() => store.goView("settings")}><Icon name="settings" /></button>}
       </header>
-      {!starting && (
+      {!starting && !s.live && (
         <div className="ah-proto">
           <span>ситуация:</span>
           {SITUATIONS.map(([id, label]) => (

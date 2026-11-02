@@ -1,6 +1,7 @@
 """Чтение для экранов поверх таблиц других модулей. Только SELECT и только одного бизнеса."""
 
 from datetime import date, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
@@ -151,6 +152,22 @@ class SqlDashboard:
     def __init__(self, sessions: async_sessionmaker[AsyncSession], business_id: UUID) -> None:
         self._sessions = sessions
         self._business_id = business_id
+
+    async def note_ad_state(self, account: str, ad_id: str, state: str) -> None:
+        """Результат, прочитанный журналом. Полную сверку с площадкой делает синхронизация (T6)."""
+        await self._note(ADS, account, ADS.c.ad_id == ad_id, state)
+
+    async def note_campaign_state(self, account: str, campaign_id: str, state: str) -> None:
+        await self._note(CAMPAIGNS, account, CAMPAIGNS.c.campaign_id == campaign_id, state)
+
+    async def _note(self, target: Any, account: str, which: Any, state: str) -> None:
+        statement = (
+            target.update()
+            .where(target.c.business_id == self._business_id, target.c.account == account, which)
+            .values(state=state)
+        )
+        async with self._sessions() as session, session.begin():
+            await session.execute(statement)
 
     async def periods(self, now: datetime) -> list[PeriodLine]:
         latest = (

@@ -44,7 +44,7 @@ export function Ads({ store }: { store: Store }) {
     <section className="ads" aria-labelledby="ads-list-title">
       <div className="ads-list-head">
         <h2 id="ads-list-title" className="ah-panel-title">Объявления</h2>
-        <button type="button" className="ah-btn" onClick={() => store.openAdScreen("new")}>Новое объявление</button>
+        {!s.live && <button type="button" className="ah-btn" onClick={() => store.openAdScreen("new")}>Новое объявление</button>}
       </div>
       <div className="ah-chips" role="group" aria-label="Какие показать">
         {filters.map(([id, label]) => (

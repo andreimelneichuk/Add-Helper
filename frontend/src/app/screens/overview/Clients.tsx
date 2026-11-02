@@ -8,6 +8,8 @@ const clientsWord = (n: number) => (n % 10 === 1 && n % 100 !== 11 ? "клиен
 // Без этого ответа нет цены клиента, поэтому вопрос стоит сразу под выводом, а не внутри блоков ниже.
 export function Clients({ s, store }: { s: State; store: Store }) {
   const [error, setError] = useState("");
+  // Ответ о клиентах сервис пока не хранит: в живом режиме вопрос не задаём.
+  if (s.live) return null;
   if (s.situation === "problem" || s.situation === "first" || s.situation === "access") return null;
   const leads = week(s).leads;
   if (s.clients) return <div className="ah-panel ov-clients ah-muted">{`Записал ${s.clients} ${clientsWord(s.clients)}. Цена клиента теперь считается.`}</div>;

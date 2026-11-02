@@ -123,10 +123,10 @@ export function AdDetail({ store, id }: { store: Store; id: string }) {
               {inTest(s, id) && <p className="ah-muted">Идёт проверка вариантов: решу на 14-й день.</p>}
               <div>
                 <div className="ah-label">Откуда факты</div>
-                <div>{ad.facts}</div>
+                <div>{ad.facts || "Проверяю"}</div>
               </div>
               <div className="ad-actions">
-                <button type="button" className="ah-btn ah-btn-primary" onClick={() => setComposing(true)}>Переделать</button>
+                {!s.live && <button type="button" className="ah-btn ah-btn-primary" onClick={() => setComposing(true)}>Переделать</button>}
                 <button type="button" className="ah-btn" onClick={() => (off ? store.run({ action: "ad", value: id }) : store.ask({ action: "ad", value: id }))}>{action}</button>
               </div>
             </section>

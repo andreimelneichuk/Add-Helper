@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
-import { ADS, DAYS, FACTS, histFor, leadsWord, MIN_BUDGET, OPENING, OPTIONS, rub, STEPS } from "./data";
-import type { Ad, Fact, HistoryEntry, HistoryKind, Period, SettingKey, Situation, View } from "./data";
+import { ADS, DAYS, FACTS, histFor, leadsWord, MIN_BUDGET, OPENING, OPTIONS, rub, STATS, STEPS } from "./data";
+import type { Ad, Day, Fact, HistoryEntry, HistoryKind, Live, Period, PeriodStats, SettingKey, Situation, View } from "./data";
 
 export type Who = "me" | "ai" | "note";
 export type Message = { id: number; who: Who; text: string; link?: { label: string; view: View } };
@@ -10,10 +10,13 @@ type Pending =
   | { action: "undo"; value: string }
   | { action: "price"; value: number }
   | { action: "ad"; value: string }
-  | { action: "adSave"; value: Ad };
+  | { action: "adSave"; value: Ad }
+  | { action: "balance" };
 type Action = Pending | { action: "clients"; value: number };
 
 export type State = {
+  /** Данные сервиса; null в прототипе на подставных данных. */
+  live: Live | null;
   stage: "work" | "start";
   situation: Situation;
   mode: "panel" | "chat";
@@ -59,13 +62,13 @@ export type State = {
 
 let nextId = 1;
 const newFact = (value: string): Fact => ({ id: "n" + nextId++, label: "Вы добавили", value, source: "от вас" });
-const msg = (who: Who, text: string, link?: Message["link"]): Message => ({ id: nextId++, who, text, link });
+export const msg = (who: Who, text: string, link?: Message["link"]): Message => ({ id: nextId++, who, text, link });
 
 const GREETING = "Здравствуйте! Я веду рекламу малого бизнеса сам: создаю, слежу за деньгами, улучшаю. Начнём с вашего сайта. Напишите ссылку здесь или откройте «Настройку» и заполните всё там.";
 
 export function initialState(stage: State["stage"] = "work", situation: Situation = "running"): State {
   return {
-    stage, situation, mode: "panel", view: "overview", notice: "", price: null, step: 0, input: "", pending: null,
+    live: null, stage, situation, mode: "panel", view: "overview", notice: "", price: null, step: 0, input: "", pending: null,
     msgs: [msg("ai", stage === "start" ? GREETING : OPENING[situation])],
     hist: histFor(situation), undone: {}, asked: {}, adsOff: {}, ads: ADS, openAd: null, paused: false, topped: false, decided: null, extra: 0,
     metric: "cost", selDay: null, period: "week", filter: "all", clientsInput: "", clients: null,
@@ -76,18 +79,22 @@ export function initialState(stage: State["stage"] = "work", situation: Situatio
 
 /** Расход и обращения за 7 дней и за 7 дней до них. */
 export function week(s: State) {
-  const d = DAYS[s.situation];
+  const d = s.live?.trail ?? DAYS[s.situation];
   const sum = (a: typeof d, i: 0 | 1) => a.reduce((x, y) => x + y[i], 0);
   const last = d.slice(-7);
   const prev = d.slice(-14, -7);
   return { cost: sum(last, 0), leads: sum(last, 1), prevCost: sum(prev, 0), prevLeads: sum(prev, 1) };
 }
-export const budgetOf = (s: State) => Number(s.f.budget) + s.extra;
-export const spentOf = (s: State) => DAYS[s.situation].reduce((x, d) => x + d[0], 0);
-export const stopped = (s: State) => s.situation === "problem" && !s.topped;
-export const warned = (s: State) => s.situation === "budget" && !s.decided;
+export const daysOf = (s: State): Day[] => s.live?.days ?? DAYS[s.situation];
+export const statsOf = (s: State, period: Period): PeriodStats => s.live?.stats[period] ?? STATS[period];
+export const budgetOf = (s: State) => s.live?.budget ?? Number(s.f.budget) + s.extra;
+export const spentOf = (s: State) => (s.live ? (s.live.spent ?? 0) : DAYS[s.situation].reduce((x, d) => x + d[0], 0));
+const STOPPING = new Set(["zero_balance", "balance_mismatch", "budget_stopped"]);
+export const stopped = (s: State) => (s.live ? s.live.alerts.some((a) => STOPPING.has(a.kind)) : s.situation === "problem" && !s.topped);
+export const warned = (s: State) => (s.live ? s.live.alerts.length > 0 : s.situation === "budget" && !s.decided);
+const liveStatus = (s: State) => (s.paused ? "На паузе" : stopped(s) ? "Показы остановлены" : warned(s) ? "Нужно внимание" : s.live?.hasCampaigns ? "Реклама идёт" : "Реклама не запущена");
 export const statusText = (s: State) =>
-  s.paused ? "На паузе" : stopped(s) ? "Показы остановлены" : warned(s) ? "Бюджет на исходе" : s.situation === "problem" ? "Жду деньги"
+  s.live ? liveStatus(s) : s.paused ? "На паузе" : stopped(s) ? "Показы остановлены" : warned(s) ? "Бюджет на исходе" : s.situation === "problem" ? "Жду деньги"
     : s.situation === "access" && !s.topped ? "Нет доступа" : s.situation === "first" ? "Собираю данные" : "Реклама идёт";
 /** Название объявления с учётом новой цены из профиля. */
 export const adName = (s: State, id: string) => (s.price && id === "a2" ? `Маникюр от ${rub(s.price)}` : s.ads.find((a) => a.id === id)!.name);
@@ -164,6 +171,7 @@ function refusalOf(s: State, a: Pending): string | null {
 /** Что изменится: показываем до применения. */
 export function confirmText(s: State, a: Pending): string {
   switch (a.action) {
+    case "balance": return "Вы знаете причину расхождения? Сверка начнётся заново от нынешнего баланса. Показы сами не включатся.";
     case "pause": return s.paused ? "Включить рекламу снова?" : "Остановить все показы? Настройки сохранятся.";
     case "setting": {
       const [key, val] = a.value;
@@ -173,7 +181,7 @@ export function confirmText(s: State, a: Pending): string {
     }
     case "undo": { const h = s.hist.find((x) => x.id === a.value); return `Отменить «${h?.title}»? ${h?.undoNote ?? ""}`; }
     case "price": return `Маникюр теперь от ${rub(a.value)}. Обновлю профиль и объявление со старой ценой.`;
-    case "ad": return `Отключить «${adName(s, a.value)}»? ${inTest(s, a.value) ? "Идёт проверка вариантов, она закончится раньше срока. " : ""}Его деньги перераспределю между остальными. Отменить можно в истории.`;
+    case "ad": if (s.live) return `Отключить «${adName(s, a.value)}»? Общий бюджет не изменится. Отменить можно в истории.`; return `Отключить «${adName(s, a.value)}»? ${inTest(s, a.value) ? "Идёт проверка вариантов, она закончится раньше срока. " : ""}Его деньги перераспределю между остальными. Отменить можно в истории.`;
     case "adSave": {
       if (!s.ads.some((x) => x.id === a.value.id)) return `Добавить объявление «${a.value.name}»? Яндекс проверит его, обычно до суток. Общий бюджет не вырастет: деньги поделю между объявлениями. Отключить можно в истории.`;
       return `Поставить новый вариант «${adName(s, a.value.id)}»? Старый работает, пока Яндекс проверяет новый, обычно до суток. ${inTest(s, a.value.id) ? "Идёт проверка вариантов, она закончится раньше срока. " : ""}Отменить можно в истории.`;
@@ -200,6 +208,7 @@ export class Store {
   private apply(a: Action): Partial<State> & { text: string } {
     const s = this.state;
     switch (a.action) {
+      case "balance": return { text: "" };
       case "pause": {
         const paused = !s.paused;
         return { paused, hist: [this.entry(paused ? "Поставил рекламу на паузу" : "Включил рекламу", "Вы попросили.", "Настройки сохранены.", "yours"), ...s.hist], text: paused ? "Поставил на паузу. Показы остановятся примерно через 5 минут, настройки сохранены." : "Включил. Показы начнутся примерно через 5 минут." };
@@ -257,7 +266,7 @@ export class Store {
   confirm = () => { if (this.state.pending) this.run(this.state.pending); };
   decline = () => this.set({ pending: null });
   goView = (view: View) => this.set({ view, mode: "panel", openAd: null });
-  openAdScreen = (id: string) => this.set({ view: "ads", mode: "panel", openAd: id, notice: "" });
+  openAdScreen = (id: string): void => this.set({ view: "ads", mode: "panel", openAd: id, notice: "" });
   // Вопрос с панели не переносим в чат: там он не был задан словами.
   openChat = (input = "") => this.set({ mode: "chat", notice: "", input, pending: this.state.mode === "panel" ? null : this.state.pending });
   pickSituation = (situation: Situation) => this.set({ situation, mode: "panel", view: "overview", selDay: null, topped: false, decided: null, extra: 0, pending: null, notice: "", clients: null, undone: {}, asked: {}, adsOff: {}, ads: ADS, openAd: null, price: null, hist: histFor(situation), msgs: [msg("ai", OPENING[situation])] });
@@ -268,7 +277,7 @@ export class Store {
   addBudget = () => this.said("Вы добавили 3 000 ₽", "Поднял лимит ноября до 23 000 ₽. Показы идут до конца месяца.", { extra: 3000, decided: "added", hist: [this.entry("Добавил 3 000 ₽ к бюджету ноября", "Вы решили.", "Новый бюджет 23 000 ₽.", "money"), ...this.state.hist] });
   keepBudget = () => this.said("Вы оставили бюджет как есть", "Хорошо. Напомню, когда показы остановятся.", { decided: "kept" });
 
-  private reply(userText: string, aiText: string, patch: Partial<State> = {}, link?: Message["link"]) {
+  protected reply(userText: string, aiText: string, patch: Partial<State> = {}, link?: Message["link"]) {
     this.set({ ...patch, input: "", msgs: [...this.state.msgs, msg("me", userText), msg("ai", aiText, link)] });
   }
   // Разбор фраз в закрытый набор действий: заглушка на месте языковой модели. Менять можно только после подтверждения.

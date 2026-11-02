@@ -70,6 +70,7 @@ def _to_change(row: ChangeRow) -> Change:
         failure_reason=row.failure_reason,
         decision_id=row.decision_id,
         reverts_change_id=row.reverts_change_id,
+        idempotency_key=row.idempotency_key,
     )
 
 

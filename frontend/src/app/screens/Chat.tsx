@@ -8,6 +8,7 @@ type Chip = { label: string; send?: string; primary?: boolean };
 
 function chipsFor(s: State): Chip[] {
   if (s.pending) return [{ label: "Применить", primary: true }, { label: "Не надо" }];
+  if (s.live) return [{ label: "Как дела?" }, { label: "Поставь на паузу" }, { label: "Отмени последнее" }, { label: "Что ты делал?" }];
   if (s.stage === "start") {
     if (s.step === 0) return [{ label: "salon-primer.ru" }];
     if (s.step === 1) return [{ label: "Работаем до 22:00" }];

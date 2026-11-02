@@ -48,6 +48,7 @@ from adhelper.notifications.application.service import (
     deliver_pending,
     handle_telegram_updates,
 )
+from adhelper.platforms.adapters.gateway import RoutingGateway
 
 MAX_CHANGE_ATTEMPTS = 3
 
@@ -79,7 +80,8 @@ class Runtime:
             raise LookupError("Площадка не подключена")
         return Ledger(
             repository=SqlChangeRepository(self.sessions, business_id),
-            gateway=PlatformChangeGateway(platform),
+            # Просьбы владельца об объявлениях (ad:) повторяются здесь же, если Яндекс не ответил.
+            gateway=RoutingGateway(PlatformChangeGateway(platform), platform),
             lock=PostgresAccountLock(self.engine),
             max_attempts=MAX_CHANGE_ATTEMPTS,
             preflight=StoredPeriodPreflight(

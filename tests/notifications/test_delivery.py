@@ -21,7 +21,8 @@ from adhelper.worker.demo import seed_demo
 from tests.seed import seed_account
 
 Sessions = async_sessionmaker[AsyncSession]
-NOW = datetime(2026, 11, 2, 9, 0, tzinfo=UTC)
+# Тревоги создаются по часам базы: зашитая дата перестаёт работать, как только наступит.
+NOW = datetime.now(UTC) + timedelta(minutes=5)
 URL = "https://adhelper.example"
 M = 1_000_000
 
