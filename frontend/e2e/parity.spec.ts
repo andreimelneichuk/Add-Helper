@@ -9,17 +9,18 @@ const settings = (page: Page) => page.locator(".ah-bar").getByRole("button", { n
 test.describe.configure({ mode: "serial" });
 
 test("правка профиля сохраняется в базе", async ({ page }) => {
+  // Цену наращивания цитирует только приостановленное объявление: ждущие решения правка не трогает.
   await page.goto("/?new");
   await settings(page).click();
-  const price = page.getByLabel("Цена услуги 2, ₽");
-  await expect(price).toHaveValue("2200");
-  await price.fill("2300");
+  const price = page.getByLabel("Цена услуги 3, ₽");
+  await expect(price).toHaveValue("2800");
+  await price.fill("2900");
   await page.getByRole("button", { name: "Сохранить" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Сохранил" })).toBeVisible();
 
   await page.reload();
   await settings(page).click();
-  await expect(page.getByLabel("Цена услуги 2, ₽")).toHaveValue("2300");
+  await expect(page.getByLabel("Цена услуги 3, ₽")).toHaveValue("2900");
 });
 
 test("объявление, ждущее владельца, запускается и уходит в очередь", async ({ page }) => {

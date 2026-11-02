@@ -17,14 +17,24 @@ from adhelper.api.accounts import CheckedSession, CurrentSession, Service
 from adhelper.budget.adapters.rules_file import load_rules as load_budget_rules
 from adhelper.budget.adapters.sql import SqlPeriodStore
 from adhelper.budget.application.watch_cycle import confirm_balance
-from adhelper.creatives.adapters.sql import SqlCreatives, SqlProfiles
+from adhelper.creatives.adapters.rules_file import load_rules as load_creative_rules
+from adhelper.creatives.adapters.rules_file import load_slot_rules
+from adhelper.creatives.adapters.sql import (
+    SqlAdSlots,
+    SqlCreatives,
+    SqlProfiles,
+    SqlProfileSource,
+)
 from adhelper.creatives.application.service import (
+    CURRENT_RULES,
+    CURRENT_SLOT_RULES,
     WrongState,
     board,
     confirm,
     creative_report,
     live_ad_context,
     profile_from,
+    refresh_after_profile,
     withdraw,
 )
 from adhelper.notifications.adapters.sql import SqlAlerts
@@ -240,9 +250,33 @@ def cabinet_router() -> APIRouter:
             body.features,
             body.niche,
         )
-        profiles = SqlProfiles(_sessions(request), business_id)
-        await profiles.save(profile, body.website.strip())
-        return await get_profile(request, business_id)
+        sessions = _sessions(request)
+        await SqlProfiles(sessions, business_id).save(profile, body.website.strip())
+        # Правка факта сразу доходит до объявлений: устаревшие ожидающие снимаются,
+        # работающим со старым фактом заказывается замена.
+        outdated = await refresh_after_profile(
+            business_id,
+            SqlAdSlots(sessions, business_id),
+            SqlProfileSource(sessions),
+            SqlAlerts(sessions, business_id),
+            load_slot_rules(CURRENT_SLOT_RULES),
+            load_creative_rules(CURRENT_RULES),
+            _now(request),
+        )
+        return {
+            **(await get_profile(request, business_id)),
+            "outdated": [
+                {
+                    "account": item.ad.account,
+                    "ad_id": item.ad.ad_id,
+                    "headline": item.ad.draft.headline,
+                    "text": item.ad.draft.text,
+                    "numbers": list(item.numbers),
+                    "replacing": item.replacing,
+                }
+                for item in outdated
+            ],
+        }
 
     @router.get("/creatives")
     async def get_creatives(request: Request, business_id: Owned) -> dict[str, Any]:

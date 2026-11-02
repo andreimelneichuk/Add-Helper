@@ -8,7 +8,10 @@ from adhelper.creatives.domain.lifecycle import (
     CampaignSlots,
     Candidate,
     CreativeState,
+    FactPlan,
+    LiveAd,
     NewCreative,
+    Replacement,
     SlotPlan,
     StoredCreative,
     WritingSet,
@@ -46,6 +49,12 @@ class AdSlots(Protocol):
     async def open_sets(self) -> frozenset[tuple[str, str]]: ...
     async def sets_since(self, since: datetime) -> int: ...
     async def apply(self, plan: SlotPlan, creative_rules: str, now: datetime) -> None: ...
+    async def live_ads(self) -> Sequence[LiveAd]: ...
+    async def replacements(self) -> Sequence[Replacement]: ...
+    async def rewriting(self) -> frozenset[str]: ...
+    async def apply_facts(
+        self, plan: FactPlan, creative_rules: str, rework_rules: str, now: datetime
+    ) -> None: ...
 
 
 class Attention(Protocol):

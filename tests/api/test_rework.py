@@ -58,7 +58,10 @@ async def test_wish_with_fact_outside_profile_is_refused_before_model(
     assert "«30»" in detail and "в профиль" in detail
     async with sessions() as session:
         count = await session.scalar(
-            text("SELECT count(*) FROM creative_sets WHERE business_id = :b"), {"b": business}
+            text(
+                "SELECT count(*) FROM creative_sets WHERE business_id = :b AND rework IS NOT NULL"
+            ),
+            {"b": business},
         )
     assert count == 0
 
@@ -79,17 +82,21 @@ async def test_rework_writes_variants_and_owner_chooses_one(
     set_id = asked.json()["id"]
     assert (await client.get(f"{base}/reworks/{set_id}")).json()["status"] == "queued"
 
-    model = FakeModel(ads(SHORT, {"headline": "Маникюр за 900 ₽", "text": "Только у нас."}, PLACE))
+    # Сохранение профиля заказало и пополнение пустого направления: оно пишется первым.
+    refill = ads({"headline": "Маникюр рядом с вами", "text": "Стерильные инструменты."})
+    model = FakeModel(
+        refill, ads(SHORT, {"headline": "Маникюр за 900 ₽", "text": "Только у нас."}, PLACE)
+    )
     await _write(sessions, model)
     # Старый текст и просьба ушли модели строками JSON.
-    assert '"Маникюр 1500 ₽"' in model.calls[0][1] and '"Короче"' in model.calls[0][1]
+    assert '"Маникюр 1500 ₽"' in model.calls[1][1] and '"Короче"' in model.calls[1][1]
     view = (await client.get(f"{base}/reworks/{set_id}")).json()
     assert view["status"] == "ready" and view["ad_id"] == "11"
     assert [v["headline"] for v in view["variants"]] == [SHORT["headline"], PLACE["headline"]]
 
     # Невыбранные варианты не попадают в общий список и хранитель их не ставит.
     board = (await client.get(f"{base}/creatives")).json()["creatives"]
-    assert board == []
+    assert [c for c in board if c["reason"] == "rework"] == []
 
     first, second = (v["id"] for v in view["variants"])
     chosen = await client.post(
@@ -104,7 +111,8 @@ async def test_rework_writes_variants_and_owner_chooses_one(
     )
     assert again.status_code == 409
     board = (await client.get(f"{base}/creatives")).json()["creatives"]
-    assert [(c["headline"], c["state"]) for c in board] == [(PLACE["headline"], "launch_pending")]
+    chosen_rows = [(c["headline"], c["state"]) for c in board if c["reason"] == "rework"]
+    assert chosen_rows == [(PLACE["headline"], "launch_pending")]
     async with sessions() as session:
         replaces = await session.scalar(
             text("SELECT replaces FROM creatives WHERE id = :i"), {"i": second}
