@@ -177,7 +177,12 @@ async def write(args: argparse.Namespace) -> None:
         append_jsonl(DATA / "writer.jsonl", rows)
         counts["items"] += len(rows)
 
-    await asyncio.gather(*(one(pid) for pid in sorted(data.profiles) if pid not in done))
+    todo = [
+        pid
+        for pid in sorted(data.profiles)
+        if pid not in done and args.split in ("all", split_of(SPLIT_SEED, pid))
+    ]
+    await asyncio.gather(*(one(pid) for pid in todo))
     out(f"писатель {args.model}: {dict(counts)}")
 
 
@@ -401,6 +406,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     writer = sub.add_parser("write")
     writer.add_argument("--model", default=os.environ.get("OPENAI_MODEL", ""))
+    writer.add_argument("--split", default="all", choices=["train", "val", "test", "all"])
     voter = sub.add_parser("vote")
     voter.add_argument("--model", required=True, choices=SERVICE_MODELS)
     blinder = sub.add_parser("blind")
