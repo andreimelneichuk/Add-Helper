@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -22,7 +23,16 @@ from tests.seed import seed_account
 
 Sessions = async_sessionmaker[AsyncSession]
 # Тревоги создаются по часам базы: зашитая дата перестаёт работать, как только наступит.
+# Считаем перед каждым тестом: при импорте она устаревала, если прогон шёл дольше 5 минут.
 NOW = datetime.now(UTC) + timedelta(minutes=5)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_now() -> None:
+    global NOW
+    NOW = datetime.now(UTC) + timedelta(minutes=5)
+
+
 URL = "https://adhelper.example"
 M = 1_000_000
 
@@ -79,8 +89,8 @@ async def statuses(sessions: Sessions) -> list[tuple[str, str, int]]:
         return [(r[0], r[1], r[2]) for r in rows]
 
 
-async def send(sessions: Sessions, senders: dict[str, Any], now: datetime = NOW) -> int:
-    return await deliver_pending(SqlOutbox(sessions), senders, FixedMoney(), now, URL)
+async def send(sessions: Sessions, senders: dict[str, Any], now: datetime | None = None) -> int:
+    return await deliver_pending(SqlOutbox(sessions), senders, FixedMoney(), now or NOW, URL)
 
 
 async def test_alert_creates_one_email_delivery_and_sends_numbers(sessions: Sessions) -> None:
