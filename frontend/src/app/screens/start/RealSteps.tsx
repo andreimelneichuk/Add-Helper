@@ -1,7 +1,8 @@
 // Шаги 4–8 мастера на настоящих данных: объявления, кабинет, маркировка, код статистики, сводка.
 // Всё, что владелец вводит, сразу уходит в сервис; сводку готовности проверяет сервис.
 import { useEffect, useState } from "react";
-import type { AdAccount, AdvertiserKind, LaunchCheck, MarkingView, TagCheckView } from "../../../api";
+import type { AdAccount, AdvertiserKind, LaunchAnswer, LaunchCheck, MarkingView, TagCheckView } from "../../../api";
+import { rub } from "../../data";
 import type { State, Store } from "../../store";
 
 type Props = { store: Store; s: State };
@@ -159,11 +160,28 @@ export function RealLaunch({ store }: Props) {
   const api = store.wizard;
   const [check, setCheck] = useState<LaunchCheck | null>(null);
   const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [answer, setAnswer] = useState<LaunchAnswer | null>(null);
+  const [problem, setProblem] = useState("");
   useEffect(() => {
     if (!api) return;
     api.launchCheck().then(setCheck, (e: unknown) => setStatus(say(e)));
   }, [api]);
   if (!check) return <p className="ah-muted">{status || "Проверяю, всё ли готово…"}</p>;
+  const start = async () => {
+    if (!api || busy) return;
+    setBusy(true);
+    setProblem("");
+    try {
+      setAnswer(await api.startLaunch());
+      setCheck(await api.launchCheck());
+    } catch (e) {
+      setProblem(say(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const done = check.launched === "done";
   return (
     <>
       <ul className="st-ready" aria-label="Готовность к запуску">
@@ -173,7 +191,25 @@ export function RealLaunch({ store }: Props) {
           </li>
         ))}
       </ul>
-      <p className="st-letter" role="note">{check.ready ? "Всё нужное для запуска есть. " : "Чего не хватает, можно дополнить в настройках кабинета. "}{check.launch_text}</p>
+      {answer && answer.campaigns.length > 0 && (
+        <ul className="st-ready" aria-label="Созданные кампании">
+          {answer.campaigns.map((c) => (
+            <li key={c.name} className="is-ok">
+              <span role="img" aria-label="создана">✓</span> {c.name}: лимит {rub(c.limit_rubles)} на месяц
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="st-letter" role="note">
+        {done ? "" : check.ready ? "Всё нужное для запуска есть. " : "Чего не хватает, можно дополнить в настройках кабинета. "}
+        {check.launch_text}
+      </p>
+      {problem && <p className="ah-error" role="alert">{problem}</p>}
+      {check.launch_available && (
+        <button type="button" className="ah-btn ah-btn-primary" disabled={busy} onClick={() => void start()}>
+          {busy ? "Запускаю…" : "Запустить рекламу"}
+        </button>
+      )}
     </>
   );
 }

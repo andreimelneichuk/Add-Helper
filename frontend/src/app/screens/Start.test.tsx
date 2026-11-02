@@ -545,6 +545,33 @@ describe("шаги после входа на сервисе", () => {
     expect(loadDraft()).toBeNull();
   });
 
+  it("запуск на сервисе: кнопка создаёт кампании и сводка говорит, что дальше", async () => {
+    const ready = { key: "launch_plan" as const, ok: true, text: "Запуск: 1 кампания (поиск и сайты — 18 000 ₽) до 02.12" };
+    const launchCheck = vi
+      .fn()
+      .mockResolvedValueOnce({ items: [ready], ready: true, launch_available: true, launched: null, launch_text: "Нажмите «Запустить рекламу»" })
+      .mockResolvedValueOnce({ items: [ready], ready: true, launch_available: false, launched: "done", launch_text: "Реклама запущена: Яндекс проверяет объявления" });
+    const startLaunch = vi.fn(async () => ({ status: "done" as const, campaigns: [{ name: "Ноготок: поиск и сайты (ah-1-1)", limit_rubles: 18000 }], text: "" }));
+    const { user } = wizard(7, wizardApi({ launchCheck, startLaunch }));
+    await user.click(await screen.findByRole("button", { name: "Запустить рекламу" }));
+    expect(startLaunch).toHaveBeenCalledTimes(1);
+    const made = within(await screen.findByRole("list", { name: "Созданные кампании" }));
+    expect(made.getByText(/лимит 18 000 ₽ на месяц/)).toBeInTheDocument();
+    expect(screen.getByText(/Реклама запущена/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Запустить рекламу" })).not.toBeInTheDocument();
+  });
+
+  it("отказ запуска показан словами сервиса, кнопка остаётся", async () => {
+    const launchCheck = vi.fn(async () => ({ items: [], ready: true, launch_available: true, launched: null, launch_text: "" }));
+    const startLaunch = vi.fn(async () => {
+      throw new Error("В кабинете Яндекса уже есть кампании с лимитами");
+    });
+    const { user } = wizard(7, wizardApi({ launchCheck, startLaunch }));
+    await user.click(await screen.findByRole("button", { name: "Запустить рекламу" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("уже есть кампании");
+    expect(screen.getByRole("button", { name: "Запустить рекламу" })).toBeEnabled();
+  });
+
   it("возврат с подключения кабинета продолжает тот же бизнес", async () => {
     const { saveWizard } = await import("../draft");
     saveWizard("b1");

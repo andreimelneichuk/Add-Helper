@@ -50,6 +50,7 @@ export function fakeApi(over: Partial<Api> = {}) {
     tagCheck: vi.fn(async () => ({ check: null, site: "" })),
     requestTagCheck: vi.fn(async () => ({ check: null, site: "" })),
     launchCheck: vi.fn(async () => ({ items: [], ready: false, launch_available: false, launch_text: "" })),
+    startLaunch: vi.fn(async () => ({ status: "done" as const, campaigns: [], text: "" })),
     saveBudgetPlan: vi.fn(async (rubles: number) => ({ rubles })),
     accounts: vi.fn(async () => [{ id: "a1", platform: "yandex_direct", login: "anna", scopes: [], state: "connected" }]),
     connect: vi.fn(async () => ({ authorize_url: "https://oauth.yandex.ru/authorize?x=1" })),

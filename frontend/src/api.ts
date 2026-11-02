@@ -278,6 +278,7 @@ export function createApi(businessId: string, csrf: string) {
     tagCheck: () => request<TagCheckView>(`${base}/tag-check`),
     requestTagCheck: () => request<TagCheckView>(`${base}/tag-check`, { method: "POST" }, csrf),
     launchCheck: () => request<LaunchCheck>(`${base}/launch-check`),
+    startLaunch: () => request<LaunchAnswer>(`${base}/launch`, { method: "POST" }, csrf),
     adoptAds: (choice: AdsChoice) =>
       request<{ kept: number }>(`${base}/creative-sets/adopt`, { method: "POST", body: JSON.stringify(choice) }, csrf),
     wizardAds: () => request<{ ads: WizardAd[] }>(`${base}/wizard-ads`),
@@ -334,8 +335,15 @@ export type MarkingInput = { kind: AdvertiserKind; inn: string; name: string; ph
 export type MarkingView = { kind: AdvertiserKind; inn: string; name: string; phone: string | null; okved: string | null };
 export type TagCheck = { status: "queued" | "running" | "found" | "missing" | "failed"; url: string; counters: number[]; problem: string | null };
 export type TagCheckView = { check: TagCheck | null; site: string };
-export type LaunchItem = { key: "profile" | "plan" | "account" | "marking" | "counter"; ok: boolean; text: string };
-export type LaunchCheck = { items: LaunchItem[]; ready: boolean; launch_available: boolean; launch_text: string };
+export type LaunchItem = { key: "profile" | "plan" | "account" | "marking" | "counter" | "ads" | "launch_plan"; ok: boolean; text: string };
+export type LaunchCheck = {
+  items: LaunchItem[];
+  ready: boolean;
+  launch_available: boolean;
+  launched?: "done" | "pending" | "refused" | null;
+  launch_text: string;
+};
+export type LaunchAnswer = { status: "done" | "pending"; campaigns: { name: string; limit_rubles: number }[]; text: string };
 
 export async function openSession(): Promise<{ me: Me; businesses: Business[] } | null> {
   try {

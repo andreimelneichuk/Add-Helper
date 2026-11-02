@@ -21,6 +21,7 @@ export const CHANGE_KIND: Record<string, string> = {
   pause: "Остановка показов",
   pause_ad: "Отключено объявление",
   resume_ad: "Включено объявление",
+  create_campaign: "Создана кампания",
 };
 
 export const VERDICT: Record<string, string> = {
