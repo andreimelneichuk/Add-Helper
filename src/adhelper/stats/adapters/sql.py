@@ -19,6 +19,7 @@ from sqlalchemy import (
     true,
 )
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.sql import ColumnElement, TableClause
 
@@ -26,6 +27,7 @@ from adhelper.stats.domain.model import (
     AdLine,
     AlertLine,
     CampaignLine,
+    ClientAnswer,
     DayLine,
     HistoryLine,
     PeriodLine,
@@ -63,6 +65,15 @@ ALERTS = table(
     column("details", JSONB),
     column("created_at", DateTime(timezone=True)),
     column("resolved_at", DateTime(timezone=True)),
+)
+CLIENTS = table(
+    "client_answers",
+    column("business_id", Uuid),
+    column("since", Date),
+    column("until", Date),
+    column("leads", Integer),
+    column("clients", Integer),
+    column("answered_at", DateTime(timezone=True)),
 )
 CAMPAIGNS = table(
     "campaigns",
@@ -152,6 +163,46 @@ class SqlDashboard:
     def __init__(self, sessions: async_sessionmaker[AsyncSession], business_id: UUID) -> None:
         self._sessions = sessions
         self._business_id = business_id
+
+    async def leads(self, since: date, until: date) -> int:
+        """Обращения по статистике площадки за окно дат включительно."""
+        statement = select(func.coalesce(func.sum(STATS.c.conversions), 0)).where(
+            STATS.c.business_id == self._business_id,
+            STATS.c.day >= since,
+            STATS.c.day <= until,
+        )
+        async with self._sessions() as session:
+            return int(await session.scalar(statement) or 0)
+
+    async def save_clients(self, answer: ClientAnswer) -> None:
+        values = {
+            "business_id": self._business_id,
+            "since": answer.since,
+            "until": answer.until,
+            "leads": answer.leads,
+            "clients": answer.clients,
+        }
+        statement = (
+            pg_insert(CLIENTS)
+            .values(**values)
+            .on_conflict_do_update(
+                index_elements=["business_id", "since", "until"],
+                set_={"leads": answer.leads, "clients": answer.clients, "answered_at": func.now()},
+            )
+        )
+        async with self._sessions() as session, session.begin():
+            await session.execute(statement)
+
+    async def latest_clients(self) -> ClientAnswer | None:
+        statement = (
+            select(CLIENTS.c.since, CLIENTS.c.until, CLIENTS.c.leads, CLIENTS.c.clients)
+            .where(CLIENTS.c.business_id == self._business_id)
+            .order_by(CLIENTS.c.until.desc(), CLIENTS.c.answered_at.desc())
+            .limit(1)
+        )
+        async with self._sessions() as session:
+            row = (await session.execute(statement)).one_or_none()
+        return ClientAnswer(*row) if row else None
 
     async def note_ad_state(self, account: str, ad_id: str, state: str) -> None:
         """Результат, прочитанный журналом. Полную сверку с площадкой делает синхронизация (T6)."""
