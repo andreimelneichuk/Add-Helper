@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../api";
 import type { Api } from "../../api";
-import { fakeApi, open, settled } from "../testLive";
+import { fakeApi, open, overview, settled } from "../testLive";
 import { mergeFacts } from "./LiveSettings";
 import { Settings } from "./Settings";
 
@@ -234,5 +234,35 @@ describe("заполнение профиля с сайта", () => {
   it("без адреса кнопка не активна", async () => {
     render(<Settings store={await open(fakeApi())} />);
     expect(await screen.findByRole("button", { name: "Заполнить с сайта" })).toBeDisabled();
+  });
+});
+
+describe("план бюджета до запуска", () => {
+  const noPeriod = () => ({ ...overview(), money: [] });
+
+  it("показывает сумму из мастера и меняет её в сервисе", async () => {
+    const api = fakeApi({ overview: vi.fn(async () => noPeriod()), budgetPlan: vi.fn(async () => ({ rubles: 20000 })), saveBudgetPlan: vi.fn(async (rubles: number) => ({ rubles })) } as Partial<Api>);
+    render(<Settings store={await open(api)} />);
+    const field = await screen.findByLabelText("План на запуск, ₽ в месяц");
+    expect(field).toHaveValue("20000");
+    expect(screen.getByText(/лимиты в Яндексе поставлю при запуске/i)).toBeInTheDocument();
+    await userEvent.clear(field);
+    await userEvent.type(field, "25000");
+    await userEvent.click(screen.getByRole("button", { name: "Сохранить план" }));
+    expect(api.saveBudgetPlan).toHaveBeenCalledWith(25000);
+    expect(await screen.findByText(/Сохранил план: 25.000.₽/)).toBeInTheDocument();
+  });
+
+  it("отказ сервиса по сумме показывает как есть", async () => {
+    const api = fakeApi({
+      overview: vi.fn(async () => noPeriod()),
+      budgetPlan: vi.fn(async () => ({ rubles: null })),
+      saveBudgetPlan: vi.fn(async () => { throw new ApiError(422, "Яндекс не примет бюджет меньше 1 550 ₽ в месяц"); }),
+    } as Partial<Api>);
+    render(<Settings store={await open(api)} />);
+    const field = await screen.findByLabelText("План на запуск, ₽ в месяц");
+    await userEvent.type(field, "1000");
+    await userEvent.click(screen.getByRole("button", { name: "Сохранить план" }));
+    expect(await screen.findByText(/не примет бюджет меньше/)).toBeInTheDocument();
   });
 });

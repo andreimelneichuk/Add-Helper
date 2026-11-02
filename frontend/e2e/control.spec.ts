@@ -161,3 +161,30 @@ test("до входа сайт разбирается в шаги запуска
   await page.getByRole("button", { name: "Всё верно" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Сколько готовы тратить в месяц?" })).toBeVisible();
 });
+
+test("бюджет запуска проверяется по правилам сервиса", async ({ page }) => {
+  await page.goto("/?new&start");
+  await page.evaluate(() => window.localStorage.removeItem("adhelper.startDraft"));
+  await page.getByRole("button", { name: "Заполнить вручную" }).click();
+  await page.getByRole("button", { name: "Добавить факт" }).click();
+  await page.getByLabel("Новый факт").fill("Маникюр у дома");
+  await page.getByRole("button", { name: "Сохранить" }).click();
+  await page.getByRole("button", { name: "Всё верно" }).click();
+  // Минимум 1 550 ₽ пришёл из правил plan-1, в прототипе он 1 000 ₽.
+  await page.getByLabel("Своя сумма в месяц, ₽").fill("1200");
+  await page.getByRole("button", { name: "Продолжить" }).click();
+  await expect(page.getByRole("alert")).toContainText(/от 1.550/);
+});
+
+test("черновик после входа не затирает бизнес, который уже есть", async ({ page }) => {
+  // Стенд входит под демо-владельцем, у него есть бизнес: черновик переносить нельзя.
+  await page.goto("/?new&start");
+  await page.evaluate(() => window.localStorage.setItem("adhelper.startDraft", JSON.stringify({ site: "https://nogti.ru/", facts: [], budget: 20000 })));
+  await page.reload();
+  await expect(page.getByRole("alert")).toContainText("У вас уже есть бизнес");
+  await page.getByRole("button", { name: "Продолжить" }).click();
+  await expect(page).toHaveURL(/\/\?new$/);
+  await page.goto("/?new");
+  await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+  await expect(page.getByLabel("Сайт")).not.toHaveValue("https://nogti.ru/");
+});

@@ -14,7 +14,8 @@ export type Ad = { id: string; name: string; tag: string; tagTone: TagTone; lead
 type Direction = [string, number, number, [string, number, number, string?][], string?];
 export type PeriodStats = { label: string; cost: number; leads: number; shows: number; clicks: number; dirs: Direction[] };
 /** quote — дословная строка с сайта, на которой держится факт; у правок владельца её нет. */
-export type Fact = { id: string; label: string; value: string; source: string; quote?: string };
+/** field — поле профиля, куда факт ляжет после входа; у фактов, добавленных словами, его нет. */
+export type Fact = { id: string; label: string; value: string; source: string; quote?: string; field?: "niche" | "address" | "service" | "feature" };
 export type LiveAlert = { kind: string; title: string; text: string; tone: "bad" | "warn" };
 /** Настоящие данные сервиса; суммы в рублях только для показа. */
 export type Live = { name: string; today: string; monthName: string; monthOf: string; monthDays: number; days: Day[]; trail: Day[]; spent: number | null; budget: number; balance: number | null; gap: number | null; account: string | null; hasCampaigns: boolean; alerts: LiveAlert[]; stats: Record<Period, PeriodStats>; profile: [string, string][] };

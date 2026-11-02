@@ -29,6 +29,33 @@ export const CONNECT_RESULT: Record<string, string> = {
 
 const message = (e: unknown) => (e instanceof Error ? e.message : "Сервис не ответил. Попробуйте позже.");
 
+/** До запуска периода нет: показываем план из мастера. Лимиты в Яндексе из него ставятся только при запуске. */
+function PlanForm({ api }: { api: Api }) {
+  const [draft, setDraft] = useState("");
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.budgetPlan().then((p) => setDraft(p.rubles ? String(p.rubles) : ""), (e: unknown) => setStatus(message(e)));
+  }, [api]);
+  const amount = Number(draft);
+  return (
+    <form className="set-form" aria-label="План бюджета" onSubmit={(e) => {
+      e.preventDefault();
+      if (!draft || busy) return;
+      setBusy(true);
+      api.saveBudgetPlan(amount).then((p) => setStatus(`Сохранил план: ${rub(p.rubles ?? amount)} в месяц. Лимиты в Яндексе поставлю при запуске рекламы.`), (err: unknown) => setStatus(message(err))).finally(() => setBusy(false));
+    }}>
+      <label>
+        <span className="ah-label">План на запуск, ₽ в месяц</span>
+        <input className="ah-input" inputMode="numeric" value={draft} onChange={(e) => { setStatus(""); setDraft(e.target.value.replace(/\D/g, "").slice(0, 9)); }} />
+      </label>
+      <p className="set-hint">Реклама ещё не запущена, денег не тратим. Лимиты в Яндексе поставлю при запуске, на эту сумму.</p>
+      {status && <p className="set-hint" role="status">{status}</p>}
+      <div className="set-actions"><button type="submit" className="ah-btn" disabled={!draft || busy}>Сохранить план</button></div>
+    </form>
+  );
+}
+
 function BudgetForm({ store }: { store: LiveStore }) {
   const s = useStoreState(store);
   const live = s.live!;
@@ -38,7 +65,7 @@ function BudgetForm({ store }: { store: LiveStore }) {
   const spent = live.spent ?? 0;
   const problem = !draft ? "Укажите сумму." : amount < spent ? `В этом месяце уже потрачено ${rub(spent)}, бюджет не может быть меньше.` : null;
   const lower = amount < live.budget;
-  if (live.budget <= 0) return <><div><div className="ah-label">Бюджет в месяц</div><div>Ещё не задан</div></div><p className="set-hint">Бюджет задаётся при запуске рекламы.</p></>;
+  if (live.budget <= 0) return <PlanForm api={store.api} />;
   return (
     <form className="set-form" aria-label="Бюджет месяца" onSubmit={(e) => { e.preventDefault(); if (!problem && amount !== live.budget) setAsking(true); }}>
       <label>
