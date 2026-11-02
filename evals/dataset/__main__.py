@@ -2,7 +2,7 @@
 
     uv run python -m evals.dataset write             # объявления писателя по профилям
     uv run python -m evals.dataset blind --labeler claude-b --out DIR --chunks 4
-    uv run python -m evals.dataset accept --labeler claude-b --agent-model haiku DIR/claude-b-*.votes.json
+    uv run python -m evals.dataset accept --labeler claude-b --agent-model haiku DIR/*.votes.json
     uv run python -m evals.dataset vote --model qwen/qwen3.8-27b   # замер модели сервиса
     uv run python -m evals.dataset stats
     uv run python -m evals.dataset label --labeler andrei --queue disputed
