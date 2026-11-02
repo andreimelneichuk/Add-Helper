@@ -11,8 +11,11 @@ from sqlalchemy import (
     Identity,
     Index,
     Text,
+    Uuid,
+    column,
     func,
     select,
+    table,
     text,
     update,
 )
@@ -213,3 +216,34 @@ class SqlPeriodStore:
     async def latest_spent(self, period_id: int) -> int | None:
         snapshots = await self.recent_snapshots(period_id)
         return snapshots[-1].reported if snapshots else None
+
+
+PLANS = table(
+    "budget_plans",
+    column("business_id", Uuid),
+    column("monthly_micros", BigInteger),
+    column("rules_version", Text),
+    column("updated_at", DateTime(timezone=True)),
+)
+
+
+class SqlBudgetPlans:
+    """План бюджета одного бизнеса до запуска. Каждый запрос ограничен business_id."""
+
+    def __init__(self, sessions: async_sessionmaker[AsyncSession], business_id: UUID) -> None:
+        self._sessions = sessions
+        self._business_id = business_id
+
+    async def get(self) -> int | None:
+        statement = select(PLANS.c.monthly_micros).where(PLANS.c.business_id == self._business_id)
+        async with self._sessions() as session:
+            return await session.scalar(statement)
+
+    async def set(self, monthly_micros: int, rules_version: str) -> None:
+        values = {"monthly_micros": monthly_micros, "rules_version": rules_version}
+        statement = insert(PLANS).values(business_id=self._business_id, **values)
+        statement = statement.on_conflict_do_update(
+            index_elements=[PLANS.c.business_id], set_={**values, "updated_at": func.now()}
+        )
+        async with self._sessions.begin() as session:
+            await session.execute(statement)

@@ -22,6 +22,9 @@ logger = logging.getLogger(__name__)
 SESSION_COOKIE = "ah_session"
 FLOW_COOKIE = "ah_oauth_state"
 FLOW_COOKIE_SECONDS = 600
+# Куда вернуть после входа. Только из этого списка: чужой адрес из запроса не принимаем.
+AFTER_LOGIN_COOKIE = "ah_after_login"
+AFTER_LOGIN = {"start": "/?new&start"}
 SESSION_COOKIE_SECONDS = 30 * 24 * 3600
 
 
@@ -76,9 +79,11 @@ def _flow_redirect(url: str, state: str, secure: bool) -> RedirectResponse:
     return response
 
 
-def _home(query: str = "") -> RedirectResponse:
-    response = RedirectResponse(f"/{query}", status.HTTP_302_FOUND)
+def _home(result: str = "", target: str = "/") -> RedirectResponse:
+    url = target if not result else f"{target}{'&' if '?' in target else '?'}{result}"
+    response = RedirectResponse(url, status.HTTP_302_FOUND)
     response.delete_cookie(FLOW_COOKIE, path="/api")
+    response.delete_cookie(AFTER_LOGIN_COOKIE, path="/api")
     return response
 
 
@@ -103,14 +108,25 @@ def accounts_router(settings: Settings) -> APIRouter:
     secure = settings.cookie_secure
 
     @router.get("/auth/yandex/login")
-    async def login(service: Service) -> RedirectResponse:
+    async def login(service: Service, then: str | None = None) -> RedirectResponse:
         try:
             url, state = await service.begin_login()
         except ProviderUnavailable:
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE, "Вход пока не настроен"
             ) from None
-        return _flow_redirect(url, state, secure)
+        response = _flow_redirect(url, state, secure)
+        if then in AFTER_LOGIN:
+            response.set_cookie(
+                AFTER_LOGIN_COOKIE,
+                then,
+                max_age=FLOW_COOKIE_SECONDS,
+                httponly=True,
+                secure=secure,
+                samesite="lax",
+                path="/api",
+            )
+        return response
 
     @router.get("/auth/yandex/callback")
     async def login_callback(
@@ -120,18 +136,19 @@ def accounts_router(settings: Settings) -> APIRouter:
         code: str | None = None,
         error: str | None = None,
     ) -> RedirectResponse:
+        back = AFTER_LOGIN.get(request.cookies.get(AFTER_LOGIN_COOKIE, ""), "/")
         if not _state_matches_browser(request, state) or state is None:
-            return _home("?login=failed")
+            return _home("login=failed", back)
         try:
             if error is not None or code is None:
                 await service.cancel_login(state)
-                return _home("?login=denied")
+                return _home("login=denied", back)
             session = await service.complete_login(state, code)
         except (FlowInvalid, GrantRejected):
-            return _home("?login=failed")
+            return _home("login=failed", back)
         except ProviderUnavailable:
-            return _home("?login=unavailable")
-        response = _home()
+            return _home("login=unavailable", back)
+        response = _home(target=back)
         response.set_cookie(
             SESSION_COOKIE,
             session.token,
@@ -204,18 +221,18 @@ def accounts_router(settings: Settings) -> APIRouter:
         error: str | None = None,
     ) -> RedirectResponse:
         if not _state_matches_browser(request, state) or state is None:
-            return _home("?connect=failed")
+            return _home("connect=failed")
         try:
             if error is not None or code is None:
                 await service.cancel_connect(state)
-                return _home("?connect=denied")
+                return _home("connect=denied")
             await service.complete_connect(info.user.id, state, code)
         except AccountTaken:
-            return _home("?connect=taken")
+            return _home("connect=taken")
         except (FlowInvalid, GrantRejected, BusinessNotFound):
-            return _home("?connect=failed")
+            return _home("connect=failed")
         except ProviderUnavailable:
-            return _home("?connect=unavailable")
-        return _home("?connect=ok")
+            return _home("connect=unavailable")
+        return _home("connect=ok")
 
     return router
