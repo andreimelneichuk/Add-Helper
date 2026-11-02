@@ -1,4 +1,4 @@
-// Шаги 5–8 мастера на настоящих данных: кабинет, маркировка, код статистики, сводка.
+// Шаги 4–8 мастера на настоящих данных: объявления, кабинет, маркировка, код статистики, сводка.
 // Всё, что владелец вводит, сразу уходит в сервис; сводку готовности проверяет сервис.
 import { useEffect, useState } from "react";
 import type { AdAccount, AdvertiserKind, LaunchCheck, MarkingView, TagCheckView } from "../../../api";
@@ -174,6 +174,42 @@ export function RealLaunch({ store }: Props) {
         ))}
       </ul>
       <p className="st-letter" role="note">{check.ready ? "Всё нужное для запуска есть. " : "Чего не хватает, можно дополнить в настройках кабинета. "}{check.launch_text}</p>
+    </>
+  );
+}
+
+/** Шаг «Объявления»: пишет настоящий писатель по фактам черновика, владелец оставляет нужные. */
+export function RealAds({ store, s }: Props) {
+  const chosenSaved = !!s.account;
+  if (s.writing) {
+    return <p className="ah-muted" role="status">Пишу объявления по вашим фактам и проверяю каждое: цены и обещания только из профиля. Обычно это меньше минуты.</p>;
+  }
+  return (
+    <>
+      {s.adSet?.template && <p className="ah-muted">Писатель сейчас не ответил, поэтому объявления собраны по шаблону из ваших фактов. После запуска я буду писать новые и ставить лучшие.</p>}
+      {s.adSet?.needsReview && <p className="ah-muted">У вашей сферы строгие правила рекламы: перед запуском каждое объявление покажу вам на подтверждение.</p>}
+      {chosenSaved && s.ads.length > 0 && <p className="ah-muted">Выбор сохранён в сервисе: запуск начнётся с этих объявлений.</p>}
+      <div className="st-ads">
+        {s.ads.map((a) => {
+          const off = !!s.draftOff[a.id];
+          const action = off ? "Вернуть" : "Убрать";
+          return (
+            <article key={a.id} className={off ? "st-ad st-ad-plain is-off" : "st-ad st-ad-plain"}>
+              <div className="st-ad-body">
+                <h2 className="st-ad-title">{a.title}</h2>
+                <p className="st-ad-text">{a.text}</p>
+                <p className="st-ad-facts">{a.facts}</p>
+                {!chosenSaved && (
+                  <button type="button" className="ah-btn st-ad-toggle" aria-label={`${action} «${a.name}»`} onClick={() => store.set({ draftOff: { ...s.draftOff, [a.id]: !off }, block: "" })}>{action}</button>
+                )}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+      {!chosenSaved && (
+        <button type="button" className="ah-btn" onClick={() => void store.writeAds(true)}>{s.ads.length ? "Написать другие варианты" : "Написать ещё раз"}</button>
+      )}
     </>
   );
 }

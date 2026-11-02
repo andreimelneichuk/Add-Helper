@@ -162,6 +162,43 @@ test("до входа сайт разбирается в шаги запуска
   await expect(page.getByRole("heading", { level: 1, name: "Сколько готовы тратить в месяц?" })).toBeVisible();
 });
 
+test("до входа объявления пишет писатель сервиса по фактам сайта, выбор переходит в бизнес", async ({ page }) => {
+  await page.goto("/?new&start");
+  await page.evaluate(() => window.localStorage.removeItem("adhelper.startDraft"));
+  await page.getByLabel("Ссылка на сайт или страницу").fill("nogti.ru");
+  await page.getByRole("button", { name: "Изучить" }).click();
+  await page.getByRole("button", { name: "Всё верно" }).click({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Продолжить" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Вот ваши объявления" })).toBeVisible();
+  // Подставных объявлений прототипа нет: текст написан по цене и адресу с сайта.
+  await expect(page.getByText("Маникюр с покрытием гель-лаком за 1700 ₽ на Тверской, 7.")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/Опирается на: цена услуги «Маникюр с покрытием гель-лаком»/)).toBeVisible();
+  await expect(page.getByText("Скидка 20% на первый визит")).toHaveCount(0);
+  await page.getByRole("button", { name: "Убрать «Маникюр на Тверской»" }).click();
+  await page.getByRole("button", { name: "Нравится" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Подключите кабинет Яндекса" })).toBeVisible();
+
+  // Полный вход стенд не проходит: вход подменён, выбор переносим тем же вызовом, что и после входа.
+  await page.route("**/api/auth/yandex/login**", (route) => route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: "<p>login</p>" }));
+  await page.getByRole("button", { name: "Войти через Яндекс" }).click();
+  await page.waitForURL(/\/api\/auth\/yandex\/login\?then=start$/);
+  const draft = await page.evaluate(() => JSON.parse(window.localStorage.getItem("adhelper.startDraft") ?? "null"));
+  expect(draft.ads.kept).toEqual([0]);
+  const items = await page.evaluate(async (ads) => {
+    const me = await (await fetch("/api/me")).json();
+    const business = (await (await fetch("/api/businesses")).json())[0];
+    const base = `/api/businesses/${business.id}`;
+    await fetch(`${base}/creative-sets/adopt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": me.csrf_token },
+      body: JSON.stringify(ads),
+    });
+    window.localStorage.removeItem("adhelper.startDraft");
+    return (await (await fetch(`${base}/launch-check`)).json()).items.map((i: { text: string }) => i.text);
+  }, draft.ads);
+  expect(items).toContain("Объявления: выбрано 1");
+});
+
 test("бюджет запуска проверяется по правилам сервиса", async ({ page }) => {
   await page.goto("/?new&start");
   await page.evaluate(() => window.localStorage.removeItem("adhelper.startDraft"));

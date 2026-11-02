@@ -90,3 +90,4 @@
 .st-ready li { display: flex; gap: 8px; align-items: baseline; }
 .st-ready .is-ok span { color: var(--good, inherit); }
 .st-ready .is-missing { color: var(--muted, inherit); }
+.st-ads + .ah-btn { align-self: flex-start; margin-top: var(--gap); }

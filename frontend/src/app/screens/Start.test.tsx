@@ -2,11 +2,11 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../api";
-import type { SiteRead } from "../../api";
+import type { AdSet, SiteRead } from "../../api";
 import { clearDraft, clearWizard, loadDraft, loadWizard } from "../draft";
 import type { TransferDeps } from "../draft";
 import { initialState, Store } from "../store";
-import type { GuestReader, WizardApi } from "../store";
+import type { GuestReader, GuestWriter, WizardApi } from "../store";
 import { Start } from "./Start";
 
 function setup(patch: Parameters<Store["set"]>[0] = {}) {
@@ -567,5 +567,117 @@ describe("шаги после входа на сервисе", () => {
     const session = vi.fn(async () => ({ me: { email: null, csrf_token: "c" }, businesses: [{ id: "b1", name: "x" }] }));
     await store.resumeConnect({ session, open: vi.fn() }, null);
     expect(store.navigate).toHaveBeenCalledWith("/?new");
+  });
+});
+
+describe("объявления мастера на сервисе", () => {
+  const facts = [
+    { id: "site0", field: "niche" as const, label: "Чем занимаетесь", value: "маникюр", source: "с сайта", quote: "Студия маникюра" },
+    { id: "site1", field: "service" as const, label: "Услуга", value: "Маникюр, 1 500 ₽", source: "с сайта", quote: "Маникюр — 1 500 ₽" },
+  ];
+  const written: AdSet = {
+    id: 7, status: "ready", source: "model", template: false, needs_review: false, problem_text: null,
+    ads: [
+      { headline: "Маникюр за 1500 ₽", text: "Стерильные инструменты, ул. Ленина, 5.", facts: ["цена услуги «Маникюр»", "услуга из профиля"] },
+      { headline: "Маникюр рядом с домом", text: "Запишитесь онлайн: ул. Ленина, 5.", facts: [] },
+    ],
+  };
+
+  function withWriter(over: Partial<GuestWriter> = {}, patch: Parameters<Store["set"]>[0] = {}) {
+    clearDraft();
+    const writer: GuestWriter = {
+      writeAds: vi.fn(async () => ({ id: 7, token: "k", status: "queued" })),
+      adSet: vi.fn(async () => written),
+      ...over,
+    };
+    const store = new Store({ ...initialState("start"), facts, site: "https://nogti.ru/", step: 2, ...patch });
+    store.reader = { readSite: vi.fn(), siteRead: vi.fn() };
+    store.writer = writer;
+    store.navigate = vi.fn();
+    store.waitMs = 1;
+    render(<Start store={store} />);
+    return { store, writer, user: userEvent.setup() };
+  }
+
+  it("пишет объявления по фактам черновика и показывает, на что они опираются", async () => {
+    const { store, writer, user } = withWriter();
+    await user.click(button("Продолжить"));
+    expect(writer.writeAds).toHaveBeenCalledWith({
+      niche: "маникюр", address: "", services: [{ name: "Маникюр", price: 1500 }], features: [],
+    });
+    expect(await screen.findByText("Маникюр за 1500 ₽")).toBeInTheDocument();
+    expect(store.state.step).toBe(3);
+    expect(screen.getByText(/цена услуги «Маникюр», услуга из профиля/)).toBeInTheDocument();
+    // Изображений у настоящих объявлений пока нет: подпись шага этого не обещает.
+    expect(screen.getByText(/Изображения добавлю позже/)).toBeInTheDocument();
+    expect(screen.getByText(/не опирается на факты профиля/i)).toBeInTheDocument();
+    // Переделать по просьбе пока может только прототип: настоящий писатель пишет набор целиком.
+    expect(screen.queryByRole("button", { name: /Переделать/ })).not.toBeInTheDocument();
+  });
+
+  it("пока пишет, дальше не пускает", async () => {
+    let finish: (v: AdSet) => void = () => undefined;
+    const { store, user } = withWriter({ adSet: vi.fn(() => new Promise<AdSet>((resolve) => { finish = resolve; })) });
+    await user.click(button("Продолжить"));
+    expect(await screen.findByText(/Пишу объявления по вашим фактам/)).toBeInTheDocument();
+    await user.click(button("Нравится"));
+    expect(store.state.step).toBe(3);
+    expect(screen.getByRole("alert")).toHaveTextContent("ещё пишутся");
+    await act(async () => finish(written));
+    expect(await screen.findByText("Маникюр рядом с домом")).toBeInTheDocument();
+  });
+
+  it("сбой писателя объясняет и даёт написать ещё раз", async () => {
+    const failed: AdSet = { ...written, status: "failed", ads: [], problem_text: "Не получилось написать объявления. Попробуйте ещё раз" };
+    const adSet = vi.fn<GuestWriter["adSet"]>().mockResolvedValueOnce(failed).mockResolvedValue(written);
+    const { writer, user } = withWriter({ adSet });
+    await user.click(button("Продолжить"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Не получилось написать");
+    await user.click(button("Написать ещё раз"));
+    expect(writer.writeAds).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText("Маникюр за 1500 ₽")).toBeInTheDocument();
+  });
+
+  it("лимит писателя показывает словами сервиса", async () => {
+    const { user } = withWriter({ writeAds: vi.fn(async () => { throw new ApiError(429, "С этого адреса объявления сегодня писали уже 3 раза"); }) });
+    await user.click(button("Продолжить"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("уже 3 раза");
+  });
+
+  it("шаблон и строгая сфера сказаны честно", async () => {
+    const { user } = withWriter({ adSet: vi.fn(async (): Promise<AdSet> => ({ ...written, source: "template", template: true, needs_review: true })) });
+    await user.click(button("Продолжить"));
+    expect(await screen.findByText(/собраны по шаблону из ваших фактов/)).toBeInTheDocument();
+    expect(screen.getByText(/каждое объявление покажу вам/)).toBeInTheDocument();
+  });
+
+  it("назад и вперёд без правки фактов не пишет заново", async () => {
+    const { store, writer, user } = withWriter();
+    await user.click(button("Продолжить"));
+    await screen.findByText("Маникюр за 1500 ₽");
+    act(() => store.set({ step: 2 }));
+    await user.click(button("Продолжить"));
+    expect(writer.writeAds).toHaveBeenCalledTimes(1);
+    act(() => store.set({ step: 2, facts: [...facts, { id: "n1", label: "Вы добавили", value: "Парковка", source: "от вас" }] }));
+    await user.click(button("Продолжить"));
+    expect(writer.writeAds).toHaveBeenCalledTimes(2);
+  });
+
+  it("вход уносит выбор: какие объявления владелец оставил", async () => {
+    const { store, user } = withWriter();
+    await user.click(button("Продолжить"));
+    await user.click(await screen.findByRole("button", { name: "Убрать «Маникюр за 1500 ₽»" }));
+    await user.click(button("Нравится"));
+    expect(store.state.step).toBe(4);
+    await user.click(button("Войти через Яндекс"));
+    expect(loadDraft()?.ads).toEqual({ id: 7, token: "k", kept: [1] });
+  });
+
+  it("после входа выбор уже в сервисе: кнопок выбора нет", async () => {
+    const { user } = withWriter({}, { account: { email: "anna@example.ru" } });
+    await user.click(button("Продолжить"));
+    await screen.findByText("Маникюр за 1500 ₽");
+    expect(screen.queryByRole("button", { name: /Убрать/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/Выбор сохранён в сервисе/)).toBeInTheDocument();
   });
 });

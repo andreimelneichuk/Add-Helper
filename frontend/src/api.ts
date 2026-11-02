@@ -165,6 +165,24 @@ export type SiteRead = {
   pages: string[];
 };
 
+/** Объявление писателя в мастере: facts — на какие поля черновика оно опирается. */
+export type WizardAd = { headline: string; text: string; facts: string[] };
+export type AdSet = {
+  id: number;
+  status: "queued" | "running" | "ready" | "failed";
+  source: "model" | "template" | null;
+  /** Писатель не ответил или его тексты сняты проверкой: собрано кодом из фактов. */
+  template: boolean;
+  /** Строгая сфера: перед запуском каждое объявление покажем владельцу. */
+  needs_review: boolean;
+  problem_text: string | null;
+  ads: WizardAd[];
+};
+/** Черновик профиля для писателя: только подтверждённые владельцем факты. */
+export type AdDraftProfile = Omit<Profile, "website">;
+/** Выбор владельца в мастере: какой набор и какие объявления из него оставить. */
+export type AdsChoice = { id: number; token: string; kept: number[] };
+
 export type Business = { id: string; name: string };
 export type AdAccount = { id: string; platform: string; login: string; scopes: string[]; state: string };
 export type Me = { email: string | null; csrf_token: string };
@@ -223,6 +241,10 @@ export function createGuestApi() {
     siteRead: (id: number, token: string) =>
       request<SiteRead>(`/api/site-reads/${id}`, { headers: { "X-Read-Token": token } }),
     budgetOptions: () => request<{ min: number; max: number; presets: number[] }>("/api/budget-plan/options"),
+    writeAds: (profile: AdDraftProfile) =>
+      request<{ id: number; token: string; status: string }>("/api/creative-sets", { method: "POST", body: JSON.stringify(profile) }),
+    adSet: (id: number, token: string) =>
+      request<AdSet>(`/api/creative-sets/${id}`, { headers: { "X-Set-Token": token } }),
   };
 }
 
@@ -256,6 +278,9 @@ export function createApi(businessId: string, csrf: string) {
     tagCheck: () => request<TagCheckView>(`${base}/tag-check`),
     requestTagCheck: () => request<TagCheckView>(`${base}/tag-check`, { method: "POST" }, csrf),
     launchCheck: () => request<LaunchCheck>(`${base}/launch-check`),
+    adoptAds: (choice: AdsChoice) =>
+      request<{ kept: number }>(`${base}/creative-sets/adopt`, { method: "POST", body: JSON.stringify(choice) }, csrf),
+    wizardAds: () => request<{ ads: WizardAd[] }>(`${base}/wizard-ads`),
     logout: () => request<void>("/api/auth/logout", { method: "POST" }, csrf),
     channels: () => request<Channels>("/api/me/notifications"),
     linkTelegram: () => request<{ url: string }>("/api/me/telegram", { method: "POST" }, csrf),

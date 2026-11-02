@@ -1,5 +1,6 @@
 // Черновик запуска до входа: живёт в браузере, после входа становится бизнесом, профилем и планом бюджета.
-import type { Business, Me, Profile } from "../api";
+import { ApiError } from "../api";
+import type { AdsChoice, Business, Me, Profile } from "../api";
 import type { Fact } from "./data";
 
 export type StartDraft = {
@@ -8,6 +9,8 @@ export type StartDraft = {
   budget: number;
   /** Бизнес, уже созданный этим черновиком: повтор после сбоя не создаёт второй. */
   businessId?: string;
+  /** Объявления, которые владелец оставил на шаге «Объявления». */
+  ads?: AdsChoice;
 };
 
 export type TransferDeps = {
@@ -16,6 +19,7 @@ export type TransferDeps = {
   business: (id: string, csrf: string) => {
     saveProfile: (profile: Profile) => Promise<unknown>;
     saveBudgetPlan: (rubles: number) => Promise<unknown>;
+    adoptAds?: (choice: AdsChoice) => Promise<unknown>;
   };
 };
 
@@ -104,6 +108,14 @@ export async function transferDraft(deps: TransferDeps, draft: StartDraft): Prom
   const api = deps.business(id, csrf);
   await api.saveProfile(draftProfile(draft));
   await api.saveBudgetPlan(draft.budget);
+  if (draft.ads && api.adoptAds) {
+    try {
+      await api.adoptAds(draft.ads);
+    } catch (e) {
+      // Набор пропал или ещё не готов: вход важнее, объявления напишутся заново к запуску.
+      if (!(e instanceof ApiError) || e.status >= 500) throw e;
+    }
+  }
   clearDraft();
   saveWizard(id);
   return { status: "done", email: session.me.email, businessId: id, csrf };

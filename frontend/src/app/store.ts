@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { ApiError } from "../api";
-import type { AdvertiserKind, Api, Me, Business, SiteFact, SiteRead } from "../api";
-import { clearDraft, clearWizard, loadWizard, saveDraft, loadDraft, transferDraft } from "./draft";
+import type { AdDraftProfile, AdSet, AdvertiserKind, Api, Me, Business, SiteFact, SiteRead, WizardAd } from "../api";
+import { clearDraft, clearWizard, draftProfile, loadWizard, saveDraft, loadDraft, transferDraft } from "./draft";
 import type { TransferDeps } from "./draft";
 import { ADS, DAYS, FACTS, histFor, leadsWord, MIN_BUDGET, OPENING, OPTIONS, rub, STATS, STEPS } from "./data";
 import type { Ad, Day, Fact, HistoryEntry, HistoryKind, Live, Period, PeriodStats, SettingKey, Situation, View } from "./data";
@@ -72,11 +72,15 @@ export type State = {
   advertiser: { kind: AdvertiserKind; name: string; phone: string; okved: string };
   /** Маркировка сохранена в сервисе, и владелец её не правит. */
   marked: boolean;
+  /** Писатель пишет объявления мастера: ключ набора знает только этот браузер. */
+  writing: { id: number; token: string } | "asking" | null;
+  /** Готовый набор мастера; facts — по каким фактам писали, чтобы не писать заново без правок. */
+  adSet: { id: number; token: string; template: boolean; needsReview: boolean; facts: string } | null;
 };
 
 export type BudgetOptions = { min: number; max: number; presets: number[] };
 /** Шаги мастера после входа работают с бизнесом через эти методы. */
-export type WizardApi = Pick<Api, "accounts" | "connect" | "marking" | "saveMarking" | "tagCheck" | "requestTagCheck" | "launchCheck">;
+export type WizardApi = Pick<Api, "accounts" | "connect" | "marking" | "saveMarking" | "tagCheck" | "requestTagCheck" | "launchCheck" | "wizardAds">;
 export type WizardDeps = {
   session: () => Promise<{ me: Me; businesses: Business[] } | null>;
   open: (businessId: string, csrf: string) => WizardApi;
@@ -93,6 +97,26 @@ export type GuestReader = {
   readSite: (url: string) => Promise<{ id: number; token: string; status: string; url: string }>;
   siteRead: (id: number, token: string) => Promise<SiteRead>;
 };
+
+/** Писатель объявлений до входа: POST /api/creative-sets и GET /api/creative-sets/{id}. */
+export type GuestWriter = {
+  writeAds: (profile: AdDraftProfile) => Promise<{ id: number; token: string; status: string }>;
+  adSet: (id: number, token: string) => Promise<AdSet>;
+};
+
+/** Объявления писателя в карточки шага: номер в наборе живёт в id, выбор уходит по нему. */
+export const writtenAds = (ads: WizardAd[]): Ad[] => ads.map((a, i) => ({
+  id: `w${i}`,
+  name: a.headline,
+  tag: "",
+  tagTone: "neutral",
+  leads: 0,
+  cost: 0,
+  hook: a.headline,
+  title: a.headline,
+  text: a.text,
+  facts: a.facts.length ? `Опирается на: ${a.facts.join(", ")}` : "Не опирается на факты профиля: общие слова об услуге",
+}));
 
 const FACT_LABELS: Record<SiteFact["field"], string> = { niche: "Чем занимаетесь", address: "Где", service: "Услуга", feature: "Особенность" };
 /** Факты разбора в карточки шага «Профиль»: цитата остаётся рядом, чтобы владелец видел, откуда это. */
@@ -119,7 +143,7 @@ export function initialState(stage: State["stage"] = "work", situation: Situatio
     hist: histFor(situation), undone: {}, asked: {}, adsOff: {}, ads: ADS, openAd: null, paused: false, topped: false, decided: null, extra: 0,
     metric: "cost", selDay: null, period: "week", filter: "all", clientsInput: "", clients: null,
     f: { services: "маникюр и педикюр", area: "Сокольники", hours: "в часы работы", goal: 400, budget: 20000 },
-    site: "", codeCopied: false, inn: "", yandex: false, metrica: false, block: "", draftOff: {}, budgetDraft: null, facts: FACTS, factEdit: null, reading: null, budgetOptions: null, account: null, advertiser: { kind: "legal", name: "", phone: "", okved: "" }, marked: false,
+    site: "", codeCopied: false, inn: "", yandex: false, metrica: false, block: "", draftOff: {}, budgetDraft: null, facts: FACTS, factEdit: null, reading: null, budgetOptions: null, account: null, advertiser: { kind: "legal", name: "", phone: "", okved: "" }, marked: false, writing: null, adSet: null,
   };
 }
 
@@ -248,6 +272,8 @@ export class Store {
   private resumed = false;
   /** Бизнес мастера после входа; null — вход не состоялся или у владельца уже был бизнес. */
   wizard: WizardApi | null = null;
+  /** Есть — шаг «Объявления» пишет настоящий писатель; нет — подставные объявления прототипа. */
+  writer: GuestWriter | null = null;
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
   getSnapshot = () => this.state;
   set = (patch: Partial<State>) => { this.state = { ...this.state, ...patch }; this.listeners.forEach((fn) => fn()); };
@@ -428,7 +454,9 @@ export class Store {
   /** Уйти на вход Яндекса. Черновик ждёт в браузере: вход перезагружает страницу. */
   login = () => {
     const s = this.state;
-    saveDraft({ site: s.site, facts: s.facts, budget: Number(s.f.budget) });
+    const kept = s.ads.map((a, i) => (s.draftOff[a.id] ? -1 : i)).filter((i) => i >= 0);
+    const ads = s.adSet ? { ads: { id: s.adSet.id, token: s.adSet.token, kept } } : {};
+    saveDraft({ site: s.site, facts: s.facts, budget: Number(s.f.budget), ...ads });
     this.navigate(LOGIN_URL);
   };
   /** Вернулись со входа: черновик становится бизнесом, профилем и планом бюджета. */
@@ -448,6 +476,7 @@ export class Store {
       }
       this.wizard = deps.open?.(done.businessId, done.csrf) ?? null;
       this.set({ account: { email: done.email }, msgs: [...this.state.msgs, msg("ai", "Вы вошли. Профиль и бюджет сохранены в сервисе: дальше они живут в настройках кабинета.")] });
+      await this.loadChosen();
     } catch (e) {
       this.set({ block: `${e instanceof Error ? e.message : "Сервис не ответил"}. Черновик сохранён: обновите страницу, чтобы повторить.` });
     }
@@ -462,6 +491,41 @@ export class Store {
     if (!session || !business) return this.navigate("/?new");
     this.wizard = deps.open(business.id, session.me.csrf_token);
     this.set({ account: { email: session.me.email }, step: 4, block: problem ?? "" });
+    await this.loadChosen();
+  }
+  /** Выбор объявлений уже в сервисе: после перезагрузки сводка показывает его, а не подставные. */
+  private async loadChosen() {
+    if (!this.wizard || !this.writer) return;
+    try {
+      const { ads } = await this.wizard.wizardAds();
+      this.set({ ads: writtenAds(ads), draftOff: {} });
+    } catch {
+      // Сводка готовности всё равно спросит сервис; здесь только подпись в боковой колонке.
+    }
+  }
+  /** Набор пишут по фактам черновика; без правок фактов готовый набор не переписываем. */
+  async writeAds(force = false) {
+    const writer = this.writer;
+    if (!writer || this.state.writing) return;
+    const { niche, address, services, features } = draftProfile({ site: this.state.site, facts: this.state.facts, budget: 0 });
+    const draft: AdDraftProfile = { niche, address, services, features };
+    const facts = JSON.stringify(draft);
+    if (!force && this.state.adSet?.facts === facts) return;
+    this.set({ writing: "asking", adSet: null, ads: [], draftOff: {}, block: "" });
+    try {
+      const queued = await writer.writeAds(draft);
+      this.set({ writing: { id: queued.id, token: queued.token } });
+      for (;;) {
+        const set = await writer.adSet(queued.id, queued.token);
+        if (set.status === "failed") return this.set({ writing: null, block: set.problem_text ?? "Не получилось написать объявления. Попробуйте ещё раз." });
+        if (set.status === "ready") {
+          return this.set({ writing: null, ads: writtenAds(set.ads), adSet: { id: queued.id, token: queued.token, template: set.template, needsReview: set.needs_review, facts } });
+        }
+        await new Promise((resolve) => setTimeout(resolve, this.waitMs));
+      }
+    } catch (e) {
+      this.set({ writing: null, block: e instanceof ApiError ? e.message : "Сервис не ответил. Попробуйте ещё раз." });
+    }
   }
   private advance(ai?: string) {
     const s = this.state;
@@ -501,6 +565,9 @@ export class Store {
     if (s.step === 0 && !s.site.trim()) return this.set({ block: this.reader ? "Вставьте ссылку или заполните профиль вручную." : "Вставьте ссылку или расскажите о бизнесе в чате." });
     if (s.step === 0 && this.reader) { void this.study(); return; }
     if (s.step === 1 && s.facts.length === 0) return this.set({ block: "Добавьте хотя бы один факт: рекламу пишу только по ним." });
+    if (s.step === 2 && this.writer) { this.advance("Пишу объявления по вашим фактам. Посмотрите их на вкладке «Настройка» и уберите лишние."); void this.writeAds(); return; }
+    if (s.step === 3 && this.writer && s.writing) return this.set({ block: "Объявления ещё пишутся: это обычно меньше минуты." });
+    if (s.step === 3 && this.writer && !s.ads.length) return this.set({ block: "Объявлений пока нет: нажмите «Написать ещё раз»." });
     if (s.step >= 3 && s.ads.every((a) => s.draftOff[a.id])) return this.set({ block: "Оставьте хотя бы одно объявление." });
     if (s.step >= 4 && this.reader) return this.nextReal(s);
     if (s.step === 4 && !s.yandex) return this.set({ block: "Подключите кабинет Яндекса." });
