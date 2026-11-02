@@ -31,6 +31,8 @@ class SiteRules:
     min_text_chars: int
     max_tokens: int
     max_reads_per_day: int
+    max_guest_reads_per_address: int
+    max_guest_reads_per_day: int
     max_attempts: int
     max_services: int
     max_features: int

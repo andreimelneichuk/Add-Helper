@@ -19,6 +19,7 @@ from sqlalchemy import (
     update,
 )
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from adhelper.business.domain.ports import ClaimedRead
@@ -35,6 +36,8 @@ READS = table(
     "site_reads",
     column("id", BigInteger),
     column("business_id", Uuid),
+    column("guest_key", Text),
+    column("token_hash", Text),
     column("url", Text),
     column("status", Text),
     column("attempts", Integer),
@@ -54,8 +57,16 @@ WAITING = (ReadStatus.QUEUED.value, ReadStatus.RUNNING.value)
 DAY = timedelta(days=1)
 
 
+# Одна блокировка на все гостевые просьбы: их мало, а лимиты общие.
+GUEST_LOCK = 0x5173_0001
+
+
 class TooManyReads(Exception):
     """Лимит разборов за сутки исчерпан."""
+
+
+class TooManyGuestReads(Exception):
+    """Исчерпан общий суточный потолок разборов до входа."""
 
 
 def _fact_row(fact: SiteFact) -> dict[str, Any]:
@@ -120,16 +131,64 @@ class SqlSiteReads:
         )
         async with self._sessions() as session:
             row = (await session.execute(statement)).mappings().first()
-        if row is None:
-            return None
-        return StoredRead(
-            id=row["id"],
-            url=row["url"],
-            status=ReadStatus(row["status"]),
-            problem=row["problem"],
-            facts=tuple(_fact(item) for item in row["facts"]),
-            pages=tuple(row["pages"]),
+        return None if row is None else _stored(row)
+
+
+class SqlGuestSiteReads:
+    """Разборы до входа. Строку видит только тот, кто знает её ключ доступа."""
+
+    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+        self._sessions = sessions
+
+    async def request(
+        self, url: str, guest_key: str, token_hash: str, rules: SiteRules, now: datetime
+    ) -> int:
+        """Ставит разбор в очередь. Ждущие разборы тоже считаются: у гостя нет своей строки."""
+        guests = READS.c.business_id.is_(None)
+        recent = READS.c.created_at > now - DAY
+        async with self._sessions.begin() as session:
+            await session.execute(select(func.pg_advisory_xact_lock(GUEST_LOCK)))
+            mine = await session.scalar(
+                select(func.count()).where(guests, recent, READS.c.guest_key == guest_key)
+            )
+            if (mine or 0) >= rules.max_guest_reads_per_address:
+                raise TooManyReads
+            total = await session.scalar(select(func.count()).where(guests, recent))
+            if (total or 0) >= rules.max_guest_reads_per_day:
+                raise TooManyGuestReads
+            new_id = await session.scalar(
+                insert(READS)
+                .values(
+                    guest_key=guest_key,
+                    token_hash=token_hash,
+                    url=url,
+                    rules_version=rules.version,
+                    created_at=now,
+                )
+                .returning(READS.c.id)
+            )
+        return int(new_id)
+
+    async def get(self, read_id: int, token_hash: str) -> StoredRead | None:
+        statement = select(READS).where(
+            READS.c.id == read_id,
+            READS.c.business_id.is_(None),
+            READS.c.token_hash == token_hash,
         )
+        async with self._sessions() as session:
+            row = (await session.execute(statement)).mappings().first()
+        return None if row is None else _stored(row)
+
+
+def _stored(row: RowMapping) -> StoredRead:
+    return StoredRead(
+        id=row["id"],
+        url=row["url"],
+        status=ReadStatus(row["status"]),
+        problem=row["problem"],
+        facts=tuple(_fact(item) for item in row["facts"]),
+        pages=tuple(row["pages"]),
+    )
 
 
 class SqlSiteReadQueue:

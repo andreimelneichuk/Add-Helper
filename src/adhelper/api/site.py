@@ -4,15 +4,24 @@
 владелец смотрит факты с цитатами и сохраняет профиль сам.
 """
 
-from typing import Any
+import hashlib
+import hmac
+import ipaddress
+import secrets
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from adhelper.api.cabinet import Owned, OwnedChecked, _now, _sessions
 from adhelper.business.adapters.rules_file import load_site_rules
-from adhelper.business.adapters.site_reads import SqlSiteReads, TooManyReads
-from adhelper.business.application.site import UrlProblem, check_url
+from adhelper.business.adapters.site_reads import (
+    SqlGuestSiteReads,
+    SqlSiteReads,
+    TooManyGuestReads,
+    TooManyReads,
+)
+from adhelper.business.application.site import SiteRules, StoredRead, UrlProblem, check_url
 
 URL_PROBLEMS = {
     UrlProblem.EMPTY: "Укажите адрес сайта",
@@ -42,6 +51,34 @@ class SiteBody(BaseModel):
     url: str = Field(max_length=2000)
 
 
+def _checked_url(raw: str, rules: SiteRules) -> str:
+    url, problem = check_url(raw, rules)
+    if problem is not None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, URL_PROBLEMS[problem])
+    return url
+
+
+def _read_body(read: StoredRead) -> dict[str, Any]:
+    return {
+        "id": read.id,
+        "url": read.url,
+        "status": read.status.value,
+        "problem": read.problem,
+        "problem_text": None if read.problem is None else READ_PROBLEMS.get(read.problem),
+        "facts": [
+            {
+                "field": fact.field.value,
+                "value": fact.value,
+                "price": fact.price,
+                "quote": fact.quote,
+                "page": fact.page,
+            }
+            for fact in read.facts
+        ],
+        "pages": list(read.pages),
+    }
+
+
 def site_router() -> APIRouter:
     router = APIRouter(prefix="/api/businesses/{business_id}")
 
@@ -50,9 +87,7 @@ def site_router() -> APIRouter:
         request: Request, body: SiteBody, business_id: OwnedChecked
     ) -> dict[str, Any]:
         rules = load_site_rules()
-        url, problem = check_url(body.url, rules)
-        if problem is not None:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, URL_PROBLEMS[problem])
+        url = _checked_url(body.url, rules)
         try:
             read_id = await SqlSiteReads(_sessions(request), business_id).request(
                 url, rules, _now(request)
@@ -68,25 +103,69 @@ def site_router() -> APIRouter:
     @router.get("/site-reads/latest")
     async def get_latest(request: Request, business_id: Owned) -> dict[str, Any] | None:
         read = await SqlSiteReads(_sessions(request), business_id).latest()
+        return None if read is None else _read_body(read)
+
+    return router
+
+
+def _guest_key(request: Request) -> str:
+    """Ключ лимита: сеть /24 или /64 под HMAC. Сам адрес нигде не хранится."""
+    host = request.client.host if request.client else ""
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        network = host
+    else:
+        prefix = 24 if address.version == 4 else 64
+        network = str(ipaddress.ip_network(f"{address}/{prefix}", strict=False))
+    secret: bytes = request.app.state.guest_secret
+    return hmac.new(secret, network.encode(), hashlib.sha256).hexdigest()
+
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def guest_site_router() -> APIRouter:
+    """Шаг 1 мастера до входа: docs/11-user-way.md, A1. Черновик видит только этот браузер."""
+    router = APIRouter(prefix="/api/site-reads")
+
+    # Тело только JSON: чужая страница не отправит его без предварительного запроса.
+    @router.post("", status_code=status.HTTP_202_ACCEPTED)
+    async def post_guest_read(request: Request, body: SiteBody) -> dict[str, Any]:
+        rules = load_site_rules()
+        url = _checked_url(body.url, rules)
+        token = secrets.token_urlsafe(32)
+        try:
+            read_id = await SqlGuestSiteReads(_sessions(request)).request(
+                url, _guest_key(request), _token_hash(token), rules, _now(request)
+            )
+        except TooManyReads:
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                f"С этого адреса сайт сегодня разбирали уже {rules.max_guest_reads_per_address}"
+                " раза. Заполните профиль вручную или попробуйте завтра",
+            ) from None
+        except TooManyGuestReads:
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                "Сейчас разбор сайта перегружен. Заполните профиль вручную или попробуйте позже",
+            ) from None
+        return {"id": read_id, "token": token, "status": "queued", "url": url}
+
+    @router.get("/{read_id}")
+    async def get_guest_read(
+        request: Request,
+        read_id: int,
+        x_read_token: Annotated[str | None, Header(max_length=200)] = None,
+    ) -> dict[str, Any]:
+        read = None
+        if x_read_token:
+            read = await SqlGuestSiteReads(_sessions(request)).get(
+                read_id, _token_hash(x_read_token)
+            )
         if read is None:
-            return None
-        return {
-            "id": read.id,
-            "url": read.url,
-            "status": read.status.value,
-            "problem": read.problem,
-            "problem_text": None if read.problem is None else READ_PROBLEMS.get(read.problem),
-            "facts": [
-                {
-                    "field": fact.field.value,
-                    "value": fact.value,
-                    "price": fact.price,
-                    "quote": fact.quote,
-                    "page": fact.page,
-                }
-                for fact in read.facts
-            ],
-            "pages": list(read.pages),
-        }
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Разбор не найден")
+        return _read_body(read)
 
     return router

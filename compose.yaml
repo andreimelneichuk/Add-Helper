@@ -56,6 +56,9 @@ services:
       - 0.0.0.0
       - --port
       - "8000"
+      # Адрес человека берём из X-Forwarded-For: порт приложения открыт только Caddy.
+      - --proxy-headers
+      - --forwarded-allow-ips=*
     ports:
       - "127.0.0.1:${APP_PORT:-8000}:8000"
     depends_on:
