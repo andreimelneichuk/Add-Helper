@@ -81,7 +81,7 @@ class Runtime:
         return Ledger(
             repository=SqlChangeRepository(self.sessions, business_id),
             # Просьбы владельца об объявлениях (ad:) повторяются здесь же, если Яндекс не ответил.
-            gateway=RoutingGateway(PlatformChangeGateway(platform), platform),
+            gateway=RoutingGateway(PlatformChangeGateway(platform), platform, platform),
             lock=PostgresAccountLock(self.engine),
             max_attempts=MAX_CHANGE_ATTEMPTS,
             preflight=StoredPeriodPreflight(

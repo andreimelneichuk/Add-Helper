@@ -313,3 +313,109 @@ async def test_clients_answer_needs_leads_and_past_dates(anna: Anna) -> None:
     future = {"since": "2026-11-10", "until": "2026-11-12", "clients": 1}
     assert (await client.post(f"{base}/clients", json=future, headers=csrf)).status_code == 422
     assert (await client.post(f"{base}/clients", json=empty)).status_code == 403
+
+
+@pytest.fixture
+async def both() -> FakePlatform:
+    return FakePlatform(
+        [CampaignBudget("1", 100, 0, True, None), CampaignBudget("2", 100, 0, False, None)], NOW
+    )
+
+
+async def test_schedule_change_goes_through_ledger_shows_and_undoes(
+    anna: Anna, both: FakePlatform, sessions: Sessions
+) -> None:
+    client, csrf, business = anna
+    _app(client).state.platform_for = lambda _b, _a: both
+    base = f"/api/businesses/{business}"
+    before = (await client.get(f"{base}/display")).json()
+    assert before["schedule"] is None
+    assert before["campaigns"] == 2
+    assert {"id": 213, "name": "Москва"} in before["catalog"]
+
+    body = {"days": [0, 1, 2, 3, 4, 5], "start": 10, "end": 21, "request_id": "s1"}
+    response = await client.post(f"{base}/display/schedule", json=body, headers=csrf)
+    assert response.status_code == 200
+    assert response.json() == {"applied": [f"{LOGIN}:1", f"{LOGIN}:2"]}
+    assert await _rows(sessions, business) == [("user", "set_schedule", "applied")] * 2
+    shown = (await client.get(f"{base}/display")).json()
+    assert shown["schedule"] == {"days": [0, 1, 2, 3, 4, 5], "start": 10, "end": 21}
+    assert shown["schedule_text"] == "пн–сб, 10:00–21:00"
+
+    history = (await client.get(f"{base}/history")).json()
+    ref = next(h["ref"] for h in history if h["kind"] == "set_schedule")
+    change_id = ref.removeprefix("change-")
+    undo = await client.post(f"{base}/changes/{change_id}/rollback", headers=csrf)
+    assert undo.status_code == 200
+    # Отменили для одной кампании: у второй остались новые, общего значения нет.
+    assert (await client.get(f"{base}/display")).json()["schedule"] is None
+
+
+async def test_schedule_yandex_would_reject_is_refused_without_ledger(
+    anna: Anna, both: FakePlatform, sessions: Sessions
+) -> None:
+    client, csrf, business = anna
+    _app(client).state.platform_for = lambda _b, _a: both
+    body = {"days": [6], "start": 10, "end": 17, "request_id": "s1"}
+    response = await client.post(
+        f"/api/businesses/{business}/display/schedule", json=body, headers=csrf
+    )
+    assert response.status_code == 422
+    assert "8 часов показа в неделю" in response.json()["detail"]
+    assert await _rows(sessions, business) == []
+
+
+async def test_regions_change_and_platform_failure(
+    anna: Anna, both: FakePlatform, sessions: Sessions
+) -> None:
+    client, csrf, business = anna
+    _app(client).state.platform_for = lambda _b, _a: both
+    url = f"/api/businesses/{business}/display/regions"
+    both.unavailable = True
+    down = await client.post(url, json={"regions": [2], "request_id": "g1"}, headers=csrf)
+    assert down.status_code == 503
+    both.unavailable = False
+    done = await client.post(url, json={"regions": [2, 213], "request_id": "g2"}, headers=csrf)
+    assert done.status_code == 200
+    shown = (await client.get(f"/api/businesses/{business}/display")).json()
+    assert shown["regions"] == [2, 213]
+    assert shown["regions_text"] == "Санкт-Петербург, Москва"
+
+
+async def test_display_change_without_platform_says_not_connected(
+    anna: Anna, sessions: Sessions
+) -> None:
+    client, csrf, business = anna
+    response = await client.post(
+        f"/api/businesses/{business}/display/regions",
+        json={"regions": [213], "request_id": "g1"},
+        headers=csrf,
+    )
+    assert response.status_code == 503
+    assert await _rows(sessions, business) == []
+
+
+async def test_goal_is_stored_in_micros_and_shown(anna: Anna, sessions: Sessions) -> None:
+    client, csrf, business = anna
+    base = f"/api/businesses/{business}"
+    assert (await client.post(f"{base}/goal", json={"rubles": 0}, headers=csrf)).status_code == 422
+    assert (await client.post(f"{base}/goal", json={"rubles": 450}, headers=csrf)).json() == {
+        "goal": 450
+    }
+    assert (await client.get(f"{base}/display")).json()["goal"] == 450
+    async with sessions() as session:
+        stored = await session.scalar(
+            text("SELECT goal_micros FROM lead_goals WHERE business_id = :b"), {"b": business}
+        )
+    assert stored == 450_000_000
+    # Без CSRF цель не меняется.
+    assert (await client.post(f"{base}/goal", json={"rubles": 1})).status_code == 403
+
+
+async def test_display_belongs_to_owner_only(
+    anna: Anna, browser: Browser, provider: FakeProvider
+) -> None:
+    _, _, business = anna
+    other = browser()
+    await _login(other, provider, BORIS)
+    assert (await other.get(f"/api/businesses/{business}/display")).status_code == 404

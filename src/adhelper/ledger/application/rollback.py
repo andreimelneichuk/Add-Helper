@@ -19,6 +19,8 @@ INVERSE_KIND = {
     ChangeKind.RESUME: ChangeKind.PAUSE,
     ChangeKind.PAUSE_AD: ChangeKind.RESUME_AD,
     ChangeKind.RESUME_AD: ChangeKind.PAUSE_AD,
+    ChangeKind.SET_SCHEDULE: ChangeKind.SET_SCHEDULE,
+    ChangeKind.SET_REGIONS: ChangeKind.SET_REGIONS,
 }
 OPEN_OR_DONE = {ChangeStatus.PLANNED, ChangeStatus.APPLYING, ChangeStatus.APPLIED}
 EXHAUSTED = "attempts_exhausted"

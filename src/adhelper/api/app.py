@@ -16,6 +16,7 @@ from adhelper.accounts.application.service import AccountsService, OAuthProvider
 from adhelper.api.accounts import accounts_router
 from adhelper.api.cabinet import cabinet_router
 from adhelper.api.control import control_router
+from adhelper.api.display import display_router
 from adhelper.api.notifications import notifications_router
 from adhelper.config import Settings
 from adhelper.db import create_engine, ping
@@ -71,6 +72,7 @@ def create_app(
     app.include_router(accounts_router(settings))
     app.include_router(cabinet_router())
     app.include_router(control_router())
+    app.include_router(display_router())
     # Адаптер Директа появится в T5 (ждёт V1); пока действия с площадкой честно отвечают 503.
     app.state.platform_for = _no_platform
     app.include_router(notifications_router())

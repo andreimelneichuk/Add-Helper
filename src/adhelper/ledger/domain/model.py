@@ -10,6 +10,8 @@ class ChangeKind(StrEnum):
     RESUME = "resume"
     PAUSE_AD = "pause_ad"
     RESUME_AD = "resume_ad"
+    SET_SCHEDULE = "set_schedule"
+    SET_REGIONS = "set_regions"
 
 
 class ChangeSource(StrEnum):
