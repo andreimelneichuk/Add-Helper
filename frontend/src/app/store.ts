@@ -80,7 +80,7 @@ export type State = {
 
 export type BudgetOptions = { min: number; max: number; presets: number[] };
 /** Шаги мастера после входа работают с бизнесом через эти методы. */
-export type WizardApi = Pick<Api, "accounts" | "connect" | "marking" | "saveMarking" | "tagCheck" | "requestTagCheck" | "launchCheck" | "wizardAds">;
+export type WizardApi = Pick<Api, "accounts" | "connect" | "marking" | "saveMarking" | "tagCheck" | "requestTagCheck" | "launchCheck" | "startLaunch" | "wizardAds">;
 export type WizardDeps = {
   session: () => Promise<{ me: Me; businesses: Business[] } | null>;
   open: (businessId: string, csrf: string) => WizardApi;

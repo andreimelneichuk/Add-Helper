@@ -8,16 +8,21 @@
 import asyncio
 import json
 import os
+import secrets
 import subprocess
-from datetime import UTC, datetime
+import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import psycopg
 import uvicorn
+from fastapi import APIRouter
 from psycopg import sql
+from sqlalchemy import text
 from sqlalchemy.engine import make_url
 
+from adhelper.accounts.application.service import hash_token
 from adhelper.budget.domain.limits import CampaignBudget
 from adhelper.business.adapters.rules_file import load_site_rules, load_tag_rules
 from adhelper.business.adapters.site_reads import SqlSiteReadQueue
@@ -148,6 +153,57 @@ async def _serve(app: Any) -> None:
         task.cancel()
 
 
+# Логин кабинета, который стенд подключает новому владельцу вместо входа в Яндекс.
+STAND_LOGIN = "stand-direct"
+
+
+def _stand_router(app: Any) -> APIRouter:
+    """Только для стенда: новый владелец без бизнеса и подключение кабинета без Яндекса."""
+    router = APIRouter(prefix="/api/stand")
+
+    @router.post("/owners")
+    async def new_owner() -> dict[str, str]:
+        user_id, token = uuid.uuid4(), secrets.token_urlsafe(32)
+        async with app.state.sessions.begin() as session:
+            await session.execute(
+                text("INSERT INTO users (id, yandex_uid, email) VALUES (:id, :uid, :email)"),
+                {"id": user_id, "uid": f"stand-{user_id}", "email": "owner@example.ru"},
+            )
+            await session.execute(
+                text(
+                    "INSERT INTO sessions (token_hash, user_id, csrf_token, expires_at)"
+                    " VALUES (:h, :u, :c, :e)"
+                ),
+                {
+                    "h": hash_token(token),
+                    "u": user_id,
+                    "c": secrets.token_urlsafe(32),
+                    "e": datetime.now(UTC) + timedelta(days=1),
+                },
+            )
+        return {"cookie": token}
+
+    @router.post("/businesses/{business_id}/connect")
+    async def connect(business_id: uuid.UUID) -> dict[str, str]:
+        async with app.state.sessions.begin() as session:
+            await session.execute(
+                text(
+                    "INSERT INTO ad_accounts (id, business_id, platform, external_login,"
+                    " encrypted_access, encrypted_refresh, token_expires_at, scopes, state)"
+                    " VALUES (:id, :b, 'yandex_direct', :login, 'x', 'x', :e, '{}', 'connected')"
+                ),
+                {
+                    "id": uuid.uuid4(),
+                    "b": business_id,
+                    "login": f"{STAND_LOGIN}-{str(business_id)[:8]}",
+                    "e": datetime.now(UTC) + timedelta(days=30),
+                },
+            )
+        return {"status": "connected"}
+
+    return router
+
+
 def main() -> None:
     STATE.mkdir(exist_ok=True)
     os.environ["POSTGRES_DB"] = DATABASE
@@ -160,8 +216,17 @@ def main() -> None:
     from adhelper.api.app import create_app
 
     app = create_app()
-    platform = _platform()
-    app.state.platform_for = lambda _business, _account: platform
+    demo = _platform()
+    # У каждого кабинета своя площадка: кампании демо-кабинета не считаются в бюджет нового.
+    platforms: dict[str, FakePlatform] = {}
+
+    def platform_for(_business: object, account: str) -> FakePlatform:
+        if not account.startswith(STAND_LOGIN):
+            return demo
+        return platforms.setdefault(account, FakePlatform([], datetime.now(UTC)))
+
+    app.state.platform_for = platform_for
+    app.include_router(_stand_router(app))
     asyncio.run(_serve(app))
 
 

@@ -207,10 +207,10 @@ test("бюджет запуска проверяется по правилам �
   await page.getByLabel("Новый факт").fill("Маникюр у дома");
   await page.getByRole("button", { name: "Сохранить" }).click();
   await page.getByRole("button", { name: "Всё верно" }).click();
-  // Минимум 1 550 ₽ пришёл из правил plan-1, в прототипе он 1 000 ₽.
+  // Минимум 1 667 ₽ пришёл из правил plan-2, в прототипе он 1 000 ₽.
   await page.getByLabel("Своя сумма в месяц, ₽").fill("1200");
   await page.getByRole("button", { name: "Продолжить" }).click();
-  await expect(page.getByRole("alert")).toContainText(/от 1.550/);
+  await expect(page.getByRole("alert")).toContainText(/от 1.667/);
 });
 
 test("черновик после входа не затирает бизнес, который уже есть", async ({ page }) => {
@@ -264,7 +264,74 @@ test("после подключения кабинета мастер ведёт
   const ready = page.getByRole("list", { name: "Готовность к запуску" });
   await expect(ready).toContainText("Маркировка: организация, ИНН ••••••3893");
   await expect(ready).toContainText("Код Метрики на сайте есть, счётчик 98765432");
-  await expect(page.getByText(/когда Яндекс откроет доступ к API/)).toBeVisible();
+  // Объявления демо-кабинета выбраны не в мастере: кнопки запуска нет, сводка говорит, чего ждать.
+  await expect(page.getByText(/здесь появится кнопка запуска/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Запустить рекламу" })).toHaveCount(0);
   await page.getByRole("button", { name: "Открыть кабинет" }).click();
   await expect(page).toHaveURL(/\/\?new$/);
+});
+
+const STAND = "http://localhost:8011";
+
+test("новый владелец проходит мастер и запускает рекламу: кампания через журнал, видна в кабинете", async ({ page, context, request }) => {
+  // Свой владелец без бизнеса: стенд выдаёт ему вход, прокси Vite не подменяет его демо-входом.
+  const { cookie } = await (await request.post(`${STAND}/api/stand/owners`)).json();
+  await context.addCookies([{ name: "ah_session", value: cookie, url: "http://localhost:5175" }]);
+  await page.goto("/?new&start");
+  await page.evaluate(() => {
+    window.localStorage.removeItem("adhelper.startDraft");
+    window.localStorage.removeItem("adhelper.startBusiness");
+  });
+  await page.getByLabel("Ссылка на сайт или страницу").fill("nogti.ru");
+  await page.getByRole("button", { name: "Изучить" }).click();
+  await page.getByRole("button", { name: "Всё верно" }).click({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Продолжить" }).click();
+  await expect(page.getByText("Маникюр с покрытием гель-лаком за 1700 ₽ на Тверской, 7.")).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Нравится" }).click();
+
+  // Вход в Яндекс подменён: владелец уже вошёл, возвращаемся в мастер, как после настоящего входа.
+  await page.route("**/api/auth/yandex/login**", (route) => route.fulfill({ status: 302, headers: { location: "/?new&start" } }));
+  await page.getByRole("button", { name: "Войти через Яндекс" }).click();
+  await expect(page.getByRole("button", { name: "Подключить кабинет" })).toBeVisible();
+
+  // OAuth Яндекса стенд не проходит: кабинет записывает стенд, мастер возвращается на `connect=ok`,
+  // как после настоящего подключения.
+  await page.route("**/accounts/connect**", async (route) => {
+    const business = (await (await page.request.get("/api/businesses")).json())[0];
+    await request.post(`${STAND}/api/stand/businesses/${business.id}/connect`);
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ authorize_url: "/?new&start&connect=ok" }) });
+  });
+  await page.getByRole("button", { name: "Подключить кабинет" }).click();
+  await expect(page).toHaveURL(/\/\?new&start$/);
+  await expect(page.getByText(/stand-direct/)).toBeVisible();
+  await page.getByRole("button", { name: "Продолжить" }).click();
+
+  await page.getByLabel("ИНН для маркировки").fill("7707083893");
+  await page.getByLabel("Наименование, как в ЕГРЮЛ").fill("ООО «Ноготок»");
+  await page.getByLabel("ОКВЭД основного вида деятельности").fill("96.02");
+  await page.getByRole("button", { name: "Продолжить" }).click();
+  await page.getByRole("button", { name: "Проверить установку" }).click();
+  await expect(page.getByText(/Код найден на сайте, счётчик 98765432/)).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Продолжить" }).click();
+
+  const ready = page.getByRole("list", { name: "Готовность к запуску" });
+  await expect(ready).toContainText("Объявления: выбрано 2");
+  await expect(ready).toContainText(/Запуск: 1 кампания \(поиск и сайты — 18\s000\s₽\)/);
+  await page.getByRole("button", { name: "Запустить рекламу" }).click();
+  const made = page.getByRole("list", { name: "Созданные кампании" });
+  await expect(made).toContainText(/лимит 18\s000\s₽ на месяц/);
+  await expect(page.getByText(/Реклама запущена: Яндекс проверяет объявления/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Запустить рекламу" })).toHaveCount(0);
+
+  // Сервис помнит запуск: повторная сводка кнопку не даёт, второй кампании не будет.
+  const again = await page.evaluate(async () => {
+    const business = (await (await fetch("/api/businesses")).json())[0];
+    return (await fetch(`/api/businesses/${business.id}/launch-check`)).json();
+  });
+  expect([again.launched, again.launch_available]).toEqual(["done", false]);
+
+  await page.goto("/?new");
+  await nav(page, "История").click();
+  await expect(page.getByRole("heading", { name: /^Создал кампанию/ })).toBeVisible();
+  await expect(page.getByText(/лимит 18\s000\s₽ до/)).toBeVisible();
 });

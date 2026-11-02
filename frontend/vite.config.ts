@@ -20,6 +20,8 @@ export default defineConfig({
         target: API,
         configure: (proxy) => {
           proxy.on("proxyReq", (request) => {
+            // Свой вход браузера (сквозной тест второго владельца) важнее демо-входа.
+            if (/(^|;\s*)ah_session=/.test(request.getHeader("cookie")?.toString() ?? "")) return;
             const cookie = demoCookie();
             if (cookie) request.setHeader("cookie", cookie);
           });
