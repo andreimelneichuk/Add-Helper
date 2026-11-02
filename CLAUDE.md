@@ -21,6 +21,8 @@
 - Генерация контента: [docs/05-creatives.md](docs/05-creatives.md)
 - Этапы и критерии готовности: [docs/06-delivery-plan.md](docs/06-delivery-plan.md)
 - Тесты и приёмка: [docs/07-testing-acceptance.md](docs/07-testing-acceptance.md)
+- Редизайн интерфейса: [docs/10-redesign.md](docs/10-redesign.md)
+- Путь пользователя, на него опираются экраны: [docs/11-user-way.md](docs/11-user-way.md)
 - Факты о площадках и проверки `S1`–`S11`: [docs/00-research.md](docs/00-research.md)
 
 Меняется решение — правь документ в том же коммите, что и код.
@@ -31,7 +33,7 @@
 
 - Поднять окружение на чистом клоне: `make setup` (нужны `uv` и Docker).
 - Все проверки, как в CI: `make check` (`ruff`, `mypy`, `lint-imports`, `pytest`; нужна запущенная база).
-- Прототип интерфейса на тестовых данных: `make prototype` (нужен Node 22 или новее). Только интерфейс: `make check-web`.
+- Прототип интерфейса на тестовых данных: `make prototype` (нужен Node 22 или новее). Новый интерфейс открывается по адресу `/?new`, запуск по `/?new&start`. Только интерфейс: `make check-web`.
 - Кабинет на демо-данных: `uv run adhelper demo-seed` (с `--mismatch` — расхождение со счётом), затем `uv run --env-file .demo-env uvicorn adhelper.api.app:create_app --factory --port 8010` и `npm --prefix frontend run dev`.
 - Настройки и база на сервере: `docker compose exec app adhelper check`.
 - Резервная копия и проверка восстановления: `make backup restore-check`.

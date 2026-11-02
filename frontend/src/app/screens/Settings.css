@@ -1,0 +1,14 @@
+.set { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--gap); align-items: start; }
+.set-main { display: flex; flex-direction: column; gap: var(--pad); }
+.set-options { display: flex; flex-wrap: wrap; gap: 4px; }
+.set-own { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 4px; margin-top: 8px; }
+.set-own-field { flex: 1 1 120px; min-width: 0; max-width: 240px; }
+.set-own-note { width: 100%; color: var(--bad); font-size: var(--t-caption); }
+.set-hint { color: var(--muted); font-size: var(--t-caption); }
+.set-profile { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.set-profile-label { color: var(--muted); }
+.set-profile .ah-btn { margin-top: 8px; }
+
+@media (max-width: 767px) {
+  .set { grid-template-columns: minmax(0, 1fr); }
+}

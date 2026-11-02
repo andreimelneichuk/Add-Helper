@@ -1,6 +1,12 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
-import { afterEach } from "vitest";
+import { afterEach, vi } from "vitest";
+
+// Поиск по тексту приводит неразрывный пробел к обычному, а поиск по имени нет: в тестах суммы пишем с обычным.
+vi.mock("./app/data", async (original) => {
+  const data = await original<typeof import("./app/data")>();
+  return { ...data, rub: (n: number) => data.rub(n).replace(/ /g, " ") };
+});
 
 // В новых версиях Node свой пустой localStorage заслоняет хранилище из jsdom.
 const items = new Map<string, string>();
