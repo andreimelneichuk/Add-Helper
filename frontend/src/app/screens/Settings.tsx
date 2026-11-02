@@ -3,6 +3,7 @@ import { MIN_BUDGET, MIN_GOAL, OPTIONS, rub } from "../data";
 import type { SettingKey } from "../data";
 import { useStoreState } from "../store";
 import type { State, Store } from "../store";
+import { LiveSettings } from "./LiveSettings";
 import "./Settings.css";
 
 const KEYS = Object.keys(OPTIONS) as SettingKey[];
@@ -59,32 +60,9 @@ function Options({ store, s }: { store: Store; s: State }) {
   );
 }
 
-function LiveSettings({ s }: { s: State }) {
-  const live = s.live!;
-  return (
-    <div className="set">
-      <section className="ah-panel set-main" aria-labelledby="set-title">
-        <h2 id="set-title" className="ah-panel-title">Настройки</h2>
-        <div>
-          <div className="ah-label">Бюджет в месяц</div>
-          <div>{live.budget > 0 ? rub(live.budget) : "Ещё не задан"}</div>
-        </div>
-        <p className="set-hint">Менять бюджет, район и время показов отсюда пока нельзя: эти настройки ещё не подключены к сервису.</p>
-      </section>
-      <section className="ah-panel set-profile" aria-labelledby="set-profile-title">
-        <h2 id="set-profile-title" className="ah-panel-title">Профиль бизнеса</h2>
-        {live.profile.length === 0 && <p className="ah-muted">Профиль пока пуст.</p>}
-        {live.profile.map(([label, value]) => (
-          <div key={label}><span className="set-profile-label">{label}:</span> {value}</div>
-        ))}
-      </section>
-    </div>
-  );
-}
-
 export function Settings({ store }: { store: Store }) {
   const s = useStoreState(store);
-  if (s.live) return <LiveSettings s={s} />;
+  if (s.live) return <LiveSettings store={store} />;
   const profile: [string, string][] = [
     ["Цены", `маникюр от ${rub(s.price ?? 1200)}, педикюр от 1 800 ₽`],
     ["Адрес", "Москва, у метро Сокольники"],

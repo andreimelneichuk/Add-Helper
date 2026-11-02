@@ -1,43 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api";
-import type { AdLine, Api, HistoryLine, Overview } from "../api";
-import { LiveStore, loadLive } from "./live";
+import type { Api } from "../api";
+import { fakeApi, open, overview, settled } from "./testLive";
 import { rub } from "./data";
 import { statusText, week } from "./store";
-
-const MILLION = 1_000_000;
-const totals = (cost: number, conversions: number) => ({ impressions: 100, clicks: 10, cost: cost * MILLION, conversions });
-const ratios = { ctr_bp: null, cpc: null, cpa: null, conversion_bp: null };
-const line = (over: Partial<AdLine> = {}): AdLine => ({ account: "anna", ad_id: "11", campaign_id: "1", title: "Маникюр", text: "Текст", href: "", state: "on", totals: totals(700, 2), ratios, ...over });
-const change: HistoryLine = { ref: "change-5", at: "2026-11-01T10:00:00Z", source: "user", kind: "pause_ad", target: "ad:11", status: "applied", explanation: "Отключил: вы попросили.", before: { active: true }, after: { active: false }, rules_version: null };
-
-function overview(alerts: Overview["alerts"] = []): Overview {
-  const period = { account: "anna", rules_version: "1", starts_at: "2026-11-01T00:00:00Z", ends_at: "2026-12-01T00:00:00Z", hard_limit: 20000 * MILLION, reserve_bp: 0, state: "active", stop_pending: false, spent: 1500 * MILLION, data_as_of: null, opening_balance: null, opening_spent: null, last_balance: 7000 * MILLION, balance_checked_at: null };
-  return {
-    today: "2026-11-15", since: "2026-11-01", until: "2026-11-15", alerts, ratios, totals: totals(0, 0), previous: totals(0, 0),
-    money: [{ period, spendable: 0, elapsed_bp: 0, forecast: null, balance_gap: 0, balance_tolerance: 0 }],
-    campaigns: [{ account: "anna", campaign_id: "1", name: "Маникюр", state: "on", limit: null, totals: totals(0, 0), ratios }],
-    days: [{ day: "2026-11-15", totals: totals(700, 2) }, { day: "2026-11-02", totals: totals(100, 1) }],
-  };
-}
-
-function fakeApi(over: Partial<Api> = {}) {
-  return {
-    overview: vi.fn(async () => overview()),
-    ads: vi.fn(async () => [line()]),
-    history: vi.fn(async () => [change]),
-    profile: vi.fn(async () => ({ services: [{ name: "Маникюр", price: 1200 }], address: "Москва", features: [], niche: "", website: "" })),
-    ad: vi.fn(async () => ({ basis: { sources: [{ fragment: "1 200", label: "Цена", key: "price" }], unconfirmed: [] } })),
-    setAdState: vi.fn(async () => ({ status: "applied" as const })),
-    pause: vi.fn(async () => ({ stopped: ["1"] })),
-    rollback: vi.fn(async () => ({ status: "applied" })),
-    confirmBalance: vi.fn(async () => ({ confirmed: true })),
-    ...over,
-  } as unknown as Api;
-}
-
-const open = async (api: Api) => new LiveStore(api, await loadLive(api, "Салон Анны"));
-const settled = () => new Promise((resolve) => setTimeout(resolve));
 
 describe("живые данные", () => {
   it("переводит микроединицы в рубли только для показа и заполняет дни без статистики", async () => {

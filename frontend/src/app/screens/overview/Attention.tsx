@@ -19,7 +19,12 @@ function liveMessage(s: State, store: Store): Message {
   const toHistory = () => store.goView("history");
   if (first) {
     const others = s.live!.alerts.slice(1).map((a) => a.title).join(". ");
-    const actions: Decision[] = first.kind === "balance_mismatch" ? [{ label: "Я знаю причину", pick: () => store.ask({ action: "balance" }) }, { label: "Что вы сделали", pick: toHistory, quiet: true }] : [];
+    const actions: Decision[] =
+      first.kind === "balance_mismatch" ? [{ label: "Я знаю причину", pick: () => store.ask({ action: "balance" }) }, { label: "Что вы сделали", pick: toHistory, quiet: true }]
+        : first.kind === "ads_need_confirmation" ? [{ label: "Посмотреть объявления", pick: () => store.goView("ads") }]
+          : first.kind === "ads_no_profile" ? [{ label: "Заполнить профиль", pick: () => store.goView("settings") }]
+            : first.kind === "platform_not_connected" ? [{ label: "Подключить кабинет", pick: () => store.goView("settings") }]
+              : [];
     return { tone: first.tone, title: first.title, text: others ? `${first.text} Ещё: ${others}.` : first.text, actions };
   }
   if (s.paused) return { tone: "bad", title: "Реклама на паузе", text: "Настройки сохранены, деньги не тратятся.", actions: [] };

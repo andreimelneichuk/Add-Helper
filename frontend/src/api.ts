@@ -151,6 +151,7 @@ export type Profile = {
 };
 
 export type Business = { id: string; name: string };
+export type AdAccount = { id: string; platform: string; login: string; scopes: string[]; state: string };
 export type Me = { email: string | null; csrf_token: string };
 
 export class ApiError extends Error {
@@ -205,6 +206,9 @@ export function createApi(businessId: string, csrf: string) {
     creative: (id: number) => request<CreativeReport>(`${base}/creatives/${id}`),
     launch: (id: number) => request<CreativeReport>(`${base}/creatives/${id}/launch`, { method: "POST" }, csrf),
     withdraw: (id: number) => request<CreativeReport>(`${base}/creatives/${id}/withdraw`, { method: "POST" }, csrf),
+    accounts: () => request<AdAccount[]>(`${base}/accounts`),
+    connect: () => request<{ authorize_url: string }>(`${base}/accounts/connect`, { method: "POST" }, csrf),
+    logout: () => request<void>("/api/auth/logout", { method: "POST" }, csrf),
     channels: () => request<Channels>("/api/me/notifications"),
     linkTelegram: () => request<{ url: string }>("/api/me/telegram", { method: "POST" }, csrf),
     unlinkTelegram: () => request<void>("/api/me/telegram", { method: "DELETE" }, csrf),
