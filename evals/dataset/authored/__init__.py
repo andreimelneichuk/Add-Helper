@@ -37,9 +37,14 @@ class P:
 
 
 def batches() -> dict[str, tuple[P, ...]]:
-    from evals.dataset.authored import a1_beauty, a1_city, a1_home
+    from evals.dataset.authored import a1_beauty, a1_city, a1_home, a2, a3, a4
 
-    return {"a1": a1_beauty.PROFILES + a1_city.PROFILES + a1_home.PROFILES}
+    return {
+        "a1": a1_beauty.PROFILES + a1_city.PROFILES + a1_home.PROFILES,
+        "a2": a2.PROFILES,
+        "a3": a3.PROFILES,
+        "a4": a4.PROFILES,
+    }
 
 
 def build_authored(data: Dataset) -> None:
