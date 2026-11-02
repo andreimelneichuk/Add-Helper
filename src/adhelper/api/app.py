@@ -20,6 +20,7 @@ from adhelper.api.accounts import accounts_router
 from adhelper.api.cabinet import cabinet_router
 from adhelper.api.control import control_router
 from adhelper.api.display import display_router
+from adhelper.api.launch import launch_router
 from adhelper.api.notifications import notifications_router
 from adhelper.api.plan import plan_router
 from adhelper.api.site import guest_site_router, site_router
@@ -37,11 +38,17 @@ def _no_platform(_business_id: UUID, _account: str) -> None:
     return None
 
 
-def _accounts_service(
-    settings: Settings, engine: AsyncEngine, provider: OAuthProvider | None
-) -> AccountsService | None:
+def _cipher(settings: Settings) -> AesGcmCipher | None:
     keys = settings.token_encryption_keys
     if keys is None or not keys.get_secret_value():
+        return None
+    return AesGcmCipher.from_config(keys.get_secret_value())
+
+
+def _accounts_service(
+    engine: AsyncEngine, provider: OAuthProvider | None, cipher: AesGcmCipher | None, base_url: str
+) -> AccountsService | None:
+    if cipher is None:
         return None
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     return AccountsService(
@@ -50,9 +57,9 @@ def _accounts_service(
         lambda business_id: SqlAccountTokens(sessions, business_id),
         # Без провайдера сессии работают, а новый вход и подключение кабинета отвечают 503.
         provider or UnconfiguredProvider(),
-        AesGcmCipher.from_config(keys.get_secret_value()),
+        cipher,
         _utc_now,
-        settings.public_base_url,
+        base_url,
     )
 
 
@@ -83,7 +90,11 @@ def create_app(
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     app.state.sessions = sessions
     app.state.clock = _utc_now
-    app.state.accounts = _accounts_service(settings, engine, oauth_provider)
+    # Без ключей шифрования нет ни входа, ни хранения токенов и ИНН.
+    app.state.cipher = _cipher(settings)
+    app.state.accounts = _accounts_service(
+        engine, oauth_provider, app.state.cipher, settings.public_base_url
+    )
     app.include_router(accounts_router(settings))
     app.include_router(cabinet_router())
     app.include_router(control_router())
@@ -91,6 +102,7 @@ def create_app(
     app.include_router(site_router())
     app.include_router(guest_site_router())
     app.include_router(plan_router())
+    app.include_router(launch_router())
     app.state.guest_secret = _guest_secret(settings)
     # Адаптер Директа появится в T5 (ждёт V1); пока действия с площадкой честно отвечают 503.
     app.state.platform_for = _no_platform

@@ -1,7 +1,7 @@
 """Стенд сквозных тестов: своя база, демо-кабинет и поддельная площадка в памяти.
 
 Поддельная площадка подключается только отсюда, в рабочем коде её нет. Так же здесь
-воркер разбора сайта: тот же код очереди, но сайт и модель поддельные.
+воркеры разбора сайта и проверки кода Метрики: тот же код очередей, но сайт и модель поддельные.
 """
 
 import asyncio
@@ -18,9 +18,11 @@ from psycopg import sql
 from sqlalchemy.engine import make_url
 
 from adhelper.budget.domain.limits import CampaignBudget
-from adhelper.business.adapters.rules_file import load_site_rules
+from adhelper.business.adapters.rules_file import load_site_rules, load_tag_rules
 from adhelper.business.adapters.site_reads import SqlSiteReadQueue
+from adhelper.business.adapters.tag_checks import SqlTagCheckQueue
 from adhelper.business.application.site import run_site_reads
+from adhelper.business.application.tag import run_tag_checks
 from adhelper.business.domain.ports import FetchedPage
 from adhelper.config import Settings
 from adhelper.creatives.domain.model import ModelReply
@@ -79,7 +81,8 @@ SITE_FACTS = [
 
 class StandSite:
     async def fetch(self, url: str) -> FetchedPage:
-        return FetchedPage(url, SITE_TEXT)
+        # Код Метрики на странице: шаг «Статистика» находит счётчик.
+        return FetchedPage(url, SITE_TEXT, (), (98765432,))
 
 
 class StandModel:
@@ -104,6 +107,12 @@ async def _serve(app: Any) -> None:
                 "stand",
                 rules,
                 load_site_rules,
+                lambda: datetime.now(UTC),
+            )
+            await run_tag_checks(
+                SqlTagCheckQueue(app.state.sessions),
+                StandSite(),
+                load_tag_rules(),
                 lambda: datetime.now(UTC),
             )
             await asyncio.sleep(1)

@@ -17,6 +17,7 @@ from adhelper.worker.app import (
     creatives_generate,
     notifications_send,
     site_read,
+    site_tag_check,
     state_reconcile,
     telegram_poll,
 )
@@ -31,6 +32,7 @@ def test_money_tasks_are_scheduled() -> None:
         "notifications.send",
         "telegram.poll",
         "site.read",
+        "site.tag_check",
     }
     assert expected <= set(PERIODIC_TASKS)
     assert set(app.tasks) >= expected
@@ -58,6 +60,7 @@ async def test_worker_runs_money_tasks_from_real_database(
             await notifications_send.defer_async(**periodic_arguments)
             await telegram_poll.defer_async(**periodic_arguments)
             await site_read.defer_async(**periodic_arguments)
+            await site_tag_check.defer_async(**periodic_arguments)
             await test_app.run_worker_async(
                 queues=["budget", "creatives", "notifications"],
                 wait=False,
@@ -77,4 +80,5 @@ async def test_worker_runs_money_tasks_from_real_database(
         "notifications.send": "succeeded",
         "telegram.poll": "succeeded",
         "site.read": "succeeded",
+        "site.tag_check": "succeeded",
     }

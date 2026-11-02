@@ -2,6 +2,7 @@ import tomllib
 from importlib.resources import files
 
 from adhelper.business.domain.site import SiteRules
+from adhelper.business.domain.tag import TagRules
 
 CURRENT_SITE_RULES = "site-1"
 
@@ -27,3 +28,12 @@ def load_site_rules(version: str = CURRENT_SITE_RULES) -> SiteRules:
         link_words=tuple(raw["link_words"]),
         system_prompt=raw["system_prompt"].strip(),
     )
+
+
+CURRENT_TAG_RULES = "tag-1"
+
+
+def load_tag_rules(version: str = CURRENT_TAG_RULES) -> TagRules:
+    resource = files("adhelper.business.adapters") / "rules" / f"{version}.toml"
+    raw = tomllib.loads(resource.read_text(encoding="utf-8"))
+    return TagRules(raw["version"], raw["max_checks_per_day"], raw["max_attempts"])

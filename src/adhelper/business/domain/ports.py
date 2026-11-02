@@ -36,6 +36,8 @@ class FetchedPage:
     url: str
     text: str
     links: Sequence[Link] = ()
+    # Номера счётчиков Метрики из разметки: в текст для модели скрипты не попадают.
+    counters: tuple[int, ...] = ()
 
 
 class SiteFetcher(Protocol):
