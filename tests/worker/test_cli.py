@@ -132,7 +132,10 @@ async def test_channels_off_by_default_are_warnings(
 async def test_bot_without_name_fails_and_hides_token(
     migrated: Settings, engine: AsyncEngine
 ) -> None:
-    broken = migrated.model_copy(update={"telegram_bot_token": SecretStr("1:secret-bot")})
+    # Имя бота убираем явно: в локальном .env оно может быть задано.
+    broken = migrated.model_copy(
+        update={"telegram_bot_token": SecretStr("1:secret-bot"), "telegram_bot_name": ""}
+    )
     results = await run_checks(broken)
     assert statuses(results)["telegram"] is CheckStatus.FAIL
     assert "secret-bot" not in repr(results)
