@@ -16,6 +16,7 @@ PERIODIC_TASKS = (
     "notifications.send",
     "telegram.poll",
     "site.read",
+    "site.tag_check",
 )
 
 
@@ -78,3 +79,11 @@ async def telegram_poll(timestamp: int) -> None:
 async def site_read(timestamp: int) -> None:
     async with open_runtime(Settings()) as runtime:
         await runtime.site_read()
+
+
+# Проверки кода Метрики — строки tag_checks; скачивается только главная страница.
+@app.periodic(cron="* * * * *")
+@app.task(name="site.tag_check", queue=CREATIVES_QUEUE, queueing_lock="site.tag_check")
+async def site_tag_check(timestamp: int) -> None:
+    async with open_runtime(Settings()) as runtime:
+        await runtime.site_tag_check()

@@ -18,9 +18,11 @@ from adhelper.budget.adapters.sql import SqlPeriodStore
 from adhelper.budget.application.preflight import StoredPeriodPreflight
 from adhelper.budget.application.watch_cycle import run_watch_cycle
 from adhelper.business.adapters.fetcher import SafeFetcher
-from adhelper.business.adapters.rules_file import load_site_rules
+from adhelper.business.adapters.rules_file import load_site_rules, load_tag_rules
 from adhelper.business.adapters.site_reads import SqlSiteReadQueue
+from adhelper.business.adapters.tag_checks import SqlTagCheckQueue
 from adhelper.business.application.site import run_site_reads
+from adhelper.business.application.tag import run_tag_checks
 from adhelper.config import Settings
 from adhelper.creatives.adapters.factory import build_text_model
 from adhelper.creatives.adapters.rules_file import load_rules as load_creative_rules
@@ -144,6 +146,14 @@ class Runtime:
             self.text_model_name,
             rules,
             load_site_rules,
+            self.clock,
+        )
+
+    async def site_tag_check(self) -> None:
+        await run_tag_checks(
+            SqlTagCheckQueue(self.sessions),
+            SafeFetcher(load_site_rules()),
+            load_tag_rules(),
             self.clock,
         )
 

@@ -5,6 +5,7 @@ from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from adhelper.business.domain.ports import FetchedPage, Link
+from adhelper.business.domain.tag import find_counters
 
 SKIP = frozenset({"script", "style", "noscript", "template", "svg", "iframe", "head", "object"})
 BLOCK = frozenset(
@@ -129,7 +130,7 @@ def page_from_html(url: str, html: str) -> FetchedPage:
         if target is not None and target not in seen:
             seen.add(target)
             links.append(Link(target, _clean("".join(text))))
-    return FetchedPage(url, "\n".join(lines), tuple(links))
+    return FetchedPage(url, "\n".join(lines), tuple(links), find_counters(html))
 
 
 def page_from_text(url: str, text: str) -> FetchedPage:

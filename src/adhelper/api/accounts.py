@@ -190,7 +190,9 @@ def accounts_router(settings: Settings) -> APIRouter:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Бизнес не найден") from None
 
     @router.post("/businesses/{business_id}/accounts/connect")
-    async def connect(business_id: UUID, service: Service, info: CheckedSession) -> JSONResponse:
+    async def connect(
+        business_id: UUID, service: Service, info: CheckedSession, then: str | None = None
+    ) -> JSONResponse:
         try:
             url, state = await service.begin_connect(info.user.id, business_id)
         except BusinessNotFound:
@@ -209,6 +211,16 @@ def accounts_router(settings: Settings) -> APIRouter:
             samesite="lax",
             path="/api",
         )
+        if then in AFTER_LOGIN:
+            response.set_cookie(
+                AFTER_LOGIN_COOKIE,
+                then,
+                max_age=FLOW_COOKIE_SECONDS,
+                httponly=True,
+                secure=secure,
+                samesite="lax",
+                path="/api",
+            )
         return response
 
     @router.get("/accounts/yandex/callback")
@@ -220,19 +232,20 @@ def accounts_router(settings: Settings) -> APIRouter:
         code: str | None = None,
         error: str | None = None,
     ) -> RedirectResponse:
+        back = AFTER_LOGIN.get(request.cookies.get(AFTER_LOGIN_COOKIE, ""), "/")
         if not _state_matches_browser(request, state) or state is None:
-            return _home("connect=failed")
+            return _home("connect=failed", back)
         try:
             if error is not None or code is None:
                 await service.cancel_connect(state)
-                return _home("connect=denied")
+                return _home("connect=denied", back)
             await service.complete_connect(info.user.id, state, code)
         except AccountTaken:
-            return _home("connect=taken")
+            return _home("connect=taken", back)
         except (FlowInvalid, GrantRejected, BusinessNotFound):
-            return _home("connect=failed")
+            return _home("connect=failed", back)
         except ProviderUnavailable:
-            return _home("connect=unavailable")
-        return _home("connect=ok")
+            return _home("connect=unavailable", back)
+        return _home("connect=ok", back)
 
     return router

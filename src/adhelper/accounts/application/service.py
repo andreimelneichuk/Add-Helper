@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from uuid import UUID
 
 from adhelper.accounts.domain.model import (
+    AccountState,
     AdAccount,
     Business,
     FlowPurpose,
@@ -26,6 +27,7 @@ from adhelper.accounts.domain.ports import (
 )
 
 __all__ = [
+    "AccountState",
     "AccountTaken",
     "AccountsService",
     "BusinessNotFound",
