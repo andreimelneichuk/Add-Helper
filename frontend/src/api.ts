@@ -154,6 +154,17 @@ export type Profile = {
   website: string;
 };
 
+export type SiteFact = { field: "niche" | "address" | "service" | "feature"; value: string; price: number | null; quote: string; page: string };
+export type SiteRead = {
+  id: number;
+  url: string;
+  status: "queued" | "running" | "ready" | "failed";
+  problem: string | null;
+  problem_text: string | null;
+  facts: SiteFact[];
+  pages: string[];
+};
+
 export type Business = { id: string; name: string };
 export type AdAccount = { id: string; platform: string; login: string; scopes: string[]; state: string };
 export type Me = { email: string | null; csrf_token: string };
@@ -248,6 +259,9 @@ export function createApi(businessId: string, csrf: string) {
       request<{ applied: string[] }>(`${base}/display/schedule`, { method: "POST", body: JSON.stringify({ days, start, end, request_id: requestId }) }, csrf),
     setRegions: (regions: number[], requestId: string) =>
       request<{ applied: string[] }>(`${base}/display/regions`, { method: "POST", body: JSON.stringify({ regions, request_id: requestId }) }, csrf),
+    readSite: (url: string) =>
+      request<{ id: number; status: string; url: string }>(`${base}/site-reads`, { method: "POST", body: JSON.stringify({ url }) }, csrf),
+    siteRead: () => request<SiteRead | null>(`${base}/site-reads/latest`),
     setGoal: (rubles: number) =>
       request<{ goal: number }>(`${base}/goal`, { method: "POST", body: JSON.stringify({ rubles }) }, csrf),
     answerClients: (range: Range, clients: number) =>

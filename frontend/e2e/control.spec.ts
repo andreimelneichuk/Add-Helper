@@ -121,3 +121,26 @@ test("расписание короче порога Яндекса не отп�
   await expect(block.getByRole("alert")).toContainText("не принимает меньше 8 часов показа в неделю");
   await expect(block.getByRole("button", { name: "Изменить время" })).toBeDisabled();
 });
+
+test("сайт разбирается в черновик, в профиль попадает только подтверждённое", async ({ page }) => {
+  await page.goto("/?new");
+  await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+  const site = page.getByLabel("Сайт");
+  await site.fill("nogti.ru");
+  await page.getByRole("button", { name: "Заполнить с сайта" }).click();
+  const found = page.getByRole("group", { name: "Нашёл на сайте" });
+  await expect(found).toContainText("«Маникюр с покрытием гель-лаком — 1 700 ₽»", { timeout: 15_000 });
+  // Факт без цитаты со страницы код отбросил.
+  await expect(found).not.toContainText("Лучшие мастера");
+  await found.getByRole("checkbox", { name: /Адрес/ }).uncheck();
+  await found.getByRole("button", { name: "Перенести в профиль" }).click();
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Сохранил" })).toBeVisible();
+
+  await page.reload();
+  await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+  await expect(page.getByLabel("Чем занимаетесь")).toHaveValue("маникюр");
+  const services = page.locator(".set-service input[aria-label^='Услуга']");
+  await expect(services.last()).toHaveValue("Маникюр с покрытием гель-лаком");
+  await expect(page.getByLabel("Адрес", { exact: true })).not.toHaveValue("Москва, ул. Тверская, 7");
+});

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../api";
 import type { Api } from "../../api";
 import { fakeApi, open, settled } from "../testLive";
+import { mergeFacts } from "./LiveSettings";
 import { Settings } from "./Settings";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -165,3 +166,73 @@ describe("где и когда показывать", () => {
   });
 });
 
+
+const ready = {
+  id: 1,
+  url: "https://nogti.ru/",
+  status: "ready" as const,
+  problem: null,
+  problem_text: null,
+  pages: ["https://nogti.ru/"],
+  facts: [
+    { field: "niche" as const, value: "маникюр", price: null, quote: "Студия маникюра «Ноготок»", page: "https://nogti.ru/" },
+    { field: "service" as const, value: "маникюр", price: 1500, quote: "Маникюр — 1 500 ₽", page: "https://nogti.ru/" },
+    { field: "service" as const, value: "Педикюр", price: 2000, quote: "Педикюр — 2 000 ₽", page: "https://nogti.ru/" },
+    { field: "feature" as const, value: "Работаем с 2015 года", price: null, quote: "Работаем с 2015 года", page: "https://nogti.ru/" },
+  ],
+};
+
+describe("заполнение профиля с сайта", () => {
+  it("слияние: отмеченная цена заменяет прежнюю, новые факты добавляются в конец", () => {
+    const profile = { services: [{ name: "Маникюр", price: 1200 }], address: "Москва", features: ["Чай"], niche: "", website: "" };
+    expect(mergeFacts(profile, ready.facts, ready.url)).toEqual({
+      services: [{ name: "Маникюр", price: 1500 }, { name: "Педикюр", price: 2000 }],
+      address: "Москва",
+      features: ["Чай", "Работаем с 2015 года"],
+      niche: "маникюр",
+      website: "https://nogti.ru/",
+    });
+  });
+
+  it("находит факты с цитатами, переносит выбранные в форму, сохраняет владелец", async () => {
+    const siteRead = vi.fn().mockResolvedValueOnce(null).mockResolvedValue(ready);
+    const api = fakeApi({ siteRead } as Partial<Api>);
+    render(<Settings store={await open(api)} />);
+    await userEvent.type(await screen.findByLabelText("Сайт"), "nogti.ru");
+    await userEvent.click(screen.getByRole("button", { name: "Заполнить с сайта" }));
+    expect(api.readSite).toHaveBeenCalledWith("nogti.ru");
+
+    const found = await screen.findByRole("group", { name: "Нашёл на сайте" });
+    expect(within(found).getByText("«Педикюр — 2 000 ₽»")).toBeInTheDocument();
+    // Особенность владелец не подтвердил: снимает отметку.
+    await userEvent.click(within(found).getByRole("checkbox", { name: /Работаем с 2015 года/ }));
+    await userEvent.click(within(found).getByRole("button", { name: "Перенести в профиль" }));
+
+    expect(screen.queryByRole("group", { name: "Нашёл на сайте" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Чем занимаетесь")).toHaveValue("маникюр");
+    expect(screen.getByLabelText("Услуга 2")).toHaveValue("Педикюр");
+    expect(screen.getByRole("status")).toHaveTextContent("нажмите «Сохранить»");
+    // Черновик сам ничего не сохраняет.
+    expect(api.saveProfile).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+    expect(api.saveProfile).toHaveBeenCalledWith(expect.objectContaining({
+      niche: "маникюр",
+      services: [{ name: "Маникюр", price: 1500 }, { name: "Педикюр", price: 2000 }],
+      features: [],
+    }));
+  });
+
+  it("неудачу объясняет словами сервиса и предлагает заполнить вручную", async () => {
+    const failed = { ...ready, status: "failed" as const, facts: [], problem: "unreachable", problem_text: "Сайт не открылся. Проверьте адрес или заполните профиль вручную" };
+    const api = fakeApi({ siteRead: vi.fn().mockResolvedValueOnce(null).mockResolvedValue(failed) } as Partial<Api>);
+    render(<Settings store={await open(api)} />);
+    await userEvent.type(await screen.findByLabelText("Сайт"), "nogti.ru");
+    await userEvent.click(screen.getByRole("button", { name: "Заполнить с сайта" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Сайт не открылся");
+  });
+
+  it("без адреса кнопка не активна", async () => {
+    render(<Settings store={await open(fakeApi())} />);
+    expect(await screen.findByRole("button", { name: "Заполнить с сайта" })).toBeDisabled();
+  });
+});

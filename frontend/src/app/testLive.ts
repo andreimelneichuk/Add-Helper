@@ -42,6 +42,8 @@ export function fakeApi(over: Partial<Api> = {}) {
     rollback: vi.fn(async () => ({ status: "applied" })),
     confirmBalance: vi.fn(async () => ({ confirmed: true })),
     saveProfile: vi.fn(async (p: unknown) => p),
+    readSite: vi.fn(async (url: string) => ({ id: 1, status: "queued", url: url.startsWith("http") ? url : `https://${url}/` })),
+    siteRead: vi.fn(async () => null),
     accounts: vi.fn(async () => [{ id: "a1", platform: "yandex_direct", login: "anna", scopes: [], state: "connected" }]),
     connect: vi.fn(async () => ({ authorize_url: "https://oauth.yandex.ru/authorize?x=1" })),
     logout: vi.fn(async () => undefined),
