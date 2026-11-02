@@ -1,11 +1,14 @@
 """Обучающая, проверочная и тестовая выборки для агентов (docs/12-agents.md §9, AI1).
 
     uv run python -m evals.dataset write             # объявления писателя по профилям
-    uv run python -m evals.dataset vote --model openai/gpt-oss-120b
+    uv run python -m evals.dataset blind --labeler claude-b --out DIR --chunks 4
+    uv run python -m evals.dataset accept --labeler claude-b DIR/claude-b-*.votes.json
+    uv run python -m evals.dataset vote --model qwen/qwen3.8-27b   # замер модели сервиса
     uv run python -m evals.dataset stats
     uv run python -m evals.dataset label --labeler andrei --queue disputed
     uv run python -m evals.dataset label --labeler andrei --queue spot --count 60
 
+blind готовит пакеты для субагентов панели, accept принимает их голоса.
 write и vote тратят деньги и запускаются вручную, не в CI. Адрес и ключ: TEXT_MODEL_BASE_URL
 и TEXT_MODEL_API_KEY, а без них OPENAI_BASE_URL и OPENAI_API_KEY. Прерванный прогон
 продолжается с того же места: файлы только дополняются.
@@ -20,6 +23,7 @@ import sys
 from collections import Counter
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from pathlib import Path
 
 from pydantic import SecretStr
 
@@ -36,6 +40,7 @@ from evals.dataset.build import (
     LabelRow,
     VoteRow,
     append_jsonl,
+    blind_key,
     bucket,
     by_profile,
     code_violations,
@@ -49,7 +54,7 @@ from evals.dataset.build import (
     upper_bound,
     usable,
 )
-from evals.dataset.spec import AUTHOR, PANEL, SPLIT_SEED, Label
+from evals.dataset.spec import AUTHOR, PANEL, SERVICE_MODELS, SPLIT_SEED, Label
 
 # Бесплатный уровень Groq даёт 8000 токенов в минуту на модель: ждём долго, а не падаем.
 PARALLEL = 2
@@ -225,6 +230,65 @@ async def vote(args: argparse.Namespace) -> None:
     out(f"разметчик {args.model}: {dict(counts)}")
 
 
+# --- слепая разметка субагентами ---
+
+BLIND_VERSION = prompt_version("subagent", LABEL_SYSTEM)
+
+
+def blind(args: argparse.Namespace) -> None:
+    """Пакеты для субагента: правило, профили и объявления под непрозрачными ключами.
+    Вид, замысел, происхождение и чужие голоса в пакет не попадают."""
+    data = load()
+    args.out.mkdir(parents=True, exist_ok=True)
+    groups = [
+        (pid, [i for i in items if usable(i.code_violations)
+               and args.labeler not in data.votes.get(i.id, {})])
+        for pid, items in by_profile(data.items).items()
+    ]  # fmt: skip
+    groups = [(pid, items) for pid, items in groups if items]
+    for chunk in range(args.chunks):
+        part = groups[chunk :: args.chunks]
+        if not part:
+            continue
+        profiles = []
+        for pid, items in part:
+            items = sorted(items, key=lambda i: blind_key(args.labeler, i.id))
+            profiles.append(
+                {
+                    "профиль": profile_facts(data.profiles[pid].business()),
+                    "объявления": [
+                        {"k": blind_key(args.labeler, i.id), "заголовок": i.headline,
+                         "текст": i.text}
+                        for i in items
+                    ],
+                }
+            )  # fmt: skip
+        path = args.out / f"{args.labeler}-{chunk + 1}.json"
+        payload = {"правило": LABEL_SYSTEM, "профили": profiles}
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+        out(f"{path}: профилей {len(part)}, объявлений {sum(len(i) for _, i in part)}")
+
+
+def accept(args: argparse.Namespace) -> None:
+    """Голоса субагента: {"votes": [{"k", "label", "reason"}]}. Чужие ключи отбрасываются."""
+    data = load()
+    keys = {blind_key(args.labeler, item_id): item_id for item_id in data.items}
+    rows: list[VoteRow] = []
+    skipped = 0
+    for path in args.files:
+        votes = json.loads(path.read_text(encoding="utf-8")).get("votes", [])
+        for vote in votes:
+            item_id = keys.get(str(vote.get("k")))
+            label = vote.get("label")
+            if item_id is None or label not in ("pass", "block", "ambiguous"):
+                skipped += 1
+                continue
+            reason = str(vote.get("reason", ""))[:200]
+            rows.append(VoteRow(item_id, args.labeler, label, reason, BLIND_VERSION, _now()))
+    append_jsonl(DATA / "votes.jsonl", rows)
+    out(f"разметчик {args.labeler}: принято {len(rows)}, отброшено {skipped}")
+
+
 # --- сводка ---
 
 
@@ -246,7 +310,7 @@ def stats(_: argparse.Namespace) -> None:
         )
     out("\nсогласие с автором на написанных объявлениях:")
     authored_items = [i for i in items if i.origin == "authored"]
-    for labeler in PANEL[1:]:
+    for labeler in (*PANEL[1:], *SERVICE_MODELS):
         both = [i for i in authored_items if labeler in data.votes.get(i.id, {})]
         same = sum(
             1 for i in both if data.votes[i.id][labeler].label == data.votes[i.id][AUTHOR].label
@@ -258,6 +322,16 @@ def stats(_: argparse.Namespace) -> None:
             and data.votes[i.id][labeler].label == "pass"
         )
         out(f"  {labeler}: {same}/{len(both)}, пропустил нарушений {missed}")
+    out("\nмодели сервиса против эталона (человек или единогласие панели):")
+    for labeler in SERVICE_MODELS:
+        scored = [
+            (gold(data, i.id)[0], data.votes[i.id][labeler].label)
+            for i in items
+            if gold(data, i.id)[0] and labeler in data.votes.get(i.id, {})
+        ]
+        same = sum(1 for truth, vote in scored if truth == vote)
+        missed = sum(1 for truth, vote in scored if truth == "block" and vote == "pass")
+        out(f"  {labeler}: {same}/{len(scored)}, пропустил нарушений {missed}")
     checked = [i for i in items if i.id in data.labels and _panel_label(data, i.id) is not None]
     wrong = sum(1 for i in checked if data.labels[i.id].label != _panel_label(data, i.id))
     bound = upper_bound(wrong, len(checked))
@@ -327,7 +401,14 @@ def main(argv: Sequence[str] | None = None) -> None:
     writer = sub.add_parser("write")
     writer.add_argument("--model", default=os.environ.get("OPENAI_MODEL", ""))
     voter = sub.add_parser("vote")
-    voter.add_argument("--model", required=True, choices=PANEL[1:])
+    voter.add_argument("--model", required=True, choices=SERVICE_MODELS)
+    blinder = sub.add_parser("blind")
+    blinder.add_argument("--labeler", required=True, choices=PANEL[1:])
+    blinder.add_argument("--out", type=Path, required=True)
+    blinder.add_argument("--chunks", type=int, default=4)
+    acceptor = sub.add_parser("accept")
+    acceptor.add_argument("--labeler", required=True, choices=PANEL[1:])
+    acceptor.add_argument("files", type=Path, nargs="+")
     sub.add_parser("stats")
     lab = sub.add_parser("label")
     lab.add_argument("--labeler", required=True)
@@ -342,6 +423,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         asyncio.run(vote(args))
     elif args.command == "stats":
         stats(args)
+    elif args.command == "blind":
+        blind(args)
+    elif args.command == "accept":
+        accept(args)
     else:
         label(args)
 

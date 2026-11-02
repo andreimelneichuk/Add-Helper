@@ -955,3 +955,8 @@
 {"id": "cosmetology-00-w0", "labeler": "openai/gpt-oss-120b", "label": "pass", "reason": "нарушений нет", "prompt_version": "dae6f3d487", "at": "2026-11-02T13:45:41+00:00"}
 {"id": "cosmetology-00-w2", "labeler": "openai/gpt-oss-120b", "label": "pass", "reason": "нарушений нет", "prompt_version": "dae6f3d487", "at": "2026-11-02T13:45:41+00:00"}
 {"id": "cosmetology-00-w3", "labeler": "openai/gpt-oss-120b", "label": "pass", "reason": "нарушений нет", "prompt_version": "dae6f3d487", "at": "2026-11-02T13:45:41+00:00"}
+{"id": "cafe-00-w1", "labeler": "openai/gpt-oss-120b", "label": "pass", "reason": "нарушений нет", "prompt_version": "dae6f3d487", "at": "2026-11-02T13:53:53+00:00"}
+{"id": "cafe-00-w3", "labeler": "openai/gpt-oss-120b", "label": "pass", "reason": "нарушений нет", "prompt_version": "dae6f3d487", "at": "2026-11-02T13:53:53+00:00"}
+{"id": "cafe-00-w2", "labeler": "openai/gpt-oss-120b", "label": "pass", "reason": "нарушений нет", "prompt_version": "dae6f3d487", "at": "2026-11-02T13:53:53+00:00"}
+{"id": "cafe-00-w0", "labeler": "openai/gpt-oss-120b", "label": "pass", "reason": "нарушений нет", "prompt_version": "dae6f3d487", "at": "2026-11-02T13:53:53+00:00"}
+{"id": "cafe-00-w4", "labeler": "openai/gpt-oss-120b", "label": "pass", "reason": "нарушений нет", "prompt_version": "dae6f3d487", "at": "2026-11-02T13:53:53+00:00"}

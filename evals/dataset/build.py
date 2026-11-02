@@ -180,6 +180,11 @@ def split_of(seed: str, profile_id: str) -> SplitName:
     raise AssertionError("доли выборок должны давать 100")
 
 
+def blind_key(labeler: str, item_id: str) -> str:
+    """Ключ объявления для слепой разметки: по нему не видно ни вида, ни происхождения."""
+    return hashlib.sha256(f"blind:{labeler}:{item_id}".encode()).hexdigest()[:8]
+
+
 def prompt_version(*parts: str) -> str:
     return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:10]
 
