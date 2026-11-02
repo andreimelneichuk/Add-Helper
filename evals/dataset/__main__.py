@@ -2,7 +2,7 @@
 
     uv run python -m evals.dataset write             # объявления писателя по профилям
     uv run python -m evals.dataset blind --labeler claude-b --out DIR --chunks 4
-    uv run python -m evals.dataset accept --labeler claude-b DIR/claude-b-*.votes.json
+    uv run python -m evals.dataset accept --labeler claude-b --agent-model haiku DIR/claude-b-*.votes.json
     uv run python -m evals.dataset vote --model qwen/qwen3.8-27b   # замер модели сервиса
     uv run python -m evals.dataset stats
     uv run python -m evals.dataset label --labeler andrei --queue disputed
@@ -284,7 +284,8 @@ def accept(args: argparse.Namespace) -> None:
                 skipped += 1
                 continue
             reason = str(vote.get("reason", ""))[:200]
-            rows.append(VoteRow(item_id, args.labeler, label, reason, BLIND_VERSION, _now()))
+            version = f"{args.agent_model}:{BLIND_VERSION}"
+            rows.append(VoteRow(item_id, args.labeler, label, reason, version, _now()))
     append_jsonl(DATA / "votes.jsonl", rows)
     out(f"разметчик {args.labeler}: принято {len(rows)}, отброшено {skipped}")
 
@@ -408,6 +409,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     blinder.add_argument("--chunks", type=int, default=4)
     acceptor = sub.add_parser("accept")
     acceptor.add_argument("--labeler", required=True, choices=PANEL)
+    acceptor.add_argument("--agent-model", required=True, help="модель субагента: opus, haiku")
     acceptor.add_argument("files", type=Path, nargs="+")
     sub.add_parser("stats")
     lab = sub.add_parser("label")
