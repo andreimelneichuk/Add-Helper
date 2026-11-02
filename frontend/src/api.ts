@@ -208,6 +208,16 @@ export function createApi(businessId: string, csrf: string) {
     channels: () => request<Channels>("/api/me/notifications"),
     linkTelegram: () => request<{ url: string }>("/api/me/telegram", { method: "POST" }, csrf),
     unlinkTelegram: () => request<void>("/api/me/telegram", { method: "DELETE" }, csrf),
+    setAdState: (account: string, adId: string, active: boolean, requestId: string) =>
+      request<{ status: "applied" | "pending" }>(
+        `${base}/ads/${part(account)}/${part(adId)}/state`,
+        { method: "POST", body: JSON.stringify({ active, request_id: requestId }) },
+        csrf,
+      ),
+    pause: (requestId: string) =>
+      request<{ stopped: string[] }>(`${base}/pause`, { method: "POST", body: JSON.stringify({ request_id: requestId }) }, csrf),
+    rollback: (changeId: number) =>
+      request<{ status: string }>(`${base}/changes/${changeId}/rollback`, { method: "POST" }, csrf),
     confirmBalance: (account: string) =>
       request<{ confirmed: boolean }>(
         `${base}/balance/confirm`,

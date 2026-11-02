@@ -10,9 +10,12 @@ export type Day = [number, number];
 export type HistoryEntry = { id: string; kind: HistoryKind; when: string; title: string; why: string; next: string; canUndo: boolean; undoNote?: string; state?: string; revert?: { setting?: [SettingKey, string | number]; ad?: string; adOff?: string; adContent?: Ad }; about?: string };
 export type TagTone = 'good' | 'accent' | 'neutral';
 export type Ad = { id: string; name: string; tag: string; tagTone: TagTone; leads: number; cost: number; hook: string; title: string; text: string; facts: string; photo?: string };
-type Direction = [string, number, number, [string, number, number][]];
+type Direction = [string, number, number, [string, number, number, string?][]];
 export type PeriodStats = { label: string; cost: number; leads: number; shows: number; clicks: number; dirs: Direction[] };
 export type Fact = { id: string; label: string; value: string; source: string };
+export type LiveAlert = { kind: string; title: string; text: string; tone: "bad" | "warn" };
+/** Настоящие данные сервиса; суммы в рублях только для показа. */
+export type Live = { name: string; today: string; monthName: string; monthOf: string; monthDays: number; days: Day[]; trail: Day[]; spent: number | null; budget: number; balance: number | null; gap: number | null; account: string | null; hasCampaigns: boolean; alerts: LiveAlert[]; stats: Record<Period, PeriodStats>; profile: [string, string][] };
 export type Step = { label: string; title: string; lead: string; cta: string; ai: string };
 
 /** Неразрывные пробелы: сумма не должна переноситься по частям. */

@@ -14,7 +14,22 @@ function calmOf(s: State): Message {
   return { tone: "good", title: `Всё в порядке: ${w.leads} ${leadsWord(w.leads)} за 7 дней, по ${rub(w.cost / Math.max(1, w.leads))}`, text: `${was}Вмешиваться не нужно.`, actions: [], calm: true };
 }
 
+function liveMessage(s: State, store: Store): Message {
+  const first = s.live!.alerts[0];
+  const toHistory = () => store.goView("history");
+  if (first) {
+    const others = s.live!.alerts.slice(1).map((a) => a.title).join(". ");
+    const actions: Decision[] = first.kind === "balance_mismatch" ? [{ label: "Я знаю причину", pick: () => store.ask({ action: "balance" }) }, { label: "Что вы сделали", pick: toHistory, quiet: true }] : [];
+    return { tone: first.tone, title: first.title, text: others ? `${first.text} Ещё: ${others}.` : first.text, actions };
+  }
+  if (s.paused) return { tone: "bad", title: "Реклама на паузе", text: "Настройки сохранены, деньги не тратятся.", actions: [] };
+  const w = week(s);
+  if (w.leads === 0) return { tone: "info", title: w.cost > 0 ? "Обращений за 7 дней пока нет" : "За 7 дней показов не было", text: w.cost > 0 ? `Потрачено ${rub(w.cost)}. Данных пока мало для выводов.` : "Данных пока нет, поэтому выводов тоже нет.", actions: [], calm: true };
+  return calmOf(s);
+}
+
 function messageOf(s: State, store: Store): Message {
+  if (s.live) return liveMessage(s, store);
   if (s.paused) return { tone: "bad", title: "Реклама на паузе", text: "Показы останавливаются в течение 5 минут, настройки сохранены. Деньги не тратятся.", actions: [{ label: "Включить", pick: () => store.run({ action: "pause" }) }] };
   const toHistory = () => store.goView("history");
   switch (s.situation) {

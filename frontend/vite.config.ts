@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
 // Демо-сессия из `adhelper demo-seed`: прокси подставляет её cookie, в браузер токен не попадает.
-const DEMO_SESSION = new URL("../.demo-session", import.meta.url);
+const DEMO_SESSION = process.env.ADHELPER_DEMO_SESSION ?? new URL("../.demo-session", import.meta.url);
 const API = process.env.ADHELPER_API ?? "http://localhost:8010";
 
 function demoCookie(): string | null {
@@ -27,5 +27,5 @@ export default defineConfig({
       },
     },
   },
-  test: { environment: "jsdom", globals: true, setupFiles: "./src/setupTests.ts" },
+  test: { environment: "jsdom", globals: true, setupFiles: "./src/setupTests.ts", exclude: ["e2e/**", "node_modules/**"] },
 });

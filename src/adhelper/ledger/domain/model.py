@@ -58,6 +58,7 @@ class Change:
     failure_reason: str | None
     decision_id: str | None = None
     reverts_change_id: int | None = None
+    idempotency_key: str | None = None
 
 
 class ExecutionStep(StrEnum):

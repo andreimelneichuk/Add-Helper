@@ -2,6 +2,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from uuid import UUID
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -14,6 +15,7 @@ from adhelper.accounts.adapters.unconfigured import UnconfiguredProvider
 from adhelper.accounts.application.service import AccountsService, OAuthProvider
 from adhelper.api.accounts import accounts_router
 from adhelper.api.cabinet import cabinet_router
+from adhelper.api.control import control_router
 from adhelper.api.notifications import notifications_router
 from adhelper.config import Settings
 from adhelper.db import create_engine, ping
@@ -23,6 +25,10 @@ logger = logging.getLogger(__name__)
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+def _no_platform(_business_id: UUID, _account: str) -> None:
+    return None
 
 
 def _accounts_service(
@@ -64,6 +70,9 @@ def create_app(
     app.state.accounts = _accounts_service(settings, engine, oauth_provider)
     app.include_router(accounts_router(settings))
     app.include_router(cabinet_router())
+    app.include_router(control_router())
+    # Адаптер Директа появится в T5 (ждёт V1); пока действия с площадкой честно отвечают 503.
+    app.state.platform_for = _no_platform
     app.include_router(notifications_router())
     token = settings.telegram_bot_token
     # Без токена бот не читает сообщения, и ссылка на привязку никуда бы не вела.
