@@ -26,6 +26,8 @@
 .ad-compose-name { margin-left: 8px; overflow-wrap: anywhere; }
 .ad-compose-consent { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .ad-compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gap); }
+.ad-variant { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: start; margin-bottom: var(--gap); }
+.ad-variant > .ah-muted { grid-column: 2; }
 
 @media (max-width: 767px) {
   .ad-grid, .ad-compare { grid-template-columns: minmax(0, 1fr); }

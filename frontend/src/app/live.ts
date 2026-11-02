@@ -172,6 +172,7 @@ export class LiveStore extends Store {
   constructor(readonly api: Api, loaded: Partial<State>) {
     super({ ...initialState(), msgs: [], ...loaded });
     this.state = { ...this.state, msgs: [msg("ai", summary(this.state))] };
+    this.rework = api;
   }
 
   /** Перечитать данные после действия, которое прошло мимо журнала: профиль, решения по объявлениям. */

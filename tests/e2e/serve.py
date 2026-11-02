@@ -31,7 +31,7 @@ from adhelper.business.application.site import run_site_reads
 from adhelper.business.application.tag import run_tag_checks
 from adhelper.business.domain.ports import FetchedPage
 from adhelper.config import Settings
-from adhelper.creatives.adapters.rules_file import load_rules
+from adhelper.creatives.adapters.rules_file import load_rework_rules, load_rules
 from adhelper.creatives.adapters.sql import SqlCreativeQueue, SqlProfileSource
 from adhelper.creatives.application.service import run_queued
 from adhelper.creatives.domain.model import ModelReply
@@ -104,10 +104,24 @@ STAND_ADS = [
 ]
 
 
+def _rework_ads(prompt: str) -> list[dict[str, str]]:
+    """Варианты переделки строим из профиля в запросе: так они проходят проверку фактов."""
+    profile = json.loads(prompt.split("ПРОФИЛЬ:\n", 1)[1])
+    first = profile["услуги"][0]
+    price = f" за {first['цена_руб']} ₽" if first["цена_руб"] else ""
+    feature = (profile["особенности"] or [profile["адрес"]])[0]
+    return [
+        {"headline": f"{first['услуга']}{price}", "text": f"Ждём вас: {profile['адрес']}."},
+        {"headline": first["услуга"], "text": f"{feature}."},
+    ]
+
+
 class StandModel:
     async def complete_json(
         self, system: str, user: str, schema: dict[str, object], max_tokens: int
     ) -> ModelReply:
+        if "ПОЖЕЛАНИЕ" in user:
+            return ModelReply(json.dumps({"ads": _rework_ads(user)}, ensure_ascii=False), 100)
         if "ads" in schema.get("properties", {}):  # type: ignore[operator]
             return ModelReply(json.dumps({"ads": STAND_ADS}, ensure_ascii=False), 100)
         keys = ("field", "value", "quote", "price")
@@ -137,6 +151,7 @@ async def _serve(app: Any) -> None:
                 None,
                 load_rules,
                 lambda: datetime.now(UTC),
+                load_rework=load_rework_rules,
             )
             await run_tag_checks(
                 SqlTagCheckQueue(app.state.sessions),

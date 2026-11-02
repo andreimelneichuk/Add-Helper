@@ -268,6 +268,11 @@ export function createApi(businessId: string, csrf: string) {
     creatives: () => request<Board>(`${base}/creatives`),
     creative: (id: number) => request<CreativeReport>(`${base}/creatives/${id}`),
     launch: (id: number) => request<CreativeReport>(`${base}/creatives/${id}/launch`, { method: "POST" }, csrf),
+    rework: (account: string, adId: string, wish: string) =>
+      request<{ id: number; status: "queued" }>(`${base}/ads/${part(account)}/${part(adId)}/rework`, { method: "POST", body: JSON.stringify({ wish }) }, csrf),
+    reworkSet: (id: number) => request<ReworkView>(`${base}/reworks/${id}`),
+    chooseRework: (id: number, creativeId: number) =>
+      request<ReworkView>(`${base}/reworks/${id}/choose`, { method: "POST", body: JSON.stringify({ creative_id: creativeId }) }, csrf),
     withdraw: (id: number) => request<CreativeReport>(`${base}/creatives/${id}/withdraw`, { method: "POST" }, csrf),
     accounts: () => request<AdAccount[]>(`${base}/accounts`),
     connect: (then?: "start") =>
@@ -343,6 +348,8 @@ export type LaunchCheck = {
   launched?: "done" | "pending" | "refused" | null;
   launch_text: string;
 };
+export type ReworkVariant = { id: number; headline: string; text: string; state: string; sources: { fragment: string; label: string; key: string }[] };
+export type ReworkView = { id: number; status: "queued" | "ready" | "failed"; ad_id: string; problem: string | null; variants: ReworkVariant[]; text?: string };
 export type LaunchAnswer = { status: "done" | "pending"; campaigns: { name: string; limit_rubles: number }[]; text: string };
 
 export async function openSession(): Promise<{ me: Me; businesses: Business[] } | null> {

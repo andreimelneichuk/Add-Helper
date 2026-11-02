@@ -335,3 +335,29 @@ test("новый владелец проходит мастер и запуск�
   await expect(page.getByRole("heading", { name: /^Создал кампанию/ })).toBeVisible();
   await expect(page.getByText(/лимит 18\s000\s₽ до/)).toBeVisible();
 });
+
+test("переделка объявления: выдумка отклонена до писателя, выбранный вариант встаёт в очередь", async ({ page, request }) => {
+  await page.goto("/?new");
+  await nav(page, "Реклама").click();
+  await page.getByRole("button", { name: "Открыть «Педикюр у метро Профсоюзная»" }).first().click();
+  await page.getByRole("button", { name: "Переделать" }).click();
+
+  // Скидки нет в профиле: сервис отказывает сразу, писатель не вызывается.
+  await page.getByLabel("Или напишите своими словами").fill("Скидка 30% новым");
+  await page.getByRole("button", { name: "Сделать" }).click();
+  await expect(page.getByRole("alert")).toContainText("сначала добавьте это в профиль");
+
+  await page.getByRole("button", { name: "Короче" }).click();
+  const variants = page.getByRole("radiogroup", { name: "Новые варианты" });
+  await expect(variants.getByText("Вариант 1")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Сейчас в показах")).toBeVisible();
+  await expect(variants).toContainText("Профсоюзная, 12");
+  await variants.getByRole("radio").first().check();
+  await page.getByRole("button", { name: "Поставить в показы" }).click();
+  await expect(notice(page)).toContainText("старое объявление работает");
+
+  // Выбранный вариант виден в списке объявлений сервиса как ждущий запуска.
+  const businesses = await (await request.get("/api/businesses")).json();
+  const board = await (await request.get(`/api/businesses/${businesses[0].id}/creatives`)).json();
+  expect(board.creatives.some((c: { state: string; text: string }) => c.state === "launch_pending" && c.text === "Ждём вас: Москва, ул. Профсоюзная, 12.")).toBe(true);
+});

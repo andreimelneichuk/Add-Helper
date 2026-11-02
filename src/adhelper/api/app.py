@@ -23,6 +23,7 @@ from adhelper.api.display import display_router
 from adhelper.api.launch import launch_router
 from adhelper.api.notifications import notifications_router
 from adhelper.api.plan import plan_router
+from adhelper.api.rework import rework_router
 from adhelper.api.site import guest_site_router, site_router
 from adhelper.api.wizard_ads import guest_ads_router, wizard_ads_router
 from adhelper.config import Settings
@@ -104,6 +105,7 @@ def create_app(
     app.include_router(guest_site_router())
     app.include_router(plan_router())
     app.include_router(launch_router())
+    app.include_router(rework_router())
     app.include_router(guest_ads_router())
     app.include_router(wizard_ads_router())
     app.state.guest_secret = _guest_secret(settings)

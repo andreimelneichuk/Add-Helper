@@ -52,6 +52,14 @@ describe("экран объявления", () => {
 });
 
 describe("переделка объявления", () => {
+  it("форма не закрывается, когда подробности объявления пришли позже", async () => {
+    const store = openFirst();
+    await userEvent.click(button("Открыть «Первый визит со скидкой»"));
+    await userEvent.click(button("Переделать"));
+    act(() => store.set({ ads: store.state.ads.map((a) => ({ ...a, facts: "Адрес" })) }));
+    expect(button("Короче")).toBeInTheDocument();
+  });
+
   it("новый вариант виден рядом со старым и не применяется без подтверждения", async () => {
     const store = openFirst();
     await userEvent.click(button("Открыть «Первый визит со скидкой»"));
