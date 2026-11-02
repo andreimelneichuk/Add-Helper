@@ -463,3 +463,43 @@ async def test_journal_constraint_exists(engine: AsyncEngine) -> None:
             text("SELECT count(*) FROM pg_constraint WHERE conname = 'fk_changes_business_account'")
         )
     assert found == 1
+
+
+async def test_login_from_launch_returns_to_launch(
+    browser: Browser, provider: FakeProvider
+) -> None:
+    # Мастер запуска уходит на вход Яндекса с черновиком в браузере и должен вернуться к нему.
+    client = browser()
+    start = await client.get("/api/auth/yandex/login", params={"then": "start"})
+    query = _query(start.headers["location"])
+    code = provider.approve(query["code_challenge"], query["redirect_uri"], ANNA)
+    done = await client.get(
+        "/api/auth/yandex/callback", params={"state": query["state"], "code": code}
+    )
+    assert done.headers["location"] == "/?new&start"
+
+
+async def test_login_ignores_unknown_return_target(
+    browser: Browser, provider: FakeProvider
+) -> None:
+    # Куда вернуться, выбираем из своего списка: чужой адрес не принимаем.
+    client = browser()
+    start = await client.get("/api/auth/yandex/login", params={"then": "https://evil.test/"})
+    query = _query(start.headers["location"])
+    code = provider.approve(query["code_challenge"], query["redirect_uri"], ANNA)
+    done = await client.get(
+        "/api/auth/yandex/callback", params={"state": query["state"], "code": code}
+    )
+    assert done.headers["location"] == "/"
+
+
+async def test_denied_login_from_launch_returns_to_launch(
+    browser: Browser, provider: FakeProvider
+) -> None:
+    client = browser()
+    start = await client.get("/api/auth/yandex/login", params={"then": "start"})
+    query = _query(start.headers["location"])
+    done = await client.get(
+        "/api/auth/yandex/callback", params={"state": query["state"], "error": "access_denied"}
+    )
+    assert done.headers["location"] == "/?new&start&login=denied"
