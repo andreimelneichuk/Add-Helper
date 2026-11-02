@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Fact } from "./data";
 import { businessName, clearDraft, draftProfile, loadDraft, loadWizard, saveDraft, transferDraft } from "./draft";
 import type { StartDraft, TransferDeps } from "./draft";
+import { siteFacts } from "./store";
 
 const facts: Fact[] = [
   { id: "site0", field: "niche", label: "Чем занимаетесь", value: "маникюр", source: "с сайта", quote: "Студия маникюра" },
@@ -32,6 +33,20 @@ describe("черновик запуска", () => {
       services: [{ name: "Маникюр с покрытием", price: 1500 }, { name: "Педикюр", price: null }],
       features: ["Парковка", "Работаем без выходных"],
       website: "https://nogti.ru/",
+    });
+  });
+
+  it("факты разбора сайта попадают в свои поля профиля, а не в особенности", () => {
+    const read = siteFacts([
+      { field: "niche", value: "маникюр", price: null, quote: "Студия маникюра", page: "/" },
+      { field: "service", value: "Маникюр с покрытием", price: 1500, quote: "Маникюр с покрытием — 1 500 ₽", page: "/" },
+      { field: "address", value: "Казань, Даурская, 44Г", price: null, quote: "Казань, Даурская, 44Г", page: "/" },
+    ]);
+    expect(draftProfile({ site: "", facts: read, budget: 0 })).toMatchObject({
+      niche: "маникюр",
+      address: "Казань, Даурская, 44Г",
+      services: [{ name: "Маникюр с покрытием", price: 1500 }],
+      features: [],
     });
   });
 

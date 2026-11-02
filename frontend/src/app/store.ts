@@ -98,6 +98,8 @@ const FACT_LABELS: Record<SiteFact["field"], string> = { niche: "Чем зани
 /** Факты разбора в карточки шага «Профиль»: цитата остаётся рядом, чтобы владелец видел, откуда это. */
 export const siteFacts = (facts: SiteFact[]): Fact[] => facts.map((f, i) => ({
   id: `site${i}`,
+  // Поле нужно переносу в профиль: без него услуги и адрес стали бы «особенностями».
+  field: f.field,
   label: FACT_LABELS[f.field],
   value: f.price === null ? f.value : `${f.value}, ${rub(f.price)}`,
   source: "с сайта",
