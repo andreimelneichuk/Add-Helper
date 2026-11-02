@@ -13,6 +13,10 @@ min_text_chars = 40
 max_tokens = 2500
 # Разборов на бизнес за скользящие сутки: каждый стоит вызова модели.
 max_reads_per_day = 5
+# До входа: разборов с одной сети (/24 или /64) за скользящие сутки и всего у гостей.
+# Общий потолок держит расход на модель, если адреса меняют.
+max_guest_reads_per_address = 3
+max_guest_reads_per_day = 200
 max_attempts = 2
 max_services = 30
 max_features = 20

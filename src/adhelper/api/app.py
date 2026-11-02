@@ -1,4 +1,7 @@
+import hashlib
+import hmac
 import logging
+import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -18,7 +21,7 @@ from adhelper.api.cabinet import cabinet_router
 from adhelper.api.control import control_router
 from adhelper.api.display import display_router
 from adhelper.api.notifications import notifications_router
-from adhelper.api.site import site_router
+from adhelper.api.site import guest_site_router, site_router
 from adhelper.config import Settings
 from adhelper.db import create_engine, ping
 
@@ -52,6 +55,16 @@ def _accounts_service(
     )
 
 
+def _guest_secret(settings: Settings) -> bytes:
+    """Ключ HMAC для лимита гостей. Без ключей шифрования он свой у процесса, и лимит
+    обнуляется при перезапуске: это хуже, но адрес человека всё равно не хранится."""
+    keys = settings.token_encryption_keys
+    if keys is None or not keys.get_secret_value():
+        return secrets.token_bytes(32)
+    material = keys.get_secret_value().encode()
+    return hmac.new(material, b"site-guest-limit", hashlib.sha256).digest()
+
+
 def create_app(
     settings: Settings | None = None, oauth_provider: OAuthProvider | None = None
 ) -> FastAPI:
@@ -75,6 +88,8 @@ def create_app(
     app.include_router(control_router())
     app.include_router(display_router())
     app.include_router(site_router())
+    app.include_router(guest_site_router())
+    app.state.guest_secret = _guest_secret(settings)
     # Адаптер Директа появится в T5 (ждёт V1); пока действия с площадкой честно отвечают 503.
     app.state.platform_for = _no_platform
     app.include_router(notifications_router())
