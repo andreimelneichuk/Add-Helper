@@ -182,3 +182,109 @@ async def test_pause_is_visible_on_campaigns(anna: Anna, platform: FakePlatform)
     await client.post(f"{base}/pause", json={"request_id": "r1"}, headers=csrf)
     overview = (await client.get(f"{base}/overview")).json()
     assert {c["state"] for c in overview["campaigns"] if c["campaign_id"] == "1"} == {"suspended"}
+
+
+RUB = 1_000_000
+
+
+async def _hard_limit(sessions: Sessions, business_id: uuid.UUID) -> int:
+    async with sessions() as session:
+        value = await session.scalar(
+            text("SELECT hard_limit_micros FROM budget_periods WHERE business_id = :b"),
+            {"b": business_id},
+        )
+    assert isinstance(value, int)
+    return value
+
+
+async def test_owner_pause_is_lifted_with_budget_check(
+    anna: Anna, platform: FakePlatform, sessions: Sessions
+) -> None:
+    client, csrf, business = anna
+    _app(client).state.platform_for = lambda _b, _a: platform
+    base = f"/api/businesses/{business}"
+    await client.post(f"{base}/pause", json={"request_id": "r1"}, headers=csrf)
+    response = await client.post(f"{base}/resume", json={"request_id": "r2"}, headers=csrf)
+
+    assert response.status_code == 200
+    assert response.json()["resumed"] == [f"{LOGIN}:1"]
+    assert platform.campaigns["1"].active is True
+    assert await _rows(sessions, business) == [
+        ("user", "pause", "applied"),
+        ("user", "resume", "applied"),
+    ]
+    overview = (await client.get(f"{base}/overview")).json()
+    assert {c["state"] for c in overview["campaigns"] if c["campaign_id"] == "1"} == {"on"}
+
+
+async def test_guard_stop_is_not_lifted_by_button(
+    anna: Anna, platform: FakePlatform, sessions: Sessions
+) -> None:
+    client, csrf, business = anna
+    _app(client).state.platform_for = lambda _b, _a: platform
+    base = f"/api/businesses/{business}"
+    await client.post(f"{base}/pause", json={"request_id": "r1"}, headers=csrf)
+    async with sessions.begin() as session:
+        await session.execute(
+            text(
+                "INSERT INTO alerts (business_id, kind, details, created_at)"
+                " VALUES (:b, 'budget_stopped', '{}'::jsonb, :t)"
+            ),
+            {"b": business, "t": NOW},
+        )
+    response = await client.post(f"{base}/resume", json={"request_id": "r2"}, headers=csrf)
+
+    assert response.status_code == 409
+    assert "бюджет месяца заканчивается" in response.json()["detail"]
+    assert platform.campaigns["1"].active is False
+    assert await _rows(sessions, business) == [("user", "pause", "applied")]
+
+
+async def test_resume_without_owner_pause_is_refused(
+    anna: Anna, platform: FakePlatform, sessions: Sessions
+) -> None:
+    client, csrf, business = anna
+    platform.campaigns["1"] = CampaignBudget("1", 100, 0, False, None)
+    _app(client).state.platform_for = lambda _b, _a: platform
+    response = await client.post(
+        f"/api/businesses/{business}/resume", json={"request_id": "r1"}, headers=csrf
+    )
+    assert response.status_code == 409
+    assert "остановил не вы" in response.json()["detail"]
+    assert platform.campaigns["1"].active is False
+
+
+async def test_budget_below_spent_is_refused_with_minimum(
+    anna: Anna, platform: FakePlatform, sessions: Sessions
+) -> None:
+    client, csrf, business = anna
+    platform._history.append((NOW, 9_000 * RUB))
+    _app(client).state.platform_for = lambda _b, _a: platform
+    response = await client.post(
+        f"/api/businesses/{business}/budget",
+        json={"rubles": 5_000, "request_id": "r1"},
+        headers=csrf,
+    )
+    assert response.status_code == 409
+    assert "до 10 000 ₽" in response.json()["detail"]
+    assert await _hard_limit(sessions, business) == 30_000 * RUB
+    assert await _rows(sessions, business) == []
+
+
+async def test_lowering_budget_cuts_limits_through_ledger_first(
+    anna: Anna, platform: FakePlatform, sessions: Sessions
+) -> None:
+    client, csrf, business = anna
+    platform.campaigns["1"] = CampaignBudget("1", 25_000 * RUB, 0, True, None)
+    _app(client).state.platform_for = lambda _b, _a: platform
+    response = await client.post(
+        f"/api/businesses/{business}/budget",
+        json={"rubles": 10_000, "request_id": "r1"},
+        headers=csrf,
+    )
+    assert response.status_code == 200
+    assert response.json() == {"status": "applied", "cuts": 1}
+    assert platform.campaigns["1"].limit <= 9_000 * RUB
+    assert await _hard_limit(sessions, business) == 10_000 * RUB
+    assert await _rows(sessions, business) == [("user", "set_limit", "applied")]
+

@@ -7,6 +7,7 @@ from typing import Any
 class ChangeKind(StrEnum):
     SET_LIMIT = "set_limit"
     PAUSE = "pause"
+    RESUME = "resume"
     PAUSE_AD = "pause_ad"
     RESUME_AD = "resume_ad"
 

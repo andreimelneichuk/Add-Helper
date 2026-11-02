@@ -15,6 +15,8 @@ from adhelper.ledger.domain.ports import GatewayUnavailable
 
 INVERSE_KIND = {
     ChangeKind.SET_LIMIT: ChangeKind.SET_LIMIT,
+    # Снятую владельцем паузу можно вернуть; саму паузу снимает только решение с проверкой бюджета.
+    ChangeKind.RESUME: ChangeKind.PAUSE,
     ChangeKind.PAUSE_AD: ChangeKind.RESUME_AD,
     ChangeKind.RESUME_AD: ChangeKind.PAUSE_AD,
 }
