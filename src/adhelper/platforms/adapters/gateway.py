@@ -2,7 +2,12 @@ from collections.abc import Mapping
 from typing import Any
 
 from adhelper.budget.domain.ports import PlatformUnavailable
-from adhelper.campaigns.domain.ports import TARGETING_PREFIX, TargetingControl
+from adhelper.campaigns.domain.launch import LAUNCH_PREFIX, NewCampaign
+from adhelper.campaigns.domain.ports import (
+    TARGETING_PREFIX,
+    CampaignLauncher,
+    TargetingControl,
+)
 from adhelper.campaigns.domain.targeting import Schedule
 from adhelper.ledger.domain.model import ChangeKind
 from adhelper.ledger.domain.ports import GatewayUnavailable, PlatformGateway
@@ -19,10 +24,30 @@ class RoutingGateway:
         campaigns: PlatformGateway,
         ads: AdControl,
         targeting: TargetingControl | None = None,
+        launcher: CampaignLauncher | None = None,
     ) -> None:
         self._campaigns = campaigns
         self._ads = ads
         self._targeting = targeting
+        self._launcher = launcher
+
+    def _launcher_control(self) -> CampaignLauncher:
+        if self._launcher is None:
+            raise GatewayUnavailable("launcher is not connected")
+        return self._launcher
+
+    async def _read_launch(self, account: str, target_ref: str) -> Mapping[str, Any]:
+        found = await self._launcher_control().find_campaign(
+            account, target_ref.removeprefix(LAUNCH_PREFIX)
+        )
+        if found is None:
+            return {}
+        # Сверх плана: номера, по которым витрина и журнал найдут созданное.
+        return {
+            **found.campaign.planned(),
+            "campaign_id": found.campaign_id,
+            "ad_ids": list(found.ad_ids),
+        }
 
     def _targeting_control(self) -> TargetingControl:
         if self._targeting is None:
@@ -31,6 +56,8 @@ class RoutingGateway:
 
     async def read(self, account: str, target_ref: str) -> Mapping[str, Any]:
         try:
+            if target_ref.startswith(LAUNCH_PREFIX):
+                return await self._read_launch(account, target_ref)
             if target_ref.startswith(AD_PREFIX):
                 return await self._ads.read_ad(account, target_ref)
             if target_ref.startswith(TARGETING_PREFIX):
@@ -50,6 +77,13 @@ class RoutingGateway:
         self, account: str, kind: ChangeKind, target_ref: str, planned: Mapping[str, Any]
     ) -> None:
         try:
+            if target_ref.startswith(LAUNCH_PREFIX):
+                if kind is not ChangeKind.CREATE_CAMPAIGN:
+                    raise ValueError(f"{kind} не создаёт кампанию")
+                marker = target_ref.removeprefix(LAUNCH_PREFIX)
+                campaign = NewCampaign.from_planned(marker, planned)
+                await self._launcher_control().create_campaign(account, campaign)
+                return
             if target_ref.startswith(AD_PREFIX):
                 await self._ads.set_ad_active(account, target_ref, planned["active"])
                 return

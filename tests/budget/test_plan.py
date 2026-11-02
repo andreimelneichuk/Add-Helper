@@ -15,7 +15,7 @@ RULES = load_plan_rules()
 
 
 def test_rules_are_sane() -> None:
-    assert RULES.version == "plan-1"
+    assert RULES.version == "plan-2"
     assert 0 < RULES.min_monthly_rubles < RULES.max_monthly_rubles
     assert all(RULES.min_monthly_rubles <= p <= RULES.max_monthly_rubles for p in RULES.presets)
     assert list(RULES.presets) == sorted(RULES.presets)
@@ -42,3 +42,13 @@ async def test_plan_is_stored_in_micros_and_isolated(
     await SqlBudgetPlans(sessions, boris).set(25_000 * 1_000_000, RULES.version)
     assert await SqlBudgetPlans(sessions, boris).get() == 25_000 * 1_000_000
     assert await SqlBudgetPlans(sessions, other).get() is None
+
+
+def test_plan_minimum_covers_launch_minimum() -> None:
+    """Сумма, которую принял мастер, не должна упасть на запуске ниже минимума Яндекса."""
+    from adhelper.budget.adapters.rules_file import load_rules
+    from adhelper.campaigns.adapters.rules_file import load_launch_rules
+    from adhelper.campaigns.domain.launch import minimum_monthly
+
+    need = minimum_monthly(load_rules("budget-1").reserve_bp, load_launch_rules())
+    assert RULES.min_monthly_rubles * 1_000_000 >= need

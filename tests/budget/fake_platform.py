@@ -4,7 +4,8 @@ from datetime import datetime, timedelta
 from adhelper.budget.domain.limits import CampaignBudget, LimitChange, LimitDecision
 from adhelper.budget.domain.ports import PlatformUnavailable
 from adhelper.budget.domain.watch import SpendSnapshot
-from adhelper.campaigns.domain.ports import Targeting
+from adhelper.campaigns.domain.launch import NewCampaign
+from adhelper.campaigns.domain.ports import CreatedCampaign, Targeting
 from adhelper.campaigns.domain.targeting import Schedule
 
 # Новая кампания в Директе показывается круглосуточно; регион задаём Москвой.
@@ -44,6 +45,9 @@ class FakePlatform:
         self.set_limit_calls: list[LimitChange] = []
         self.rejections: list[LimitDecision] = []
         self.limit_sums = [self.limit_sum]
+        # Кампании запуска по нашей метке; номера выдаёт площадка.
+        self.created: dict[str, CreatedCampaign] = {}
+        self.create_calls = 0
         self._history = [(now, self.total_spent)]
 
     @property
@@ -102,6 +106,23 @@ class FakePlatform:
         current = self.targeting.get(campaign_id, DEFAULT_TARGETING)
         self.targeting[campaign_id] = replace(current, regions=regions)
         self._check_fault("set_regions", after_apply=True)
+
+    async def find_campaign(self, account: str, marker: str) -> CreatedCampaign | None:
+        self._check_fault("find_campaign", after_apply=False)
+        return self.created.get(marker)
+
+    async def create_campaign(self, account: str, campaign: NewCampaign) -> None:
+        self._check_fault("create_campaign", after_apply=False)
+        self.create_calls += 1
+        campaign_id = str(900 + len(self.created) + 1)
+        ad_ids = tuple(f"{campaign_id}0{i + 1}" for i in range(len(campaign.ads)))
+        self.created[campaign.marker] = CreatedCampaign(campaign_id, campaign, ad_ids)
+        # Новая кампания тратит в пределах своего лимита, как остальные.
+        self.campaigns[campaign_id] = CampaignBudget(campaign_id, campaign.limit, 0, True, None)
+        for ad_id in ad_ids:
+            self.ads[f"ad:{ad_id}"] = True
+        self.limit_sums.append(self.limit_sum)
+        self._check_fault("create_campaign", after_apply=True)
 
     async def read_campaigns(self, account: str) -> list[CampaignBudget]:
         self._check_fault("read_campaigns", after_apply=False)

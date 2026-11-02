@@ -228,6 +228,49 @@ class SqlDashboard:
         async with self._sessions() as session, session.begin():
             await session.execute(statement)
 
+    async def note_created_campaign(
+        self,
+        account: str,
+        campaign_id: str,
+        name: str,
+        limit: int,
+        ads: list[tuple[str, str, str, str]],
+    ) -> None:
+        """Кампания запуска, прочитанная журналом: до синхронизации она уже видна в кабинете.
+
+        Новое в Директе сначала проходит проверку, поэтому состояние «moderation».
+        Объявления: номер, заголовок, текст, ссылка. Повтор ничего не дублирует.
+        """
+        campaign = (
+            pg_insert(CAMPAIGNS)
+            .values(
+                business_id=self._business_id,
+                account=account,
+                campaign_id=campaign_id,
+                name=name,
+                state="moderation",
+                limit_micros=limit,
+            )
+            .on_conflict_do_nothing(index_elements=["business_id", "account", "campaign_id"])
+        )
+        async with self._sessions() as session, session.begin():
+            await session.execute(campaign)
+            for ad_id, title, body, href in ads:
+                await session.execute(
+                    pg_insert(ADS)
+                    .values(
+                        business_id=self._business_id,
+                        account=account,
+                        ad_id=ad_id,
+                        campaign_id=campaign_id,
+                        title=title,
+                        text=body,
+                        href=href,
+                        state="moderation",
+                    )
+                    .on_conflict_do_nothing(index_elements=["business_id", "account", "ad_id"])
+                )
+
     async def targetings(self, account: str | None = None) -> list[tuple[str, str, dict[str, Any]]]:
         """Кабинет, кампания и что о её показе известно."""
         statement = (
