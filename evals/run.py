@@ -2,10 +2,10 @@
 
     uv run python -m evals.run judge --models qwen/qwen3-30b-a3b-instruct-2507 --repeats 3
     uv run python -m evals.run generate --models qwen/qwen3-30b-a3b-instruct-2507
-    uv run python -m evals.run judge --models openai/gpt-oss-120b --dataset val --labels proposed
+    uv run python -m evals.run judge --models openai/gpt-oss-120b --dataset val
 
-`--dataset` берёт выборку из evals/data (см. evals/dataset). Для замера по §2 нужны метки
-человека (`--labels human`), предварительные метки генератора годятся только для подгонки.
+`--dataset` берёт выборку из evals/dataset. Для замера по §2 — `--labels gold`: метка человека
+или единогласие панели разметчиков; `author` — метка автора, только для подгонки на train.
 
 Адрес и ключ берутся из .env (TEXT_MODEL_BASE_URL, TEXT_MODEL_API_KEY, TEXT_MODEL_PROJECT).
 Результаты пишутся в evals/results/ как JSON.
@@ -251,7 +251,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     judge.add_argument("--repeats", type=int, default=3)
     judge.add_argument("--split", default="all", choices=["all", "dev", "holdout", "fresh"])
     judge.add_argument("--dataset", default="", choices=["", "train", "val", "test", "all"])
-    judge.add_argument("--labels", default="human", choices=["human", "proposed"])
+    judge.add_argument("--labels", default="gold", choices=["gold", "human", "author"])
     generate = sub.add_parser("generate")
     generate.add_argument("--models", nargs="+", required=True)
     generate.add_argument("--judge", default="")
