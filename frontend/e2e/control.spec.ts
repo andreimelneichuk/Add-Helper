@@ -16,7 +16,8 @@ test("обзор показывает настоящие данные, а не �
 test("отключение объявления доходит до журнала и видно в истории", async ({ page }) => {
   await page.goto("/?new");
   await nav(page, "Реклама").click();
-  const card = page.locator(".ads-card", { hasNot: page.locator(".ads-card-off") }).first();
+  // Карточки решений по новым объявлениям стоят выше и кнопки «Отключить» не имеют.
+  const card = page.locator(".ads-card").filter({ has: page.getByRole("button", { name: /^Отключить/ }) }).first();
   const name = await card.locator(".ads-title").innerText();
   await card.getByRole("button", { name: /^Отключить/ }).click();
   await page.getByRole("button", { name: "Применить" }).click();

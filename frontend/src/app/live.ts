@@ -17,10 +17,10 @@ const STATUS_WORD: Record<string, string> = { planned: "Запланирован
 const COMMANDS = "Через чат пока могу поставить на паузу, отменить последнее изменение и рассказать цифры. Другие команды ещё не подключены, поэтому ничего не изменил.";
 const NO_RESUME = "Снять паузу отсюда пока нельзя: включение ещё не подключено. Показы можно включить в кабинете Яндекса.";
 
-const rubles = (micros: number | null | undefined) => (micros ?? 0) / MICROS_PER_RUBLE;
+export const rubles = (micros: number | null | undefined) => (micros ?? 0) / MICROS_PER_RUBLE;
 const rublesOrNull = (micros: number | null | undefined) => (micros === null || micros === undefined ? null : rubles(micros));
-const dayNumber = (day: string) => Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10))) / 86400000;
-const dayAt = (n: number) => new Date(n * 86400000).toISOString().slice(0, 10);
+export const dayNumber = (day: string) => Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10))) / 86400000;
+export const dayAt = (n: number) => new Date(n * 86400000).toISOString().slice(0, 10);
 const sumMoney = (money: Money[], pick: (m: Money) => number | null) => money.reduce((x, m) => x + rubles(pick(m)), 0);
 
 /** Дни подряд от и до: день без статистики это ноль, а не пропуск на графике. */
@@ -34,7 +34,7 @@ function fillDays(overview: Overview, since: string, until: string): Day[] {
   return days;
 }
 
-function periodStats(label: string, overview: Overview, since: string, until: string, ads: AdLine[]): PeriodStats {
+export function periodStats(label: string, overview: Overview, since: string, until: string, ads: AdLine[]): PeriodStats {
   const inside = overview.days.filter((d) => d.day >= since && d.day <= until);
   const total = (pick: (t: Overview["totals"]) => number) => inside.reduce((x, d) => x + pick(d.totals), 0);
   const names = new Map(overview.campaigns.map((c) => [c.campaign_id, c.name]));
@@ -51,6 +51,7 @@ function periodStats(label: string, overview: Overview, since: string, until: st
       lines.reduce((x, a) => x + a.totals.conversions, 0),
       rubles(lines.reduce((x, a) => x + a.totals.cost, 0)),
       lines.map((a): [string, number, number, string] => [a.title, a.totals.conversions, rubles(a.totals.cost), `${a.account}/${a.ad_id}`]),
+      `${lines[0]!.account}/${id}`,
     ]),
   };
 }

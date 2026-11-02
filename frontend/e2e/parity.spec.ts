@@ -1,0 +1,66 @@
+// Функции сервиса, которые новый интерфейс перенял у прежнего кабинета: от кнопки до базы и обратно.
+import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+
+const notice = (page: Page) => page.locator(".ah-notice");
+const nav = (page: Page, name: string) => page.locator(".ah-rail").getByRole("button", { name });
+const settings = (page: Page) => page.locator(".ah-bar").getByRole("button", { name: "Настройки" });
+
+test.describe.configure({ mode: "serial" });
+
+test("правка профиля сохраняется в базе", async ({ page }) => {
+  await page.goto("/?new");
+  await settings(page).click();
+  const price = page.getByLabel("Цена услуги 2, ₽");
+  await expect(price).toHaveValue("2200");
+  await price.fill("2300");
+  await page.getByRole("button", { name: "Сохранить" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Сохранил" })).toBeVisible();
+
+  await page.reload();
+  await settings(page).click();
+  await expect(page.getByLabel("Цена услуги 2, ₽")).toHaveValue("2300");
+});
+
+test("объявление, ждущее владельца, запускается и уходит в очередь", async ({ page }) => {
+  await page.goto("/?new");
+  await nav(page, "Реклама").click();
+  const decide = page.getByRole("region", { name: "Нужно ваше решение" });
+  const card = decide.getByRole("article", { name: "Решение по «Педикюр в студии «Лак»»" });
+  await card.getByRole("button", { name: "Запустить" }).click();
+  await expect(notice(page)).toContainText("Разрешил запуск «Педикюр в студии «Лак»»");
+
+  await page.reload();
+  await nav(page, "Реклама").click();
+  const queue = page.getByRole("region", { name: "Готовлю к запуску" });
+  await expect(queue.getByRole("listitem").filter({ hasText: "Педикюр в студии «Лак»" })).toContainText("уйдёт в Яндекс первым");
+  await expect(page.getByRole("article", { name: "Решение по «Педикюр в студии «Лак»»" })).toHaveCount(0);
+});
+
+test("отчёт направления и свой период берут цифры у сервиса", async ({ page }) => {
+  await page.goto("/?new");
+  await nav(page, "Статистика").click();
+  await page.getByRole("button", { name: "Отчёт по направлению «Маникюр — поиск»" }).click();
+  await expect(page.getByRole("heading", { name: "Маникюр — поиск" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Объявления направления" }).getByRole("row")).not.toHaveCount(1);
+  await page.getByRole("button", { name: "Назад к статистике" }).click();
+
+  await page.getByRole("button", { name: "Свой период" }).click();
+  await page.getByRole("form", { name: "Свой период" }).getByRole("button", { name: "Показать" }).click();
+  await expect(page.getByRole("button", { name: / – / })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText(/^Обращения$/).locator("xpath=following-sibling::dd")).not.toHaveText("");
+});
+
+test("подключение кабинета: отказ сервиса и возврат из Яндекса видны владельцу", async ({ page }) => {
+  await page.goto("/?new");
+  await settings(page).click();
+  const account = page.getByRole("region", { name: "Кабинет Яндекса" });
+  await account.getByRole("button", { name: /^Подключить/ }).click();
+  // На стенде нет приложения Яндекса: сервис честно отказывает, а не делает вид, что подключил.
+  await expect(account.getByRole("alert")).toContainText("пока не настроено");
+
+  await page.goto("/?connect=denied");
+  await expect(notice(page)).toContainText("Вы отменили подключение в Яндексе");
+  await expect(page.getByRole("heading", { name: "Кабинет Яндекса" })).toBeVisible();
+  await expect(page).toHaveURL(/\/\?new$/);
+});

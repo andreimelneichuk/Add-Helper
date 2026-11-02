@@ -10,7 +10,8 @@ export type Day = [number, number];
 export type HistoryEntry = { id: string; kind: HistoryKind; when: string; title: string; why: string; next: string; canUndo: boolean; undoNote?: string; state?: string; revert?: { setting?: [SettingKey, string | number]; ad?: string; adOff?: string; adContent?: Ad }; about?: string };
 export type TagTone = 'good' | 'accent' | 'neutral';
 export type Ad = { id: string; name: string; tag: string; tagTone: TagTone; leads: number; cost: number; hook: string; title: string; text: string; facts: string; photo?: string };
-type Direction = [string, number, number, [string, number, number, string?][]];
+/** Название, обращения, расход, объявления; у настоящих данных ещё «кабинет/номер направления». */
+type Direction = [string, number, number, [string, number, number, string?][], string?];
 export type PeriodStats = { label: string; cost: number; leads: number; shows: number; clicks: number; dirs: Direction[] };
 export type Fact = { id: string; label: string; value: string; source: string };
 export type LiveAlert = { kind: string; title: string; text: string; tone: "bad" | "warn" };
