@@ -182,6 +182,18 @@ async function request<T>(path: string, init: RequestInit = {}, csrf?: string): 
   return (await response.json()) as T;
 }
 
+/** Где и когда показывать и желаемая цена обращения; null — значение неизвестно или разное. */
+export type Display = {
+  campaigns: number;
+  schedule: { days: number[]; start: number; end: number } | null;
+  schedule_text: string | null;
+  regions: number[] | null;
+  regions_text: string | null;
+  goal: number | null;
+  catalog: { id: number; name: string }[];
+  min_weekly_hours: number;
+};
+
 export type Channels = {
   email: string | null;
   telegram: { available: boolean; linked: boolean };
@@ -230,6 +242,14 @@ export function createApi(businessId: string, csrf: string) {
     /** Бюджет месяца в рублях; при снижении сервис сначала снижает лимиты в Яндексе. */
     setBudget: (rubles: number, requestId: string) =>
       request<{ status: string; cuts: number }>(`${base}/budget`, { method: "POST", body: JSON.stringify({ rubles, request_id: requestId }) }, csrf),
+    display: () => request<Display>(`${base}/display`),
+    /** Дни (0 — понедельник) и часы [start, end) показа; меняется через журнал. */
+    setSchedule: (days: number[], start: number, end: number, requestId: string) =>
+      request<{ applied: string[] }>(`${base}/display/schedule`, { method: "POST", body: JSON.stringify({ days, start, end, request_id: requestId }) }, csrf),
+    setRegions: (regions: number[], requestId: string) =>
+      request<{ applied: string[] }>(`${base}/display/regions`, { method: "POST", body: JSON.stringify({ regions, request_id: requestId }) }, csrf),
+    setGoal: (rubles: number) =>
+      request<{ goal: number }>(`${base}/goal`, { method: "POST", body: JSON.stringify({ rubles }) }, csrf),
     answerClients: (range: Range, clients: number) =>
       request<ClientAnswer>(`${base}/clients`, { method: "POST", body: JSON.stringify({ ...range, clients }) }, csrf),
     rollback: (changeId: number) =>

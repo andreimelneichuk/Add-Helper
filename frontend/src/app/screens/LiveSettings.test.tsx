@@ -103,4 +103,65 @@ describe("бюджет на настоящих данных", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("уже потрачено 1 500 ₽");
     expect(screen.getByRole("button", { name: "Изменить бюджет" })).toBeDisabled();
   });
+
 });
+
+describe("где и когда показывать", () => {
+  it("регион и часы меняет только после подтверждения и пишет, как отменить", async () => {
+    const api = fakeApi();
+    render(<Settings store={await open(api)} />);
+    const block = await screen.findByRole("region", { name: "Где и когда показывать" });
+    expect(await within(block).findByText(/Сейчас: Москва/)).toBeInTheDocument();
+    await userEvent.click(within(block).getByRole("button", { name: "Санкт-Петербург" }));
+    await userEvent.click(within(block).getByRole("button", { name: "Изменить регион" }));
+    const ask = within(block).getByRole("group", { name: "Подтверждение показа" });
+    expect(ask).toHaveTextContent("Москва, Санкт-Петербург вместо «Москва»");
+    expect(api.setRegions).not.toHaveBeenCalled();
+    await userEvent.click(within(ask).getByRole("button", { name: "Применить" }));
+    expect(api.setRegions).toHaveBeenCalledWith([213, 2], expect.any(String));
+    expect(await within(block).findByRole("status")).toHaveTextContent("Отменить можно в истории");
+
+    await userEvent.click(within(block).getByRole("button", { name: "вс" }));
+    await userEvent.selectOptions(within(block).getByLabelText("Показывать с"), "10");
+    await userEvent.selectOptions(within(block).getByLabelText("Показывать до"), "21");
+    await userEvent.click(within(block).getByRole("button", { name: "Изменить время" }));
+    await userEvent.click(within(block).getByRole("button", { name: "Не менять" }));
+    expect(api.setSchedule).not.toHaveBeenCalled();
+    await userEvent.click(within(block).getByRole("button", { name: "Изменить время" }));
+    expect(within(block).getByRole("group", { name: "Подтверждение показа" })).toHaveTextContent("пн–сб, 10:00–21:00");
+    await userEvent.click(within(block).getByRole("button", { name: "Применить" }));
+    expect(api.setSchedule).toHaveBeenCalledWith([0, 1, 2, 3, 4, 5], 10, 21, expect.any(String));
+  });
+
+  it("расписание, которое Яндекс не примет, отправить нельзя", async () => {
+    render(<Settings store={await open(fakeApi())} />);
+    const block = await screen.findByRole("region", { name: "Где и когда показывать" });
+    await within(block).findByText(/Сейчас: круглосуточно/);
+    for (const day of ["пн", "вт", "ср", "чт", "пт", "сб"]) await userEvent.click(within(block).getByRole("button", { name: day }));
+    await userEvent.selectOptions(within(block).getByLabelText("Показывать с"), "10");
+    await userEvent.selectOptions(within(block).getByLabelText("Показывать до"), "17");
+    expect(within(block).getByRole("alert")).toHaveTextContent("не принимает меньше 8 часов показа в неделю, сейчас 7");
+    expect(within(block).getByRole("button", { name: "Изменить время" })).toBeDisabled();
+  });
+
+  it("отказ сервиса при смене региона показывает как есть", async () => {
+    const api = fakeApi({ setRegions: vi.fn(async () => { throw new ApiError(503, "Кабинет Яндекса пока не подключён, поэтому ничего не изменилось"); }) } as Partial<Api>);
+    render(<Settings store={await open(api)} />);
+    const block = await screen.findByRole("region", { name: "Где и когда показывать" });
+    await userEvent.click(await within(block).findByRole("button", { name: "Москва и область" }));
+    await userEvent.click(within(block).getByRole("button", { name: "Изменить регион" }));
+    await userEvent.click(within(block).getByRole("button", { name: "Применить" }));
+    expect(await within(block).findByRole("status")).toHaveTextContent("ничего не изменилось");
+  });
+
+  it("желаемую цену обращения сохраняет в рублях", async () => {
+    const api = fakeApi();
+    render(<Settings store={await open(api)} />);
+    const field = await screen.findByLabelText("Желаемая цена обращения, ₽");
+    await userEvent.type(field, "450");
+    await userEvent.click(screen.getByRole("button", { name: "Задать цену" }));
+    expect(api.setGoal).toHaveBeenCalledWith(450);
+    expect(await screen.findByText(/теперь 450/)).toBeInTheDocument();
+  });
+});
+

@@ -85,3 +85,39 @@ test("бюджет ниже потраченного не принимается
   await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
   await expect(page.getByLabel("Бюджет в месяц, ₽")).toHaveValue(String(target));
 });
+
+test("регион показа меняется через журнал, видно в истории, отмена возвращает прежний", async ({ page }) => {
+  await page.goto("/?new");
+  await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+  const block = page.getByRole("region", { name: "Где и когда показывать" });
+  await expect(block).toContainText("Сейчас: у направлений разный регион");
+  await block.getByRole("button", { name: "Санкт-Петербург", exact: true }).click();
+  await block.getByRole("button", { name: "Изменить регион" }).click();
+  await block.getByRole("group", { name: "Подтверждение показа" }).getByRole("button", { name: "Применить" }).click();
+  await expect(block.getByRole("status")).toContainText("Регион показов теперь: Санкт-Петербург");
+
+  await page.reload();
+  await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+  await expect(page.getByRole("region", { name: "Где и когда показывать" })).toContainText("Сейчас: Санкт-Петербург.");
+
+  await nav(page, "История").click();
+  const row = page.locator(".ah-hist-row", { hasText: "Изменил регион показов" }).first();
+  await expect(row).toContainText("Санкт-Петербург");
+  await row.getByRole("button", { name: "Отменить" }).click();
+  await page.getByRole("button", { name: "Да, отменить" }).click();
+  await expect(notice(page)).toContainText("Отменил");
+  // Отменено для одного направления: у остальных новый регион, общего значения больше нет.
+  await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+  await expect(page.getByRole("region", { name: "Где и когда показывать" })).toContainText("разный регион");
+});
+
+test("расписание короче порога Яндекса не отправляется", async ({ page }) => {
+  await page.goto("/?new");
+  await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+  const block = page.getByRole("region", { name: "Где и когда показывать" });
+  for (const day of ["пн", "вт", "ср", "чт", "пт", "сб"]) await block.getByRole("button", { name: day, exact: true }).click();
+  await block.getByLabel("Показывать с").selectOption("10");
+  await block.getByLabel("Показывать до").selectOption("17");
+  await expect(block.getByRole("alert")).toContainText("не принимает меньше 8 часов показа в неделю");
+  await expect(block.getByRole("button", { name: "Изменить время" })).toBeDisabled();
+});
