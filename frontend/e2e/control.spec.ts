@@ -50,3 +50,38 @@ test("пауза из шапки останавливает показы и пе
   await page.reload();
   await expect(page.locator(".ah-status")).toHaveText("На паузе");
 });
+
+test("пауза владельца снимается кнопкой, остановленное не владельцем остаётся", async ({ page }) => {
+  await page.goto("/?new");
+  await expect(page.locator(".ah-status")).toHaveText("На паузе");
+  await page.locator(".ah-bar").getByRole("button", { name: "Включить" }).click();
+  await expect(notice(page)).toContainText("Снял паузу");
+  // «Наращивание» стояло до паузы владельца: его кнопка не включает.
+  await expect(notice(page)).toContainText("Часть направлений не включил");
+  await page.reload();
+  await expect(page.locator(".ah-status")).not.toHaveText("На паузе");
+  await nav(page, "История").click();
+  await expect(page.getByText(/Снял паузу: вы попросили/).first()).toBeVisible();
+});
+
+test("бюджет ниже потраченного не принимается, снижение доходит до сервиса", async ({ page }) => {
+  await page.goto("/?new");
+  await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+  const form = page.getByRole("form", { name: "Бюджет месяца" });
+  const input = form.getByLabel("Бюджет в месяц, ₽");
+  await input.fill("1000");
+  await expect(form.getByRole("alert")).toContainText("уже потрачено");
+  await expect(form.getByRole("button", { name: "Изменить бюджет" })).toBeDisabled();
+
+  const spentText = (await form.locator(".set-hint").first().textContent()) ?? "";
+  const spent = Number(spentText.match(/потрачено ([\d\s ]+)/)![1]!.replace(/\D/g, ""));
+  const target = Math.max(spent + 1000, 30000);
+  await input.fill(String(target));
+  await form.getByRole("button", { name: "Изменить бюджет" }).click();
+  await form.getByRole("group", { name: "Подтверждение бюджета" }).getByRole("button", { name: "Применить" }).click();
+  await expect(notice(page)).toContainText(`Бюджет месяца теперь`);
+
+  await page.reload();
+  await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+  await expect(page.getByLabel("Бюджет в месяц, ₽")).toHaveValue(String(target));
+});

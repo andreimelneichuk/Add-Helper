@@ -57,7 +57,11 @@ export type Overview = {
   previous: Totals;
   campaigns: Campaign[];
   days: Day[];
+  /** Последний ответ владельца о клиентах. */
+  clients: ClientAnswer | null;
 };
+
+export type ClientAnswer = { since: string; until: string; leads: number; clients: number };
 
 export type AdLine = {
   account: string;
@@ -220,6 +224,14 @@ export function createApi(businessId: string, csrf: string) {
       ),
     pause: (requestId: string) =>
       request<{ stopped: string[] }>(`${base}/pause`, { method: "POST", body: JSON.stringify({ request_id: requestId }) }, csrf),
+    /** Снять паузу владельца; остановку защитой бюджета сервис не снимает. */
+    resume: (requestId: string) =>
+      request<{ resumed: string[]; refused: string[]; failed: string[] }>(`${base}/resume`, { method: "POST", body: JSON.stringify({ request_id: requestId }) }, csrf),
+    /** Бюджет месяца в рублях; при снижении сервис сначала снижает лимиты в Яндексе. */
+    setBudget: (rubles: number, requestId: string) =>
+      request<{ status: string; cuts: number }>(`${base}/budget`, { method: "POST", body: JSON.stringify({ rubles, request_id: requestId }) }, csrf),
+    answerClients: (range: Range, clients: number) =>
+      request<ClientAnswer>(`${base}/clients`, { method: "POST", body: JSON.stringify({ ...range, clients }) }, csrf),
     rollback: (changeId: number) =>
       request<{ status: string }>(`${base}/changes/${changeId}/rollback`, { method: "POST" }, csrf),
     confirmBalance: (account: string) =>

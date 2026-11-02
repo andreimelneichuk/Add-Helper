@@ -27,7 +27,7 @@ function liveMessage(s: State, store: Store): Message {
               : [];
     return { tone: first.tone, title: first.title, text: others ? `${first.text} Ещё: ${others}.` : first.text, actions };
   }
-  if (s.paused) return { tone: "bad", title: "Реклама на паузе", text: "Настройки сохранены, деньги не тратятся.", actions: [] };
+  if (s.paused) return { tone: "bad", title: "Реклама на паузе", text: "Вы поставили паузу. Настройки сохранены, деньги не тратятся. Перед включением проверю, что расход не выйдет за бюджет.", actions: [{ label: "Включить", pick: () => store.run({ action: "pause" }) }] };
   const w = week(s);
   if (w.leads === 0) return { tone: "info", title: w.cost > 0 ? "Обращений за 7 дней пока нет" : "За 7 дней показов не было", text: w.cost > 0 ? `Потрачено ${rub(w.cost)}. Данных пока мало для выводов.` : "Данных пока нет, поэтому выводов тоже нет.", actions: [], calm: true };
   return calmOf(s);

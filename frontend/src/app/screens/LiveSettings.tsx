@@ -29,6 +29,42 @@ export const CONNECT_RESULT: Record<string, string> = {
 
 const message = (e: unknown) => (e instanceof Error ? e.message : "Сервис не ответил. Попробуйте позже.");
 
+function BudgetForm({ store }: { store: LiveStore }) {
+  const s = useStoreState(store);
+  const live = s.live!;
+  const [draft, setDraft] = useState(live.budget > 0 ? String(live.budget) : "");
+  const [asking, setAsking] = useState(false);
+  const amount = Number(draft);
+  const spent = live.spent ?? 0;
+  const problem = !draft ? "Укажите сумму." : amount < spent ? `В этом месяце уже потрачено ${rub(spent)}, бюджет не может быть меньше.` : null;
+  const lower = amount < live.budget;
+  if (live.budget <= 0) return <><div><div className="ah-label">Бюджет в месяц</div><div>Ещё не задан</div></div><p className="set-hint">Бюджет задаётся при запуске рекламы.</p></>;
+  return (
+    <form className="set-form" aria-label="Бюджет месяца" onSubmit={(e) => { e.preventDefault(); if (!problem && amount !== live.budget) setAsking(true); }}>
+      <label>
+        <span className="ah-label">Бюджет в месяц, ₽</span>
+        <input className="ah-input" inputMode="numeric" value={draft} onChange={(e) => { setAsking(false); setDraft(e.target.value.replace(/\D/g, "").slice(0, 9)); }} />
+      </label>
+      <p className="set-hint">Сейчас {rub(live.budget)}, потрачено {rub(spent)}. Яндекс не потратит больше: лимиты стоят в самом кабинете.</p>
+      {draft && problem && <p className="ah-error" role="alert">{problem}</p>}
+      {asking ? (
+        <div className="set-confirm" role="group" aria-label="Подтверждение бюджета">
+          <p>
+            {`Поставить ${rub(amount)} в месяц вместо ${rub(live.budget)}? `}
+            {lower ? "Сначала снижу лимиты в Яндексе, потом сменю бюджет: так расход не выйдет за новую сумму ни в какой момент." : "Лимиты в Яндексе не изменятся сразу: автопилот поднимает их по правилам, понемногу."}
+          </p>
+          <div className="set-actions">
+            <button type="button" className="ah-btn ah-btn-primary" onClick={() => { setAsking(false); store.run({ action: "setting", value: ["budget", amount] }); }}>Применить</button>
+            <button type="button" className="ah-btn" onClick={() => { setAsking(false); setDraft(String(live.budget)); }}>Не менять</button>
+          </div>
+        </div>
+      ) : (
+        <div className="set-actions"><button type="submit" className="ah-btn" disabled={!!problem || amount === live.budget}>Изменить бюджет</button></div>
+      )}
+    </form>
+  );
+}
+
 function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -179,9 +215,7 @@ function Accounts({ api }: { api: Api }) {
 }
 
 export function LiveSettings({ store }: { store: Store }) {
-  const s = useStoreState(store);
   const api = liveApi(store)!;
-  const live = s.live!;
   const [leaving, setLeaving] = useState<string | null>(null);
   const logout = async () => {
     setLeaving("Выхожу…");
@@ -197,8 +231,8 @@ export function LiveSettings({ store }: { store: Store }) {
       <div className="set-main">
         <section className="ah-panel set-section" aria-labelledby="set-title">
           <h2 id="set-title" className="ah-panel-title">Бюджет</h2>
-          <div><div className="ah-label">Бюджет в месяц</div><div>{live.budget > 0 ? rub(live.budget) : "Ещё не задан"}</div></div>
-          <p className="set-hint">Менять бюджет, район и время показов отсюда пока нельзя: эти настройки ещё не подключены к сервису.</p>
+          <BudgetForm store={store as LiveStore} />
+          <p className="set-hint">Район и время показов отсюда пока не меняются: эти настройки ещё не подключены к сервису.</p>
         </section>
         <section className="ah-panel set-section" aria-labelledby="set-profile-title">
           <h2 id="set-profile-title" className="ah-panel-title">Профиль бизнеса</h2>
