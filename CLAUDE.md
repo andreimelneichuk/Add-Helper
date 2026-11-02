@@ -23,6 +23,7 @@
 - Тесты и приёмка: [docs/07-testing-acceptance.md](docs/07-testing-acceptance.md)
 - Редизайн интерфейса: [docs/10-redesign.md](docs/10-redesign.md)
 - Путь пользователя, на него опираются экраны: [docs/11-user-way.md](docs/11-user-way.md)
+- ИИ-агенты, метрики ошибок, ворота выпуска: [docs/12-agents.md](docs/12-agents.md)
 - Факты о площадках и проверки `S1`–`S11`: [docs/00-research.md](docs/00-research.md)
 
 Меняется решение — правь документ в том же коммите, что и код.
