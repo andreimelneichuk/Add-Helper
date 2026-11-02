@@ -6,7 +6,7 @@
     uv run python -m evals.dataset vote --model qwen/qwen3.8-27b   # замер модели сервиса
     uv run python -m evals.dataset stats
     uv run python -m evals.dataset label --labeler andrei --queue disputed
-    uv run python -m evals.dataset label --labeler andrei --queue spot --count 60
+    uv run python -m evals.dataset label --labeler andrei --queue spot --panel-model haiku
 
 blind готовит пакеты для субагентов панели, accept принимает их голоса.
 write и vote тратят деньги и запускаются вручную, не в CI. Адрес и ключ: TEXT_MODEL_BASE_URL
@@ -375,7 +375,15 @@ def label(args: argparse.Namespace) -> None:
     if args.queue == "disputed":
         queue = [i for i in candidates if gold(data, i.id)[1] == "disputed"]
     else:
-        agreed = [i for i in candidates if gold(data, i.id)[1] == "consensus"]
+        agreed = [
+            i
+            for i in candidates
+            if gold(data, i.id)[1] == "consensus"
+            and all(
+                data.votes[i.id][name].prompt_version.startswith(args.panel_model)
+                for name in PANEL[1:]
+            )
+        ]
         queue = random.Random(args.seed).sample(agreed, min(args.count, len(agreed)))
     out(
         f"к разметке: {len(queue)}. p — нарушений нет, b — снять, a — спорно, s — пропустить, "
@@ -424,6 +432,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     lab.add_argument("--count", type=int, default=60)
     lab.add_argument("--seed", type=int, default=1)
     lab.add_argument("--split", default="all", choices=["train", "val", "test", "all"])
+    lab.add_argument(
+        "--panel-model", default="", help="для spot: только единогласие субагентов этой модели"
+    )
     args = parser.parse_args(argv)
     if args.command == "write":
         asyncio.run(write(args))
