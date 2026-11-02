@@ -1,6 +1,6 @@
 // Поддельный API для тестов нового интерфейса на настоящих данных.
 import { vi } from "vitest";
-import type { AdLine, Api, HistoryLine, Overview } from "../api";
+import type { AdLine, Api, Display, HistoryLine, Overview } from "../api";
 import { LiveStore, loadLive } from "./live";
 
 export const MILLION = 1_000_000;
@@ -18,6 +18,17 @@ export function overview(alerts: Overview["alerts"] = []): Overview {
     days: [{ day: "2026-11-15", totals: totals(700, 2) }, { day: "2026-11-02", totals: totals(100, 1) }],
   };
 }
+
+export const display = (): Display => ({
+  campaigns: 1,
+  schedule: { days: [0, 1, 2, 3, 4, 5, 6], start: 0, end: 24 },
+  schedule_text: "круглосуточно",
+  regions: [213],
+  regions_text: "Москва",
+  goal: null,
+  catalog: [{ id: 1, name: "Москва и область" }, { id: 213, name: "Москва" }, { id: 2, name: "Санкт-Петербург" }],
+  min_weekly_hours: 8,
+});
 
 export function fakeApi(over: Partial<Api> = {}) {
   return {
@@ -41,6 +52,10 @@ export function fakeApi(over: Partial<Api> = {}) {
     launch: vi.fn(async () => ({})),
     withdraw: vi.fn(async () => ({})),
     campaign: vi.fn(async () => { throw new Error("не задано в тесте"); }),
+    display: vi.fn(async () => display()),
+    setSchedule: vi.fn(async () => ({ applied: ["anna:1"] })),
+    setRegions: vi.fn(async () => ({ applied: ["anna:1"] })),
+    setGoal: vi.fn(async (rubles: number) => ({ goal: rubles })),
     ...over,
   } as unknown as Api;
 }

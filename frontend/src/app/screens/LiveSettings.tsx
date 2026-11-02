@@ -1,7 +1,7 @@
 // Настройки на настоящих данных: профиль, уведомления, кабинет Яндекса и выход.
 // Правка профиля не трогает площадку, поэтому идёт прямо в API, а не через журнал.
 import { useCallback, useEffect, useState } from "react";
-import type { AdAccount, Api, Channels as ChannelsData, Profile } from "../../api";
+import type { AdAccount, Api, Channels as ChannelsData, Display, Profile } from "../../api";
 import { rub } from "../data";
 import { liveApi } from "../live";
 import type { LiveStore } from "../live";
@@ -62,6 +62,124 @@ function BudgetForm({ store }: { store: LiveStore }) {
         <div className="set-actions"><button type="submit" className="ah-btn" disabled={!!problem || amount === live.budget}>Изменить бюджет</button></div>
       )}
     </form>
+  );
+}
+
+const DAY_NAMES = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
+const HOURS = Array.from({ length: 25 }, (_, h) => h);
+/** Те же слова, что пишет сервис в историю: «пн–сб, 10:00–21:00». */
+export function describeSchedule(days: number[], [start, end]: [number, number]): string {
+  if (days.length === 7 && start === 0 && end === 24) return "круглосуточно";
+  const first = days[0] ?? 0;
+  const last = days[days.length - 1] ?? 0;
+  const span = days.length > 2 && last - first + 1 === days.length;
+  const when = days.length === 7 ? "каждый день" : span ? `${DAY_NAMES[first]}–${DAY_NAMES[last]}` : days.map((d) => DAY_NAMES[d]).join(", ");
+  return `${when}, ${start}:00–${end}:00`;
+}
+type Ask = { text: string; apply: () => Promise<string> } | null;
+
+/** Где и когда показывать. Меняется в Яндексе через журнал, поэтому с подтверждением и отменой в истории. */
+function DisplayForm({ api, store }: { api: Api; store: LiveStore }) {
+  const [display, setDisplay] = useState<Display | null>(null);
+  const [regions, setRegions] = useState<number[]>([]);
+  const [days, setDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
+  const [hours, setHours] = useState<[number, number]>([0, 24]);
+  const [goal, setGoal] = useState("");
+  const [ask, setAsk] = useState<Ask>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(async () => {
+    const d = await api.display();
+    setDisplay(d);
+    setRegions(d.regions ?? []);
+    if (d.schedule) { setDays(d.schedule.days); setHours([d.schedule.start, d.schedule.end]); }
+    setGoal(d.goal ? String(d.goal) : "");
+  }, [api]);
+  useEffect(() => { load().catch((e: unknown) => setStatus(message(e))); }, [load]);
+  if (!display) return <p className="ah-muted">{status ?? "Загружаю…"}</p>;
+
+  const names = (ids: number[]) => display.catalog.filter((r) => ids.includes(r.id)).map((r) => r.name).join(", ");
+  const weeklyHours = days.length * Math.max(0, hours[1] - hours[0]);
+  const scheduleProblem = !days.length ? "Выберите хотя бы один день." : hours[0] >= hours[1] ? "Начало должно быть раньше конца." : weeklyHours < display.min_weekly_hours ? `Яндекс не принимает меньше ${display.min_weekly_hours} часов показа в неделю, сейчас ${weeklyHours}.` : null;
+  const sameSchedule = !!display.schedule && display.schedule.days.join() === days.join() && display.schedule.start === hours[0] && display.schedule.end === hours[1];
+  const sameRegions = !!display.regions && display.regions.join() === [...regions].sort((a, b) => a - b).join();
+  const scheduleText = describeSchedule(days, hours);
+  const goalValue = Number(goal);
+
+  const confirm = async () => {
+    if (!ask) return;
+    setBusy(true);
+    try {
+      const text = await ask.apply();
+      await load();
+      await store.refresh();
+      setStatus(text);
+    } catch (e) {
+      setStatus(message(e));
+    } finally {
+      setAsk(null);
+      setBusy(false);
+    }
+  };
+  const toggle = <T,>(list: T[], value: T) => (list.includes(value) ? list.filter((x) => x !== value) : [...list, value]);
+  const noCampaigns = display.campaigns === 0;
+
+  return (
+    <div className="set-form">
+      {noCampaigns && <p className="set-hint">Кампаний ещё нет: регион и часы зададутся при запуске.</p>}
+      <div role="group" aria-label="Где показывать">
+        <div className="ah-label">Где показывать</div>
+        <p className="set-hint">Сейчас: {display.regions_text ?? "у направлений разный регион или Яндекс его ещё не передал"}.</p>
+        <div className="set-options">
+          {display.catalog.map((r) => (
+            <button key={r.id} type="button" className="ah-chip" aria-pressed={regions.includes(r.id)} onClick={() => { setStatus(null); setRegions(toggle(regions, r.id)); }}>{r.name}</button>
+          ))}
+        </div>
+        <div className="set-actions">
+          <button type="button" className="ah-btn" disabled={noCampaigns || !regions.length || sameRegions || busy} onClick={() => setAsk({ text: `Показывать рекламу: ${names(regions)}${display.regions_text ? ` вместо «${display.regions_text}»` : ""}? Это изменится в Яндексе для всех направлений, отменить можно в истории.`, apply: async () => { await api.setRegions(regions, crypto.randomUUID()); return `Регион показов теперь: ${names(regions)}. Вы попросили. Отменить можно в истории.`; } })}>Изменить регион</button>
+        </div>
+      </div>
+      <div role="group" aria-label="Когда показывать">
+        <div className="ah-label">Когда показывать</div>
+        <p className="set-hint">Сейчас: {display.schedule_text ?? "у направлений разное время или Яндекс его ещё не передал"}.</p>
+        <div className="set-options">
+          {DAY_NAMES.map((name, d) => (
+            <button key={name} type="button" className="ah-chip" aria-pressed={days.includes(d)} onClick={() => { setStatus(null); setDays(toggle(days, d).sort((a, b) => a - b)); }}>{name}</button>
+          ))}
+        </div>
+        <div className="set-options">
+          <label><span className="ah-label">С</span> <select className="ah-input" aria-label="Показывать с" value={hours[0]} onChange={(e) => setHours([Number(e.target.value), hours[1]])}>{HOURS.slice(0, 24).map((h) => <option key={h} value={h}>{h}:00</option>)}</select></label>
+          <label><span className="ah-label">До</span> <select className="ah-input" aria-label="Показывать до" value={hours[1]} onChange={(e) => setHours([hours[0], Number(e.target.value)])}>{HOURS.slice(1).map((h) => <option key={h} value={h}>{h}:00</option>)}</select></label>
+        </div>
+        {scheduleProblem && <p className="ah-error" role="alert">{scheduleProblem}</p>}
+        <div className="set-actions">
+          <button type="button" className="ah-btn" disabled={noCampaigns || !!scheduleProblem || sameSchedule || busy} onClick={() => setAsk({ text: `Показывать рекламу ${scheduleText}${display.schedule_text ? ` вместо «${display.schedule_text}»` : ""}? Это изменится в Яндексе для всех направлений, отменить можно в истории.`, apply: async () => { await api.setSchedule(days, hours[0], hours[1], crypto.randomUUID()); return `Показываю рекламу ${scheduleText}. Вы попросили. Отменить можно в истории.`; } })}>Изменить время</button>
+        </div>
+      </div>
+      {ask && (
+        <div className="set-confirm" role="group" aria-label="Подтверждение показа">
+          <p>{ask.text}</p>
+          <div className="set-actions">
+            <button type="button" className="ah-btn ah-btn-primary" disabled={busy} onClick={confirm}>Применить</button>
+            <button type="button" className="ah-btn" disabled={busy} onClick={() => setAsk(null)}>Не менять</button>
+          </div>
+        </div>
+      )}
+      <form className="set-form" aria-label="Желаемая цена обращения" onSubmit={(e) => {
+        e.preventDefault();
+        if (goalValue < 1 || goalValue === display.goal) return;
+        setBusy(true);
+        api.setGoal(goalValue).then(async () => { await load(); setStatus(`Желаемая цена обращения теперь ${rub(goalValue)}. Это мерка для автопилота: объявление, где обращение выходит заметно дороже, он отключает. Поменять можно здесь же.`); }, (err: unknown) => setStatus(message(err))).finally(() => setBusy(false));
+      }}>
+        <label>
+          <span className="ah-label">Желаемая цена обращения, ₽</span>
+          <input className="ah-input" inputMode="numeric" value={goal} placeholder={display.goal ? undefined : "Например, 400"} onChange={(e) => { setStatus(null); setGoal(e.target.value.replace(/\D/g, "").slice(0, 7)); }} />
+        </label>
+        <p className="set-hint">{display.goal ? `Сейчас ${rub(display.goal)}.` : "Пока не задана."} В Яндексе это ничего не меняет: это мерка для решений автопилота.</p>
+        <div className="set-actions"><button type="submit" className="ah-btn" disabled={busy || goalValue < 1 || goalValue === display.goal}>Задать цену</button></div>
+      </form>
+      {status && <p role="status" className="set-hint">{status}</p>}
+    </div>
   );
 }
 
@@ -232,7 +350,10 @@ export function LiveSettings({ store }: { store: Store }) {
         <section className="ah-panel set-section" aria-labelledby="set-title">
           <h2 id="set-title" className="ah-panel-title">Бюджет</h2>
           <BudgetForm store={store as LiveStore} />
-          <p className="set-hint">Район и время показов отсюда пока не меняются: эти настройки ещё не подключены к сервису.</p>
+        </section>
+        <section className="ah-panel set-section" aria-labelledby="set-display-title">
+          <h2 id="set-display-title" className="ah-panel-title">Где и когда показывать</h2>
+          <DisplayForm api={api} store={store as LiveStore} />
         </section>
         <section className="ah-panel set-section" aria-labelledby="set-profile-title">
           <h2 id="set-profile-title" className="ah-panel-title">Профиль бизнеса</h2>
