@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Fact } from "./data";
-import { businessName, clearDraft, draftProfile, loadDraft, saveDraft, transferDraft } from "./draft";
+import { businessName, clearDraft, draftProfile, loadDraft, loadWizard, saveDraft, transferDraft } from "./draft";
 import type { StartDraft, TransferDeps } from "./draft";
 
 const facts: Fact[] = [
@@ -51,7 +51,9 @@ describe("черновик запуска", () => {
   it("после входа создаёт бизнес, сохраняет профиль и бюджет, потом стирается", async () => {
     saveDraft(draft);
     const { full, saved } = deps();
-    expect(await transferDraft(full, draft)).toEqual({ status: "done", email: "anna@example.ru", businessId: "b1" });
+    expect(await transferDraft(full, draft)).toEqual({ status: "done", email: "anna@example.ru", businessId: "b1", csrf: "c" });
+    // Мастер продолжит с этим бизнесом и после возврата с подключения кабинета.
+    expect(loadWizard()).toBe("b1");
     expect(full.createBusiness).toHaveBeenCalledWith("nogti.ru", "c");
     expect(full.business).toHaveBeenCalledWith("b1", "c");
     expect(saved.profile).toHaveBeenCalledWith(draftProfile(draft));

@@ -3,10 +3,10 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../api";
 import type { SiteRead } from "../../api";
-import { loadDraft, clearDraft } from "../draft";
+import { clearDraft, clearWizard, loadDraft, loadWizard } from "../draft";
 import type { TransferDeps } from "../draft";
 import { initialState, Store } from "../store";
-import type { GuestReader } from "../store";
+import type { GuestReader, WizardApi } from "../store";
 import { Start } from "./Start";
 
 function setup(patch: Parameters<Store["set"]>[0] = {}) {
@@ -390,5 +390,182 @@ describe("повторный перенос", () => {
     };
     await Promise.all([store.resume(deps, null), store.resume(deps, null)]);
     expect(createBusiness).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("шаги после входа на сервисе", () => {
+  const facts = [{ id: "site0", field: "niche" as const, label: "Чем занимаетесь", value: "маникюр", source: "с сайта", quote: "Студия маникюра" }];
+  const found = { status: "found" as const, url: "https://nogti.ru/", counters: [98765432], problem: null };
+
+  function wizardApi(over: Partial<WizardApi> = {}): WizardApi {
+    return {
+      accounts: vi.fn(async () => []),
+      connect: vi.fn(async () => ({ authorize_url: "https://oauth.yandex.ru/authorize?x=1" })),
+      marking: vi.fn(async () => ({ saved: null })),
+      saveMarking: vi.fn(async (body) => ({ saved: { kind: body.kind, inn: "••••••3893", name: body.name, phone: null, okved: body.okved ?? null } })),
+      tagCheck: vi.fn(async () => ({ check: null, site: "https://nogti.ru/" })),
+      requestTagCheck: vi.fn(async () => ({ check: { ...found, status: "queued" as const, counters: [] }, site: "https://nogti.ru/" })),
+      launchCheck: vi.fn(async () => ({ items: [], ready: false, launch_available: false, launch_text: "" })),
+      ...over,
+    } as WizardApi;
+  }
+
+  function wizard(step: number, api: WizardApi, patch: Parameters<Store["set"]>[0] = {}) {
+    clearDraft();
+    const store = new Store({ ...initialState("start"), facts, site: "https://nogti.ru/", step, account: { email: "anna@example.ru" }, ...patch });
+    store.reader = { readSite: vi.fn(), siteRead: vi.fn() };
+    store.navigate = vi.fn();
+    store.wizard = api;
+    store.waitMs = 1;
+    render(<Start store={store} />);
+    return { store, user: userEvent.setup() };
+  }
+
+  it("после входа мастер идёт дальше с бизнесом, а не уходит в кабинет", async () => {
+    const { saveDraft } = await import("../draft");
+    clearDraft();
+    saveDraft({ site: "https://nogti.ru/", facts, budget: 30000 });
+    const store = new Store({ ...initialState("start") });
+    store.reader = { readSite: vi.fn(), siteRead: vi.fn() };
+    store.navigate = vi.fn();
+    const api = wizardApi();
+    const open = vi.fn(() => api);
+    render(<Start store={store} />);
+    const deps = {
+      session: vi.fn(async () => ({ me: { email: "anna@example.ru", csrf_token: "c" }, businesses: [] })),
+      createBusiness: vi.fn(async (name: string) => ({ id: "b1", name })),
+      business: vi.fn(() => ({ saveProfile: vi.fn(async () => ({})), saveBudgetPlan: vi.fn(async () => ({})) })),
+      open,
+    };
+    await act(() => store.resume(deps, null));
+    expect(open).toHaveBeenCalledWith("b1", "c");
+    expect(loadWizard()).toBe("b1");
+    await userEvent.click(button("Продолжить"));
+    expect(store.state.step).toBe(5);
+    expect(store.navigate).not.toHaveBeenCalled();
+  });
+
+  it("кабинет подключается через Яндекс с возвратом в мастер", async () => {
+    const api = wizardApi();
+    const { store, user } = wizard(4, api);
+    await user.click(await screen.findByRole("button", { name: "Подключить кабинет" }));
+    expect(api.connect).toHaveBeenCalledWith("start");
+    expect(store.navigate).toHaveBeenCalledWith("https://oauth.yandex.ru/authorize?x=1");
+  });
+
+  it("подключённый кабинет виден по логину и считается в подключениях", async () => {
+    const api = wizardApi({ accounts: vi.fn(async () => [{ id: "a", platform: "yandex_direct", login: "anna-direct", scopes: [], state: "connected" }]) });
+    wizard(4, api);
+    expect(await screen.findByText("Кабинет подключён: anna-direct")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Подключить кабинет" })).not.toBeInTheDocument();
+    expect(side().getByText("1 из 3")).toBeInTheDocument();
+  });
+
+  it("отказ сервиса по ИНН держит на шаге и объясняет", async () => {
+    const saveMarking = vi.fn(async () => { throw new ApiError(422, "В ИНН ошибка в цифрах: проверьте по документам"); });
+    const { store, user } = wizard(5, wizardApi({ saveMarking }));
+    await user.type(screen.getByLabelText("ИНН для маркировки"), "7707083894");
+    await user.type(screen.getByLabelText("Наименование, как в ЕГРЮЛ"), "ООО «Ноготки»");
+    await user.type(screen.getByLabelText("ОКВЭД основного вида деятельности"), "96.02");
+    await user.click(button("Продолжить"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("ошибка в цифрах");
+    expect(saveMarking).toHaveBeenCalledWith({ kind: "legal", inn: "7707083894", name: "ООО «Ноготки»", okved: "96.02" });
+    expect(store.state.step).toBe(5);
+  });
+
+  it("маркировка уходит в сервис, полный ИНН в браузере не остаётся", async () => {
+    const api = wizardApi();
+    const { store, user } = wizard(5, api);
+    await user.click(screen.getByRole("radio", { name: "Физическое лицо" }));
+    await user.type(screen.getByLabelText("ИНН для маркировки"), "500100732259");
+    await user.type(screen.getByLabelText("ФИО"), "Иванова Анна");
+    expect(screen.queryByLabelText("ОКВЭД основного вида деятельности")).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("Телефон"), "+7 916 123-45-67");
+    await user.click(button("Продолжить"));
+    await waitFor(() => expect(store.state.step).toBe(6));
+    expect(api.saveMarking).toHaveBeenCalledWith({ kind: "person", inn: "500100732259", name: "Иванова Анна", phone: "+7 916 123-45-67" });
+    expect(store.state.inn).toBe("");
+  });
+
+  it("сохранённая маркировка показывается без полного ИНН и не отправляется снова", async () => {
+    const api = wizardApi({ marking: vi.fn(async () => ({ saved: { kind: "legal" as const, inn: "••••••3893", name: "ООО «Ноготки»", phone: null, okved: "96.02" } })) });
+    const { store, user } = wizard(5, api);
+    expect(await screen.findByText(/Сохранено: организация, ИНН ••••••3893/)).toBeInTheDocument();
+    await user.click(button("Продолжить"));
+    expect(store.state.step).toBe(6);
+    expect(api.saveMarking).not.toHaveBeenCalled();
+  });
+
+  it("код статистики проверяет сервис и ждёт воркер", async () => {
+    let calls = 0;
+    const tagCheck = vi.fn(async () => (calls++ === 0 ? { check: null, site: "https://nogti.ru/" } : { check: found, site: "https://nogti.ru/" }));
+    const api = wizardApi({ tagCheck });
+    const { store, user } = wizard(6, api);
+    await user.click(await screen.findByRole("button", { name: "Проверить установку" }));
+    expect(api.requestTagCheck).toHaveBeenCalled();
+    expect(await screen.findByText(/Код найден на сайте, счётчик 98765432/)).toBeInTheDocument();
+    expect(store.state.metrica).toBe(true);
+  });
+
+  it("кода нет: честно про Tag Manager, письмо с адресом сайта", async () => {
+    const api = wizardApi({ tagCheck: vi.fn(async () => ({ check: { ...found, status: "missing" as const, counters: [] }, site: "https://nogti.ru/" })) });
+    const { user } = wizard(6, api);
+    expect(await screen.findByText(/Google Tag Manager/)).toBeInTheDocument();
+    await user.click(button("Скопировать письмо разработчику"));
+    expect(screen.getByText(/на сайт https:\/\/nogti.ru\/ код счётчика/)).toBeInTheDocument();
+  });
+
+  it("без сайта код не нужен", async () => {
+    const { store } = wizard(6, wizardApi({ tagCheck: vi.fn(async () => ({ check: null, site: "" })) }));
+    expect(await screen.findByText(/В профиле нет сайта/)).toBeInTheDocument();
+    expect(store.state.metrica).toBe(true);
+  });
+
+  it("сводка от сервиса: что готово, чего нет, запуск честно ждёт доступа", async () => {
+    const launchCheck = vi.fn(async () => ({
+      items: [
+        { key: "plan" as const, ok: true, text: "Бюджет: 20 000 ₽ в месяц" },
+        { key: "account" as const, ok: false, text: "Кабинет Директа не подключён" },
+      ],
+      ready: false,
+      launch_available: false,
+      launch_text: "Создавать кампании в Яндексе сервис начнёт, когда Яндекс откроет доступ к API.",
+    }));
+    const { saveDraft } = await import("../draft");
+    const { store, user } = wizard(7, wizardApi({ launchCheck }));
+    saveDraft({ site: "x", facts: [], budget: 1 });
+    expect(heading("Что готово к запуску")).toBeInTheDocument();
+    const list = within(await screen.findByRole("list", { name: "Готовность к запуску" }));
+    expect(list.getByText(/Бюджет: 20 000 ₽/)).toBeInTheDocument();
+    expect(list.getByRole("img", { name: "не готово" })).toBeInTheDocument();
+    expect(screen.getByText(/когда Яндекс откроет доступ к API/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Запустить рекламу" })).not.toBeInTheDocument();
+    await user.click(button("Открыть кабинет"));
+    expect(store.navigate).toHaveBeenCalledWith("/?new");
+    expect(loadDraft()).toBeNull();
+  });
+
+  it("возврат с подключения кабинета продолжает тот же бизнес", async () => {
+    const { saveWizard } = await import("../draft");
+    saveWizard("b1");
+    const store = new Store(initialState("start"));
+    store.reader = { readSite: vi.fn(), siteRead: vi.fn() };
+    store.navigate = vi.fn();
+    const open = vi.fn(() => wizardApi());
+    render(<Start store={store} />);
+    const session = vi.fn(async () => ({ me: { email: "anna@example.ru", csrf_token: "c" }, businesses: [{ id: "other", name: "x" }, { id: "b1", name: "nogti.ru" }] }));
+    await act(() => store.resumeConnect({ session, open }, "Подключить не получилось: ссылка устарела или Яндекс отказал."));
+    expect(open).toHaveBeenCalledWith("b1", "c");
+    expect(store.state.step).toBe(4);
+    expect(screen.getByRole("alert")).toHaveTextContent("Подключить не получилось");
+  });
+
+  it("возврат без запуска в этом браузере ведёт в кабинет", async () => {
+    clearWizard();
+    const store = new Store(initialState("start"));
+    store.navigate = vi.fn();
+    const session = vi.fn(async () => ({ me: { email: null, csrf_token: "c" }, businesses: [{ id: "b1", name: "x" }] }));
+    await store.resumeConnect({ session, open: vi.fn() }, null);
+    expect(store.navigate).toHaveBeenCalledWith("/?new");
   });
 });

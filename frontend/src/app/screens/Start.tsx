@@ -6,9 +6,9 @@ import type { State, Store } from "../store";
 import { adsLeft, innReady, STEP_BODIES } from "./start/Steps";
 import "./Start.css";
 
-function summary(s: State) {
+function summary(s: State, real: boolean) {
   const site = s.site.trim();
-  const links = [s.yandex, innReady(s), s.metrica].filter(Boolean).length;
+  const links = [s.yandex, real ? s.marked : innReady(s), s.metrica].filter(Boolean).length;
   return [
     { label: "Сайт", value: site || "пока нет", on: !!site },
     { label: "Профиль", value: s.step > 1 ? "подтверждён" : s.step === 1 ? "на проверке" : "пока нет", on: s.step > 1 },
@@ -20,7 +20,11 @@ function summary(s: State) {
 
 export function Start({ store }: { store: Store }) {
   const s = useStoreState(store);
-  const step = STEPS[s.step] ?? STEPS[0]!;
+  const base = STEPS[s.step] ?? STEPS[0]!;
+  // В настоящем запуске сводка честно показывает, что готово: создание кампаний ещё не подключено.
+  const step = store.reader && s.step === STEPS.length - 1
+    ? { ...base, title: "Что готово к запуску", lead: "Сервис проверил всё, что нужно для запуска рекламы." }
+    : base;
   const Body = STEP_BODIES[s.step] ?? STEP_BODIES[0]!;
   const title = useRef<HTMLHeadingElement>(null);
   const first = useRef(true);
@@ -54,7 +58,7 @@ export function Start({ store }: { store: Store }) {
           <p className="st-lead">{step.lead}</p>
           <Body store={store} s={s} />
           <div className="st-actions">
-            <button type="submit" className="ah-btn ah-btn-primary st-next">{step.cta}</button>
+            <button type="submit" className="ah-btn ah-btn-primary st-next">{store.reader && s.step === STEPS.length - 1 ? "Открыть кабинет" : step.cta}</button>
             {s.step > 0 && <button type="button" className="ah-btn" onClick={() => store.set({ step: s.step - 1, block: "" })}>Назад</button>}
             {s.block && <p role="alert" className="st-block">{s.block}</p>}
           </div>
@@ -63,7 +67,7 @@ export function Start({ store }: { store: Store }) {
 
         <aside className="ah-panel st-side" aria-label="Что уже готово">
           <h2 className="ah-panel-title">Собирается</h2>
-          {summary(s).map((r) => (
+          {summary(s, !!store.reader).map((r) => (
             <div key={r.label} className="st-side-row">
               <i aria-hidden="true" className={r.on ? "is-on" : undefined} />
               <div>

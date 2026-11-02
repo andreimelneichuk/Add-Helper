@@ -188,3 +188,46 @@ test("черновик после входа не затирает бизнес,
   await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
   await expect(page.getByLabel("Сайт")).not.toHaveValue("https://nogti.ru/");
 });
+
+test("после подключения кабинета мастер ведёт маркировку, код статистики и сводку через сервис", async ({ page }) => {
+  await page.goto("/?new");
+  // Сайт в профиле нужен шагу «Статистика»; бизнес мастера запоминает браузер после переноса черновика.
+  const id = await page.evaluate(async () => {
+    const me = await (await fetch("/api/me")).json();
+    const business = (await (await fetch("/api/businesses")).json())[0];
+    const base = `/api/businesses/${business.id}`;
+    const profile = await (await fetch(`${base}/profile`)).json();
+    await fetch(`${base}/profile`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": me.csrf_token },
+      body: JSON.stringify({ ...profile, website: "https://nogti.ru/" }),
+    });
+    return business.id as string;
+  });
+  await page.evaluate((b) => window.localStorage.setItem("adhelper.startBusiness", b), id);
+  await page.goto("/?new&start&connect=denied");
+  await expect(page.getByRole("heading", { level: 1, name: "Подключите кабинет Яндекса" })).toBeVisible();
+  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page).toHaveURL(/\/\?new&start$/);
+  await page.getByRole("button", { name: "Продолжить" }).click();
+
+  await page.getByLabel("ИНН для маркировки").fill("7707083894");
+  await page.getByLabel("Наименование, как в ЕГРЮЛ").fill("ООО «Лак»");
+  await page.getByLabel("ОКВЭД основного вида деятельности").fill("96.02");
+  await page.getByRole("button", { name: "Продолжить" }).click();
+  await expect(page.getByRole("alert")).toContainText("ошибка в цифрах");
+  await page.getByLabel("ИНН для маркировки").fill("7707083893");
+  await page.getByRole("button", { name: "Продолжить" }).click();
+
+  await expect(page.getByRole("heading", { level: 1, name: "Поставьте код статистики на сайт" })).toBeVisible();
+  await page.getByRole("button", { name: "Проверить установку" }).click();
+  await expect(page.getByText(/Код найден на сайте, счётчик 98765432/)).toBeVisible({ timeout: 15000 });
+  await page.getByRole("button", { name: "Продолжить" }).click();
+
+  const ready = page.getByRole("list", { name: "Готовность к запуску" });
+  await expect(ready).toContainText("Маркировка: организация, ИНН ••••••3893");
+  await expect(ready).toContainText("Код Метрики на сайте есть, счётчик 98765432");
+  await expect(page.getByText(/когда Яндекс откроет доступ к API/)).toBeVisible();
+  await page.getByRole("button", { name: "Открыть кабинет" }).click();
+  await expect(page).toHaveURL(/\/\?new$/);
+});
