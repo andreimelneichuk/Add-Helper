@@ -35,8 +35,14 @@ function GuestStart() {
     guest.budgetOptions().then((budgetOptions) => store.set({ budgetOptions }), () => undefined);
     const params = new URLSearchParams(window.location.search);
     const login = params.get("login");
-    if (login !== null) window.history.replaceState(null, "", "/?new&start");
-    void store.resume({ session: openSession, createBusiness, business: createApi }, login);
+    const connect = params.get("connect");
+    if (login !== null || connect !== null) window.history.replaceState(null, "", "/?new&start");
+    if (connect !== null) {
+      // С подключения кабинета: черновик уже перенесён, мастер продолжает с бизнесом.
+      void store.resumeConnect({ session: openSession, open: createApi }, connect === "ok" ? null : CONNECT_RESULT[connect] ?? CONNECT_RESULT.failed!);
+      return;
+    }
+    void store.resume({ session: openSession, createBusiness, business: createApi, open: createApi }, login);
   }, [store]);
   return <AppShell store={store} />;
 }

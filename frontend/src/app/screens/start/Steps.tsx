@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ComponentType } from "react";
 import { ACCOUNT, MIN_BUDGET, rub } from "../../data";
 import { AdArt, Compose } from "../AdDetail";
+import { RealCode, RealLaunch, RealMarking, RealYandex } from "./RealSteps";
 import type { State, Store } from "../../store";
 
 type StepProps = { store: Store; s: State };
@@ -132,6 +133,7 @@ function AdsStep({ store, s }: StepProps) {
 }
 
 function YandexStep({ store, s }: StepProps) {
+  if (store.reader && s.account && store.wizard) return <RealYandex store={store} s={s} />;
   if (store.reader) {
     const signed = s.account !== null;
     return (
@@ -160,6 +162,7 @@ function YandexStep({ store, s }: StepProps) {
 }
 
 function InnStep({ store, s }: StepProps) {
+  if (store.reader) return <RealMarking store={store} s={s} />;
   return (
     <label className="st-field st-inn">
       <span className="ah-label">ИНН для маркировки</span>
@@ -171,6 +174,7 @@ function InnStep({ store, s }: StepProps) {
 const CODE_LETTER = "Здравствуйте! Поставьте, пожалуйста, на сайт salon-primer.ru код статистики Яндекс Метрики на все страницы. Без него реклама не увидит заявки и звонки.";
 
 function CodeStep({ store, s }: StepProps) {
+  if (store.reader) return <RealCode store={store} s={s} />;
   // Буфер обмена может быть недоступен, поэтому текст письма показываем и на экране.
   const copy = () => { void navigator.clipboard?.writeText(CODE_LETTER).catch(() => undefined); store.set({ codeCopied: true }); };
   return (
@@ -188,7 +192,8 @@ function CodeStep({ store, s }: StepProps) {
   );
 }
 
-function LaunchStep({ s }: StepProps) {
+function LaunchStep({ store, s }: StepProps) {
+  if (store.reader) return <RealLaunch store={store} s={s} />;
   const rows = [
     { label: "Бюджет", value: `${rub(Number(s.f.budget))} в месяц` },
     { label: "Где покажем", value: "Поиск и сайты Яндекса" },

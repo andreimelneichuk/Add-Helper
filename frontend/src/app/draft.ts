@@ -20,7 +20,7 @@ export type TransferDeps = {
 };
 
 export type Transfer =
-  | { status: "done"; email: string | null; businessId: string }
+  | { status: "done"; email: string | null; businessId: string; csrf: string }
   | { status: "exists"; name: string }
   | { status: "signed_out" };
 
@@ -45,6 +45,19 @@ export function clearDraft() {
 }
 
 // Цену в карточку услуги ставит сам мастер в виде «Название, 1 500 ₽»; так же её и отделяем.
+// Бизнес, который ведёт мастер после входа: нужен, когда владелец вернётся с подключения кабинета.
+const WIZARD_KEY = "adhelper.startBusiness";
+
+export function saveWizard(businessId: string) {
+  try { window.localStorage.setItem(WIZARD_KEY, businessId); } catch { /* без хранилища */ }
+}
+export function loadWizard(): string | null {
+  try { return window.localStorage.getItem(WIZARD_KEY); } catch { return null; }
+}
+export function clearWizard() {
+  try { window.localStorage.removeItem(WIZARD_KEY); } catch { /* без хранилища */ }
+}
+
 const PRICED = /^(.*\S),\s*(\d[\d\s]*)\s*₽$/u;
 
 function service(value: string): Profile["services"][number] {
@@ -92,5 +105,6 @@ export async function transferDraft(deps: TransferDeps, draft: StartDraft): Prom
   await api.saveProfile(draftProfile(draft));
   await api.saveBudgetPlan(draft.budget);
   clearDraft();
-  return { status: "done", email: session.me.email, businessId: id };
+  saveWizard(id);
+  return { status: "done", email: session.me.email, businessId: id, csrf };
 }

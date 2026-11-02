@@ -248,7 +248,14 @@ export function createApi(businessId: string, csrf: string) {
     launch: (id: number) => request<CreativeReport>(`${base}/creatives/${id}/launch`, { method: "POST" }, csrf),
     withdraw: (id: number) => request<CreativeReport>(`${base}/creatives/${id}/withdraw`, { method: "POST" }, csrf),
     accounts: () => request<AdAccount[]>(`${base}/accounts`),
-    connect: () => request<{ authorize_url: string }>(`${base}/accounts/connect`, { method: "POST" }, csrf),
+    connect: (then?: "start") =>
+      request<{ authorize_url: string }>(`${base}/accounts/connect${then ? `?then=${then}` : ""}`, { method: "POST" }, csrf),
+    marking: () => request<{ saved: MarkingView | null }>(`${base}/marking`),
+    saveMarking: (body: MarkingInput) =>
+      request<{ saved: MarkingView | null }>(`${base}/marking`, { method: "PUT", body: JSON.stringify(body) }, csrf),
+    tagCheck: () => request<TagCheckView>(`${base}/tag-check`),
+    requestTagCheck: () => request<TagCheckView>(`${base}/tag-check`, { method: "POST" }, csrf),
+    launchCheck: () => request<LaunchCheck>(`${base}/launch-check`),
     logout: () => request<void>("/api/auth/logout", { method: "POST" }, csrf),
     channels: () => request<Channels>("/api/me/notifications"),
     linkTelegram: () => request<{ url: string }>("/api/me/telegram", { method: "POST" }, csrf),
@@ -295,6 +302,15 @@ export function createApi(businessId: string, csrf: string) {
 }
 
 export type Api = ReturnType<typeof createApi>;
+
+export type AdvertiserKind = "legal" | "ip" | "person";
+export type MarkingInput = { kind: AdvertiserKind; inn: string; name: string; phone?: string; okved?: string };
+/** ИНН и телефон приходят только с последними цифрами. */
+export type MarkingView = { kind: AdvertiserKind; inn: string; name: string; phone: string | null; okved: string | null };
+export type TagCheck = { status: "queued" | "running" | "found" | "missing" | "failed"; url: string; counters: number[]; problem: string | null };
+export type TagCheckView = { check: TagCheck | null; site: string };
+export type LaunchItem = { key: "profile" | "plan" | "account" | "marking" | "counter"; ok: boolean; text: string };
+export type LaunchCheck = { items: LaunchItem[]; ready: boolean; launch_available: boolean; launch_text: string };
 
 export async function openSession(): Promise<{ me: Me; businesses: Business[] } | null> {
   try {

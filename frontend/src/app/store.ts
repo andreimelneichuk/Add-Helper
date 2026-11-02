@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { ApiError } from "../api";
-import type { SiteFact, SiteRead } from "../api";
-import { clearDraft, loadDraft, saveDraft, transferDraft } from "./draft";
+import type { AdvertiserKind, Api, Me, Business, SiteFact, SiteRead } from "../api";
+import { clearDraft, clearWizard, loadWizard, saveDraft, loadDraft, transferDraft } from "./draft";
 import type { TransferDeps } from "./draft";
 import { ADS, DAYS, FACTS, histFor, leadsWord, MIN_BUDGET, OPENING, OPTIONS, rub, STATS, STEPS } from "./data";
 import type { Ad, Day, Fact, HistoryEntry, HistoryKind, Live, Period, PeriodStats, SettingKey, Situation, View } from "./data";
@@ -68,9 +68,19 @@ export type State = {
   budgetOptions: BudgetOptions | null;
   /** Вход в настоящем запуске состоялся, черновик перенесён в бизнес. */
   account: { email: string | null } | null;
+  /** Данные для маркировки, кроме ИНН: ИНН живёт в поле inn. */
+  advertiser: { kind: AdvertiserKind; name: string; phone: string; okved: string };
+  /** Маркировка сохранена в сервисе, и владелец её не правит. */
+  marked: boolean;
 };
 
 export type BudgetOptions = { min: number; max: number; presets: number[] };
+/** Шаги мастера после входа работают с бизнесом через эти методы. */
+export type WizardApi = Pick<Api, "accounts" | "connect" | "marking" | "saveMarking" | "tagCheck" | "requestTagCheck" | "launchCheck">;
+export type WizardDeps = {
+  session: () => Promise<{ me: Me; businesses: Business[] } | null>;
+  open: (businessId: string, csrf: string) => WizardApi;
+};
 export const LOGIN_URL = "/api/auth/yandex/login?then=start";
 const LOGIN_FAILED: Record<string, string> = {
   denied: "Вход не состоялся: доступ в Яндексе не дан. Черновик сохранён, можно попробовать ещё раз.",
@@ -107,7 +117,7 @@ export function initialState(stage: State["stage"] = "work", situation: Situatio
     hist: histFor(situation), undone: {}, asked: {}, adsOff: {}, ads: ADS, openAd: null, paused: false, topped: false, decided: null, extra: 0,
     metric: "cost", selDay: null, period: "week", filter: "all", clientsInput: "", clients: null,
     f: { services: "маникюр и педикюр", area: "Сокольники", hours: "в часы работы", goal: 400, budget: 20000 },
-    site: "", codeCopied: false, inn: "", yandex: false, metrica: false, block: "", draftOff: {}, budgetDraft: null, facts: FACTS, factEdit: null, reading: null, budgetOptions: null, account: null,
+    site: "", codeCopied: false, inn: "", yandex: false, metrica: false, block: "", draftOff: {}, budgetDraft: null, facts: FACTS, factEdit: null, reading: null, budgetOptions: null, account: null, advertiser: { kind: "legal", name: "", phone: "", okved: "" }, marked: false,
   };
 }
 
@@ -234,6 +244,8 @@ export class Store {
   /** Переход на другую страницу: вход Яндекса и кабинет. В тестах подменяется. */
   navigate = (url: string) => window.location.assign(url);
   private resumed = false;
+  /** Бизнес мастера после входа; null — вход не состоялся или у владельца уже был бизнес. */
+  wizard: WizardApi | null = null;
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
   getSnapshot = () => this.state;
   set = (patch: Partial<State>) => { this.state = { ...this.state, ...patch }; this.listeners.forEach((fn) => fn()); };
@@ -418,7 +430,7 @@ export class Store {
     this.navigate(LOGIN_URL);
   };
   /** Вернулись со входа: черновик становится бизнесом, профилем и планом бюджета. */
-  async resume(deps: TransferDeps, loginResult: string | null) {
+  async resume(deps: TransferDeps & Partial<Pick<WizardDeps, "open">>, loginResult: string | null) {
     // Эффект в режиме разработки запускается дважды: второй перенос создал бы второй бизнес.
     if (this.resumed) return;
     this.resumed = true;
@@ -432,10 +444,50 @@ export class Store {
       if (done.status === "exists") {
         return this.set({ block: `У вас уже есть бизнес «${done.name}». Черновик в него не переношу, чтобы не затереть профиль. Нажмите «Продолжить», чтобы открыть кабинет.`, account: { email: null } });
       }
+      this.wizard = deps.open?.(done.businessId, done.csrf) ?? null;
       this.set({ account: { email: done.email }, msgs: [...this.state.msgs, msg("ai", "Вы вошли. Профиль и бюджет сохранены в сервисе: дальше они живут в настройках кабинета.")] });
     } catch (e) {
       this.set({ block: `${e instanceof Error ? e.message : "Сервис не ответил"}. Черновик сохранён: обновите страницу, чтобы повторить.` });
     }
+  }
+  /** Вернулись с подключения кабинета: мастер продолжается с шага «Кабинет». */
+  async resumeConnect(deps: WizardDeps, problem: string | null) {
+    if (this.resumed) return;
+    this.resumed = true;
+    const id = loadWizard();
+    const session = await deps.session().catch(() => null);
+    const business = session?.businesses.find((b) => b.id === id);
+    if (!session || !business) return this.navigate("/?new");
+    this.wizard = deps.open(business.id, session.me.csrf_token);
+    this.set({ account: { email: session.me.email }, step: 4, block: problem ?? "" });
+  }
+  private advance(ai?: string) {
+    const s = this.state;
+    this.set({ step: s.step + 1, msgs: [...s.msgs, msg("ai", ai ?? STEPS[s.step]!.ai)], block: "" });
+  }
+  private async saveMarking() {
+    const s = this.state;
+    if (!this.wizard) return;
+    if (s.marked) return this.advance();
+    const { kind, name, phone, okved } = s.advertiser;
+    try {
+      await this.wizard.saveMarking({ kind, inn: s.inn.trim(), name, ...(kind === "person" ? { phone } : { okved }) });
+      // Полный ИНН в браузере больше не нужен: сервис хранит его зашифрованным.
+      this.set({ marked: true, inn: "" });
+      this.advance();
+    } catch (e) {
+      this.set({ block: e instanceof Error ? e.message : "Сервис не ответил. Попробуйте ещё раз." });
+    }
+  }
+  /** Шаги после входа в настоящем запуске: данные уходят в сервис, сводку проверяет сервис. */
+  private nextReal(s: State) {
+    if (s.step === 4 && !s.account) return this.set({ block: "Войдите через Яндекс: так профиль и бюджет сохранятся." });
+    // Бизнес уже был: мастер его не трогает, дальше кабинет.
+    if (s.step >= 4 && !this.wizard) { clearDraft(); return this.navigate("/?new"); }
+    if (s.step === 5) { void this.saveMarking(); return; }
+    if (s.step === 6) return this.advance("Проверьте сводку: в ней видно, что готово и чего не хватает.");
+    if (s.step === STEPS.length - 1) { clearDraft(); clearWizard(); return this.navigate("/?new"); }
+    return this.advance();
   }
   /** Следующий шаг запуска; держит на шаге, пока не выполнены условия. */
   next(userText?: string) {
@@ -444,12 +496,11 @@ export class Store {
     const limits = s.budgetOptions ?? { min: MIN_BUDGET, max: Infinity };
     if (s.step === 2 && s.budgetDraft !== null && Number(s.budgetDraft) < limits.min) return this.set({ block: `Укажите сумму от ${rub(limits.min)} в месяц.` });
     if (s.step === 2 && s.budgetDraft !== null && Number(s.budgetDraft) > limits.max) return this.set({ block: `Больше ${rub(limits.max)} в месяц здесь не ставлю: проверьте, нет ли лишнего нуля.` });
-    // Дальше входа настоящий запуск пока не идёт: ИНН, код и запуск ждут доступа к Директу.
-    if (s.step === 4 && this.reader) return s.account ? (clearDraft(), this.navigate("/?new")) : this.set({ block: "Войдите через Яндекс: так профиль и бюджет сохранятся." });
     if (s.step === 0 && !s.site.trim()) return this.set({ block: this.reader ? "Вставьте ссылку или заполните профиль вручную." : "Вставьте ссылку или расскажите о бизнесе в чате." });
     if (s.step === 0 && this.reader) { void this.study(); return; }
     if (s.step === 1 && s.facts.length === 0) return this.set({ block: "Добавьте хотя бы один факт: рекламу пишу только по ним." });
     if (s.step >= 3 && s.ads.every((a) => s.draftOff[a.id])) return this.set({ block: "Оставьте хотя бы одно объявление." });
+    if (s.step >= 4 && this.reader) return this.nextReal(s);
     if (s.step === 4 && !s.yandex) return this.set({ block: "Подключите кабинет Яндекса." });
     if (s.step === 5 && !/^(\d{10}|\d{12})$/.test(s.inn)) return this.set({ block: "ИНН это 10 или 12 цифр." });
     if (s.step === 6 && !s.metrica) return this.set({ block: "Проверьте установку кода." });
