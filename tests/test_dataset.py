@@ -12,6 +12,7 @@ from evals.dataset.build import (
     LabelRow,
     VoteRow,
     append_jsonl,
+    blind_key,
     gold,
     load,
     parse_ads,
@@ -21,7 +22,15 @@ from evals.dataset.build import (
     upper_bound,
     usable,
 )
-from evals.dataset.spec import AD_KINDS, AUTHOR, KINDS_BY_CATEGORY, NICHES, PANEL, SPLITS
+from evals.dataset.spec import (
+    AD_KINDS,
+    AUTHOR,
+    KINDS_BY_CATEGORY,
+    NICHES,
+    PANEL,
+    SERVICE_MODELS,
+    SPLITS,
+)
 
 from adhelper.creatives.domain.model import ViolationKind
 
@@ -35,6 +44,8 @@ def test_spec_is_consistent() -> None:
     assert len({n.slug for n in NICHES}) == len(NICHES)
     assert {kind.label for kind in AD_KINDS} == {"pass", "block"}
     assert PANEL[0] == AUTHOR and len(set(PANEL)) == len(PANEL)
+    # Модель сервиса не может размечать правду о самой себе.
+    assert not set(PANEL) & set(SERVICE_MODELS)
 
 
 def test_authored_profiles_cover_every_niche_and_split() -> None:
@@ -142,3 +153,11 @@ def test_store_roundtrip_and_cases(tmp_path: Path) -> None:
     assert profile_id in profiles
     authored_cases, _ = to_cases(data, "train", "author")
     assert len(authored_cases) == sum(1 for i in AUTHORED.items.values() if i.split == "train")
+
+
+def test_blind_key_hides_item_and_differs_by_labeler() -> None:
+    item_id = next(iter(AUTHORED.items))
+    key = blind_key("claude-b", item_id)
+    assert key == blind_key("claude-b", item_id)
+    assert key != blind_key("claude-c", item_id)
+    assert item_id.split("-")[0] not in key and len(key) == 8
