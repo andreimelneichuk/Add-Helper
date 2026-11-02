@@ -88,7 +88,9 @@ async def run_queued(
         claimed = await queue.claim(now, now - STALE_AFTER, MAX_ATTEMPTS)
         if claimed is None:
             break
-        profile = await profiles.profile(claimed.business_id)
+        profile = claimed.profile
+        if profile is None and claimed.business_id is not None:
+            profile = await profiles.profile(claimed.business_id)
         if profile is None or not profile.services:
             await queue.fail(claimed.id, "no_profile", clock())
             continue

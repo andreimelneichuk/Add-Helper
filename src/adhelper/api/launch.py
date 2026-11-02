@@ -26,6 +26,7 @@ from adhelper.business.adapters.tag_checks import SqlTagChecks, TooManyChecks
 from adhelper.business.application.site import check_url
 from adhelper.business.application.tag import StoredTagCheck, TagStatus
 from adhelper.creatives.adapters.sql import SqlProfiles
+from adhelper.creatives.adapters.wizard import SqlWizardAds
 
 MARKING_PROBLEMS = {
     MarkingProblem.INN_FORMAT: "ИНН состоит из 10 или 12 цифр",
@@ -162,6 +163,7 @@ def launch_router() -> APIRouter:
         connected = [login for login, state in accounts if state is AccountState.CONNECTED]
         marking = await _store(request, business_id).get()
         site = await _site(request, business_id)
+        chosen = await SqlWizardAds(sessions, business_id).chosen()
         counter_ok, counter_text = _counter_item(
             found is not None, site, await SqlTagChecks(sessions, business_id).latest()
         )
@@ -199,6 +201,13 @@ def launch_router() -> APIRouter:
                 else "Нет данных для маркировки: без них запускать рекламу нельзя по закону",
             },
             {"key": "counter", "ok": counter_ok, "text": counter_text},
+            {
+                "key": "ads",
+                "ok": bool(chosen),
+                "text": f"Объявления: выбрано {len(chosen)}"
+                if chosen
+                else "Объявления не выбраны: вернитесь к шагу «Объявления»",
+            },
         ]
         return {
             "items": items,

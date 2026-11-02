@@ -10,6 +10,7 @@ from tests.accounts.test_flow import ANNA, BORIS, Browser, _connect, _login
 from tests.accounts.test_marking import LEGAL_INN
 from tests.api.test_cabinet import NOW, Sessions
 from tests.api.test_site import Anna, anna  # noqa: F401
+from tests.api.test_wizard_ads import written
 from tests.business.test_tag import Pages
 
 TAG_RULES = load_tag_rules()
@@ -107,6 +108,7 @@ async def test_launch_check_lists_what_is_missing(
         "account": False,
         "marking": False,
         "counter": False,
+        "ads": False,
     }
     assert empty["ready"] is False
     # Запуск сам кампании пока не создаёт: это честно сказано, даже когда всё готово.
@@ -122,6 +124,12 @@ async def test_launch_check_lists_what_is_missing(
     await _connect(client, provider, csrf, str(business_id), ANNA)
     await client.post(f"{base}/tag-check", headers=headers)
     await _worker(sessions, [98765432])
+    set_id, token = await written(client, sessions)
+    await client.post(
+        f"{base}/creative-sets/adopt",
+        json={"id": set_id, "token": token, "kept": [0, 1]},
+        headers=headers,
+    )
 
     full = (await client.get(f"{base}/launch-check")).json()
     assert state(full) == dict.fromkeys(state(empty), True)
@@ -129,6 +137,7 @@ async def test_launch_check_lists_what_is_missing(
     assert full["launch_available"] is False
     texts = " ".join(item["text"] for item in full["items"]).replace("\xa0", " ")
     assert "20 000 ₽" in texts and "98765432" in texts and LEGAL_INN not in texts
+    assert "Объявления: выбрано 2" in texts
 
 
 async def test_without_site_counter_is_not_required(anna: Anna) -> None:  # noqa: F811

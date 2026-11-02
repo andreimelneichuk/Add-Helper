@@ -1,7 +1,8 @@
 """Стенд сквозных тестов: своя база, демо-кабинет и поддельная площадка в памяти.
 
 Поддельная площадка подключается только отсюда, в рабочем коде её нет. Так же здесь
-воркеры разбора сайта и проверки кода Метрики: тот же код очередей, но сайт и модель поддельные.
+воркеры разбора сайта, проверки кода Метрики и писателя объявлений: тот же код очередей,
+но сайт и модель поддельные.
 """
 
 import asyncio
@@ -25,6 +26,9 @@ from adhelper.business.application.site import run_site_reads
 from adhelper.business.application.tag import run_tag_checks
 from adhelper.business.domain.ports import FetchedPage
 from adhelper.config import Settings
+from adhelper.creatives.adapters.rules_file import load_rules
+from adhelper.creatives.adapters.sql import SqlCreativeQueue, SqlProfileSource
+from adhelper.creatives.application.service import run_queued
 from adhelper.creatives.domain.model import ModelReply
 from adhelper.worker.demo import ADS, CAMPAIGNS, ENV_FILE, seed_demo, write_demo_env
 from adhelper.worker.runtime import open_runtime
@@ -85,10 +89,22 @@ class StandSite:
         return FetchedPage(url, SITE_TEXT, (), (98765432,))
 
 
+# Объявления писателя по фактам сайта стенда: проходят проверку кодом.
+STAND_ADS = [
+    {
+        "headline": "Маникюр с покрытием гель-лаком",
+        "text": "Маникюр с покрытием гель-лаком за 1700 ₽ на Тверской, 7.",
+    },
+    {"headline": "Маникюр на Тверской", "text": "Запишитесь на маникюр: Москва, ул. Тверская, 7."},
+]
+
+
 class StandModel:
     async def complete_json(
         self, system: str, user: str, schema: dict[str, object], max_tokens: int
     ) -> ModelReply:
+        if "ads" in schema.get("properties", {}):  # type: ignore[operator]
+            return ModelReply(json.dumps({"ads": STAND_ADS}, ensure_ascii=False), 100)
         keys = ("field", "value", "quote", "price")
         facts = [dict(zip(keys, fact, strict=True)) for fact in SITE_FACTS]
         return ModelReply(json.dumps({"facts": facts}, ensure_ascii=False), 100)
@@ -107,6 +123,14 @@ async def _serve(app: Any) -> None:
                 "stand",
                 rules,
                 load_site_rules,
+                lambda: datetime.now(UTC),
+            )
+            await run_queued(
+                SqlCreativeQueue(app.state.sessions),
+                SqlProfileSource(app.state.sessions),
+                StandModel(),
+                None,
+                load_rules,
                 lambda: datetime.now(UTC),
             )
             await run_tag_checks(

@@ -99,10 +99,23 @@ class CreativeSetRow(Base):
             postgresql_where=text("status IN ('queued', 'running')"),
         ),
         Index("ix_creative_sets_business_id", "business_id", "id"),
+        Index(
+            "ix_creative_sets_guest",
+            "guest_key",
+            "created_at",
+            postgresql_where=text("business_id IS NULL"),
+        ),
+        Index(
+            "ix_creative_sets_token",
+            "token_hash",
+            unique=True,
+            postgresql_where=text("token_hash IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    business_id: Mapped[UUID]
+    # Набор мастера до входа живёт без бизнеса: миграция 0018.
+    business_id: Mapped[UUID | None]
     status: Mapped[str] = mapped_column(Text)
     rules_version: Mapped[str] = mapped_column(Text)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
@@ -120,6 +133,10 @@ class CreativeSetRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    guest_key: Mapped[str | None] = mapped_column(Text)
+    token_hash: Mapped[str | None] = mapped_column(Text)
+    profile: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    kept: Mapped[list[int] | None] = mapped_column(JSONB)
 
 
 class CreativeRow(Base):
@@ -191,6 +208,20 @@ def _profile(row: BusinessProfileRow, name: str) -> BusinessProfile:
         address=row.address,
         features=tuple(row.features),
         niche=row.niche,
+    )
+
+
+def profile_to_json(profile: BusinessProfile) -> dict[str, Any]:
+    return asdict(profile)
+
+
+def profile_from_json(raw: dict[str, Any]) -> BusinessProfile:
+    return BusinessProfile(
+        name=str(raw.get("name", "")),
+        services=tuple(Service(str(s["name"]), s.get("price")) for s in raw.get("services", [])),
+        address=str(raw.get("address", "")),
+        features=tuple(str(f) for f in raw.get("features", [])),
+        niche=str(raw.get("niche", "")),
     )
 
 
@@ -505,7 +536,13 @@ class SqlCreativeQueue:
                     )
                 )
             return ClaimedSet(
-                row.id, row.business_id, row.rules_version, row.account, row.campaign_id, name
+                row.id,
+                row.business_id,
+                row.rules_version,
+                row.account,
+                row.campaign_id,
+                name,
+                None if row.profile is None else profile_from_json(row.profile),
             )
 
     async def finish(

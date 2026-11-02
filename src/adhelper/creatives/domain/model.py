@@ -115,9 +115,24 @@ class SetStatus(StrEnum):
 @dataclass(frozen=True)
 class ClaimedSet:
     id: int
-    business_id: UUID
+    # У набора мастера до входа бизнеса ещё нет.
+    business_id: UUID | None
     rules_version: str
-    # Место, для которого пишем. У наборов до §8 его нет.
+    # Место, для которого пишем. У наборов до §8 и у наборов мастера его нет.
     account: str | None = None
     campaign_id: str | None = None
     campaign_name: str | None = None
+    # Факты черновика мастера: пишем по ним, а не по профилю бизнеса.
+    profile: BusinessProfile | None = None
+
+
+@dataclass(frozen=True)
+class WizardRules:
+    """Объявления в мастере до входа: лимиты гостя и размер черновика профиля."""
+
+    version: str
+    max_guest_sets_per_address: int
+    max_guest_sets_per_day: int
+    max_services: int
+    max_features: int
+    max_fact_chars: int
