@@ -3,7 +3,7 @@ from importlib.resources import files
 
 from adhelper.budget.domain.plan import PlanRules
 
-CURRENT_PLAN_RULES = "plan-1"
+CURRENT_PLAN_RULES = "plan-2"
 
 
 def load_plan_rules(version: str = CURRENT_PLAN_RULES) -> PlanRules:

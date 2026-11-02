@@ -1,7 +1,9 @@
 """Мастер после входа: проверка кода Метрики и готовность к запуску."""
 
 import httpx
+from sqlalchemy import text
 
+from adhelper.budget.domain.limits import CampaignBudget
 from adhelper.business.adapters.rules_file import load_tag_rules
 from adhelper.business.adapters.tag_checks import SqlTagCheckQueue
 from adhelper.business.application.tag import run_tag_checks
@@ -11,7 +13,10 @@ from tests.accounts.test_marking import LEGAL_INN
 from tests.api.test_cabinet import NOW, Sessions
 from tests.api.test_site import Anna, anna  # noqa: F401
 from tests.api.test_wizard_ads import written
+from tests.budget.fake_platform import FakePlatform
 from tests.business.test_tag import Pages
+
+MICROS = 1_000_000
 
 TAG_RULES = load_tag_rules()
 
@@ -89,33 +94,23 @@ async def test_other_owner_sees_nothing(
     assert post.status_code == 404
 
 
-async def test_launch_check_lists_what_is_missing(
-    anna: Anna,  # noqa: F811
+def _state_of(view: dict[str, object]) -> dict[str, bool]:
+    return {item["key"]: item["ok"] for item in view["items"]}  # type: ignore[attr-defined]
+
+
+async def _make_ready(
+    client: httpx.AsyncClient,
+    csrf: str,
+    business_id: object,
     sessions: Sessions,
     provider: FakeProvider,
+    rubles: int = 20_000,
 ) -> None:
-    client, csrf, business_id = anna
+    """Всё, что мастер собирает до запуска: профиль, бюджет, кабинет, код, объявления."""
     headers = {"X-CSRF-Token": csrf}
     base = f"/api/businesses/{business_id}"
-
-    def state(view: dict[str, object]) -> dict[str, bool]:
-        return {item["key"]: item["ok"] for item in view["items"]}  # type: ignore[attr-defined]
-
-    empty = (await client.get(f"{base}/launch-check")).json()
-    assert state(empty) == {
-        "profile": False,
-        "plan": False,
-        "account": False,
-        "marking": False,
-        "counter": False,
-        "ads": False,
-    }
-    assert empty["ready"] is False
-    # Запуск сам кампании пока не создаёт: это честно сказано, даже когда всё готово.
-    assert empty["launch_available"] is False
-
     await _profile(client, csrf, business_id, "nogti.ru")
-    await client.put(f"{base}/budget-plan", json={"rubles": 20_000}, headers=headers)
+    await client.put(f"{base}/budget-plan", json={"rubles": rubles}, headers=headers)
     await client.put(
         f"{base}/marking",
         json={"kind": "legal", "inn": LEGAL_INN, "name": "ООО «Ноготки»", "okved": "96.02"},
@@ -131,13 +126,169 @@ async def test_launch_check_lists_what_is_missing(
         headers=headers,
     )
 
+
+async def test_launch_check_lists_what_is_missing(
+    anna: Anna,  # noqa: F811
+    sessions: Sessions,
+    provider: FakeProvider,
+) -> None:
+    client, csrf, business_id = anna
+    base = f"/api/businesses/{business_id}"
+
+    empty = (await client.get(f"{base}/launch-check")).json()
+    assert _state_of(empty) == {
+        "profile": False,
+        "plan": False,
+        "account": False,
+        "marking": False,
+        "counter": False,
+        "ads": False,
+    }
+    assert empty["ready"] is False
+    assert empty["launch_available"] is False
+    assert empty["launched"] is None
+
+    await _make_ready(client, csrf, business_id, sessions, provider)
+
     full = (await client.get(f"{base}/launch-check")).json()
-    assert state(full) == dict.fromkeys(state(empty), True)
+    # Когда всё собрано, сводка показывает, что именно создаст запуск.
+    assert _state_of(full) == {**dict.fromkeys(_state_of(empty), True), "launch_plan": True}
     assert full["ready"] is True
+    # Площадки нет (клиент Директа ждёт доступа): запуск честно недоступен.
     assert full["launch_available"] is False
+    assert "откроет доступ" in full["launch_text"]
     texts = " ".join(item["text"] for item in full["items"]).replace("\xa0", " ")
     assert "20 000 ₽" in texts and "98765432" in texts and LEGAL_INN not in texts
     assert "Объявления: выбрано 2" in texts
+    assert "Запуск: 1 кампания (поиск и сайты — 18 000 ₽)" in texts
+
+
+def _with_platform(client: httpx.AsyncClient, platform: FakePlatform | None) -> None:
+    client._transport.app.state.platform_for = lambda _b, _a: platform  # type: ignore[attr-defined]
+
+
+async def test_launch_creates_campaign_and_shows_it_in_cabinet(
+    anna: Anna,  # noqa: F811
+    sessions: Sessions,
+    provider: FakeProvider,
+) -> None:
+    client, csrf, business_id = anna
+    headers = {"X-CSRF-Token": csrf}
+    base = f"/api/businesses/{business_id}"
+    await _make_ready(client, csrf, business_id, sessions, provider)
+    platform = FakePlatform([], NOW)
+    _with_platform(client, platform)
+
+    check = (await client.get(f"{base}/launch-check")).json()
+    assert check["launch_available"] is True
+    assert "Запустить рекламу" in check["launch_text"]
+    assert (await client.post(f"{base}/launch")).status_code == 403
+
+    done = await client.post(f"{base}/launch", headers=headers)
+    assert done.status_code == 200, done.text
+    body = done.json()
+    assert body["status"] == "done"
+    assert [c["limit_rubles"] for c in body["campaigns"]] == [18_000]
+    assert platform.create_calls == 1 and max(platform.limit_sums) <= 18_000 * MICROS
+
+    after = (await client.get(f"{base}/launch-check")).json()
+    assert (after["launched"], after["launch_available"]) == ("done", False)
+    # Повторное нажатие ничего не создаёт.
+    again = await client.post(f"{base}/launch", headers=headers)
+    assert again.json()["status"] == "done" and platform.create_calls == 1
+
+    # Кампания и объявления видны в кабинете до первой статистики.
+    async with sessions() as session:
+        states = (
+            (
+                await session.execute(
+                    text("SELECT state FROM campaigns WHERE business_id = :b"), {"b": business_id}
+                )
+            )
+            .scalars()
+            .all()
+        )
+        ads = await session.scalar(
+            text("SELECT count(*) FROM ads WHERE business_id = :b"), {"b": business_id}
+        )
+        kinds = (
+            (
+                await session.execute(
+                    text("SELECT kind FROM changes WHERE business_id = :b"), {"b": business_id}
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert states == ["moderation"] and ads == 2 and kinds == ["create_campaign"]
+
+
+async def test_launch_without_platform_records_nothing(
+    anna: Anna,  # noqa: F811
+    sessions: Sessions,
+    provider: FakeProvider,
+) -> None:
+    client, csrf, business_id = anna
+    base = f"/api/businesses/{business_id}"
+    await _make_ready(client, csrf, business_id, sessions, provider)
+    _with_platform(client, None)
+    refused = await client.post(f"{base}/launch", headers={"X-CSRF-Token": csrf})
+    assert refused.status_code == 503
+    assert "откроет доступ" in refused.json()["detail"]
+    async with sessions() as session:
+        periods = await session.scalar(
+            text("SELECT count(*) FROM budget_periods WHERE business_id = :b"), {"b": business_id}
+        )
+    assert periods == 0
+
+
+async def test_launch_refuses_when_not_ready_or_over_budget(
+    anna: Anna,  # noqa: F811
+    sessions: Sessions,
+    provider: FakeProvider,
+) -> None:
+    client, csrf, business_id = anna
+    headers = {"X-CSRF-Token": csrf}
+    base = f"/api/businesses/{business_id}"
+    platform = FakePlatform([CampaignBudget("77", 10_000 * MICROS, 0, False, None)], NOW)
+    _with_platform(client, platform)
+    early = await client.post(f"{base}/launch", headers=headers)
+    assert early.status_code == 409
+    assert "В профиле нет услуг" in early.json()["detail"]
+
+    await _make_ready(client, csrf, business_id, sessions, provider)
+    # В кабинете уже есть чужая кампания с лимитом: вместе с новой вышли бы за бюджет.
+    over = await client.post(f"{base}/launch", headers=headers)
+    assert over.status_code == 409
+    assert "уже есть кампании" in over.json()["detail"]
+    assert platform.create_calls == 0
+
+
+async def test_small_budget_says_minimum(
+    anna: Anna,  # noqa: F811
+    sessions: Sessions,
+    provider: FakeProvider,
+) -> None:
+    client, csrf, business_id = anna
+    base = f"/api/businesses/{business_id}"
+    await _make_ready(client, csrf, business_id, sessions, provider, rubles=1_667)
+    _with_platform(client, FakePlatform([], NOW))
+    view = (await client.get(f"{base}/launch-check")).json()
+    assert view["launch_available"] is True
+    assert "1 500 ₽" in " ".join(i["text"] for i in view["items"]).replace("\xa0", " ")
+
+
+async def test_other_owner_cannot_launch(
+    anna: Anna,  # noqa: F811
+    browser: Browser,
+    provider: FakeProvider,
+) -> None:
+    _, _, business_id = anna
+    other = browser()
+    csrf = await _login(other, provider, BORIS)
+    _with_platform(other, FakePlatform([], NOW))
+    post = await other.post(f"/api/businesses/{business_id}/launch", headers={"X-CSRF-Token": csrf})
+    assert post.status_code == 404
 
 
 async def test_without_site_counter_is_not_required(anna: Anna) -> None:  # noqa: F811

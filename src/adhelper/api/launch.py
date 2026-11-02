@@ -1,6 +1,7 @@
-"""Мастер запуска после входа: маркировка, код статистики, готовность к запуску.
+"""Мастер запуска после входа: маркировка, код статистики, готовность и сам запуск.
 
-Сами кампании создаёт запуск в T6; здесь только данные и проверки перед ним.
+Запуск создаёт период бюджета и кампании через журнал. Без площадки (клиент Директа — T5)
+он честно недоступен: сводка говорит, что всё сохранено и запуск продолжится с этого места.
 """
 
 from typing import Annotated, Any
@@ -17,16 +18,33 @@ from adhelper.accounts.application.marking import (
 )
 from adhelper.accounts.application.service import AccountState
 from adhelper.api.cabinet import Owned, OwnedChecked, _now, _sessions
-from adhelper.api.control import MICROS_PER_RUB
+from adhelper.api.control import MICROS_PER_RUB, _ledger
 from adhelper.api.plan import _rub
 from adhelper.api.site import URL_PROBLEMS
+from adhelper.budget.adapters.rules_file import load_rules as load_budget_rules
 from adhelper.budget.adapters.sql import SqlBudgetPlans
 from adhelper.business.adapters.rules_file import load_site_rules, load_tag_rules
 from adhelper.business.adapters.tag_checks import SqlTagChecks, TooManyChecks
 from adhelper.business.application.site import check_url
 from adhelper.business.application.tag import StoredTagCheck, TagStatus
+from adhelper.campaigns.adapters.launch_sql import SqlLaunches
+from adhelper.campaigns.adapters.rules_file import load_launch_rules
+from adhelper.campaigns.application.launch import (
+    MOSCOW_TZ,
+    PLACEMENT_WORDS,
+    LaunchInputs,
+    LaunchPlan,
+    LaunchProblem,
+    LaunchResult,
+    LaunchStatus,
+    NewAd,
+    launch,
+    launch_state,
+    preview,
+)
 from adhelper.creatives.adapters.sql import SqlProfiles
 from adhelper.creatives.adapters.wizard import SqlWizardAds
+from adhelper.stats.adapters.sql import SqlDashboard
 
 MARKING_PROBLEMS = {
     MarkingProblem.INN_FORMAT: "ИНН состоит из 10 или 12 цифр",
@@ -55,6 +73,29 @@ LAUNCH_LATER = (
     "Создавать кампании в Яндексе сервис начнёт, когда Яндекс откроет доступ к API."
     " Всё, что вы ввели, сохранено: запуск продолжится с этого места."
 )
+LAUNCH_NOT_READY = "Когда всё в списке будет готово, здесь появится кнопка запуска."
+LAUNCH_NOW = (
+    "Нажмите «Запустить рекламу»: сервис создаст кампании, лимит встанет в самом Яндексе."
+    " Показы начнутся, когда Яндекс проверит объявления."
+)
+LAUNCH_DONE = (
+    "Реклама запущена: Яндекс проверяет объявления, обычно это несколько часов."
+    " Остановить показы можно паузой в шапке кабинета."
+)
+LAUNCH_PENDING = (
+    "Запуск начат, но Яндекс пока не подтвердил создание кампаний."
+    " Сервис проверит сам и не создаст их дважды. Можно нажать «Запустить рекламу» ещё раз."
+)
+# Почему журнал не дал создать кампанию: слова для владельца.
+REFUSALS = {
+    "period_exists": "В этом кабинете реклама уже идёт с бюджетом на месяц. Новый запуск создал"
+    " бы второй бюджет; меняйте настройки в кабинете",
+    "exceeds_operating_budget": "В кабинете Яндекса уже есть кампании с лимитами: вместе с новыми"
+    " они превысили бы ваш бюджет. Остановите или удалите лишние в Яндексе и запустите снова",
+    "budget_stop_pending": "Сейчас сработала защита бюджета: запуск подождёт её решения",
+    "no_active_period": "Бюджет месяца не начался: попробуйте запустить ещё раз",
+    "ends_after_period": "Срок кампании вышел за бюджетный период: попробуйте запустить ещё раз",
+}
 
 
 def _check_view(check: StoredTagCheck | None) -> dict[str, Any] | None:
@@ -153,8 +194,9 @@ def launch_router() -> APIRouter:
             ) from None
         return {"check": _check_view(await checks.latest()), "site": url}
 
-    @router.get("/launch-check")
-    async def launch_check(request: Request, business_id: Owned) -> dict[str, Any]:
+    async def readiness(
+        request: Request, business_id: Any
+    ) -> tuple[list[dict[str, Any]], LaunchInputs | None, str | None]:
         sessions = _sessions(request)
         found = await SqlProfiles(sessions, business_id).get()
         services = len(found[0].services) + len(found[0].features) if found else 0
@@ -164,9 +206,8 @@ def launch_router() -> APIRouter:
         marking = await _store(request, business_id).get()
         site = await _site(request, business_id)
         chosen = await SqlWizardAds(sessions, business_id).chosen()
-        counter_ok, counter_text = _counter_item(
-            found is not None, site, await SqlTagChecks(sessions, business_id).latest()
-        )
+        tag = await SqlTagChecks(sessions, business_id).latest()
+        counter_ok, counter_text = _counter_item(found is not None, site, tag)
         items = [
             {
                 "key": "profile",
@@ -209,11 +250,145 @@ def launch_router() -> APIRouter:
                 else "Объявления не выбраны: вернитесь к шагу «Объявления»",
             },
         ]
+        login = connected[0] if connected else None
+        if not all(item["ok"] for item in items) or found is None or plan is None or not login:
+            return items, None, login
+        counters = tag.counters if tag is not None and tag.status is TagStatus.FOUND else ()
+        inputs = LaunchInputs(
+            title=found[0].name,
+            account=login,
+            monthly=plan,
+            ads=tuple(NewAd(draft.headline, draft.text) for draft in chosen),
+            href=site,
+            address=found[0].address,
+            counters=tuple(counters),
+        )
+        planned = preview(inputs, load_launch_rules(), load_budget_rules("budget-1"), _now(request))
+        items.append(_plan_item(planned))
+        return items, inputs if planned.problem is None else None, login
+
+    @router.get("/launch-check")
+    async def launch_check(request: Request, business_id: Owned) -> dict[str, Any]:
+        items, inputs, login = await readiness(request, business_id)
+        state = await _state(request, business_id)
+        platform = request.app.state.platform_for(business_id, login) if login else None
+        launched = state.status.value if state is not None else None
+        available = (
+            inputs is not None
+            and platform is not None
+            and launched in (None, LaunchStatus.PENDING.value)
+        )
+        if launched == LaunchStatus.DONE.value:
+            text = LAUNCH_DONE
+        elif launched == LaunchStatus.PENDING.value:
+            text = LAUNCH_PENDING
+        elif platform is None:
+            text = LAUNCH_LATER
+        elif inputs is None:
+            text = LAUNCH_NOT_READY
+        else:
+            text = LAUNCH_NOW
         return {
             "items": items,
             "ready": all(item["ok"] for item in items),
-            "launch_available": False,
-            "launch_text": LAUNCH_LATER,
+            "launch_available": available,
+            "launched": launched,
+            "launch_text": text,
         }
 
+    @router.post("/launch")
+    async def post_launch(request: Request, business_id: OwnedChecked) -> dict[str, Any]:
+        items, inputs, _login = await readiness(request, business_id)
+        missing = [item["text"] for item in items if not item["ok"]]
+        if missing or inputs is None:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"Запустить пока нельзя: {missing[0] if missing else 'не хватает данных'}",
+            )
+        platform = request.app.state.platform_for(business_id, inputs.account)
+        if platform is None:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, LAUNCH_LATER)
+        result = await launch(
+            SqlLaunches(_sessions(request), business_id),
+            _ledger(request, business_id, platform),
+            inputs,
+            load_launch_rules(),
+            load_budget_rules("budget-1"),
+            _now(request),
+        )
+        return await _answer(request, business_id, inputs.account, result)
+
     return router
+
+
+def _plan_item(planned: LaunchPlan) -> dict[str, Any]:
+    if planned.problem is LaunchProblem.BELOW_PLATFORM_MIN:
+        minimum = _rub((planned.minimum_monthly or 0) // MICROS_PER_RUB)
+        text = (
+            "Бюджета после резерва 10% не хватает на минимум Яндекса 50 ₽ в день."
+            f" Поднимите бюджет до {minimum} в месяц"
+        )
+        return {"key": "launch_plan", "ok": False, "text": text}
+    if planned.problem is LaunchProblem.NO_CITY:
+        text = "Не понял город из адреса профиля: допишите город, например «Москва, ул. …»"
+        return {"key": "launch_plan", "ok": False, "text": text}
+    if planned.problem is LaunchProblem.NO_SITE:
+        text = "Пока запускаю только с сайтом: объявлению нужна страница, куда ведёт ссылка"
+        return {"key": "launch_plan", "ok": False, "text": text}
+    if planned.problem is LaunchProblem.NO_ADS:
+        return {"key": "launch_plan", "ok": False, "text": "Объявлений для запуска нет"}
+    first = planned.campaigns[0]
+    until = first.ends_at.astimezone(MOSCOW_TZ).strftime("%d.%m")
+    parts = ", ".join(
+        f"{PLACEMENT_WORDS[c.placement]} — {_rub(c.limit // MICROS_PER_RUB)}"
+        for c in planned.campaigns
+    )
+    count = len(planned.campaigns)
+    word = "кампания" if count == 1 else "кампании"
+    return {
+        "key": "launch_plan",
+        "ok": True,
+        "text": f"Запуск: {count} {word} ({parts}) до {until}, 10% бюджета в резерве",
+    }
+
+
+async def _state(request: Request, business_id: Any) -> LaunchResult | None:
+    """Состояние запуска по журналу. Без площадки журнал читается так же: площадку не трогаем."""
+    sessions = _sessions(request)
+    store = SqlLaunches(sessions, business_id)
+    stored = await store.get()
+    if stored is None:
+        return None
+    platform = request.app.state.platform_for(business_id, stored.account)
+    return await launch_state(store, _ledger(request, business_id, platform))
+
+
+async def _answer(
+    request: Request, business_id: Any, account: str, result: LaunchResult
+) -> dict[str, Any]:
+    if result.status is LaunchStatus.PROBLEM:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Запустить пока нельзя: проверьте сводку")
+    if result.status is LaunchStatus.REFUSED:
+        text = REFUSALS.get(result.reason or "", "Проверка бюджета не дала создать кампании")
+        raise HTTPException(status.HTTP_409_CONFLICT, text)
+    if result.status is LaunchStatus.PENDING:
+        return {"status": result.status.value, "campaigns": [], "text": LAUNCH_PENDING}
+    dashboard = SqlDashboard(_sessions(request), business_id)
+    for created in result.created:
+        await dashboard.note_created_campaign(
+            account,
+            created.campaign_id,
+            created.name,
+            created.limit,
+            [
+                (ad_id, ad.headline, ad.text, created.href)
+                for ad_id, ad in zip(created.ad_ids, created.ads, strict=False)
+            ],
+        )
+    return {
+        "status": result.status.value,
+        "campaigns": [
+            {"name": c.name, "limit_rubles": c.limit // MICROS_PER_RUB} for c in result.created
+        ],
+        "text": LAUNCH_DONE,
+    }

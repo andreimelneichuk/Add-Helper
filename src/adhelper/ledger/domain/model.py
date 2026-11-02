@@ -12,6 +12,8 @@ class ChangeKind(StrEnum):
     RESUME_AD = "resume_ad"
     SET_SCHEDULE = "set_schedule"
     SET_REGIONS = "set_regions"
+    # Новая кампания запуска. Отмены нет: созданное останавливают паузой, а не удалением.
+    CREATE_CAMPAIGN = "create_campaign"
 
 
 class ChangeSource(StrEnum):

@@ -92,7 +92,9 @@ def _ledger(request: Request, business_id: UUID, platform: Any) -> Ledger:
     sessions = _sessions(request)
     return Ledger(
         repository=SqlChangeRepository(sessions, business_id),
-        gateway=RoutingGateway(PlatformChangeGateway(platform), platform, platform),
+        gateway=RoutingGateway(
+            PlatformChangeGateway(platform), platform, platform, launcher=platform
+        ),
         lock=PostgresAccountLock(request.app.state.engine),
         max_attempts=MAX_CHANGE_ATTEMPTS,
         preflight=StoredPeriodPreflight(
