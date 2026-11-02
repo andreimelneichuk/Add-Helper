@@ -6,7 +6,9 @@ import type { State, Store } from "../../store";
 
 type StepProps = { store: Store; s: State };
 
-const BUDGETS: [number, string][] = [[15000, "Примерно 25–35 обращений"], [20000, "Примерно 30–45 обращений"], [25000, "Примерно 40–55 обращений"]];
+const PRESETS = [15000, 20000, 25000];
+// Сумму в день считает код: это деление, а не прогноз.
+const perDay = (month: number) => `около ${rub(month / 30)} в день`;
 
 export const adsLeft = (s: State) => s.ads.filter((a) => !s.draftOff[a.id]).length;
 export const innReady = (s: State) => s.inn.length === 10 || s.inn.length === 12;
@@ -70,35 +72,31 @@ function ProfileStep({ store, s }: StepProps) {
   );
 }
 
-// Та же грубая оценка, что у готовых вариантов: 1,5–2,25 обращения на 1 000 ₽, округлено до 5.
-function estimate(budget: number) {
-  const near5 = (n: number) => Math.max(5, Math.round(n / 5) * 5);
-  return `Примерно ${near5(budget * 0.0015)}–${near5(budget * 0.00225)} обращений`;
-}
-
 function BudgetStep({ store, s }: StepProps) {
   const custom = s.budgetDraft !== null;
   const typed = Number(s.budgetDraft ?? 0);
+  const min = s.budgetOptions?.min ?? MIN_BUDGET;
+  const max = s.budgetOptions?.max ?? Infinity;
   return (
     <>
       <div className="st-budgets">
-        {BUDGETS.map(([value, hint]) => (
+        {(s.budgetOptions?.presets ?? PRESETS).map((value) => (
           <button key={value} type="button" className="st-budget" aria-pressed={!custom && s.f.budget === value} onClick={() => store.set({ f: { ...s.f, budget: value }, budgetDraft: null, block: "" })}>
             <strong>{rub(value)}</strong>
-            <span>{hint}</span>
+            <span>{perDay(value)}</span>
           </button>
         ))}
       </div>
       <label className={custom ? "st-budget-own is-on" : "st-budget-own"}>
         <span className="ah-label">Своя сумма в месяц, ₽</span>
-        <input className="ah-input" inputMode="numeric" autoComplete="off" placeholder={`От ${MIN_BUDGET}`} value={s.budgetDraft ?? ""} onChange={(e) => {
+        <input className="ah-input" inputMode="numeric" autoComplete="off" placeholder={`От ${min}`} value={s.budgetDraft ?? ""} onChange={(e) => {
           const draft = e.target.value.replace(/\D/g, "").slice(0, 8);
           const n = Number(draft);
-          store.set({ budgetDraft: draft || null, block: "", ...(n >= MIN_BUDGET ? { f: { ...s.f, budget: n } } : {}) });
+          store.set({ budgetDraft: draft || null, block: "", ...(n >= min && n <= max ? { f: { ...s.f, budget: n } } : {}) });
         }} />
-        {custom && <span className="ah-muted">{typed >= MIN_BUDGET ? estimate(typed) : `Минимум ${rub(MIN_BUDGET)}`}</span>}
+        {custom && <span className="ah-muted">{typed >= min ? perDay(typed) : `Минимум ${rub(min)}`}</span>}
       </label>
-      <p className="ah-muted">Это оценка, а не обещание. Больше выбранной суммы не потрачу: лимит будет стоять в самом Яндексе.</p>
+      <p className="ah-muted">Прогноз обращений покажу, когда подключите кабинет: его считает Яндекс по вашему району и услугам. Больше выбранной суммы не потрачу: лимит будет стоять в самом Яндексе.</p>
     </>
   );
 }
@@ -134,6 +132,22 @@ function AdsStep({ store, s }: StepProps) {
 }
 
 function YandexStep({ store, s }: StepProps) {
+  if (store.reader) {
+    const signed = s.account !== null;
+    return (
+      <div className="st-link">
+        <div className="st-link-text">
+          <div className="st-link-title">Вход через Яндекс</div>
+          <div className="ah-muted">
+            {signed
+              ? `${s.account?.email ? `Вы вошли: ${s.account.email}. ` : ""}Профиль и бюджет сохранены в сервисе. Кабинет Директа подключите в настройках: ИНН, код статистики и запуск появятся, когда Яндекс откроет доступ к API.`
+              : "Войдите тем логином, где будет реклама. Профиль и бюджет сохранятся в сервисе, ничего вводить заново не придётся."}
+          </div>
+        </div>
+        {!signed && <button type="button" className="ah-btn ah-btn-primary" onClick={store.login}>Войти через Яндекс</button>}
+      </div>
+    );
+  }
   return (
     <div className="st-link">
       <div className="st-link-text">

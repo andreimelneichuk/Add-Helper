@@ -222,8 +222,12 @@ export function createGuestApi() {
       request<{ id: number; token: string; status: string; url: string }>("/api/site-reads", { method: "POST", body: JSON.stringify({ url }) }),
     siteRead: (id: number, token: string) =>
       request<SiteRead>(`/api/site-reads/${id}`, { headers: { "X-Read-Token": token } }),
+    budgetOptions: () => request<{ min: number; max: number; presets: number[] }>("/api/budget-plan/options"),
   };
 }
+
+export const createBusiness = (name: string, csrf: string) =>
+  request<Business>("/api/businesses", { method: "POST", body: JSON.stringify({ name }) }, csrf);
 
 export function createApi(businessId: string, csrf: string) {
   const base = `/api/businesses/${businessId}`;
@@ -272,6 +276,9 @@ export function createApi(businessId: string, csrf: string) {
     readSite: (url: string) =>
       request<{ id: number; status: string; url: string }>(`${base}/site-reads`, { method: "POST", body: JSON.stringify({ url }) }, csrf),
     siteRead: () => request<SiteRead | null>(`${base}/site-reads/latest`),
+    budgetPlan: () => request<{ rubles: number | null }>(`${base}/budget-plan`),
+    saveBudgetPlan: (rubles: number) =>
+      request<{ rubles: number }>(`${base}/budget-plan`, { method: "PUT", body: JSON.stringify({ rubles }) }, csrf),
     setGoal: (rubles: number) =>
       request<{ goal: number }>(`${base}/goal`, { method: "POST", body: JSON.stringify({ rubles }) }, csrf),
     answerClients: (range: Range, clients: number) =>

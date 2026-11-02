@@ -1,6 +1,6 @@
 import { StrictMode, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { createApi, createGuestApi, openSession } from "./api";
+import { createApi, createBusiness, createGuestApi, openSession } from "./api";
 import { App } from "./App";
 import { AppShell } from "./app/AppShell";
 import { LiveStore, loadLive } from "./app/live";
@@ -29,6 +29,15 @@ function GuestStart() {
     created.reader = createGuestApi();
     return created;
   }, []);
+  useEffect(() => {
+    const guest = createGuestApi();
+    // Без ответа сервиса остаются пределы прототипа; сервис всё равно проверит сумму при сохранении.
+    guest.budgetOptions().then((budgetOptions) => store.set({ budgetOptions }), () => undefined);
+    const params = new URLSearchParams(window.location.search);
+    const login = params.get("login");
+    if (login !== null) window.history.replaceState(null, "", "/?new&start");
+    void store.resume({ session: openSession, createBusiness, business: createApi }, login);
+  }, [store]);
   return <AppShell store={store} />;
 }
 

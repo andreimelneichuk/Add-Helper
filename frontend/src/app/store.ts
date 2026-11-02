@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
 import { ApiError } from "../api";
 import type { SiteFact, SiteRead } from "../api";
+import { clearDraft, loadDraft, saveDraft, transferDraft } from "./draft";
+import type { TransferDeps } from "./draft";
 import { ADS, DAYS, FACTS, histFor, leadsWord, MIN_BUDGET, OPENING, OPTIONS, rub, STATS, STEPS } from "./data";
 import type { Ad, Day, Fact, HistoryEntry, HistoryKind, Live, Period, PeriodStats, SettingKey, Situation, View } from "./data";
 
@@ -62,7 +64,19 @@ export type State = {
   factEdit: { id: string | null; value: string } | null;
   /** Разбор сайта до входа идёт: ключ доступа знает только этот браузер. */
   reading: { id: number; token: string } | "asking" | null;
+  /** Пределы и варианты бюджета из правил сервиса; null — прототип на подставных. */
+  budgetOptions: BudgetOptions | null;
+  /** Вход в настоящем запуске состоялся, черновик перенесён в бизнес. */
+  account: { email: string | null } | null;
 };
+
+export type BudgetOptions = { min: number; max: number; presets: number[] };
+export const LOGIN_URL = "/api/auth/yandex/login?then=start";
+const LOGIN_FAILED: Record<string, string> = {
+  denied: "Вход не состоялся: доступ в Яндексе не дан. Черновик сохранён, можно попробовать ещё раз.",
+  unavailable: "Вход сейчас не работает. Черновик сохранён, попробуйте позже.",
+};
+const LOGIN_FAILED_OTHER = "Вход не состоялся. Черновик сохранён, попробуйте ещё раз.";
 
 /** Разбор сайта до входа: POST /api/site-reads и GET /api/site-reads/{id}. */
 export type GuestReader = {
@@ -93,7 +107,7 @@ export function initialState(stage: State["stage"] = "work", situation: Situatio
     hist: histFor(situation), undone: {}, asked: {}, adsOff: {}, ads: ADS, openAd: null, paused: false, topped: false, decided: null, extra: 0,
     metric: "cost", selDay: null, period: "week", filter: "all", clientsInput: "", clients: null,
     f: { services: "маникюр и педикюр", area: "Сокольники", hours: "в часы работы", goal: 400, budget: 20000 },
-    site: "", codeCopied: false, inn: "", yandex: false, metrica: false, block: "", draftOff: {}, budgetDraft: null, facts: FACTS, factEdit: null, reading: null,
+    site: "", codeCopied: false, inn: "", yandex: false, metrica: false, block: "", draftOff: {}, budgetDraft: null, facts: FACTS, factEdit: null, reading: null, budgetOptions: null, account: null,
   };
 }
 
@@ -217,6 +231,9 @@ export class Store {
   reader: GuestReader | null = null;
   /** Пауза между опросами разбора; воркер берёт разбор раз в минуту. */
   waitMs = 3000;
+  /** Переход на другую страницу: вход Яндекса и кабинет. В тестах подменяется. */
+  navigate = (url: string) => window.location.assign(url);
+  private resumed = false;
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
   getSnapshot = () => this.state;
   set = (patch: Partial<State>) => { this.state = { ...this.state, ...patch }; this.listeners.forEach((fn) => fn()); };
@@ -394,11 +411,41 @@ export class Store {
   }
   /** Сайта нет или он не читается: профиль с чистого листа. */
   fillByHand = () => this.set({ facts: [], step: 1, block: "", reading: null });
+  /** Уйти на вход Яндекса. Черновик ждёт в браузере: вход перезагружает страницу. */
+  login = () => {
+    const s = this.state;
+    saveDraft({ site: s.site, facts: s.facts, budget: Number(s.f.budget) });
+    this.navigate(LOGIN_URL);
+  };
+  /** Вернулись со входа: черновик становится бизнесом, профилем и планом бюджета. */
+  async resume(deps: TransferDeps, loginResult: string | null) {
+    // Эффект в режиме разработки запускается дважды: второй перенос создал бы второй бизнес.
+    if (this.resumed) return;
+    this.resumed = true;
+    const draft = loadDraft();
+    if (!draft) return;
+    this.set({ facts: draft.facts, site: draft.site, f: { ...this.state.f, budget: draft.budget }, step: 4, block: "" });
+    if (loginResult) return this.set({ block: LOGIN_FAILED[loginResult] ?? LOGIN_FAILED_OTHER });
+    try {
+      const done = await transferDraft(deps, draft);
+      if (done.status === "signed_out") return;
+      if (done.status === "exists") {
+        return this.set({ block: `У вас уже есть бизнес «${done.name}». Черновик в него не переношу, чтобы не затереть профиль. Нажмите «Продолжить», чтобы открыть кабинет.`, account: { email: null } });
+      }
+      this.set({ account: { email: done.email }, msgs: [...this.state.msgs, msg("ai", "Вы вошли. Профиль и бюджет сохранены в сервисе: дальше они живут в настройках кабинета.")] });
+    } catch (e) {
+      this.set({ block: `${e instanceof Error ? e.message : "Сервис не ответил"}. Черновик сохранён: обновите страницу, чтобы повторить.` });
+    }
+  }
   /** Следующий шаг запуска; держит на шаге, пока не выполнены условия. */
   next(userText?: string) {
     const s = this.state;
     if (s.factEdit) return this.set({ block: "Сохраните или отмените правку факта." });
-    if (s.step === 2 && s.budgetDraft !== null && Number(s.budgetDraft) < MIN_BUDGET) return this.set({ block: `Укажите сумму от ${rub(MIN_BUDGET)} в месяц.` });
+    const limits = s.budgetOptions ?? { min: MIN_BUDGET, max: Infinity };
+    if (s.step === 2 && s.budgetDraft !== null && Number(s.budgetDraft) < limits.min) return this.set({ block: `Укажите сумму от ${rub(limits.min)} в месяц.` });
+    if (s.step === 2 && s.budgetDraft !== null && Number(s.budgetDraft) > limits.max) return this.set({ block: `Больше ${rub(limits.max)} в месяц здесь не ставлю: проверьте, нет ли лишнего нуля.` });
+    // Дальше входа настоящий запуск пока не идёт: ИНН, код и запуск ждут доступа к Директу.
+    if (s.step === 4 && this.reader) return s.account ? (clearDraft(), this.navigate("/?new")) : this.set({ block: "Войдите через Яндекс: так профиль и бюджет сохранятся." });
     if (s.step === 0 && !s.site.trim()) return this.set({ block: this.reader ? "Вставьте ссылку или заполните профиль вручную." : "Вставьте ссылку или расскажите о бизнесе в чате." });
     if (s.step === 0 && this.reader) { void this.study(); return; }
     if (s.step === 1 && s.facts.length === 0) return this.set({ block: "Добавьте хотя бы один факт: рекламу пишу только по ним." });

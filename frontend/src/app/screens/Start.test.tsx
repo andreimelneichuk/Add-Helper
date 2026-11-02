@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../api";
 import type { SiteRead } from "../../api";
+import { loadDraft, clearDraft } from "../draft";
+import type { TransferDeps } from "../draft";
 import { initialState, Store } from "../store";
 import type { GuestReader } from "../store";
 import { Start } from "./Start";
@@ -27,7 +29,8 @@ describe("экран запуска", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("от 1");
     await user.clear(field);
     await user.type(field, "32000");
-    expect(screen.getByText("Примерно 50–70 обращений")).toBeInTheDocument();
+    // Прогноз обращений не выдумываем: только сумма в день, её считает код.
+    expect(screen.getByText(/около 1.067.₽ в день/)).toBeInTheDocument();
     await user.click(button("Продолжить"));
     expect(store.state.step).toBe(3);
     expect(store.state.f.budget).toBe(32000);
@@ -158,8 +161,8 @@ describe("экран запуска", () => {
     expect(store.state.f.budget).toBe(25000);
     expect(button(/25.000/)).toHaveAttribute("aria-pressed", "true");
     expect(button(/20.000/)).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByText("Примерно 40–55 обращений")).toBeInTheDocument();
-    expect(screen.getByText(/Это оценка, а не обещание/)).toBeInTheDocument();
+    expect(screen.queryByText(/Примерно/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Прогноз обращений покажу/)).toBeInTheDocument();
     await user.click(button("Продолжить"));
 
     await user.click(button(/^Убрать «Маникюр от 1\s200\s₽»$/));
@@ -285,5 +288,107 @@ describe("разбор сайта до входа", () => {
     await waitFor(() => expect(store.state.step).toBe(1));
     expect(reader.readSite).toHaveBeenCalledWith("nogti.ru");
     expect(store.state.msgs.at(-1)?.text).toMatch(/Прочитал сайт/);
+  });
+});
+
+describe("бюджет и вход в настоящем запуске", () => {
+  const options = { min: 1550, max: 1_000_000, presets: [10000, 30000] };
+  const facts = [{ id: "site0", field: "niche" as const, label: "Чем занимаетесь", value: "маникюр", source: "с сайта", quote: "Студия маникюра" }];
+
+  function real(patch: Parameters<Store["set"]>[0] = {}) {
+    clearDraft();
+    const store = new Store({ ...initialState("start"), facts, site: "https://nogti.ru/", budgetOptions: options, ...patch });
+    store.reader = { readSite: vi.fn(), siteRead: vi.fn() };
+    store.navigate = vi.fn();
+    render(<Start store={store} />);
+    return { store, user: userEvent.setup() };
+  }
+
+  it("варианты и пределы бюджета берёт у сервиса", async () => {
+    const { store, user } = real({ step: 2 });
+    expect(button(/10.000/)).toBeInTheDocument();
+    expect(button(/30.000/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /20.000/ })).not.toBeInTheDocument();
+    const field = screen.getByLabelText("Своя сумма в месяц, ₽");
+    await user.type(field, "1500");
+    await user.click(button("Продолжить"));
+    expect(store.state.step).toBe(2);
+    expect(screen.getByRole("alert")).toHaveTextContent(/от 1.550/);
+    await user.clear(field);
+    await user.type(field, "2000000");
+    await user.click(button("Продолжить"));
+    expect(store.state.step).toBe(2);
+    expect(screen.getByRole("alert")).toHaveTextContent("лишнего нуля");
+  });
+
+  it("вход уносит черновик с собой и возвращает в запуск", async () => {
+    const { store, user } = real({ step: 4, f: { ...initialState().f, budget: 30000 } });
+    await user.click(button("Продолжить"));
+    expect(screen.getByRole("alert")).toHaveTextContent("Войдите через Яндекс");
+    await user.click(button("Войти через Яндекс"));
+    expect(store.navigate).toHaveBeenCalledWith("/api/auth/yandex/login?then=start");
+    expect(loadDraft()).toMatchObject({ site: "https://nogti.ru/", budget: 30000, facts });
+  });
+
+  it("после входа переносит черновик и ведёт в кабинет", async () => {
+    const { store, user } = real({ step: 0, facts: [], site: "" });
+    const { saveDraft } = await import("../draft");
+    saveDraft({ site: "https://nogti.ru/", facts, budget: 30000 });
+    const saveProfile = vi.fn(async () => ({}));
+    const saveBudgetPlan = vi.fn(async () => ({}));
+    const deps: TransferDeps = {
+      session: vi.fn(async () => ({ me: { email: "anna@example.ru", csrf_token: "c" }, businesses: [] })),
+      createBusiness: vi.fn(async (name: string) => ({ id: "b1", name })),
+      business: vi.fn(() => ({ saveProfile, saveBudgetPlan })),
+    };
+    await act(() => store.resume(deps, null));
+    expect(store.state.step).toBe(4);
+    expect(saveBudgetPlan).toHaveBeenCalledWith(30000);
+    expect(screen.getByText(/Вы вошли: anna@example.ru/)).toBeInTheDocument();
+    expect(screen.getByText(/профиль и бюджет сохранены/i)).toBeInTheDocument();
+    await user.click(button("Продолжить"));
+    expect(store.navigate).toHaveBeenCalledWith("/?new");
+  });
+
+  it("у владельца уже есть бизнес: черновик его не затирает, это сказано", async () => {
+    const { store } = real({ step: 0 });
+    const { saveDraft } = await import("../draft");
+    saveDraft({ site: "https://nogti.ru/", facts, budget: 30000 });
+    const deps: TransferDeps = {
+      session: vi.fn(async () => ({ me: { email: "anna@example.ru", csrf_token: "c" }, businesses: [{ id: "old", name: "Салон Анны" }] })),
+      createBusiness: vi.fn(),
+      business: vi.fn(),
+    };
+    await act(() => store.resume(deps, null));
+    expect(screen.getByRole("alert")).toHaveTextContent("«Салон Анны»");
+    expect(deps.createBusiness).not.toHaveBeenCalled();
+  });
+
+  it("вход не состоялся: черновик на месте, причина словами", async () => {
+    const { store } = real({ step: 0 });
+    const { saveDraft } = await import("../draft");
+    saveDraft({ site: "https://nogti.ru/", facts, budget: 30000 });
+    const deps: TransferDeps = { session: vi.fn(async () => null), createBusiness: vi.fn(), business: vi.fn() };
+    await act(() => store.resume(deps, "denied"));
+    expect(store.state.step).toBe(4);
+    expect(store.state.facts).toEqual(facts);
+    expect(screen.getByRole("alert")).toHaveTextContent("Вход не состоялся");
+    expect(loadDraft()).not.toBeNull();
+  });
+});
+
+describe("повторный перенос", () => {
+  it("второй вызов не создаёт второй бизнес", async () => {
+    const { saveDraft } = await import("../draft");
+    saveDraft({ site: "https://nogti.ru/", facts: [], budget: 20000 });
+    const store = new Store(initialState("start"));
+    const createBusiness = vi.fn(async (name: string) => ({ id: "b1", name }));
+    const deps: TransferDeps = {
+      session: vi.fn(async () => ({ me: { email: null, csrf_token: "c" }, businesses: [] })),
+      createBusiness,
+      business: vi.fn(() => ({ saveProfile: vi.fn(async () => ({})), saveBudgetPlan: vi.fn(async () => ({})) })),
+    };
+    await Promise.all([store.resume(deps, null), store.resume(deps, null)]);
+    expect(createBusiness).toHaveBeenCalledTimes(1);
   });
 });
