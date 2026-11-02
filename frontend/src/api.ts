@@ -176,7 +176,7 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}, csrf?: string): Promise<T> {
-  const headers: Record<string, string> = { Accept: "application/json" };
+  const headers: Record<string, string> = { Accept: "application/json", ...(init.headers as Record<string, string> | undefined) };
   if (init.body) headers["Content-Type"] = "application/json";
   if (csrf) headers["X-CSRF-Token"] = csrf;
   const response = await fetch(path, { credentials: "same-origin", ...init, headers });
@@ -213,6 +213,16 @@ export type Channels = {
 // Без периода сервис отдаёт последние 14 дней.
 function period(range?: Range | null): string {
   return range ? `?since=${range.since}&until=${range.until}` : "";
+}
+
+/** Разбор сайта до входа: без сессии, черновик открывается ключом из ответа. */
+export function createGuestApi() {
+  return {
+    readSite: (url: string) =>
+      request<{ id: number; token: string; status: string; url: string }>("/api/site-reads", { method: "POST", body: JSON.stringify({ url }) }),
+    siteRead: (id: number, token: string) =>
+      request<SiteRead>(`/api/site-reads/${id}`, { headers: { "X-Read-Token": token } }),
+  };
 }
 
 export function createApi(businessId: string, csrf: string) {

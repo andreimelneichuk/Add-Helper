@@ -144,3 +144,20 @@ test("сайт разбирается в черновик, в профиль п�
   await expect(services.last()).toHaveValue("Маникюр с покрытием гель-лаком");
   await expect(page.getByLabel("Адрес", { exact: true })).not.toHaveValue("Москва, ул. Тверская, 7");
 });
+
+test("до входа сайт разбирается в шаги запуска, выдуманного там нет", async ({ page }) => {
+  await page.goto("/?new&start");
+  await page.getByLabel("Ссылка на сайт или страницу").fill("nogti.ru");
+  await page.getByRole("button", { name: "Изучить" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Вот что я понял о вас" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("«Маникюр с покрытием гель-лаком — 1 700 ₽»")).toBeVisible();
+  // Факт без цитаты со страницы код отбросил, подставных фактов прототипа нет.
+  await expect(page.getByText("Лучшие мастера")).toHaveCount(0);
+  await expect(page.getByText("Скидка 20% на первый визит")).toHaveCount(0);
+  await page.getByRole("button", { name: "Изменить: Чем занимаетесь" }).click();
+  await page.getByLabel("Чем занимаетесь").fill("маникюр и педикюр");
+  await page.getByRole("button", { name: "Сохранить" }).click();
+  await expect(page.getByText("маникюр и педикюр")).toBeVisible();
+  await page.getByRole("button", { name: "Всё верно" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Сколько готовы тратить в месяц?" })).toBeVisible();
+});

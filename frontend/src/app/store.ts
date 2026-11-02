@@ -1,4 +1,6 @@
 import { useSyncExternalStore } from "react";
+import { ApiError } from "../api";
+import type { SiteFact, SiteRead } from "../api";
 import { ADS, DAYS, FACTS, histFor, leadsWord, MIN_BUDGET, OPENING, OPTIONS, rub, STATS, STEPS } from "./data";
 import type { Ad, Day, Fact, HistoryEntry, HistoryKind, Live, Period, PeriodStats, SettingKey, Situation, View } from "./data";
 
@@ -58,7 +60,25 @@ export type State = {
   facts: Fact[];
   /** Открытая правка факта; id null у нового факта. */
   factEdit: { id: string | null; value: string } | null;
+  /** Разбор сайта до входа идёт: ключ доступа знает только этот браузер. */
+  reading: { id: number; token: string } | "asking" | null;
 };
+
+/** Разбор сайта до входа: POST /api/site-reads и GET /api/site-reads/{id}. */
+export type GuestReader = {
+  readSite: (url: string) => Promise<{ id: number; token: string; status: string; url: string }>;
+  siteRead: (id: number, token: string) => Promise<SiteRead>;
+};
+
+const FACT_LABELS: Record<SiteFact["field"], string> = { niche: "Чем занимаетесь", address: "Где", service: "Услуга", feature: "Особенность" };
+/** Факты разбора в карточки шага «Профиль»: цитата остаётся рядом, чтобы владелец видел, откуда это. */
+export const siteFacts = (facts: SiteFact[]): Fact[] => facts.map((f, i) => ({
+  id: `site${i}`,
+  label: FACT_LABELS[f.field],
+  value: f.price === null ? f.value : `${f.value}, ${rub(f.price)}`,
+  source: "с сайта",
+  quote: f.quote,
+}));
 
 let nextId = 1;
 const newFact = (value: string): Fact => ({ id: "n" + nextId++, label: "Вы добавили", value, source: "от вас" });
@@ -73,7 +93,7 @@ export function initialState(stage: State["stage"] = "work", situation: Situatio
     hist: histFor(situation), undone: {}, asked: {}, adsOff: {}, ads: ADS, openAd: null, paused: false, topped: false, decided: null, extra: 0,
     metric: "cost", selDay: null, period: "week", filter: "all", clientsInput: "", clients: null,
     f: { services: "маникюр и педикюр", area: "Сокольники", hours: "в часы работы", goal: 400, budget: 20000 },
-    site: "", codeCopied: false, inn: "", yandex: false, metrica: false, block: "", draftOff: {}, budgetDraft: null, facts: FACTS, factEdit: null,
+    site: "", codeCopied: false, inn: "", yandex: false, metrica: false, block: "", draftOff: {}, budgetDraft: null, facts: FACTS, factEdit: null, reading: null,
   };
 }
 
@@ -193,6 +213,10 @@ export class Store {
   state: State;
   private listeners = new Set<() => void>();
   constructor(state: State = initialState()) { this.state = state; }
+  /** Есть — шаг «О бизнесе» читает настоящий сайт; нет — прототип на подставных фактах. */
+  reader: GuestReader | null = null;
+  /** Пауза между опросами разбора; воркер берёт разбор раз в минуту. */
+  waitMs = 3000;
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
   getSnapshot = () => this.state;
   set = (patch: Partial<State>) => { this.state = { ...this.state, ...patch }; this.listeners.forEach((fn) => fn()); };
@@ -327,6 +351,7 @@ export class Store {
   }
   private sendStart(text: string, t: string) {
     const s = this.state;
+    if (s.step === 0 && this.reader) { this.set({ site: text, input: "", msgs: [...s.msgs, msg("me", text)] }); void this.study(); return; }
     if (s.step === 0) { this.set({ site: s.site || text, input: "", step: 1, block: "", msgs: [...s.msgs, msg("me", text), msg("ai", STEPS[0]!.ai)] }); return; }
     if (s.step === 1 && !/верно|(^|\s)да(\s|$)|дальше/.test(t)) return this.reply(text, "Записал в профиль. Только такие факты попадут в рекламу.", { facts: [...s.facts, newFact(text)] });
     if (s.step === 2) { const n = Number((t.match(/\d[\d\s]*/) || ["0"])[0].replace(/\s/g, "")); if (n >= 1000) return this.reply(text, `Поставил ${rub(n)} в месяц.`, { f: { ...s.f, budget: n } }); }
@@ -338,16 +363,45 @@ export class Store {
     const { factEdit: edit, facts } = this.state;
     const value = edit?.value.trim();
     if (!edit || !value) return;
-    const next = edit.id === null ? [...facts, newFact(value)] : facts.map((f) => (f.id === edit.id ? { ...f, value, source: "от вас" } : f));
+    const next = edit.id === null ? [...facts, newFact(value)] : facts.map((f) => (f.id === edit.id ? { ...f, value, source: "от вас", quote: undefined } : f));
     this.set({ facts: next, factEdit: null, block: "" });
   };
   removeFact = (id: string) => this.set({ facts: this.state.facts.filter((f) => f.id !== id), factEdit: null, block: "" });
+  /** Разобрать сайт до входа. Шаг меняется, когда разбор готов; сбой оставляет путь вручную. */
+  async study() {
+    const reader = this.reader;
+    if (!reader || this.state.reading) return;
+    this.set({ reading: "asking", block: "" });
+    try {
+      const queued = await reader.readSite(this.state.site.trim());
+      this.set({ reading: { id: queued.id, token: queued.token }, site: queued.url });
+      await this.awaitRead(reader, queued.id, queued.token);
+    } catch (e) {
+      this.set({ reading: null, block: e instanceof ApiError ? e.message : "Сервис не ответил. Попробуйте ещё раз или заполните профиль вручную." });
+    }
+  }
+  private async awaitRead(reader: GuestReader, id: number, token: string) {
+    for (;;) {
+      const read = await reader.siteRead(id, token);
+      if (read.status === "failed") return this.set({ reading: null, block: read.problem_text ?? "Сайт не прочитался. Заполните профиль вручную." });
+      if (read.status === "ready") {
+        const facts = siteFacts(read.facts);
+        const ai = facts.length ? STEPS[0]!.ai : "На сайте не нашёл фактов, которые можно подтвердить цитатой. Добавьте их сами: в рекламу попадёт только это.";
+        return this.set({ reading: null, facts, step: 1, block: "", msgs: [...this.state.msgs, msg("ai", ai)] });
+      }
+      await new Promise((resolve) => setTimeout(resolve, this.waitMs));
+    }
+  }
+  /** Сайта нет или он не читается: профиль с чистого листа. */
+  fillByHand = () => this.set({ facts: [], step: 1, block: "", reading: null });
   /** Следующий шаг запуска; держит на шаге, пока не выполнены условия. */
   next(userText?: string) {
     const s = this.state;
     if (s.factEdit) return this.set({ block: "Сохраните или отмените правку факта." });
     if (s.step === 2 && s.budgetDraft !== null && Number(s.budgetDraft) < MIN_BUDGET) return this.set({ block: `Укажите сумму от ${rub(MIN_BUDGET)} в месяц.` });
-    if (s.step === 0 && !s.site.trim()) return this.set({ block: "Вставьте ссылку или расскажите о бизнесе в чате." });
+    if (s.step === 0 && !s.site.trim()) return this.set({ block: this.reader ? "Вставьте ссылку или заполните профиль вручную." : "Вставьте ссылку или расскажите о бизнесе в чате." });
+    if (s.step === 0 && this.reader) { void this.study(); return; }
+    if (s.step === 1 && s.facts.length === 0) return this.set({ block: "Добавьте хотя бы один факт: рекламу пишу только по ним." });
     if (s.step >= 3 && s.ads.every((a) => s.draftOff[a.id])) return this.set({ block: "Оставьте хотя бы одно объявление." });
     if (s.step === 4 && !s.yandex) return this.set({ block: "Подключите кабинет Яндекса." });
     if (s.step === 5 && !/^(\d{10}|\d{12})$/.test(s.inn)) return this.set({ block: "ИНН это 10 или 12 цифр." });

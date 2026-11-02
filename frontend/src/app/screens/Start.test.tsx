@@ -1,7 +1,10 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { ApiError } from "../../api";
+import type { SiteRead } from "../../api";
 import { initialState, Store } from "../store";
+import type { GuestReader } from "../store";
 import { Start } from "./Start";
 
 function setup(patch: Parameters<Store["set"]>[0] = {}) {
@@ -189,5 +192,98 @@ describe("экран запуска", () => {
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     await user.click(button("Можно спросить в чате"));
     expect(store.state.mode).toBe("chat");
+  });
+});
+
+describe("разбор сайта до входа", () => {
+  const ready: SiteRead = {
+    id: 7, url: "https://nogti.ru/", status: "ready", problem: null, problem_text: null, pages: ["https://nogti.ru/"],
+    facts: [
+      { field: "niche", value: "маникюр", price: null, quote: "Студия маникюра «Ноготок»", page: "https://nogti.ru/" },
+      { field: "service", value: "Маникюр с покрытием", price: 1500, quote: "Маникюр с покрытием — 1 500 ₽", page: "https://nogti.ru/price" },
+      { field: "feature", value: "Оплата картой", price: null, quote: "Принимаем оплату картой", page: "https://nogti.ru/" },
+    ],
+  };
+  const queued = { id: 7, token: "t".repeat(40), status: "queued", url: "https://nogti.ru/" };
+
+  function withReader(reader: Partial<GuestReader>) {
+    const full: GuestReader = {
+      readSite: vi.fn(async () => queued),
+      siteRead: vi.fn(async () => ready),
+      ...reader,
+    };
+    const store = new Store(initialState("start"));
+    store.reader = full;
+    store.waitMs = 0;
+    render(<Start store={store} />);
+    return { store, reader: full, user: userEvent.setup() };
+  }
+
+  it("читает сайт и показывает найденные факты с цитатами", async () => {
+    const answers = [{ ...ready, status: "running" as const, facts: [] }, ready];
+    const { store, reader, user } = withReader({ siteRead: vi.fn(async () => answers.shift()!) });
+    await user.type(screen.getByLabelText("Ссылка на сайт или страницу"), "nogti.ru");
+    await user.click(button("Изучить"));
+    expect(reader.readSite).toHaveBeenCalledWith("nogti.ru");
+    await screen.findByRole("heading", { level: 1, name: "Вот что я понял о вас" });
+    expect(reader.siteRead).toHaveBeenCalledWith(7, queued.token);
+    expect(screen.getByText(/^Маникюр с покрытием, 1.500.₽$/)).toBeInTheDocument();
+    expect(screen.getByText("«Маникюр с покрытием — 1 500 ₽»")).toBeInTheDocument();
+    expect(screen.getByText("Оплата картой")).toBeInTheDocument();
+    // Подставных фактов прототипа здесь нет: только найденное на сайте.
+    expect(screen.queryByText("Скидка 20% на первый визит")).not.toBeInTheDocument();
+    expect(store.state.site).toBe("https://nogti.ru/");
+  });
+
+  it("пока сайт читается, второй разбор не ставится", async () => {
+    const { reader, user } = withReader({ siteRead: vi.fn(() => new Promise<SiteRead>(() => undefined)) });
+    await user.type(screen.getByLabelText("Ссылка на сайт или страницу"), "nogti.ru");
+    await user.click(button("Изучить"));
+    expect(await screen.findByRole("status")).toHaveTextContent("Читаю сайт");
+    await user.click(button("Изучить"));
+    expect(reader.readSite).toHaveBeenCalledTimes(1);
+  });
+
+  it("правка факта с сайта снимает цитату: теперь это слова владельца", async () => {
+    const { store, user } = withReader({});
+    await user.type(screen.getByLabelText("Ссылка на сайт или страницу"), "nogti.ru{Enter}");
+    await screen.findByRole("heading", { level: 1, name: "Вот что я понял о вас" });
+    await user.click(button("Изменить: Чем занимаетесь"));
+    await user.clear(screen.getByLabelText("Чем занимаетесь"));
+    await user.type(screen.getByLabelText("Чем занимаетесь"), "маникюр и педикюр{Enter}");
+    expect(store.state.facts.find((f) => f.label === "Чем занимаетесь")).toMatchObject({ source: "от вас", quote: undefined });
+    expect(screen.queryByText("«Студия маникюра «Ноготок»»")).not.toBeInTheDocument();
+  });
+
+  it("сайт не прочитался: причина словами и путь вручную", async () => {
+    const failed: SiteRead = { ...ready, status: "failed", problem: "empty_page", problem_text: "На странице почти нет текста", facts: [] };
+    const { store, user } = withReader({ siteRead: vi.fn(async () => failed) });
+    await user.type(screen.getByLabelText("Ссылка на сайт или страницу"), "nogti.ru{Enter}");
+    expect(await screen.findByRole("alert")).toHaveTextContent("почти нет текста");
+    expect(store.state.step).toBe(0);
+    await user.click(button("Заполнить вручную"));
+    heading("Вот что я понял о вас");
+    expect(store.state.facts).toEqual([]);
+    // Без единого факта рекламу писать не из чего.
+    await user.click(button("Всё верно"));
+    expect(store.state.step).toBe(1);
+    expect(screen.getByRole("alert")).toHaveTextContent("Добавьте хотя бы один факт");
+  });
+
+  it("отказ сервиса показывается как есть: лимит по адресу", async () => {
+    const { store, user } = withReader({
+      readSite: vi.fn(async () => { throw new ApiError(429, "С этого адреса сайт сегодня разбирали уже 3 раза"); }),
+    });
+    await user.type(screen.getByLabelText("Ссылка на сайт или страницу"), "nogti.ru{Enter}");
+    expect(await screen.findByRole("alert")).toHaveTextContent("уже 3 раза");
+    expect(store.state.step).toBe(0);
+  });
+
+  it("ссылку можно дать и в чате", async () => {
+    const { store, reader } = withReader({});
+    act(() => store.send("nogti.ru"));
+    await waitFor(() => expect(store.state.step).toBe(1));
+    expect(reader.readSite).toHaveBeenCalledWith("nogti.ru");
+    expect(store.state.msgs.at(-1)?.text).toMatch(/Прочитал сайт/);
   });
 });
