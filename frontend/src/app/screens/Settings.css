@@ -24,3 +24,8 @@
   .set-service { grid-template-columns: minmax(0, 1fr) auto; }
   .set-service > :first-child { grid-column: 1 / -1; }
 }
+.set-site { display: grid; gap: 8px; }
+.set-site > .ah-btn { justify-self: start; }
+.set-facts { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.set-facts label { display: block; overflow-wrap: anywhere; }
+.set-quote { font-size: var(--t-caption); padding-left: 1.6em; overflow-wrap: anywhere; }

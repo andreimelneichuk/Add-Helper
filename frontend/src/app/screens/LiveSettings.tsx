@@ -1,7 +1,7 @@
 // Настройки на настоящих данных: профиль, уведомления, кабинет Яндекса и выход.
 // Правка профиля не трогает площадку, поэтому идёт прямо в API, а не через журнал.
 import { useCallback, useEffect, useState } from "react";
-import type { AdAccount, Api, Channels as ChannelsData, Display, Profile } from "../../api";
+import type { AdAccount, Api, Channels as ChannelsData, Display, Profile, SiteFact, SiteRead } from "../../api";
 import { rub } from "../data";
 import { liveApi } from "../live";
 import type { LiveStore } from "../live";
@@ -183,6 +183,64 @@ function DisplayForm({ api, store }: { api: Api; store: LiveStore }) {
   );
 }
 
+// Разбор идёт в воркере раз в минуту; чаще спрашивать незачем.
+const SITE_WAIT_MS = 3_000;
+const MAX_SERVICES = 30;
+const MAX_FEATURES = 20;
+const FACT_LABEL: Record<SiteFact["field"], string> = {
+  niche: "Чем занимаетесь",
+  address: "Адрес",
+  service: "Услуга",
+  feature: "Особенность",
+};
+
+/** Черновик с сайта в форме профиля. Сохраняет владелец сам: в рекламу идёт только сохранённое. */
+export function mergeFacts(profile: Profile, facts: SiteFact[], url: string): Profile {
+  const services = [...profile.services];
+  const features = [...profile.features];
+  let { niche, address } = profile;
+  for (const fact of facts) {
+    if (fact.field === "niche") niche = fact.value;
+    else if (fact.field === "address") address = fact.value;
+    else if (fact.field === "service") {
+      const i = services.findIndex((x) => x.name.trim().toLowerCase() === fact.value.trim().toLowerCase());
+      const same = services[i];
+      // Отмеченная цена — выбор владельца: она заменяет прежнюю.
+      if (same) services[i] = { ...same, price: fact.price ?? same.price };
+      else if (services.length < MAX_SERVICES) services.push({ name: fact.value, price: fact.price });
+    } else if (!features.some((f) => f.trim().toLowerCase() === fact.value.trim().toLowerCase()) && features.length < MAX_FEATURES) {
+      features.push(fact.value);
+    }
+  }
+  return { ...profile, services, features, niche, address, website: profile.website.trim() || url };
+}
+
+function SiteDraft({ read, onApply, onClose }: { read: SiteRead; onApply: (facts: SiteFact[]) => void; onClose: () => void }) {
+  const [chosen, setChosen] = useState<boolean[]>(() => read.facts.map(() => true));
+  if (read.status === "failed") return <p role="alert" className="set-hint">{read.problem_text ?? "Не получилось разобрать сайт. Заполните профиль вручную."}</p>;
+  if (read.facts.length === 0) return <p role="alert" className="set-hint">На сайте не нашёл фактов, которые можно подтвердить цитатой. Заполните профиль вручную.</p>;
+  return (
+    <div className="set-confirm" role="group" aria-label="Нашёл на сайте">
+      <p>Вот что я нашёл на сайте. Под каждым фактом цитата со страницы. Снимите отметку с того, что неверно или устарело.</p>
+      <ul className="set-facts">
+        {read.facts.map((fact, i) => (
+          <li key={i}>
+            <label>
+              <input type="checkbox" checked={chosen[i]} onChange={() => setChosen(chosen.map((c, j) => (j === i ? !c : c)))} />{" "}
+              {FACT_LABEL[fact.field]}: {fact.value}{fact.price !== null ? `, ${rub(fact.price)}` : ""}
+            </label>
+            <div className="ah-muted set-quote">«{fact.quote}»</div>
+          </li>
+        ))}
+      </ul>
+      <div className="set-actions">
+        <button type="button" className="ah-btn ah-btn-primary" disabled={!chosen.some(Boolean)} onClick={() => onApply(read.facts.filter((_, i) => chosen[i]))}>Перенести в профиль</button>
+        <button type="button" className="ah-btn" onClick={onClose}>Не переносить</button>
+      </div>
+    </div>
+  );
+}
+
 function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -190,6 +248,29 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
   useEffect(() => {
     api.profile().then(setProfile, (e: unknown) => setStatus(message(e)));
   }, [api]);
+  const [read, setRead] = useState<SiteRead | null>(null);
+  const [reading, setReading] = useState(false);
+  const [readError, setReadError] = useState<string | null>(null);
+  const poll = useCallback(async () => {
+    try {
+      const latest = await api.siteRead();
+      const waiting = latest !== null && (latest.status === "queued" || latest.status === "running");
+      setReading(waiting);
+      if (latest && !waiting) setRead(latest);
+    } catch (e) {
+      setReading(false);
+      setReadError(message(e));
+    }
+  }, [api]);
+  // Разбор, начатый раньше, досматриваем, а готовый старый черновик не навязываем.
+  useEffect(() => {
+    api.siteRead().then((latest) => setReading(latest !== null && (latest.status === "queued" || latest.status === "running")), () => undefined);
+  }, [api]);
+  useEffect(() => {
+    if (!reading) return;
+    const timer = window.setInterval(() => void poll(), SITE_WAIT_MS);
+    return () => window.clearInterval(timer);
+  }, [reading, poll]);
   if (!profile) return <p className="ah-muted">{status ?? "Загружаю профиль…"}</p>;
 
   const set = (patch: Partial<Profile>) => {
@@ -212,11 +293,35 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
     }
   };
 
+  const readSite = async () => {
+    setRead(null);
+    setReadError(null);
+    setStatus(null);
+    try {
+      await api.readSite(profile.website);
+      setReading(true);
+      await poll();
+    } catch (e) {
+      setReadError(message(e));
+    }
+  };
+  const apply = (facts: SiteFact[]) => {
+    if (read) setProfile(mergeFacts(profile, facts, read.url));
+    setRead(null);
+    setStatus("Перенёс в форму. Проверьте и нажмите «Сохранить»: в рекламу идут только сохранённые факты.");
+  };
+
   return (
     <div className="set-form">
+      <div className="set-site">
+        <label><span className="ah-label">Сайт</span><input className="ah-input" value={profile.website} placeholder="salon.ru" onChange={(e) => set({ website: e.target.value })} /></label>
+        <button type="button" className="ah-btn" disabled={!profile.website.trim() || reading} onClick={() => void readSite()}>Заполнить с сайта</button>
+        {reading && <p className="set-hint" role="status">Читаю сайт. Обычно это минута-две, можно уйти с экрана и вернуться.</p>}
+        {readError && <p role="alert" className="set-hint">{readError}</p>}
+        {read && <SiteDraft key={read.id} read={read} onApply={apply} onClose={() => setRead(null)} />}
+      </div>
       <label><span className="ah-label">Чем занимаетесь</span><input className="ah-input" value={profile.niche} placeholder="маникюр" onChange={(e) => set({ niche: e.target.value })} /></label>
       <label><span className="ah-label">Адрес</span><input className="ah-input" value={profile.address} onChange={(e) => set({ address: e.target.value })} /></label>
-      <label><span className="ah-label">Сайт</span><input className="ah-input" value={profile.website} placeholder="https://" onChange={(e) => set({ website: e.target.value })} /></label>
       <fieldset className="set-services">
         <legend className="ah-label">Услуги и цены</legend>
         {profile.services.map((x, i) => (
