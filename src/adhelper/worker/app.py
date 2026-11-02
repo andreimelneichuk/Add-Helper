@@ -15,6 +15,7 @@ PERIODIC_TASKS = (
     "ads.keep",
     "notifications.send",
     "telegram.poll",
+    "site.read",
 )
 
 
@@ -69,3 +70,11 @@ async def notifications_send(timestamp: int) -> None:
 async def telegram_poll(timestamp: int) -> None:
     async with open_runtime(Settings()) as runtime:
         await runtime.telegram_poll()
+
+
+# Разборы сайта — строки site_reads, их ставит владелец; задача разбирает их раз в минуту.
+@app.periodic(cron="* * * * *")
+@app.task(name="site.read", queue=CREATIVES_QUEUE, queueing_lock="site.read")
+async def site_read(timestamp: int) -> None:
+    async with open_runtime(Settings()) as runtime:
+        await runtime.site_read()

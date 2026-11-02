@@ -18,6 +18,7 @@ from adhelper.accounts.adapters.sql import logins_of_business
 from adhelper.autopilot.adapters.rules_file import load_rules as load_autopilot_rules
 from adhelper.budget.adapters.rules_file import load_rules as load_budget_rules
 from adhelper.budget.application.emergency import StopReport, stop_account
+from adhelper.business.adapters.rules_file import load_site_rules
 from adhelper.config import Settings
 from adhelper.creatives.adapters.factory import build_text_model
 from adhelper.creatives.adapters.rules_file import load_rules as load_creative_rules
@@ -41,6 +42,7 @@ RULE_LOADERS = (
     (load_creative_rules, "creatives-1"),
     (load_creative_rules, "creatives-2"),
     (load_slot_rules, "ads-1"),
+    (load_site_rules, "site-1"),
 )
 
 
