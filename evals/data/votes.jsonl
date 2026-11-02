@@ -3578,3 +3578,33 @@
 {"id": "tires-04-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:36:32+00:00"}
 {"id": "tires-04-w1", "labeler": "claude-c", "label": "block", "reason": "«Скидка 10% на услуги» — в профиле скидка 10% по будням до 12 без указания, что она на все услуги", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:36:32+00:00"}
 {"id": "tires-04-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:36:32+00:00"}
+{"id": "dance-05-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:06:59+00:00"}
+{"id": "dance-05-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:06:59+00:00"}
+{"id": "dance-05-w3", "labeler": "claude", "label": "block", "reason": "«Танцуйте до закрытия» — срок и часы вечеринки не указаны в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:06:59+00:00"}
+{"id": "dance-05-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:06:59+00:00"}
+{"id": "dance-05-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:06:59+00:00"}
+{"id": "sushi-03-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:06:59+00:00"}
+{"id": "sushi-03-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:06:59+00:00"}
+{"id": "sushi-03-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:06:59+00:00"}
+{"id": "sushi-03-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:06:59+00:00"}
+{"id": "sushi-03-w0", "labeler": "claude", "label": "block", "reason": "«Вкусный вок» — оценка вкуса без опоры в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:06:59+00:00"}
+{"id": "dance-05-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:07:00+00:00"}
+{"id": "dance-05-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:07:00+00:00"}
+{"id": "dance-05-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:07:00+00:00"}
+{"id": "dance-05-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:07:00+00:00"}
+{"id": "dance-05-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:07:00+00:00"}
+{"id": "sushi-03-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:07:00+00:00"}
+{"id": "sushi-03-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:07:00+00:00"}
+{"id": "sushi-03-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:07:00+00:00"}
+{"id": "sushi-03-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:07:00+00:00"}
+{"id": "sushi-03-w0", "labeler": "claude-b", "label": "block", "reason": "«Вкусный вок с курицей»: оценка вкуса без опоры на профиль", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:07:00+00:00"}
+{"id": "dance-05-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:07:00+00:00"}
+{"id": "dance-05-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:07:00+00:00"}
+{"id": "dance-05-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет (пробное 300 ₽ для новых, в профиле: для тех, кто не ходил)", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:07:00+00:00"}
+{"id": "dance-05-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет (вход 500 совпадает; «танцуйте до закрытия» — призыв без указания часов)", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:07:00+00:00"}
+{"id": "dance-05-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:07:00+00:00"}
+{"id": "sushi-03-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет (ежедневно с 12 до 22 = без выходных с 12 до 22)", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:07:00+00:00"}
+{"id": "sushi-03-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:07:00+00:00"}
+{"id": "sushi-03-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:07:00+00:00"}
+{"id": "sushi-03-w0", "labeler": "claude-c", "label": "block", "reason": "«Вкусный вок» — оценка вкуса без опоры на профиль", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:07:00+00:00"}
+{"id": "sushi-03-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T20:07:00+00:00"}
