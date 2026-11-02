@@ -2978,3 +2978,513 @@
 {"id": "fitness-02-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T16:48:51+00:00"}
 {"id": "fitness-02-w3", "labeler": "claude-c", "label": "block", "reason": "«Занимайтесь ... в удобное время»: гибкость режима не подтверждена профилем", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T16:48:51+00:00"}
 {"id": "fitness-02-w0", "labeler": "claude-c", "label": "block", "reason": "«Приходите без обязательств»: условия разового посещения в профиле не указаны", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T16:48:51+00:00"}
+{"id": "bakery-04-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "bakery-04-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "bakery-04-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "bakery-04-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "bakery-04-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "cosmetology-05-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "cosmetology-05-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "cosmetology-05-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "cosmetology-05-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "cosmetology-05-w0", "labeler": "claude", "label": "block", "reason": "«Запись на удобное время» — оценка и условие записи, которых нет в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "dance-02-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "dance-02-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "dance-02-w1", "labeler": "claude", "label": "block", "reason": "«мы вас подберем» — услуга подбора пары, которой нет в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "dance-02-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "dance-02-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "driving-02-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "driving-02-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "driving-02-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "driving-02-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "driving-02-w1", "labeler": "claude", "label": "block", "reason": "«Запись на субботу по телефону» — способ записи не указан в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "driving-04-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "driving-04-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "driving-04-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "driving-04-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "driving-04-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "driving-06-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "driving-06-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "driving-06-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "driving-06-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "driving-06-w4", "labeler": "claude", "label": "block", "reason": "«Удобное расписание» — оценка без опоры в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "drycleaning-06-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "drycleaning-06-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "drycleaning-06-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "drycleaning-06-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "drycleaning-06-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "fitness-06-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "fitness-06-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "fitness-06-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "fitness-06-w3", "labeler": "claude", "label": "block", "reason": "«Тренер на связи» — в профиле тренер на зале, а не на связи", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "fitness-06-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "flowers-02-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "flowers-02-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "flowers-02-w1", "labeler": "claude", "label": "block", "reason": "«Красивое растение» — оценка качества без опоры в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "flowers-02-w0", "labeler": "claude", "label": "block", "reason": "«Свежие цветы в наличии» — оценка качества и наличие, которых нет в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "flowers-02-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "flowers-05-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "flowers-05-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "flowers-05-w3", "labeler": "claude", "label": "block", "reason": "«Классический букет» — характеристика товара, которой нет в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "flowers-05-w0", "labeler": "claude", "label": "block", "reason": "«Свежие цветы для вашего офиса» — оценка качества без опоры в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "flowers-05-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "flowers-06-w2", "labeler": "claude", "label": "block", "reason": "«Яркий подарок» и «свежих роз» — оценка без опоры в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "flowers-06-w4", "labeler": "claude", "label": "block", "reason": "«Подбор цветов под ваш запрос» — услуга, которой нет в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "flowers-06-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "flowers-06-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "flowers-06-w3", "labeler": "claude", "label": "block", "reason": "«Отличный вариант для подарка» — оценка без опоры в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "furniture-02-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "furniture-02-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "furniture-02-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "furniture-02-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "furniture-02-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "furniture-03-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "furniture-03-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "furniture-03-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "furniture-03-w3", "labeler": "claude", "label": "block", "reason": "«Выезд на замер. Стоимость 6800 рублей за кв. м» — в профиле 6800 за кв. м относится к гардеробной, замер без цены", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "furniture-03-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "furniture-07-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "furniture-07-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "furniture-07-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "furniture-07-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "furniture-07-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "hair-03-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "hair-03-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "hair-03-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "hair-03-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "hair-03-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "hair-07-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "hair-07-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "hair-07-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "hair-07-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "hair-07-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "handyman-06-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "handyman-06-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "handyman-06-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "handyman-06-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "handyman-06-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "handyman-07-w3", "labeler": "claude", "label": "block", "reason": "«Повесим полки и карнизы» — конкретные работы, которых нет в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "handyman-07-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "handyman-07-w2", "labeler": "claude", "label": "block", "reason": "«Меняем смесители в квартире» — место работ, условие которого нет в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "handyman-07-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "handyman-07-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "keys-03-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "keys-03-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "keys-03-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "keys-03-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "keys-03-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "keys-07-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "keys-07-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "keys-07-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "keys-07-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "keys-07-w0", "labeler": "claude", "label": "block", "reason": "«Работаем круглосуточно» противоречит профилю: работаем с 20:00 до 08:00", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "kids-02-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "kids-02-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "kids-02-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "kids-02-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "kids-02-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "nails-02-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "nails-02-w0", "labeler": "claude", "label": "block", "reason": "«Запись на удобное время» — условие записи, которого нет в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "nails-02-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "nails-02-w1", "labeler": "claude", "label": "block", "reason": "«Услуга доступна в любое время» — условие, которого нет в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "nails-02-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "photo-01-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "photo-01-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "photo-01-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "photo-01-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "photo-01-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "photo-03-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "photo-03-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "photo-03-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "photo-03-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "photo-03-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "photo-05-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "photo-05-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "photo-05-w3", "labeler": "claude", "label": "block", "reason": "«4 фотографии в подарок» — бонус, которого нет в профиле (4 фото входят в цену 500)", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "photo-05-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "photo-05-w0", "labeler": "claude", "label": "block", "reason": "«Запись на будни по телефону» — способ записи не указан в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "photo-07-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "photo-07-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "photo-07-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "photo-07-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "photo-07-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "print-03-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "print-03-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "print-03-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "print-03-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "print-03-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "print-06-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "print-06-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "print-06-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "print-06-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "print-06-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "shoes-02-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "shoes-02-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "shoes-02-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "shoes-02-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "shoes-02-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "sushi-07-w3", "labeler": "claude", "label": "block", "reason": "«Скидка 15%» без оговорки «студентам по справке»", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "sushi-07-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "sushi-07-w2", "labeler": "claude", "label": "block", "reason": "«Скидка 15% студентам» без оговорки «по справке»", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "sushi-07-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "sushi-07-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "tailor-03-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "tailor-03-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "tailor-03-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "tailor-03-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "tailor-03-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "tutor-04-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "tutor-04-w2", "labeler": "claude", "label": "block", "reason": "«Занятие можно провести в любое время» — в профиле онлайн по договорённости", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "tutor-04-w4", "labeler": "claude", "label": "block", "reason": "«Оплата пакета переводом заранее» приписана проверке ДЗ, а в профиле относится к пакету", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "tutor-04-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "tutor-04-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "vet-03-w3", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "vet-03-w0", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "vet-03-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "vet-03-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "vet-03-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "yoga-06-w4", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "yoga-06-w2", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "yoga-06-w3", "labeler": "claude", "label": "block", "reason": "«Выбирайте удобное время» — оценка и гибкость расписания, которых нет в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "yoga-06-w0", "labeler": "claude", "label": "block", "reason": "«Приходите на пробное занятие» — в профиле разовое занятие, пробного нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "yoga-06-w1", "labeler": "claude", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:10+00:00"}
+{"id": "bakery-04-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "bakery-04-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "bakery-04-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "bakery-04-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "bakery-04-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "cosmetology-05-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "cosmetology-05-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "cosmetology-05-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "cosmetology-05-w0", "labeler": "claude-b", "label": "block", "reason": "«Запись на удобное время»: условие записи не указано в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "cosmetology-05-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "dance-02-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "dance-02-w1", "labeler": "claude-b", "label": "block", "reason": "«мы вас подберем» (пара): в профиле только «без пары — приходите одни», подбора пары нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "dance-02-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "dance-02-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "dance-02-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-02-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-02-w1", "labeler": "claude-b", "label": "block", "reason": "«Запись на субботу по телефону»: способ записи по телефону не указан в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-02-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-02-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-02-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-04-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-04-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-04-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-04-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-04-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-06-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-06-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-06-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-06-w4", "labeler": "claude-b", "label": "block", "reason": "«Удобное расписание занятий»: оценка «удобное» без опоры на профиль", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-06-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "drycleaning-06-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "drycleaning-06-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "drycleaning-06-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "drycleaning-06-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "drycleaning-06-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "fitness-06-w3", "labeler": "claude-b", "label": "block", "reason": "«Тренер на связи с 7 до 22»: в профиле «тренер на зале», а «на связи» меняет смысл", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "fitness-06-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "fitness-06-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "fitness-06-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "fitness-06-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-02-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-02-w1", "labeler": "claude-b", "label": "block", "reason": "«Красивое растение»: оценка качества без опоры на профиль", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-02-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-02-w0", "labeler": "claude-b", "label": "block", "reason": "«Свежие цветы в наличии»: свежесть и наличие не указаны в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-02-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-05-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-05-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-05-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-05-w3", "labeler": "claude-b", "label": "block", "reason": "«Классический букет»: характеристика без опоры на профиль", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-05-w0", "labeler": "claude-b", "label": "block", "reason": "«Свежие цветы для вашего офиса»: свежесть не указана в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-06-w3", "labeler": "claude-b", "label": "block", "reason": "«Отличный вариант для подарка»: оценка качества без опоры на профиль", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-06-w4", "labeler": "claude-b", "label": "block", "reason": "«Подбор цветов под ваш запрос»: услуга подбора не указана в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-06-w1", "labeler": "claude-b", "label": "block", "reason": "«к началу рабочего дня»: в профиле доставка в офис «до 11 утра», время не совпадает", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-06-w2", "labeler": "claude-b", "label": "block", "reason": "«Яркий подарок», «свежих роз»: оценки качества без опоры на профиль", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-06-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-02-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-02-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-02-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-02-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-02-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-03-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-03-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-03-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-03-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-03-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-07-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-07-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-07-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-07-w0", "labeler": "claude-b", "label": "block", "reason": "«Кровать-чердак из массива сосны»: материал выбирается (сосна или ЛДСП), сосна не гарантирована", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-07-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "hair-03-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "hair-03-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "hair-03-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "hair-03-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "hair-03-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "hair-07-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "hair-07-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "hair-07-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "hair-07-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "hair-07-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "handyman-06-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "handyman-06-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "handyman-06-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "handyman-06-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "handyman-06-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "handyman-07-w1", "labeler": "claude-b", "label": "block", "reason": "«Собираем мебель по адресу ул. Ивановская, 18»: в профиле адрес не место работ, выезд к клиенту", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "handyman-07-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "handyman-07-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "handyman-07-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "handyman-07-w4", "labeler": "claude-b", "label": "block", "reason": "«Выполняем работы по адресу ул. Ивановская, 18»: в профиле адрес не место работ, выезд к клиенту", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "keys-03-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "keys-03-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "keys-03-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "keys-03-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "keys-03-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "keys-07-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "keys-07-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "keys-07-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "keys-07-w0", "labeler": "claude-b", "label": "block", "reason": "«Работаем круглосуточно»: в профиле 20:00–08:00", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "keys-07-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "kids-02-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "kids-02-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "kids-02-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "kids-02-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "kids-02-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "nails-02-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "nails-02-w1", "labeler": "claude-b", "label": "block", "reason": "«Услуга доступна в любое время»: в профиле работа с 10 до 20", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "nails-02-w0", "labeler": "claude-b", "label": "block", "reason": "«Запись на удобное время»: условие записи не указано в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "nails-02-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "nails-02-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-01-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-01-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-01-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-01-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-01-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-03-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-03-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-03-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-03-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-03-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-05-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-05-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-05-w0", "labeler": "claude-b", "label": "block", "reason": "«Запись на будни по телефону»: способ записи по телефону не указан в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-05-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-05-w3", "labeler": "claude-b", "label": "block", "reason": "«4 фотографии в подарок»: в профиле это услуга за 500 ₽, а не подарок; «сразу» не подтверждено", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-07-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-07-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-07-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-07-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-07-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "print-03-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "print-03-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "print-03-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "print-03-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "print-03-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "print-06-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "print-06-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "print-06-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "print-06-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "print-06-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "shoes-02-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "shoes-02-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "shoes-02-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "shoes-02-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "shoes-02-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "sushi-07-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "sushi-07-w2", "labeler": "claude-b", "label": "block", "reason": "«Скидка 15% студентам» без оговорки: в профиле скидка только по справке", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "sushi-07-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "sushi-07-w3", "labeler": "claude-b", "label": "block", "reason": "«Скидка 15%» без оговорки: в профиле скидка только студентам по справке", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "sushi-07-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "tailor-03-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "tailor-03-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "tailor-03-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "tailor-03-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "tailor-03-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "tutor-04-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "tutor-04-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "tutor-04-w2", "labeler": "claude-b", "label": "block", "reason": "«Занятие можно провести в любое время»: в профиле «по договорённости», воскресенье выходной", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "tutor-04-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "tutor-04-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "vet-03-w3", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "vet-03-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "vet-03-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "vet-03-w0", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "vet-03-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "yoga-06-w2", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "yoga-06-w4", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "yoga-06-w3", "labeler": "claude-b", "label": "block", "reason": "«Выбирайте удобное время»: оценка «удобное» без опоры на профиль", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "yoga-06-w0", "labeler": "claude-b", "label": "block", "reason": "«Приходите на пробное занятие»: в профиле «разовое занятие» 700 ₽, пробного нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "yoga-06-w1", "labeler": "claude-b", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "bakery-04-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "bakery-04-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "bakery-04-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "bakery-04-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "bakery-04-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "cosmetology-05-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "cosmetology-05-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "cosmetology-05-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "cosmetology-05-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "cosmetology-05-w0", "labeler": "claude-c", "label": "block", "reason": "«Запись на удобное время» — оценка удобства записи и гибкость расписания нет в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "dance-02-w1", "labeler": "claude-c", "label": "block", "reason": "«мы вас подберем» — подбор пары не указан в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "dance-02-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "dance-02-w2", "labeler": "claude-c", "label": "block", "reason": "«Научим танцевать для вашего праздника» — обещание результата клиенту", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "dance-02-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "dance-02-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-02-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-02-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-02-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-02-w1", "labeler": "claude-c", "label": "block", "reason": "«Запись на субботу по телефону» — способ записи по телефону не указан в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-02-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-04-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-04-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-04-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-04-w2", "labeler": "claude-c", "label": "block", "reason": "«Отмена занятия за 6 часов» без оговорки о списании занятия при позднейшей отмене из профиля", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-04-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-06-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-06-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-06-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-06-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "driving-06-w4", "labeler": "claude-c", "label": "block", "reason": "«Удобное расписание занятий» — оценка удобства не подтверждена профилем", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "drycleaning-06-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "drycleaning-06-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "drycleaning-06-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "drycleaning-06-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "drycleaning-06-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "fitness-06-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "fitness-06-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "fitness-06-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "fitness-06-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "fitness-06-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-02-w0", "labeler": "claude-c", "label": "block", "reason": "«Свежие цветы в наличии» — свежесть и наличие не подтверждены профилем", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-02-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-02-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-02-w1", "labeler": "claude-c", "label": "block", "reason": "«Красивое растение» — оценка качества без опоры на профиль", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-02-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-05-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-05-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-05-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-05-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-05-w0", "labeler": "claude-c", "label": "block", "reason": "«Свежие цветы для вашего офиса» — свежесть не подтверждена профилем", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-06-w1", "labeler": "claude-c", "label": "block", "reason": "«к началу рабочего дня» — время доставки не совпадает с профилем («до 11 утра»)", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-06-w4", "labeler": "claude-c", "label": "block", "reason": "«Подбор цветов под ваш запрос» — индивидуальный подбор не указан в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-06-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-06-w2", "labeler": "claude-c", "label": "block", "reason": "«Яркий подарок» и «свежих роз» — оценки качества без опоры на профиль", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "flowers-06-w3", "labeler": "claude-c", "label": "block", "reason": "«Отличный вариант для подарка коллегам» — оценка качества без опоры на профиль", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-02-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-02-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-02-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-02-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-02-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-03-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-03-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-03-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-03-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-03-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-07-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-07-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-07-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-07-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "furniture-07-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "hair-03-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "hair-03-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "hair-03-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "hair-03-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "hair-03-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "hair-07-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "hair-07-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "hair-07-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "hair-07-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "hair-07-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "handyman-06-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "handyman-06-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "handyman-06-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "handyman-06-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "handyman-06-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "handyman-07-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "handyman-07-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "handyman-07-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "handyman-07-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "handyman-07-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "keys-03-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "keys-03-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "keys-03-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "keys-03-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "keys-03-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "keys-07-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "keys-07-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "keys-07-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "keys-07-w0", "labeler": "claude-c", "label": "block", "reason": "«Работаем круглосуточно» — в профиле работа с 20:00 до 08:00", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "keys-07-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "kids-02-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "kids-02-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "kids-02-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "kids-02-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "kids-02-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "nails-02-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "nails-02-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "nails-02-w0", "labeler": "claude-c", "label": "block", "reason": "«Запись на удобное время» — гибкость записи не подтверждена профилем", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "nails-02-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "nails-02-w1", "labeler": "claude-c", "label": "block", "reason": "«Услуга доступна в любое время» — профиль указывает работу с 10 до 20", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-01-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-01-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-01-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-01-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-01-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-03-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-03-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-03-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-03-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-03-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-05-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-05-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-05-w0", "labeler": "claude-c", "label": "block", "reason": "«Запись на будни по телефону» — способ записи не указан в профиле", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-05-w3", "labeler": "claude-c", "label": "block", "reason": "«4 фотографии в подарок» противоречит цене 500 ₽; «готовые кадры сразу» не подтверждено профилем", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-05-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-07-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-07-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-07-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-07-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "photo-07-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "print-03-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "print-03-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "print-03-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "print-03-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "print-03-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "print-06-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "print-06-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "print-06-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "print-06-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "print-06-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "shoes-02-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "shoes-02-w0", "labeler": "claude-c", "label": "block", "reason": "«Восстановим обувь» — обещание результата клиенту", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "shoes-02-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "shoes-02-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "shoes-02-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "sushi-07-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "sushi-07-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "sushi-07-w3", "labeler": "claude-c", "label": "block", "reason": "«Скидка 15%» без оговорки «студентам по справке» из профиля", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "sushi-07-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "sushi-07-w2", "labeler": "claude-c", "label": "block", "reason": "«Скидка 15% студентам» без оговорки «по справке» из профиля", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "tailor-03-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "tailor-03-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "tailor-03-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "tailor-03-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "tailor-03-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "tutor-04-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "tutor-04-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "tutor-04-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "tutor-04-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "tutor-04-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "vet-03-w0", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "vet-03-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "vet-03-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "vet-03-w3", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "vet-03-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "yoga-06-w4", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "yoga-06-w1", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "yoga-06-w2", "labeler": "claude-c", "label": "pass", "reason": "нарушений нет", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "yoga-06-w3", "labeler": "claude-c", "label": "block", "reason": "«Выбирайте удобное время» — гибкость расписания не подтверждена профилем", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
+{"id": "yoga-06-w0", "labeler": "claude-c", "label": "block", "reason": "«пробное занятие» за 700 ₽ — пробного занятия в профиле нет, есть разовое занятие", "prompt_version": "haiku:0562edb079", "at": "2026-11-02T19:06:11+00:00"}
