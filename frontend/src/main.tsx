@@ -26,18 +26,23 @@ function Live() {
   const params = new URLSearchParams(window.location.search);
   const [store, setStore] = useState<LiveStore | "mock" | "failed" | null>(null);
   useEffect(() => {
+    // В режиме разработки эффект запускается дважды. Без отмены второй магазин придёт позже
+    // и заменит первый, в котором владелец уже успел перейти в другой раздел.
+    let cancelled = false;
     openSession().then(async (session) => {
       const business = session?.businesses[0];
-      if (!session || !business) return setStore("mock");
+      if (!session || !business) return cancelled || setStore("mock");
       const api = createApi(business.id, session.me.csrf_token);
       const live = new LiveStore(api, await loadLive(api, business.name));
+      if (cancelled) return;
       const connect = params.get("connect");
       if (connect !== null) {
         live.set({ view: "settings", notice: CONNECT_RESULT[connect] ?? CONNECT_RESULT.failed! });
         window.history.replaceState(null, "", "/?new");
       }
       setStore(live);
-    }).catch(() => setStore("failed"));
+    }).catch(() => cancelled || setStore("failed"));
+    return () => { cancelled = true; };
   }, []);
   if (store === null) return null;
   if (store === "failed") return <p role="alert">Сервис не ответил. Обновите страницу через минуту.</p>;
