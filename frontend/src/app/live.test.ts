@@ -64,14 +64,25 @@ describe("действия идут через сервис", () => {
     expect(store.state.undone["change-5"]).toBe(true);
   });
 
-  it("снять паузу честно отказывается", async () => {
-    const api = fakeApi();
+  it("снимает паузу владельца через сервис и объясняет проверку бюджета", async () => {
+    const api = fakeApi({ resume: vi.fn(async () => ({ resumed: ["anna:1"], refused: [], failed: [] })) } as Partial<Api>);
     const store = await open(api);
     store.set({ paused: true });
     store.run({ action: "pause" });
     await settled();
     expect(api.pause).not.toHaveBeenCalled();
-    expect(store.state.notice).toContain("нельзя");
+    expect(api.resume).toHaveBeenCalledOnce();
+    expect(store.state.notice).toContain("Снял паузу");
+    expect(store.state.notice).toContain("не выйдет за бюджет 20 000 ₽");
+  });
+
+  it("отказ включить показывает словами сервиса", async () => {
+    const api = fakeApi({ resume: vi.fn(async () => { throw new ApiError(409, "Эти показы остановил не вы, а защита бюджета. Кнопка их не включит"); }) } as Partial<Api>);
+    const store = await open(api);
+    store.set({ paused: true });
+    store.run({ action: "pause" });
+    await settled();
+    expect(store.state.notice).toContain("остановил не вы");
   });
 
   it("чат не применяет без подтверждения и не обещает неподключённое", async () => {
@@ -83,7 +94,39 @@ describe("действия идут через сервис", () => {
     store.send("да");
     await settled();
     expect(api.pause).toHaveBeenCalledOnce();
-    store.send("Измени бюджет на 30000");
+    store.send("Поменяй район на Арбат");
     expect(store.state.msgs.at(-1)?.text).toContain("ничего не изменил");
+  });
+
+  it("бюджет из чата: сначала подтверждение, потом сервис; ниже потраченного не предлагает", async () => {
+    const api = fakeApi({ setBudget: vi.fn(async () => ({ status: "applied", cuts: 1 })) } as Partial<Api>);
+    const store = await open(api);
+    store.send("Поставь бюджет 1000");
+    expect(store.state.msgs.at(-1)?.text).toContain("уже потрачено 1 500 ₽");
+    expect(store.state.pending).toBeNull();
+    store.send("Измени бюджет на 15000");
+    expect(store.state.pending).toEqual({ action: "setting", value: ["budget", 15000] });
+    expect(store.state.msgs.at(-1)?.text).toContain("Сначала снижу лимиты в Яндексе");
+    store.send("да");
+    await settled();
+    expect(api.setBudget).toHaveBeenCalledWith(15000, expect.any(String));
+    expect(store.state.msgs.at(-1)?.text).toContain("Бюджет месяца теперь 15 000 ₽, был 20 000 ₽");
+  });
+
+  it("включение из чата только после подтверждения", async () => {
+    const api = fakeApi({ resume: vi.fn(async () => ({ resumed: ["anna:1"], refused: [], failed: [] })) } as Partial<Api>);
+    const store = await open(api);
+    store.set({ paused: true });
+    store.send("Включи рекламу");
+    expect(api.resume).not.toHaveBeenCalled();
+    expect(store.state.pending).toEqual({ action: "pause" });
+  });
+
+  it("ответ о клиентах подставляется, только если он за ту же неделю", async () => {
+    const answer = { since: "2026-11-09", until: "2026-11-15", leads: 2, clients: 1 };
+    const store = await open(fakeApi({ overview: vi.fn(async () => ({ ...overview(), clients: answer })) } as Partial<Api>));
+    expect(store.state.clients).toBe(1);
+    const old = await open(fakeApi({ overview: vi.fn(async () => ({ ...overview(), clients: { ...answer, until: "2026-11-14" } })) } as Partial<Api>));
+    expect(old.state.clients).toBeNull();
   });
 });

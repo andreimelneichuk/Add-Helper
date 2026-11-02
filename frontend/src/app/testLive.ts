@@ -12,7 +12,7 @@ export const change: HistoryLine = { ref: "change-5", at: "2026-11-01T10:00:00Z"
 export function overview(alerts: Overview["alerts"] = []): Overview {
   const period = { account: "anna", rules_version: "1", starts_at: "2026-11-01T00:00:00Z", ends_at: "2026-12-01T00:00:00Z", hard_limit: 20000 * MILLION, reserve_bp: 0, state: "active", stop_pending: false, spent: 1500 * MILLION, data_as_of: null, opening_balance: null, opening_spent: null, last_balance: 7000 * MILLION, balance_checked_at: null };
   return {
-    today: "2026-11-15", since: "2026-11-01", until: "2026-11-15", alerts, ratios, totals: totals(0, 0), previous: totals(0, 0),
+    today: "2026-11-15", since: "2026-11-01", until: "2026-11-15", alerts, ratios, clients: null, totals: totals(0, 0), previous: totals(0, 0),
     money: [{ period, spendable: 0, elapsed_bp: 0, forecast: null, balance_gap: 0, balance_tolerance: 0 }],
     campaigns: [{ account: "anna", campaign_id: "1", name: "Маникюр", state: "on", limit: null, totals: totals(0, 0), ratios }],
     days: [{ day: "2026-11-15", totals: totals(700, 2) }, { day: "2026-11-02", totals: totals(100, 1) }],

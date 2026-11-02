@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../api";
 import type { Api } from "../../api";
-import { fakeApi, open } from "../testLive";
+import { fakeApi, open, settled } from "../testLive";
 import { Settings } from "./Settings";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -73,5 +73,34 @@ describe("настройки на настоящих данных", () => {
     await userEvent.click(screen.getByRole("button", { name: "Выйти" }));
     expect(api.logout).toHaveBeenCalledOnce();
     expect(assign).toHaveBeenCalledWith("/");
+  });
+});
+
+describe("бюджет на настоящих данных", () => {
+  it("снижение спрашивает подтверждение и объясняет порядок, затем уходит в сервис", async () => {
+    const api = fakeApi({ setBudget: vi.fn(async () => ({ status: "applied", cuts: 1 })) } as Partial<Api>);
+    const store = await open(api);
+    render(<Settings store={store} />);
+    const input = screen.getByLabelText("Бюджет в месяц, ₽");
+    await userEvent.clear(input);
+    await userEvent.type(input, "15000");
+    await userEvent.click(screen.getByRole("button", { name: "Изменить бюджет" }));
+    expect(api.setBudget).not.toHaveBeenCalled();
+    const confirm = screen.getByRole("group", { name: "Подтверждение бюджета" });
+    expect(confirm).toHaveTextContent("Сначала снижу лимиты в Яндексе");
+    await userEvent.click(within(confirm).getByRole("button", { name: "Применить" }));
+    await settled();
+    expect(api.setBudget).toHaveBeenCalledWith(15000, expect.any(String));
+    expect(store.state.notice).toContain("Бюджет месяца теперь 15 000 ₽");
+  });
+
+  it("ниже потраченного не даёт отправить", async () => {
+    const api = fakeApi();
+    render(<Settings store={await open(api)} />);
+    const input = screen.getByLabelText("Бюджет в месяц, ₽");
+    await userEvent.clear(input);
+    await userEvent.type(input, "1000");
+    expect(screen.getByRole("alert")).toHaveTextContent("уже потрачено 1 500 ₽");
+    expect(screen.getByRole("button", { name: "Изменить бюджет" })).toBeDisabled();
   });
 });

@@ -6,7 +6,7 @@ import { ALERT } from "../cabinet/words";
 import { MICROS_PER_RUBLE } from "../money";
 import { leadsWord, rub } from "./data";
 import type { Ad, Day, HistoryEntry, HistoryKind, Live, LiveAlert, Period, PeriodStats } from "./data";
-import { initialState, msg, Store, week } from "./store";
+import { budgetOf, initialState, msg, Store, week } from "./store";
 import type { State } from "./store";
 
 const MONTHS = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
@@ -14,8 +14,7 @@ const MONTHS_OF = ["января", "февраля", "марта", "апреля
 const KIND_TITLE: Record<string, string> = { set_limit: "Изменил дневной лимит", pause: "Остановил показы", pause_ad: "Отключил объявление", resume_ad: "Включил объявление" };
 const UNDOABLE = new Set(["set_limit", "pause_ad", "resume_ad"]);
 const STATUS_WORD: Record<string, string> = { planned: "Запланировано", applying: "Применяется", failed: "Не удалось", rejected: "Отклонено правилами", conflict: "Изменено кем-то ещё" };
-const COMMANDS = "Через чат пока могу поставить на паузу, отменить последнее изменение и рассказать цифры. Другие команды ещё не подключены, поэтому ничего не изменил.";
-const NO_RESUME = "Снять паузу отсюда пока нельзя: включение ещё не подключено. Показы можно включить в кабинете Яндекса.";
+const COMMANDS = "Через чат пока могу поставить на паузу и снять её, сменить бюджет месяца, отменить последнее изменение и рассказать цифры. Другие команды ещё не подключены, поэтому ничего не изменил.";
 
 export const rubles = (micros: number | null | undefined) => (micros ?? 0) / MICROS_PER_RUBLE;
 const rublesOrNull = (micros: number | null | undefined) => (micros === null || micros === undefined ? null : rubles(micros));
@@ -157,6 +156,8 @@ export async function loadLive(api: Api, name: string): Promise<Partial<State>> 
     ads,
     hist: history.map((line) => toEntry(line, ads)),
     adsOff: Object.fromEntries(ads.filter((a) => a.tag === "отключено").map((a) => [a.id, true])),
+    // Ответ о клиентах показываем, только если он за то же окно, что и цифры недели: иначе цена клиента соврёт.
+    clients: overview.clients && overview.clients.since === weekStart && overview.clients.until === today ? overview.clients.clients : null,
     paused: running.length > 0 && running.every((c) => c.state === "suspended") && !alerts.some((a) => a.tone === "bad"),
   };
 }
@@ -195,7 +196,13 @@ export class LiveStore extends Store {
     const s = this.state;
     switch (a.action) {
       case "pause": {
-        if (s.paused) return NO_RESUME;
+        if (s.paused) {
+          const { refused } = await this.api.resume(crypto.randomUUID());
+          const budget = budgetOf(s);
+          const check = budget > 0 ? `бюджет ${rub(budget)}` : "бюджет месяца";
+          const rest = refused.length ? " Часть направлений не включил: их остановили не вы, а защита бюджета." : "";
+          return `Снял паузу, показы идут. Вы попросили. Перед включением проверил, что расход не выйдет за ${check}.${rest} Снова остановить можно кнопкой «Пауза».`;
+        }
         const { stopped } = await this.api.pause(crypto.randomUUID());
         return stopped.length ? "Поставил на паузу. Настройки сохранены, запись в истории." : "Идущих показов нет, останавливать нечего.";
       }
@@ -213,6 +220,16 @@ export class LiveStore extends Store {
         if (status === "pending") return "Яндекс не ответил, отмена записана и будет повторена.";
         this.set({ undone: { ...this.state.undone, [a.value]: true } });
         return `Отменил: ${h?.title ?? "изменение"}. Исходная запись осталась в истории.`;
+      }
+      case "setting": {
+        const [key, value] = a.value;
+        if (key !== "budget") return "Это действие ещё не подключено к сервису, ничего не изменилось.";
+        const before = budgetOf(s);
+        const { cuts } = await this.api.setBudget(Number(value), crypto.randomUUID());
+        const how = cuts
+          ? `Сначала снизил лимиты ${cuts} ${cuts === 1 ? "направления" : "направлений"} в Яндексе, потом сменил бюджет: так расход не выйдет за новую сумму ни в какой момент.`
+          : "Лимиты в Яндексе не менялись: они уже помещаются в новую сумму.";
+        return `Бюджет месяца теперь ${rub(Number(value))}, был ${rub(before)}. Вы попросили. ${how} Вернуть прежний можно здесь же, в настройках.`;
       }
       case "balance":
         await this.api.confirmBalance(s.live!.account!);
@@ -249,8 +266,18 @@ export class LiveStore extends Store {
       if (/(^|\s)(нет|не|отмен\S*|оставь)(\s|$)/.test(t)) return this.reply(text, "Хорошо, ничего не меняю.", { pending: null });
       if (/(^|\s)(да|примени\S*|подтвер\S*)(\s|$)/.test(t)) { this.set({ input: "" }); return this.run(s.pending, text); }
     }
+    if (s.paused && /включ|сними|возобнов/.test(t)) {
+      return this.reply(text, "Понял так: снять паузу. Перед включением проверю, что расход не выйдет за бюджет. Применить?", { pending: { action: "pause" } });
+    }
+    const amount = Number((t.match(/\d[\d\s]*/) ?? ["0"])[0].replace(/\s/g, ""));
+    if (/бюджет/.test(t) && amount >= 1000) {
+      const spent = s.live?.spent ?? 0;
+      if (amount < spent) return this.reply(text, `В этом месяце уже потрачено ${rub(spent)}, бюджет не может быть меньше.`);
+      const lower = amount < budgetOf(s);
+      return this.reply(text, `Понял так: бюджет ${rub(amount)} в месяц.${lower ? " Сначала снижу лимиты в Яндексе, потом сменю бюджет." : ""} Применить?`, { pending: { action: "setting", value: ["budget", amount] } });
+    }
     if (/пауз|останов/.test(t)) {
-      if (s.paused) return this.reply(text, NO_RESUME);
+      if (s.paused) return this.reply(text, "Реклама уже на паузе. Чтобы включить, напишите «включи».");
       return this.reply(text, "Понял так: остановить все показы. Настройки сохранятся. Применить?", { pending: { action: "pause" } });
     }
     if (/отмени/.test(t)) {

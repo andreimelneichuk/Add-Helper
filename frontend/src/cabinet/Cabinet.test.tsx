@@ -11,6 +11,7 @@ const totals = (impressions: number, clicks: number, cost: number, conversions: 
 function overview(gap: number, alerts: Overview["alerts"] = []): Overview {
   return {
     today: "2026-11-10",
+    clients: null,
     since: "2026-10-28",
     until: "2026-11-10",
     previous: totals(1800, 60, 900, 2),
