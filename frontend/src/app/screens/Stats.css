@@ -14,6 +14,12 @@
 .stats-check { display: flex; justify-content: space-between; gap: var(--gap); margin-top: 4px; }
 .stats-check-note { margin-top: 8px; }
 
+.stats-own { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.stats-own label { flex: 1 1 140px; max-width: 200px; min-width: 0; }
+.stats-own-note { width: 100%; }
+.stats-dir { display: flex; flex-direction: column; gap: 8px; }
+.stats-dir-head { display: flex; }
+
 @media (max-width: 767px) {
   .stats-grid { grid-template-columns: minmax(0, 1fr); }
 }

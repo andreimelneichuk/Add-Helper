@@ -21,4 +21,6 @@
 
 @media (max-width: 767px) {
   .set { grid-template-columns: minmax(0, 1fr); }
+  .set-service { grid-template-columns: minmax(0, 1fr) auto; }
+  .set-service > :first-child { grid-column: 1 / -1; }
 }
