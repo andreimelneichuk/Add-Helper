@@ -14,6 +14,7 @@ from sqlalchemy import (
     Uuid,
     column,
     func,
+    literal,
     select,
     table,
     true,
@@ -83,6 +84,7 @@ CAMPAIGNS = table(
     column("name", Text),
     column("state", Text),
     column("limit_micros", BigInteger),
+    column("targeting", JSONB),
 )
 STATS = table(
     "campaign_stats",
@@ -210,6 +212,34 @@ class SqlDashboard:
 
     async def note_campaign_state(self, account: str, campaign_id: str, state: str) -> None:
         await self._note(CAMPAIGNS, account, CAMPAIGNS.c.campaign_id == campaign_id, state)
+
+    async def note_targeting(self, account: str, campaign_id: str, patch: dict[str, Any]) -> None:
+        """После применённого изменения показа: иначе экран до синхронизации покажет старое."""
+        current = func.coalesce(CAMPAIGNS.c.targeting, literal({}, JSONB))
+        statement = (
+            CAMPAIGNS.update()
+            .where(
+                CAMPAIGNS.c.business_id == self._business_id,
+                CAMPAIGNS.c.account == account,
+                CAMPAIGNS.c.campaign_id == campaign_id,
+            )
+            .values(targeting=current.op("||")(literal(patch, JSONB)))
+        )
+        async with self._sessions() as session, session.begin():
+            await session.execute(statement)
+
+    async def targetings(self, account: str | None = None) -> list[tuple[str, str, dict[str, Any]]]:
+        """Кабинет, кампания и что о её показе известно."""
+        statement = (
+            select(CAMPAIGNS.c.account, CAMPAIGNS.c.campaign_id, CAMPAIGNS.c.targeting)
+            .where(CAMPAIGNS.c.business_id == self._business_id)
+            .order_by(CAMPAIGNS.c.account, CAMPAIGNS.c.campaign_id)
+        )
+        if account is not None:
+            statement = statement.where(CAMPAIGNS.c.account == account)
+        async with self._sessions() as session:
+            rows = (await session.execute(statement)).all()
+        return [(row.account, row.campaign_id, dict(row.targeting or {})) for row in rows]
 
     async def _note(self, target: Any, account: str, which: Any, state: str) -> None:
         statement = (

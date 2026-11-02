@@ -4,6 +4,11 @@ from datetime import datetime, timedelta
 from adhelper.budget.domain.limits import CampaignBudget, LimitChange, LimitDecision
 from adhelper.budget.domain.ports import PlatformUnavailable
 from adhelper.budget.domain.watch import SpendSnapshot
+from adhelper.campaigns.domain.ports import Targeting
+from adhelper.campaigns.domain.targeting import Schedule
+
+# Новая кампания в Директе показывается круглосуточно; регион задаём Москвой.
+DEFAULT_TARGETING = Targeting(Schedule((0, 1, 2, 3, 4, 5, 6), 0, 24), (213,))
 
 
 @dataclass
@@ -33,6 +38,9 @@ class FakePlatform:
         self.stats_frozen_at: datetime | None = None
         self.faults: list[Fault] = []
         self.ads: dict[str, bool] = {}
+        # Только изменённые; остальные кампании показываются по DEFAULT_TARGETING.
+        self.targeting: dict[str, Targeting] = {}
+        self.schedule_calls = 0
         self.set_limit_calls: list[LimitChange] = []
         self.rejections: list[LimitDecision] = []
         self.limit_sums = [self.limit_sum]
@@ -75,6 +83,25 @@ class FakePlatform:
     async def set_ad_active(self, account: str, ad_ref: str, active: bool) -> None:
         self._check_fault("set_ad_active", after_apply=False)
         self.ads[ad_ref] = active
+
+    async def read_targeting(self, account: str, campaign_id: str) -> Targeting | None:
+        self._check_fault("read_targeting", after_apply=False)
+        if campaign_id not in self.campaigns:
+            return None
+        return self.targeting.get(campaign_id, DEFAULT_TARGETING)
+
+    async def set_schedule(self, account: str, campaign_id: str, schedule: Schedule) -> None:
+        self._check_fault("set_schedule", after_apply=False)
+        current = self.targeting.get(campaign_id, DEFAULT_TARGETING)
+        self.targeting[campaign_id] = replace(current, schedule=schedule)
+        self.schedule_calls += 1
+        self._check_fault("set_schedule", after_apply=True)
+
+    async def set_regions(self, account: str, campaign_id: str, regions: tuple[int, ...]) -> None:
+        self._check_fault("set_regions", after_apply=False)
+        current = self.targeting.get(campaign_id, DEFAULT_TARGETING)
+        self.targeting[campaign_id] = replace(current, regions=regions)
+        self._check_fault("set_regions", after_apply=True)
 
     async def read_campaigns(self, account: str) -> list[CampaignBudget]:
         self._check_fault("read_campaigns", after_apply=False)

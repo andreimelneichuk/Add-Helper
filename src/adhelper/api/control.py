@@ -18,6 +18,8 @@ from adhelper.budget.application.owner import (
     resume_account,
 )
 from adhelper.budget.application.preflight import StoredPeriodPreflight
+from adhelper.campaigns.adapters.rules_file import load_targeting_rules
+from adhelper.campaigns.application.targeting import TARGETING_PREFIX, vitrine_patch
 from adhelper.ledger.adapters.sql import PostgresAccountLock, SqlChangeRepository
 from adhelper.ledger.application.owner import AD_PREFIX, set_ad_active
 from adhelper.ledger.application.rollback import RollbackStatus, rollback_change
@@ -90,7 +92,7 @@ def _ledger(request: Request, business_id: UUID, platform: Any) -> Ledger:
     sessions = _sessions(request)
     return Ledger(
         repository=SqlChangeRepository(sessions, business_id),
-        gateway=RoutingGateway(PlatformChangeGateway(platform), platform),
+        gateway=RoutingGateway(PlatformChangeGateway(platform), platform, platform),
         lock=PostgresAccountLock(request.app.state.engine),
         max_attempts=MAX_CHANGE_ATTEMPTS,
         preflight=StoredPeriodPreflight(
@@ -274,6 +276,15 @@ def control_router() -> APIRouter:
         result = await rollback_change(_ledger(request, business_id, platform), change_id)
         if result.status in FINAL_REFUSAL:
             raise HTTPException(status.HTTP_409_CONFLICT, FINAL_REFUSAL[result.status])
+        if result.status is RollbackStatus.APPLIED and change.target_ref.startswith(
+            TARGETING_PREFIX
+        ):
+            restored = {key: change.before[key] for key in change.planned}
+            await SqlDashboard(_sessions(request), business_id).note_targeting(
+                change.account,
+                change.target_ref.removeprefix(TARGETING_PREFIX),
+                vitrine_patch(restored, load_targeting_rules()),
+            )
         if result.status is RollbackStatus.APPLIED and change.target_ref.startswith(AD_PREFIX):
             state = "on" if change.before.get("active") else "suspended"
             await SqlDashboard(_sessions(request), business_id).note_ad_state(
