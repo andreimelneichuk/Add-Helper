@@ -24,7 +24,8 @@ class DailyStat:
     spend: int
     leads: int
     clicks: int
-    visits: int
+    # None: визиты неизвестны (Метрика не подключена), а не ноль.
+    visits: int | None
     trusted: bool = True
 
 
@@ -131,3 +132,31 @@ def classify(stats: AdStats, target: int, rules: AutopilotRules) -> Evaluation:
     if result.p_good_bp >= rules.good_probability_bp:
         return Evaluation(Verdict.EFFICIENT, result)
     return Evaluation(Verdict.BORDERLINE, result)
+
+
+@dataclass(frozen=True)
+class AdDay:
+    """Один день объявления для симулятора."""
+
+    ref: str
+    campaign_id: str
+    group_id: str
+    spend: int
+    leads: int
+    clicks: int
+    visits: int | None
+
+
+@dataclass(frozen=True)
+class Day:
+    day: date
+    ads: Sequence[AdDay]
+    platform_incident: bool = False
+
+
+@dataclass(frozen=True)
+class History:
+    """Записанные дни кабинета и текущие лимиты кампаний."""
+
+    days: list[Day]
+    limits: dict[str, int]
