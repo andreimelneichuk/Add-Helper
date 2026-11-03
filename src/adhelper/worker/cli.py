@@ -12,10 +12,13 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from adhelper.accounts.adapters.crypto import AesGcmCipher, CipherConfigError
 from adhelper.accounts.adapters.sql import logins_of_business
+from adhelper.autopilot.adapters.data import SqlHistory, autopilot_accounts
 from adhelper.autopilot.adapters.rules_file import load_rules as load_autopilot_rules
+from adhelper.autopilot.application.simulator import Difference, compare
 from adhelper.budget.adapters.rules_file import load_rules as load_budget_rules
 from adhelper.budget.application.emergency import StopReport, stop_account
 from adhelper.business.adapters.rules_file import load_site_rules
@@ -33,11 +36,12 @@ from adhelper.worker.demo import (
     seed_demo,
     write_demo_env,
 )
-from adhelper.worker.runtime import Runtime, open_runtime
+from adhelper.worker.runtime import CURRENT_AUTOPILOT_RULES, Runtime, open_runtime
 
 RULE_LOADERS = (
     (load_budget_rules, "budget-1"),
     (load_autopilot_rules, "autopilot-1"),
+    (load_autopilot_rules, "autopilot-2"),
     (load_experiment_rules, "experiments-1"),
     (load_creative_rules, "creatives-1"),
     (load_creative_rules, "creatives-2"),
@@ -256,6 +260,82 @@ async def _demo_seed(settings: Settings, mismatch: bool) -> int:
     return 0
 
 
+DECISION_WORDS = {
+    None: "ничего",
+    "pause_ad": "пауза объявления",
+    "increase_limit": "рост лимита",
+    "start_test": "тест",
+    "protect_only": "только защита",
+}
+MICROS_PER_RUB = 1_000_000
+
+
+def describe_difference(difference: Difference) -> str:
+    before = DECISION_WORDS.get(difference.before, difference.before)
+    after = DECISION_WORDS.get(difference.after, difference.after)
+    return f"{difference.day.isoformat()} {difference.ref}: {before} → {after}"
+
+
+async def history_report(
+    sessions: async_sessionmaker[AsyncSession],
+    business_id: uuid.UUID,
+    before: str,
+    after: str,
+    target_rubles: int | None,
+) -> list[str]:
+    """Две версии правил на записанной истории каждого кабинета бизнеса. Только чтение."""
+    logins = await logins_of_business(sessions, business_id)
+    goals = {
+        login: goal for b, login, goal in await autopilot_accounts(sessions) if b == business_id
+    }
+    if not logins:
+        return ["У бизнеса нет подключённых кабинетов с историей."]
+    old, new = load_autopilot_rules(before), load_autopilot_rules(after)
+    lines: list[str] = []
+    for login in logins:
+        target = target_rubles * MICROS_PER_RUB if target_rubles else goals.get(login)
+        if not target:
+            return ["Нет цели цены обращения: задайте её в кабинете или через --target."]
+        history = await SqlHistory(sessions, business_id).load(login)
+        if not history.days:
+            lines.append(f"Кабинет {login}: истории нет.")
+            continue
+        first, last = history.days[0].day, history.days[-1].day
+        lines.append(
+            f"Кабинет {login}: {len(history.days)} дней ({first.isoformat()} — {last.isoformat()}),"
+            f" цель {target // MICROS_PER_RUB} ₽, правила {before} → {after}."
+        )
+        differences = compare(history.days, target, old, new, history.limits)
+        lines += [describe_difference(d) for d in differences]
+        lines.append(
+            f"Расхождений: {len(differences)}." if differences else "Решения не изменились."
+        )
+    return lines
+
+
+async def _simulate(
+    settings: Settings, business_id: uuid.UUID, before: str, after: str, target: int | None
+) -> int:
+    try:
+        async with open_runtime(settings) as runtime:
+            lines = await history_report(runtime.sessions, business_id, before, after, target)
+    except (SQLAlchemyError, OSError) as error:
+        # Только тип ошибки: текст может содержать адрес и пароль подключения.
+        _say(f"База недоступна: {type(error).__name__}")
+        return 1
+    for line in lines:
+        _say(line)
+    return 0
+
+
+def _known_rules(version: str) -> bool:
+    try:
+        load_autopilot_rules(version)
+    except (FileNotFoundError, TypeError, ValueError):
+        return False
+    return True
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="adhelper")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -266,6 +346,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     demo.add_argument(
         "--mismatch", action="store_true", help="Счёт не сходится со статистикой, реклама стоит"
     )
+    simulate = commands.add_parser(
+        "simulate", help="Сравнить две версии правил автопилота на истории кабинета"
+    )
+    simulate.add_argument("--business", type=uuid.UUID, required=True)
+    simulate.add_argument("--rules", default="autopilot-1", help="Прежняя версия правил")
+    simulate.add_argument("--against", default=CURRENT_AUTOPILOT_RULES, help="Новая версия")
+    simulate.add_argument("--target", type=int, help="Цель цены обращения в рублях")
     args = parser.parse_args(argv)
 
     settings = Settings()
@@ -273,6 +360,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _print_checks(asyncio.run(run_checks(settings)))
     if args.command == "demo-seed":
         return asyncio.run(_demo_seed(settings, args.mismatch))
+    if args.command == "simulate":
+        unknown = [v for v in (args.rules, args.against) if not _known_rules(v)]
+        if unknown:
+            _say(f"Нет таких правил: {', '.join(unknown)}")
+            return 2
+        return asyncio.run(
+            _simulate(settings, args.business, args.rules, args.against, args.target)
+        )
     return asyncio.run(_emergency_stop(settings, args.business))
 
 

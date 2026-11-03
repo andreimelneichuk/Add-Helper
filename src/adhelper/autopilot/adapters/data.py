@@ -10,7 +10,7 @@
 """
 
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import BigInteger, Date, DateTime, Text, Uuid, column, func, select, table
@@ -19,9 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from adhelper.autopilot.domain.health import Window
 from adhelper.autopilot.domain.model import (
     AccountData,
+    AdDay,
     AdStats,
     CampaignStats,
     DailyStat,
+    Day,
+    History,
     mature_totals,
 )
 from adhelper.autopilot.domain.rules import AutopilotRules
@@ -274,3 +277,49 @@ class SqlAutopilotData:
             DECISIONS.c.decided_at > since,
         )
         return set(await session.scalars(statement))
+
+
+class SqlHistory:
+    """Записанные дни кабинета для симулятора: те же подмены, что у суточного цикла.
+
+    Объявление — своя группа, визиты неизвестны, сбоев площадки в прошлом не отмечаем.
+    """
+
+    def __init__(self, sessions: async_sessionmaker[AsyncSession], business_id: UUID) -> None:
+        self._sessions = sessions
+        self._business_id = business_id
+
+    async def load(self, account: str) -> History:
+        own_ads = (ADS.c.business_id == self._business_id) & (ADS.c.account == account)
+        statement = (
+            select(
+                AD_STATS.c.day,
+                AD_STATS.c.ad_id,
+                ADS.c.campaign_id,
+                AD_STATS.c.cost_micros,
+                AD_STATS.c.conversions,
+                AD_STATS.c.clicks,
+            )
+            .join(
+                ADS,
+                (ADS.c.business_id == AD_STATS.c.business_id)
+                & (ADS.c.account == AD_STATS.c.account)
+                & (ADS.c.ad_id == AD_STATS.c.ad_id),
+            )
+            .where(own_ads)
+            .order_by(AD_STATS.c.day, AD_STATS.c.ad_id)
+        )
+        limits_statement = select(CAMPAIGNS.c.campaign_id, CAMPAIGNS.c.limit_micros).where(
+            (CAMPAIGNS.c.business_id == self._business_id) & (CAMPAIGNS.c.account == account)
+        )
+        async with self._sessions() as session:
+            rows = (await session.execute(statement)).all()
+            limits = {cid: int(limit) for cid, limit in await session.execute(limits_statement)}
+        by_day: dict[date, list[AdDay]] = defaultdict(list)
+        for day, ad_id, campaign_id, cost, conversions, clicks in rows:
+            ref = f"{AD_PREFIX}{ad_id}"
+            by_day[day].append(
+                AdDay(ref, campaign_id, ref, int(cost), int(conversions), int(clicks), None)
+            )
+        days = [Day(day, ads) for day, ads in by_day.items()]
+        return History(days, limits)
