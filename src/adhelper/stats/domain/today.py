@@ -16,6 +16,8 @@ UNDOABLE = frozenset(
 )
 # Чьи действия напоминаем: свои и сервиса. Изменения из кабинета и сами отмены — нет.
 ACTORS = frozenset({"autopilot", "user", "experiment"})
+ASKED = "Вы попросили."
+UNDO_HINT = "Отменить можно в истории."
 ACTION_TITLE = {
     "set_limit": "Изменил дневной лимит",
     "resume": "Снял паузу",
@@ -200,12 +202,14 @@ def _last_action(facts: TodayFacts, rules: TodayRules) -> Card | None:
             continue
         if line.status != "applied" or line.reverted:
             continue
-        who = "Вы попросили. " if line.source == "user" else ""
+        # Часть объяснений уже говорит, кто попросил и как отменить: не повторяем.
+        who = "" if line.source != "user" or ASKED in line.explanation else f"{ASKED} "
+        tail = "" if UNDO_HINT in line.explanation else f" {UNDO_HINT}"
         return Card(
             "last_action",
             "info",
             ACTION_TITLE[line.kind],
-            f"{who}{line.explanation} Отменить можно в истории.",
+            f"{who}{line.explanation}{tail}",
             "undo",
             line.ref,
             rules.version,
