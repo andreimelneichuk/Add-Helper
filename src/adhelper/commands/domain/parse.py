@@ -90,8 +90,7 @@ def _best(text: str, names: Mapping[str, str]) -> str | None:
     """
     words = _stems(text)
     scores = {
-        key: (len(_stems(name) & words), -len(_stems(name) - words))
-        for key, name in names.items()
+        key: (len(_stems(name) & words), -len(_stems(name) - words)) for key, name in names.items()
     }
     top = max(scores.values(), default=(0, 0))
     if top[0] == 0:

@@ -1,3 +1,4 @@
+import type { TodayCard } from "../../../api";
 import { DAYS, leadsWord, rub } from "../../data";
 import { budgetOf, spentOf, week } from "../../store";
 import type { State, Store } from "../../store";
@@ -33,8 +34,22 @@ function liveMessage(s: State, store: Store): Message {
   return calmOf(s);
 }
 
+/** Действия карточки из закрытого набора сервиса: экран знает, что по ним открыть. */
+function cardMessage(card: TodayCard, store: Store): Message {
+  const toHistory = () => store.goView("history");
+  const actions: Decision[] =
+    card.action === "balance" ? [{ label: "Я знаю причину", pick: () => store.ask({ action: "balance" }) }, { label: "Что вы сделали", pick: toHistory, quiet: true }]
+      : card.action === "ads" ? [{ label: "Посмотреть объявления", pick: () => store.goView("ads") }]
+        : card.action === "settings" ? [{ label: card.kind === "alert:platform_not_connected" ? "Подключить кабинет" : card.kind === "alert:ads_no_profile" ? "Заполнить профиль" : "Открыть настройки", pick: () => store.goView("settings") }]
+          : card.action === "resume" ? [{ label: "Включить", pick: () => store.run({ action: "pause" }) }]
+            : card.action === "undo" && card.ref ? [{ label: "Отменить", pick: () => { store.goView("history"); store.askUndo(card.ref!); }, quiet: true }]
+              : card.action === "history" ? [{ label: "Открыть историю", pick: toHistory }]
+                : [];
+  return { tone: card.tone, title: card.title, text: card.text, actions, calm: card.kind === "summary" || card.kind === "last_action" };
+}
+
 function messageOf(s: State, store: Store): Message {
-  if (s.live) return liveMessage(s, store);
+  if (s.live) return s.live.cards?.length ? cardMessage(s.live.cards[0]!, store) : liveMessage(s, store);
   if (s.paused) return { tone: "bad", title: "Реклама на паузе", text: "Показы останавливаются в течение 5 минут, настройки сохранены. Деньги не тратятся.", actions: [{ label: "Включить", pick: () => store.run({ action: "pause" }) }] };
   const toHistory = () => store.goView("history");
   switch (s.situation) {
@@ -67,7 +82,37 @@ function messageOf(s: State, store: Store): Message {
   }
 }
 
+/** Остальные карточки ленты сервиса, по порядку из его правил. Лента конечна. */
+function More({ cards, store }: { cards: TodayCard[]; store: Store }) {
+  return (
+    <section className="ah-panel ov-more" aria-label="Ещё на сегодня">
+      <ul>
+        {cards.map((card) => {
+          const m = cardMessage(card, store);
+          return (
+            <li key={card.kind + (card.ref ?? "")} className={`ov-more-item ov-more-${card.tone}`}>
+              <div className="ov-more-body"><h3>{m.title}</h3>{m.text && <p>{m.text}</p>}</div>
+              {m.actions.map((a) => <button key={a.label} type="button" className="ah-btn" onClick={a.pick}>{a.label}</button>)}
+            </li>
+          );
+        })}
+      </ul>
+      <p className="ov-more-done">На сегодня всё.</p>
+    </section>
+  );
+}
+
 export function Attention({ s, store }: { s: State; store: Store }) {
+  const rest = s.live?.cards?.slice(1) ?? [];
+  return (
+    <>
+      <Main s={s} store={store} />
+      {rest.length > 0 && <More cards={rest} store={store} />}
+    </>
+  );
+}
+
+function Main({ s, store }: { s: State; store: Store }) {
   const message = messageOf(s, store);
   return (
     <section role={message.calm ? undefined : "status"} className={`ov-attention ov-attention-${message.tone}`}>

@@ -497,3 +497,50 @@ async def test_display_belongs_to_owner_only(
     other = browser()
     await _login(other, provider, BORIS)
     assert (await other.get(f"/api/businesses/{business}/display")).status_code == 404
+
+
+async def test_today_cards_come_ordered_from_rules(
+    anna: Anna, platform: FakePlatform, sessions: Sessions
+) -> None:
+    client, csrf, business = anna
+    _app(client).state.platform_for = lambda _b, _a: platform
+    base = f"/api/businesses/{business}"
+    calm = (await client.get(f"{base}/today")).json()
+    assert calm["rules"] == "today-1"
+    assert calm["cards"][0]["kind"] == "summary"
+
+    await client.post(f"{base}/pause", json={"request_id": "p1"}, headers=csrf)
+    paused = (await client.get(f"{base}/today")).json()["cards"]
+    assert paused[0]["kind"] == "paused"
+    assert paused[0]["action"] == "resume"
+    assert paused[0]["rules"] == "today-1"
+    assert len(paused) <= 5
+
+
+async def test_today_shows_recent_action_with_undo(anna: Anna, platform: FakePlatform) -> None:
+    client, csrf, business = anna
+    _app(client).state.platform_for = lambda _b, _a: platform
+    # Время записи журнала ставит база, поэтому часы сервиса берём настоящие.
+    _app(client).state.clock = lambda: datetime.now(UTC)
+    base = f"/api/businesses/{business}"
+    await client.post(
+        f"{base}/ads/{LOGIN}/11/state", json={"active": False, "request_id": "a1"}, headers=csrf
+    )
+    shown = (await client.get(f"{base}/today")).json()["cards"]
+    last = next(card for card in shown if card["kind"] == "last_action")
+    assert last["action"] == "undo"
+    assert last["ref"].startswith("change-")
+    assert last["text"].startswith("Вы попросили.")
+
+    await client.post(
+        f"{base}/changes/{last['ref'].removeprefix('change-')}/rollback", headers=csrf
+    )
+    after = (await client.get(f"{base}/today")).json()["cards"]
+    assert "last_action" not in [card["kind"] for card in after]
+
+
+async def test_today_is_owners_only(anna: Anna, browser: Browser, provider: FakeProvider) -> None:
+    _client, _csrf, business = anna
+    other = browser()
+    await _login(other, provider, BORIS)
+    assert (await other.get(f"/api/businesses/{business}/today")).status_code == 404

@@ -127,12 +127,14 @@ export async function loadLive(api: Api, name: string): Promise<Partial<State>> 
   const weekStart = dayAt(dayNumber(today) - 6);
   const trailStart = dayAt(dayNumber(today) - 13);
   const since = monthStart < trailStart ? monthStart : trailStart;
-  const [overview, adsWeek, adsMonth, history, profile] = await Promise.all([
+  const [overview, adsWeek, adsMonth, history, profile, today_] = await Promise.all([
     api.overview({ since, until: today }),
     api.ads({ since: weekStart, until: today }),
     api.ads({ since: monthStart, until: today }),
     api.history(),
     api.profile().catch(() => null),
+    // Без ленты сервиса экран соберёт вывод сам из тех же данных.
+    api.today().catch(() => null),
   ]);
   const month = Number(today.slice(5, 7)) - 1;
   const year = Number(today.slice(0, 4));
@@ -148,6 +150,7 @@ export async function loadLive(api: Api, name: string): Promise<Partial<State>> 
     month: periodStats(`С 1 ${MONTHS_OF[month]}`, overview, monthStart, today, adsMonth),
   };
   const live: Live = {
+    cards: today_?.cards,
     name,
     today,
     monthName: MONTHS[month]!,

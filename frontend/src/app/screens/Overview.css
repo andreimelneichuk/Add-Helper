@@ -15,6 +15,18 @@
 .ov-attention-do { border-color: var(--on-accent); background: var(--on-accent); color: var(--tone); font-weight: 600; }
 .ov-attention-do:hover { border-color: var(--on-accent); }
 
+/* Остальные карточки ленты: компактно, цвет состояния только полоской слева */
+.ov-more ul { display: grid; gap: var(--gap); }
+.ov-more-item { display: flex; flex-wrap: wrap; align-items: center; gap: 8px var(--pad); padding-left: 12px; border-left: 4px solid var(--tone); }
+.ov-more-info { --tone: var(--accent-ink); }
+.ov-more-bad { --tone: var(--bad); }
+.ov-more-warn { --tone: var(--warn); }
+.ov-more-good { --tone: var(--good); }
+.ov-more-body { flex: 1 1 240px; min-width: 0; }
+.ov-more-body h3 { font-size: var(--t-title); font-weight: 700; }
+.ov-more-body p { margin-top: 2px; color: var(--muted); }
+.ov-more-done { margin-top: var(--gap); color: var(--muted); }
+
 /* Вопрос о клиентах */
 .ov-clients { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gap) var(--pad); }
 .ov-clients-text { flex: 1 1 280px; min-width: 0; }
