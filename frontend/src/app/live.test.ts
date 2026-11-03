@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api";
-import type { Api } from "../api";
-import { fakeApi, open, overview, settled } from "./testLive";
+import type { Api, Profile } from "../api";
+import { fakeApi, open, overview, said, settled } from "./testLive";
 import { rub } from "./data";
 import { statusText, week } from "./store";
 
@@ -85,26 +85,45 @@ describe("действия идут через сервис", () => {
     expect(store.state.notice).toContain("остановил не вы");
   });
 
-  it("чат не применяет без подтверждения и не обещает неподключённое", async () => {
-    const api = fakeApi();
+  it("чат не применяет без подтверждения и честно отказывает вне набора", async () => {
+    const api = fakeApi({ command: vi.fn(async () => said({ kind: "pause", confirm: "Понял так: остановить все показы. Настройки сохранятся. Применить?" })) } as Partial<Api>);
     const store = await open(api);
     store.send("Поставь на паузу");
+    await settled();
+    expect(api.command).toHaveBeenCalledWith("Поставь на паузу");
     expect(api.pause).not.toHaveBeenCalled();
     expect(store.state.pending).toEqual({ action: "pause" });
     store.send("да");
     await settled();
+    expect(api.command).toHaveBeenCalledOnce();
     expect(api.pause).toHaveBeenCalledOnce();
+    vi.mocked(api.command).mockResolvedValueOnce(said({ reply: "Район показов меняется в разделе «Реклама». Сам ничего не изменил." }));
     store.send("Поменяй район на Арбат");
+    await settled();
     expect(store.state.msgs.at(-1)?.text).toContain("ничего не изменил");
+    expect(store.state.pending).toBeNull();
+  });
+
+  it("отказ разборщика показывает как есть", async () => {
+    const api = fakeApi({ command: vi.fn(async () => { throw new ApiError(503, "Сервис занят"); }) } as Partial<Api>);
+    const store = await open(api);
+    store.send("пауза");
+    await settled();
+    expect(store.state.msgs.at(-1)?.text).toBe("Сервис занят");
+    expect(store.state.pending).toBeNull();
   });
 
   it("бюджет из чата: сначала подтверждение, потом сервис; ниже потраченного не предлагает", async () => {
     const api = fakeApi({ setBudget: vi.fn(async () => ({ status: "applied", cuts: 1 })) } as Partial<Api>);
     const store = await open(api);
+    vi.mocked(api.command).mockResolvedValueOnce(said({ kind: "set_budget", rubles: 1000 }));
     store.send("Поставь бюджет 1000");
+    await settled();
     expect(store.state.msgs.at(-1)?.text).toContain("уже потрачено 1 500 ₽");
     expect(store.state.pending).toBeNull();
+    vi.mocked(api.command).mockResolvedValueOnce(said({ kind: "set_budget", rubles: 15000 }));
     store.send("Измени бюджет на 15000");
+    await settled();
     expect(store.state.pending).toEqual({ action: "setting", value: ["budget", 15000] });
     expect(store.state.msgs.at(-1)?.text).toContain("Сначала снижу лимиты в Яндексе");
     store.send("да");
@@ -114,12 +133,78 @@ describe("действия идут через сервис", () => {
   });
 
   it("включение из чата только после подтверждения", async () => {
-    const api = fakeApi({ resume: vi.fn(async () => ({ resumed: ["anna:1"], refused: [], failed: [] })) } as Partial<Api>);
+    const api = fakeApi({
+      resume: vi.fn(async () => ({ resumed: ["anna:1"], refused: [], failed: [] })),
+      command: vi.fn(async () => said({ kind: "resume", confirm: "Понял так: снять паузу. Применить?" })),
+    } as Partial<Api>);
     const store = await open(api);
     store.set({ paused: true });
     store.send("Включи рекламу");
+    await settled();
     expect(api.resume).not.toHaveBeenCalled();
     expect(store.state.pending).toEqual({ action: "pause" });
+  });
+
+  it("дни без показов: сервис убирает только названные, часы направлений оставляет", async () => {
+    const days = said({ kind: "skip_days", days: [7], confirm: "Понял так: не показывать рекламу: воскресенье. Бюджет месяца не изменится. Применить?" });
+    const api = fakeApi({
+      command: vi.fn(async () => days),
+      skipDays: vi.fn(async () => ({ applied: ["anna:1"], unknown: ["anna:2"], unchanged: [] })),
+    } as Partial<Api>);
+    const store = await open(api);
+    store.send("не показывай по воскресеньям");
+    await settled();
+    expect(store.state.pending).toEqual({ action: "chat", value: days });
+    expect(api.skipDays).not.toHaveBeenCalled();
+    store.send("да");
+    await settled();
+    expect(api.skipDays).toHaveBeenCalledWith([6], expect.any(String));
+    const text = store.state.msgs.at(-1)?.text ?? "";
+    expect(text).toContain("Больше не показываю рекламу: воскресенье");
+    expect(text).toContain("У 1 направления часы ещё не прочитаны");
+  });
+
+  it("отказ сервиса по дням показывает как есть", async () => {
+    const api = fakeApi({
+      command: vi.fn(async () => said({ kind: "skip_days", days: [6, 7], confirm: "Понял так: … Применить?" })),
+      skipDays: vi.fn(async () => { throw new ApiError(409, "Часы показа направлений ещё не прочитаны у Яндекса, поэтому дни не меняю."); }),
+    } as Partial<Api>);
+    const store = await open(api);
+    store.send("без выходных");
+    await settled();
+    store.send("да");
+    await settled();
+    expect(store.state.msgs.at(-1)?.text).toContain("не прочитаны");
+  });
+
+  it("цена услуги из чата сохраняется в профиль и говорит про старые объявления", async () => {
+    const outdated = [{ account: "anna", ad_id: "11", headline: "Маникюр за 1200 ₽", text: "", numbers: ["1200"], replacing: true }];
+    const api = fakeApi({
+      command: vi.fn(async () => said({ kind: "set_price", service: "Маникюр", rubles: 1600, confirm: "Понял так: «Маникюр» теперь 1 600 ₽. Применить?" })),
+      saveProfile: vi.fn(async (p: Profile) => ({ ...p, outdated })),
+    } as Partial<Api>);
+    const store = await open(api);
+    store.send("маникюр теперь 1600");
+    await settled();
+    store.send("да");
+    await settled();
+    expect(api.saveProfile).toHaveBeenCalledWith(expect.objectContaining({ services: [{ name: "Маникюр", price: 1600 }] }));
+    const text = store.state.msgs.at(-1)?.text ?? "";
+    expect(text).toContain("Цена «Маникюр» в профиле теперь 1 600 ₽");
+    expect(text).toContain("«Маникюр за 1200 ₽» (1200)");
+  });
+
+  it("объявление: уже отключённое не трогает, последнее не отключает", async () => {
+    const api = fakeApi({ command: vi.fn(async () => said({ kind: "ad_off", ad: { id: "anna/11", name: "Маникюр" }, confirm: "Понял так: отключить объявление «Маникюр». Применить?" })) } as Partial<Api>);
+    const store = await open(api);
+    store.send("отключи объявление про маникюр");
+    await settled();
+    expect(store.state.msgs.at(-1)?.text).toContain("последнее объявление");
+    expect(store.state.pending).toBeNull();
+    store.set({ adsOff: { "anna/11": true } });
+    store.send("отключи объявление про маникюр");
+    await settled();
+    expect(store.state.msgs.at(-1)?.text).toContain("уже отключено");
   });
 
   it("ответ о клиентах подставляется, только если он за ту же неделю", async () => {

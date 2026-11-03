@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { ApiError } from "../api";
-import type { AdDraftProfile, AdSet, AdvertiserKind, Api, Me, Business, SiteFact, SiteRead, WizardAd } from "../api";
+import type { AdDraftProfile, AdSet, AdvertiserKind, Api, ChatCommand, Me, Business, SiteFact, SiteRead, WizardAd } from "../api";
 import { clearDraft, clearWizard, draftProfile, loadWizard, saveDraft, loadDraft, transferDraft } from "./draft";
 import type { TransferDeps } from "./draft";
 import { ADS, DAYS, FACTS, histFor, leadsWord, MIN_BUDGET, OPENING, OPTIONS, rub, STATS, STEPS } from "./data";
@@ -15,7 +15,9 @@ type Pending =
   | { action: "price"; value: number }
   | { action: "ad"; value: string }
   | { action: "adSave"; value: Ad }
-  | { action: "balance" };
+  | { action: "balance" }
+  // Команда из чата на настоящих данных: что именно сделать, понял сервис.
+  | { action: "chat"; value: ChatCommand };
 type Action = Pending | { action: "clients"; value: number };
 
 export type State = {
@@ -242,6 +244,7 @@ function refusalOf(s: State, a: Pending): string | null {
 /** Что изменится: показываем до применения. */
 export function confirmText(s: State, a: Pending): string {
   switch (a.action) {
+    case "chat": return a.value.confirm.replace(/^Понял так: /, "").replace(/ Применить\?$/, "");
     case "balance": return "Вы знаете причину расхождения? Сверка начнётся заново от нынешнего баланса. Показы сами не включатся.";
     case "pause": return s.paused ? "Включить рекламу снова?" : "Остановить все показы? Настройки сохранятся.";
     case "setting": {
@@ -293,6 +296,7 @@ export class Store {
     const s = this.state;
     switch (a.action) {
       case "balance": return { text: "" };
+      case "chat": return { text: "Это действие работает только на настоящих данных." };
       case "pause": {
         const paused = !s.paused;
         return { paused, hist: [this.entry(paused ? "Поставил рекламу на паузу" : "Включил рекламу", "Вы попросили.", "Настройки сохранены.", "yours"), ...s.hist], text: paused ? "Поставил на паузу. Показы остановятся примерно через 5 минут, настройки сохранены." : "Включил. Показы начнутся примерно через 5 минут." };

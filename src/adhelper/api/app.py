@@ -18,6 +18,7 @@ from adhelper.accounts.adapters.unconfigured import UnconfiguredProvider
 from adhelper.accounts.application.service import AccountsService, OAuthProvider
 from adhelper.api.accounts import accounts_router
 from adhelper.api.cabinet import cabinet_router
+from adhelper.api.chat import chat_router
 from adhelper.api.control import control_router
 from adhelper.api.display import display_router
 from adhelper.api.launch import launch_router
@@ -26,7 +27,9 @@ from adhelper.api.plan import plan_router
 from adhelper.api.rework import rework_router
 from adhelper.api.site import guest_site_router, site_router
 from adhelper.api.wizard_ads import guest_ads_router, wizard_ads_router
+from adhelper.commands.application.service import CallBudget
 from adhelper.config import Settings
+from adhelper.creatives.adapters.factory import build_text_model
 from adhelper.db import create_engine, ping
 
 logger = logging.getLogger(__name__)
@@ -112,6 +115,15 @@ def create_app(
     # Адаптер Директа появится в T5 (ждёт V1); пока действия с площадкой честно отвечают 503.
     app.state.platform_for = _no_platform
     app.include_router(notifications_router())
+    app.include_router(chat_router())
+    # Разборщик команд: без ключа модели чат понимает только правила.
+    app.state.command_model = build_text_model(
+        settings.text_model_base_url,
+        settings.text_model_api_key,
+        settings.text_model_name,
+        settings.text_model_project,
+    )
+    app.state.command_calls = CallBudget()
     token = settings.telegram_bot_token
     # Без токена бот не читает сообщения, и ссылка на привязку никуда бы не вела.
     has_bot = token is not None and bool(token.get_secret_value())

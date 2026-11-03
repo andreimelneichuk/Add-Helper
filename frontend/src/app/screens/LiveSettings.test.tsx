@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../api";
 import type { Api, Profile } from "../../api";
 import { fakeApi, open, overview, settled } from "../testLive";
-import { mergeFacts, savedText } from "./LiveSettings";
+import { savedText } from "../live";
+import { mergeFacts } from "./LiveSettings";
 import { Settings } from "./Settings";
 
 afterEach(() => vi.unstubAllGlobals());
