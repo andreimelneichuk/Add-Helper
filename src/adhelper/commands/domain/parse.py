@@ -83,11 +83,18 @@ def _stems(name: str) -> set[str]:
 
 
 def _best(text: str, names: Mapping[str, str]) -> str | None:
-    """Ключ единственного лучшего совпадения по основам слов; ничья — не угадываем."""
+    """Ключ единственного лучшего совпадения по основам слов; ничья — не угадываем.
+
+    При равном числе совпавших слов выигрывает название, названное целиком: «маникюр
+    с покрытием» — это услуга с таким именем, а не «… гель-лаком» с лишними словами.
+    """
     words = _stems(text)
-    scores = {key: len(_stems(name) & words) for key, name in names.items()}
-    top = max(scores.values(), default=0)
-    if top == 0:
+    scores = {
+        key: (len(_stems(name) & words), -len(_stems(name) - words))
+        for key, name in names.items()
+    }
+    top = max(scores.values(), default=(0, 0))
+    if top[0] == 0:
         return None
     best = [key for key, score in scores.items() if score == top]
     return best[0] if len(best) == 1 else None
