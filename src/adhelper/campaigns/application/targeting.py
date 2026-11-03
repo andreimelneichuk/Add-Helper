@@ -39,6 +39,8 @@ __all__ = [
     "change_schedule",
     "describe_regions",
     "describe_schedule",
+    "plan_skip",
+    "skip_days",
     "summarize",
     "vitrine_patch",
 ]
@@ -203,3 +205,75 @@ def summarize(targetings: Sequence[Mapping[str, Any]]) -> DisplaySummary:
         schedule = Schedule.of(only[0], only[1][0], only[1][1])
     region = next(iter(regions)) if len(regions) == 1 else None
     return DisplaySummary(schedule, region, len(targetings))
+
+
+@dataclass
+class SkipResult:
+    """Итог просьбы «не показывать в эти дни» по кампаниям одного кабинета."""
+
+    applied: list[str] = field(default_factory=list)
+    failed: list[str] = field(default_factory=list)
+    # Расписание кампании не прочитано: часы не знаем, поэтому дни не трогаем.
+    unknown: list[str] = field(default_factory=list)
+    unchanged: list[str] = field(default_factory=list)
+    # Кампании, где остаток расписания короче порога площадки. Тогда не меняется ничего.
+    refused: list[str] = field(default_factory=list)
+    planned: dict[str, Mapping[str, Any]] = field(default_factory=dict)
+
+
+@dataclass
+class SkipPlan:
+    """Что станет с расписанием каждой кампании; площадку не трогает."""
+
+    change: list[tuple[str, Schedule]] = field(default_factory=list)
+    unknown: list[str] = field(default_factory=list)
+    unchanged: list[str] = field(default_factory=list)
+    refused: list[str] = field(default_factory=list)
+
+
+def plan_skip(
+    targetings: Sequence[tuple[str, Mapping[str, Any]]],
+    skip: Sequence[int],
+    rules: TargetingRules,
+) -> SkipPlan:
+    plan = SkipPlan()
+    for campaign_id, targeting in targetings:
+        if SCHEDULE_PLAN not in targeting:
+            plan.unknown.append(campaign_id)
+            continue
+        current = Schedule.from_planned(targeting[SCHEDULE_PLAN])
+        wanted = Schedule.of(
+            [day for day in current.days if day not in skip], current.start, current.end
+        )
+        if wanted == current:
+            plan.unchanged.append(campaign_id)
+        elif check_schedule(wanted, rules) is not None:
+            plan.refused.append(campaign_id)
+        else:
+            plan.change.append((campaign_id, wanted))
+    return plan
+
+
+async def skip_days(
+    ledger: Ledger,
+    account: str,
+    targetings: Sequence[tuple[str, Mapping[str, Any]]],
+    skip: Sequence[int],
+    rules: TargetingRules,
+    request_id: str,
+) -> SkipResult:
+    """Убрать дни из расписания каждой кампании, сохранив её часы.
+
+    Сначала проверяем все кампании, потом меняем: просьба выполняется целиком или никак.
+    """
+    plan = plan_skip(targetings, skip, rules)
+    result = SkipResult(unknown=plan.unknown, unchanged=plan.unchanged, refused=plan.refused)
+    if plan.refused:
+        return result
+    for campaign_id, wanted in plan.change:
+        done = await change_schedule(ledger, account, [campaign_id], wanted, rules, request_id)
+        result.applied += done.applied
+        result.failed += done.failed
+        if done.applied:
+            result.planned[campaign_id] = done.planned
+    return result

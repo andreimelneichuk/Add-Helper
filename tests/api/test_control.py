@@ -365,6 +365,36 @@ async def test_schedule_yandex_would_reject_is_refused_without_ledger(
     assert await _rows(sessions, business) == []
 
 
+async def test_skip_days_keeps_hours_and_refuses_unknown_schedule(
+    anna: Anna, both: FakePlatform, sessions: Sessions
+) -> None:
+    client, csrf, business = anna
+    _app(client).state.platform_for = lambda _b, _a: both
+    base = f"/api/businesses/{business}"
+    skip = {"days": [6], "request_id": "k1"}
+    # Часы направлений не прочитаны: дни не трогаем, чтобы не придумать расписание.
+    unknown = await client.post(f"{base}/display/skip-days", json=skip, headers=csrf)
+    assert unknown.status_code == 409
+    assert "не прочитаны" in unknown.json()["detail"]
+    assert await _rows(sessions, business) == []
+
+    body = {"days": [0, 1, 2, 3, 4, 5, 6], "start": 9, "end": 21, "request_id": "s1"}
+    await client.post(f"{base}/display/schedule", json=body, headers=csrf)
+    done = await client.post(f"{base}/display/skip-days", json=skip, headers=csrf)
+    assert done.status_code == 200, done.text
+    assert done.json() == {"applied": [f"{LOGIN}:1", f"{LOGIN}:2"], "unknown": [], "unchanged": []}
+    shown = (await client.get(f"{base}/display")).json()
+    assert shown["schedule"] == {"days": [0, 1, 2, 3, 4, 5], "start": 9, "end": 21}
+
+    again = await client.post(f"{base}/display/skip-days", json=skip, headers=csrf)
+    # Витрина уже знает новое расписание: повтор ничего не меняет.
+    assert again.json()["unchanged"] == [f"{LOGIN}:1", f"{LOGIN}:2"]
+    too_short = {"days": [0, 1, 2, 3, 4, 5], "request_id": "k2"}
+    refused = await client.post(f"{base}/display/skip-days", json=too_short, headers=csrf)
+    assert refused.status_code == 422
+    assert len(await _rows(sessions, business)) == 4
+
+
 async def test_regions_change_and_platform_failure(
     anna: Anna, both: FakePlatform, sessions: Sessions
 ) -> None:

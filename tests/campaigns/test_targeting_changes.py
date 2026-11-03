@@ -14,6 +14,7 @@ from adhelper.campaigns.application.targeting import (
     TargetingStatus,
     change_regions,
     change_schedule,
+    skip_days,
 )
 from adhelper.campaigns.domain.targeting import Schedule
 from adhelper.ledger.adapters.sql import PostgresAccountLock, SqlChangeRepository
@@ -151,3 +152,41 @@ async def test_no_campaigns_means_nothing_to_change(
     _, ledger = setup(sessions, engine)
     result = await change_schedule(ledger, "acc", [], WORK, RULES, "req-1")
     assert result.status is TargetingStatus.NO_CAMPAIGNS
+
+
+def _plan(days: list[int], start: int, end: int) -> dict[str, object]:
+    return {"schedule_plan": {"days": days, "hours": [start, end]}}
+
+
+async def test_skip_days_keeps_each_campaign_hours(sessions: Sessions, engine: AsyncEngine) -> None:
+    platform, ledger = setup(sessions, engine)
+    week = [0, 1, 2, 3, 4, 5, 6]
+    targetings = [
+        ("a", _plan(week, 9, 21)),
+        ("b", _plan(week, 8, 22)),
+        ("c", {}),
+        ("d", _plan([0, 1, 2, 3, 4, 5], 10, 20)),
+    ]
+    result = await skip_days(ledger, "acc", targetings, [6], RULES, "req-1")
+
+    assert result.applied == ["a", "b"]
+    assert result.unknown == ["c"] and result.unchanged == ["d"]
+    assert platform.targeting["a"].schedule == Schedule((0, 1, 2, 3, 4, 5), 9, 21)
+    assert platform.targeting["b"].schedule == Schedule((0, 1, 2, 3, 4, 5), 8, 22)
+    assert result.planned["b"] == {"schedule": {"days": [0, 1, 2, 3, 4, 5], "hours": [8, 22]}}
+
+    again = await skip_days(ledger, "acc", targetings, [6], RULES, "req-1")
+    assert again.applied == ["a", "b"]
+    assert len(await SqlChangeRepository(sessions, BUSINESS).all()) == 2
+
+
+async def test_skip_days_changes_nothing_if_one_campaign_would_be_too_short(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    platform, ledger = setup(sessions, engine)
+    targetings = [("a", _plan([0, 1, 2, 3, 4, 5, 6], 9, 21)), ("b", _plan([5, 6], 10, 14))]
+    result = await skip_days(ledger, "acc", targetings, [6], RULES, "req-1")
+
+    assert result.refused == ["b"] and result.applied == []
+    assert await SqlChangeRepository(sessions, BUSINESS).all() == []
+    assert platform.targeting == {}

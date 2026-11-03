@@ -24,6 +24,8 @@ from adhelper.campaigns.application.targeting import (
     change_schedule,
     describe_regions,
     describe_schedule,
+    plan_skip,
+    skip_days,
     summarize,
     vitrine_patch,
 )
@@ -53,6 +55,20 @@ class ScheduleBody(BaseModel):
     start: int
     end: int
     request_id: str = Field(min_length=1, max_length=100)
+
+
+class SkipDaysBody(BaseModel):
+    # Дни без показов: 0 — понедельник. Часы каждой кампании остаются её собственными.
+    days: list[int] = Field(min_length=1, max_length=6)
+    request_id: str = Field(min_length=1, max_length=100)
+
+
+UNKNOWN_SCHEDULE = (
+    "Часы показа направлений ещё не прочитаны у Яндекса, поэтому дни не меняю."
+    " Задайте дни и часы в настройках показов"
+)
+TOO_SHORT = "Без этих дней у направления останется меньше {hours} часов показа в неделю, Яндекс"
+TOO_SHORT += " такое не примет. Ничего не изменил"
 
 
 class RegionsBody(BaseModel):
@@ -159,6 +175,63 @@ def display_router() -> APIRouter:
             )
 
         return await _apply(request, business_id, service, info, change)
+
+    @router.post("/display/skip-days")
+    async def post_skip_days(
+        request: Request,
+        body: SkipDaysBody,
+        business_id: OwnedChecked,
+        service: Service,
+        info: CheckedSession,
+    ) -> dict[str, Any]:
+        """Не показывать в эти дни: каждое направление сохраняет свои часы.
+
+        Сначала проверяем все кабинеты, потом меняем: просьба выполняется целиком или никак.
+        """
+        if any(not 0 <= day < 7 for day in body.days):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Дни указаны неверно")
+        accounts = await service.accounts(info.user.id, business_id)
+        if not accounts:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NOT_CONNECTED)
+        rules = load_targeting_rules()
+        dashboard = SqlDashboard(_sessions(request), business_id)
+        targetings = {
+            account.login: [(cid, t) for _, cid, t in await dashboard.targetings(account.login)]
+            for account in accounts
+        }
+        known = [(login, cid, t) for login, rows in targetings.items() for cid, t in rows]
+        if not known:
+            raise HTTPException(status.HTTP_409_CONFLICT, NO_CAMPAIGNS)
+        # Проверка всех кабинетов до первого изменения.
+        plan = plan_skip([(cid, t) for _, cid, t in known], body.days, rules)
+        if plan.refused:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                TOO_SHORT.format(hours=rules.min_weekly_hours),
+            )
+        if not plan.change and not plan.unchanged:
+            raise HTTPException(status.HTTP_409_CONFLICT, UNKNOWN_SCHEDULE)
+        applied: list[str] = []
+        failed: list[str] = []
+        unknown: list[str] = []
+        unchanged: list[str] = []
+        for login, rows in targetings.items():
+            if not rows:
+                continue
+            platform = _platform(request, business_id, login)
+            ledger = _ledger(request, business_id, platform)
+            result = await skip_days(ledger, login, rows, body.days, rules, body.request_id)
+            for campaign_id, planned in result.planned.items():
+                await dashboard.note_targeting(login, campaign_id, vitrine_patch(planned, rules))
+            applied += [f"{login}:{cid}" for cid in result.applied]
+            failed += [f"{login}:{cid}" for cid in result.failed]
+            unknown += [f"{login}:{cid}" for cid in result.unknown]
+            unchanged += [f"{login}:{cid}" for cid in result.unchanged]
+        if failed:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE, UNCONFIRMED if applied else NO_ANSWER
+            )
+        return {"applied": applied, "unknown": unknown, "unchanged": unchanged}
 
     @router.post("/goal")
     async def post_goal(
