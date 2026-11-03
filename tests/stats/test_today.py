@@ -86,7 +86,6 @@ def test_recent_undoable_action_is_shown_with_undo() -> None:
     assert "1 840 ₽" in plain(shown[1].text)
 
 
-
 def test_owner_action_text_does_not_repeat_itself() -> None:
     # Объяснение просьбы владельца уже говорит «Вы попросили» и как отменить: не повторяем.
     told = "Показываю рекламу в регионе: Санкт-Петербург. Вы попросили. Отменить можно в истории."
@@ -95,6 +94,7 @@ def test_owner_action_text_does_not_repeat_itself() -> None:
     plain_line = change("pause_ad", "user", explanation="Отключил объявление.")
     shown = cards(facts(history=(plain_line,)), RULES)
     assert shown[1].text == "Вы попросили. Отключил объявление. Отменить можно в истории."
+
 
 def test_old_reverted_or_foreign_actions_are_not_offered() -> None:
     old = change(at=NOW - timedelta(days=RULES.last_action_days + 1))
