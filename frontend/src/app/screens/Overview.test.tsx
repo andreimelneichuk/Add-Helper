@@ -202,4 +202,27 @@ describe("лента сервиса на «Сегодня»", () => {
     await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
     expect(api.rollbackPreview).toHaveBeenCalledWith(5);
   });
+  it("предложение теста: согласие уходит в сервис, его ответ виден; отмена готовящегося", async () => {
+    const offer = { kind: "test_offer", tone: "info" as const, title: "Предлагаю проверить новый вариант объявления", text: "«Маникюр» потратило 1 200 ₽.", action: "test_offer" as const, ref: "41", rules: "today-2" };
+    const preparing = { kind: "test_preparing", tone: "info" as const, title: "Готовлю A/B-тест", text: "Новый вариант напишу позже.", action: "test_cancel" as const, ref: "9", rules: "today-2" };
+    const summary = { kind: "summary", tone: "good" as const, title: "Всё в порядке", text: "", action: null, ref: null, rules: "today-2" };
+    const api = fakeApi({ today: vi.fn(async () => ({ rules: "today-2", cards: [summary, offer, preparing] })) });
+    const store = await open(api);
+    render(<Overview store={store} />);
+    const more = within(screen.getByRole("region", { name: "Ещё на сегодня" }));
+
+    fireEvent.click(more.getByRole("button", { name: "Проверить вариант" }));
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    expect(api.answerTest).toHaveBeenCalledWith(41, true);
+    expect(store.state.notice).toBe("Готовлю тест. Пока вариант не отправлен, объявление работает как раньше.");
+
+    fireEvent.click(more.getByRole("button", { name: "Не сейчас" }));
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    expect(api.answerTest).toHaveBeenLastCalledWith(41, false);
+
+    fireEvent.click(more.getByRole("button", { name: "Отменить тест" }));
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    expect(api.cancelTest).toHaveBeenCalledWith(9);
+    expect(store.state.notice).toBe("Тест отменён. Показы не менялись, это объявление не предложу две недели.");
+  });
 });

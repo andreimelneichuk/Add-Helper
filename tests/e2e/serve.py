@@ -36,7 +36,7 @@ from adhelper.creatives.adapters.sql import SqlCreativeQueue, SqlProfileSource
 from adhelper.creatives.application.service import run_queued
 from adhelper.creatives.domain.model import ModelReply
 from adhelper.worker.demo import ADS, CAMPAIGNS, ENV_FILE, seed_demo, write_demo_env
-from adhelper.worker.runtime import open_runtime
+from adhelper.worker.runtime import Runtime, open_runtime
 from tests.budget.fake_platform import FakePlatform
 
 DATABASE = "adhelper_e2e"
@@ -215,6 +215,16 @@ def _stand_router(app: Any) -> APIRouter:
                 },
             )
         return {"status": "connected"}
+
+    @router.post("/businesses/{business_id}/autopilot")
+    async def autopilot(business_id: uuid.UUID) -> dict[str, int]:
+        """Суточный цикл автопилота сейчас, а не в 06:20: тот же код, что в воркере."""
+        runtime = Runtime(
+            sessions=app.state.sessions,
+            engine=app.state.engine,
+            platform_for=app.state.platform_for,
+        )
+        return {"accounts": await runtime.autopilot_run(only=business_id)}
 
     return router
 

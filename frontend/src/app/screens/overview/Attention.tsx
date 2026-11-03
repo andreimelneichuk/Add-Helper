@@ -44,8 +44,13 @@ function cardMessage(card: TodayCard, store: Store): Message {
           : card.action === "resume" ? [{ label: "Включить", pick: () => store.run({ action: "pause" }) }]
             : card.action === "undo" && card.ref ? [{ label: "Отменить", pick: () => { store.goView("history"); store.askUndo(card.ref!); }, quiet: true }]
               : card.action === "history" ? [{ label: "Открыть историю", pick: toHistory }]
-                : [];
-  return { tone: card.tone, title: card.title, text: card.text, actions, calm: card.kind === "summary" || card.kind === "last_action" };
+                : card.action === "test_offer" && card.ref ? [
+                  { label: "Проверить вариант", pick: () => store.run({ action: "test", value: card.ref!, answer: "agree" }) },
+                  { label: "Не сейчас", pick: () => store.run({ action: "test", value: card.ref!, answer: "decline" }), quiet: true },
+                ]
+                  : card.action === "test_cancel" && card.ref ? [{ label: "Отменить тест", pick: () => store.run({ action: "test", value: card.ref!, answer: "cancel" }), quiet: true }]
+                    : [];
+  return { tone: card.tone, title: card.title, text: card.text, actions, calm: card.kind === "summary" || card.kind === "last_action" || card.kind.startsWith("test_") };
 }
 
 function messageOf(s: State, store: Store): Message {

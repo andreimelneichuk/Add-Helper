@@ -3,6 +3,7 @@ import type { Page } from "@playwright/test";
 
 const notice = (page: Page) => page.locator(".ah-notice");
 const nav = (page: Page, name: string) => page.locator(".ah-rail").getByRole("button", { name });
+const STAND = "http://localhost:8011";
 
 test.describe.configure({ mode: "serial" });
 
@@ -11,6 +12,45 @@ test("обзор показывает настоящие данные, а не �
   await expect(page.locator(".ah-brand")).toHaveText("Студия маникюра «Лак»");
   await expect(page.locator(".ah-proto")).toHaveCount(0);
   await expect(page.getByText("Салон «Пример»")).toHaveCount(0);
+});
+
+// Первым после обзора: другие сценарии меняют направления, а после изменения тест не предлагается.
+test("тест по итогам анализа: автопилот предлагает, владелец соглашается и отменяет, площадка не тронута", async ({ page }) => {
+  await page.goto("/?new");
+  const business = (await (await page.request.get("/api/businesses")).json())[0];
+  const { csrf_token: csrf } = await (await page.request.get("/api/me")).json();
+  const base = `/api/businesses/${business.id}`;
+  const changes = async () =>
+    ((await (await page.request.get(`${base}/history`)).json()) as { ref: string }[]).filter((line) => line.ref.startsWith("change-")).length;
+  const changesBefore = await changes();
+  // Цель 300 ₽: «Маникюр у метро Профсоюзная» тратит больше, но выводов о нём ещё нет.
+  const goal = await page.request.post(`${base}/goal`, { data: { rubles: 300 }, headers: { "X-CSRF-Token": csrf } });
+  expect(goal.ok()).toBe(true);
+  const run = await page.request.post(`${STAND}/api/stand/businesses/${business.id}/autopilot`);
+  expect((await run.json()).accounts).toBe(1);
+
+  await page.reload();
+  const offer = page.locator(".ov-attention, .ov-more-item").filter({ has: page.getByRole("heading", { name: "Предлагаю проверить новый вариант объявления" }) });
+  await expect(offer).toContainText("«Маникюр у метро Профсоюзная»");
+  await expect(offer).toContainText("Бюджет не меняется");
+  await offer.getByRole("button", { name: "Проверить вариант" }).click();
+  await expect(notice(page)).toContainText("Готовлю тест. Пока вариант не отправлен, объявление работает как раньше");
+
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Предлагаю проверить новый вариант объявления" })).toHaveCount(0);
+  const preparing = page.locator(".ov-attention, .ov-more-item").filter({ has: page.getByRole("heading", { name: "Готовлю A/B-тест" }) });
+  await expect(preparing).toContainText("работает как раньше");
+  await preparing.getByRole("button", { name: "Отменить тест" }).click();
+  await expect(notice(page)).toContainText("Тест отменён. Показы не менялись, это объявление не предложу две недели");
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Готовлю A/B-тест" })).toHaveCount(0);
+
+  // Отмена — тот же отказ: следующий цикл не предлагает это объявление снова.
+  await page.request.post(`${STAND}/api/stand/businesses/${business.id}/autopilot`);
+  const today = await (await page.request.get(`${base}/today`)).json();
+  expect(today.cards.filter((card: { kind: string }) => card.kind.startsWith("test_"))).toEqual([]);
+  // Ни предложение, ни подготовка, ни отмена не меняли площадку: журнал изменений тот же.
+  expect(await changes()).toBe(changesBefore);
 });
 
 test("отключение объявления доходит до журнала и видно в истории", async ({ page }) => {
@@ -55,7 +95,7 @@ test("«Сегодня»: карточки в порядке правил сер
   await page.goto("/?new");
   const business = (await (await page.request.get("/api/businesses")).json())[0];
   const { rules, cards } = await (await page.request.get(`/api/businesses/${business.id}/today`)).json();
-  expect(rules).toBe("today-1");
+  expect(rules).toBe("today-2");
   // Пауза владельца из прошлого шага — первая карточка, итог недели ниже.
   expect(cards[0].kind).toBe("paused");
   expect(cards.map((c: { kind: string }) => c.kind)).toContain("summary");
@@ -290,7 +330,6 @@ test("после подключения кабинета мастер ведёт
   await expect(page).toHaveURL(/\/\?new$/);
 });
 
-const STAND = "http://localhost:8011";
 
 test("новый владелец проходит мастер и запускает рекламу: кампания через журнал, видна в кабинете", async ({ page, context, request }) => {
   // Свой владелец без бизнеса: стенд выдаёт ему вход, прокси Vite не подменяет его демо-входом.
@@ -471,3 +510,4 @@ test("чат: просьба становится командой из набо
   await apply();
   await expect(last).toContainText("старых цифр нет");
 });
+

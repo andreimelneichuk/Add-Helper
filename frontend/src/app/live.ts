@@ -261,6 +261,11 @@ export class LiveStore extends Store {
       }
       case "chat":
         return this.performChat(a.value);
+      case "test": {
+        const id = Number(a.value);
+        const { text } = a.answer === "cancel" ? await this.api.cancelTest(id) : await this.api.answerTest(id, a.answer === "agree");
+        return `${text}.`;
+      }
       case "balance":
         await this.api.confirmBalance(s.live!.account!);
         return "Сверка начнётся заново от нынешнего баланса. Показы сами не включатся.";

@@ -1,9 +1,10 @@
 import math
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from enum import StrEnum
 
+from adhelper.autopilot.domain.health import Window
 from adhelper.autopilot.domain.rules import AutopilotRules
 from adhelper.budget.domain.calendar import platform_date
 
@@ -43,6 +44,8 @@ class AdStats:
     age_days: int
     active: bool
     rollback_hold: bool = False
+    # Владелец недавно отказался от теста этого объявления.
+    test_hold: bool = False
 
 
 @dataclass(frozen=True)
@@ -52,6 +55,18 @@ class CampaignStats:
     budget_limited: bool
     last_change_at: datetime | None
     test_running: bool = False
+
+
+@dataclass(frozen=True)
+class AccountData:
+    """Всё, что цикл читает о кабинете за один проход."""
+
+    ads: Sequence[AdStats]
+    campaigns: Sequence[CampaignStats]
+    recent: Window
+    baseline: Window
+    platform_incident: bool
+    manual_hold: bool
 
 
 @dataclass(frozen=True)

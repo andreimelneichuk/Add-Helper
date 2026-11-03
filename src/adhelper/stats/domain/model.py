@@ -96,6 +96,31 @@ class ClientAnswers(Protocol):
 
 
 @dataclass(frozen=True)
+class TestOffer:
+    """Предложение автопилота провести тест: ждёт ответа владельца."""
+
+    __test__ = False
+    decision_id: int
+    ad_title: str
+    hypothesis: str
+    spend: int
+    leads: int
+    target: int
+    limit: int
+
+
+@dataclass(frozen=True)
+class TestLine:
+    """Тест, который готовится или идёт."""
+
+    __test__ = False
+    id: int
+    ad_title: str
+    hypothesis: str
+    status: str
+
+
+@dataclass(frozen=True)
 class HistoryLine:
     """Изменение площадки из журнала или решение автопилота."""
 
@@ -122,3 +147,5 @@ class Dashboard(Protocol):
     async def ads(self, since: date, until: date, scope: Scope) -> list[AdLine]: ...
     async def days(self, since: date, until: date, scope: Scope) -> list[DayLine]: ...
     async def history(self, limit: int) -> list[HistoryLine]: ...
+    async def test_offers(self) -> list[TestOffer]: ...
+    async def open_tests(self) -> list[TestLine]: ...
