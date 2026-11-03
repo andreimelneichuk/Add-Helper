@@ -11,6 +11,10 @@ function Entry({ store, entry }: { store: Store; entry: HistoryEntry }) {
   const undone = !!s.undone[entry.id];
   const can = entry.canUndo && !undone;
   const asked = !!s.asked[entry.id] && can;
+  const info = s.undoInfo[entry.id];
+  // Сервис проверил заранее: если отменить нельзя, говорим почему и не предлагаем кнопку.
+  const possible = info?.possible ?? true;
+  const many = info && info.possible && info.directions > 1 ? info.directions : 0;
   const state = undone ? "Отменено вами" : entry.state ?? "";
   const titleId = useId();
   const noteId = useId();
@@ -28,7 +32,7 @@ function Entry({ store, entry }: { store: Store; entry: HistoryEntry }) {
     else stateRef.current?.focus();
   }, [asked, can]);
 
-  const toggle = () => store.set({ asked: { ...store.state.asked, [entry.id]: !store.state.asked[entry.id] } });
+  const toggle = () => store.askUndo(entry.id);
 
   return (
     <article className="ah-hist-row" aria-labelledby={titleId}>
@@ -36,14 +40,19 @@ function Entry({ store, entry }: { store: Store; entry: HistoryEntry }) {
       <div className="ah-hist-body">
         <h2 id={titleId} className="ah-hist-title">{entry.title}</h2>
         <p className="ah-hist-text">{entry.why} {entry.next}</p>
-        {asked && <p id={noteId} className="ah-hist-note">{entry.undoNote}</p>}
+        {asked && <p id={noteId} className="ah-hist-note" role="status">{info?.text ?? entry.undoNote}</p>}
       </div>
       <div className="ah-hist-actions">
         {can && !asked && <button ref={askRef} type="button" className="ah-btn" aria-describedby={titleId} onClick={toggle}>Отменить</button>}
         {asked && (
           <>
-            <button type="button" className="ah-btn ah-btn-primary" aria-describedby={noteId} onClick={() => store.run({ action: "undo", value: entry.id })}>Да, отменить</button>
-            <button ref={keepRef} type="button" className="ah-btn" onClick={toggle}>Оставить</button>
+            {possible && many > 0 && (
+              <button type="button" className="ah-btn ah-btn-primary" aria-describedby={noteId} onClick={() => store.run({ action: "undo", value: entry.id, whole: true })}>Отменить для всех {many} направлений</button>
+            )}
+            {possible && (
+              <button type="button" className={many ? "ah-btn" : "ah-btn ah-btn-primary"} aria-describedby={noteId} onClick={() => store.run({ action: "undo", value: entry.id })}>{many ? "Только это направление" : "Да, отменить"}</button>
+            )}
+            <button ref={keepRef} type="button" className="ah-btn" onClick={toggle}>{possible ? "Оставить" : "Понятно"}</button>
           </>
         )}
         {!can && state && <span ref={stateRef} tabIndex={-1} className="ah-hist-state">{state}</span>}

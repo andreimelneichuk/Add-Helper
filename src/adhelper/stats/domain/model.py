@@ -109,6 +109,8 @@ class HistoryLine:
     before: Mapping[str, Any]
     after: Mapping[str, Any] | None
     rules_version: str | None
+    # Изменение уже отменено новой записью журнала: кнопку отмены не показываем.
+    reverted: bool = False
 
 
 class Dashboard(Protocol):

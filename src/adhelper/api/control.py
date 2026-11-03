@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from adhelper.api.accounts import CheckedSession, Service
-from adhelper.api.cabinet import OwnedChecked, Period, _now, _sessions
+from adhelper.api.cabinet import Owned, OwnedChecked, Period, _now, _sessions
 from adhelper.budget.adapters.ledgered import PlatformChangeGateway
 from adhelper.budget.adapters.rules_file import load_rules
 from adhelper.budget.adapters.sql import SqlPeriodStore
@@ -21,8 +21,15 @@ from adhelper.budget.application.preflight import StoredPeriodPreflight
 from adhelper.campaigns.adapters.rules_file import load_targeting_rules
 from adhelper.campaigns.application.targeting import TARGETING_PREFIX, vitrine_patch
 from adhelper.ledger.adapters.sql import PostgresAccountLock, SqlChangeRepository
+from adhelper.ledger.application.consequences import consequence
 from adhelper.ledger.application.owner import AD_PREFIX, set_ad_active
-from adhelper.ledger.application.rollback import RollbackStatus, rollback_change
+from adhelper.ledger.application.rollback import (
+    Change,
+    RollbackStatus,
+    apply_request,
+    preview_request,
+    rollback_change,
+)
 from adhelper.ledger.application.service import Ledger
 from adhelper.platforms.adapters.gateway import RoutingGateway
 from adhelper.stats.adapters.sql import SqlDashboard
@@ -112,6 +119,34 @@ def _platform(request: Request, business_id: UUID, account: str) -> Any:
     if platform is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NOT_CONNECTED)
     return platform
+
+
+async def _ledger_for_change(
+    request: Request, business_id: UUID, change_id: int
+) -> tuple[Ledger, Change]:
+    change = await SqlChangeRepository(_sessions(request), business_id).get(change_id)
+    if change is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Изменение не найдено")
+    platform = _platform(request, business_id, change.account)
+    return _ledger(request, business_id, platform), change
+
+
+async def _note_restored(request: Request, business_id: UUID, changes: list[Change]) -> None:
+    """Витрина узнаёт прежние значения из снимка «до», без лишнего чтения площадки."""
+    dashboard = SqlDashboard(_sessions(request), business_id)
+    for change in changes:
+        if change.target_ref.startswith(TARGETING_PREFIX):
+            restored = {key: change.before[key] for key in change.planned}
+            await dashboard.note_targeting(
+                change.account,
+                change.target_ref.removeprefix(TARGETING_PREFIX),
+                vitrine_patch(restored, load_targeting_rules()),
+            )
+        if change.target_ref.startswith(AD_PREFIX):
+            state = "on" if change.before.get("active") else "suspended"
+            await dashboard.note_ad_state(
+                change.account, change.target_ref.removeprefix(AD_PREFIX), state
+            )
 
 
 def control_router() -> APIRouter:
@@ -267,31 +302,35 @@ def control_router() -> APIRouter:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, BUDGET_UNCONFIRMED)
         return {"status": result.status.value, "cuts": result.cuts}
 
+    @router.get("/changes/{change_id}/rollback")
+    async def get_rollback(request: Request, change_id: int, business_id: Owned) -> dict[str, Any]:
+        """Что будет после отмены — до нажатия. Площадка только читается."""
+        ledger, _change = await _ledger_for_change(request, business_id, change_id)
+        preview = await preview_request(ledger, change_id)
+        regions = load_targeting_rules().regions
+        return {
+            "possible": preview.result.status is RollbackStatus.READY,
+            "status": preview.result.status.value,
+            "text": consequence(preview.result, len(preview.ready), regions),
+            "directions": len(preview.ready),
+        }
+
     @router.post("/changes/{change_id}/rollback")
     async def post_rollback(
-        request: Request, change_id: int, business_id: OwnedChecked
+        request: Request, change_id: int, business_id: OwnedChecked, whole: bool = False
     ) -> dict[str, str]:
-        change = await SqlChangeRepository(_sessions(request), business_id).get(change_id)
-        if change is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "Изменение не найдено")
-        platform = _platform(request, business_id, change.account)
-        result = await rollback_change(_ledger(request, business_id, platform), change_id)
+        ledger, change = await _ledger_for_change(request, business_id, change_id)
+        if whole:
+            preview = await preview_request(ledger, change_id)
+            result = await apply_request(ledger, preview)
+            changed = list(preview.ready)
+        else:
+            result = await rollback_change(ledger, change_id)
+            changed = [change]
         if result.status in FINAL_REFUSAL:
             raise HTTPException(status.HTTP_409_CONFLICT, FINAL_REFUSAL[result.status])
-        if result.status is RollbackStatus.APPLIED and change.target_ref.startswith(
-            TARGETING_PREFIX
-        ):
-            restored = {key: change.before[key] for key in change.planned}
-            await SqlDashboard(_sessions(request), business_id).note_targeting(
-                change.account,
-                change.target_ref.removeprefix(TARGETING_PREFIX),
-                vitrine_patch(restored, load_targeting_rules()),
-            )
-        if result.status is RollbackStatus.APPLIED and change.target_ref.startswith(AD_PREFIX):
-            state = "on" if change.before.get("active") else "suspended"
-            await SqlDashboard(_sessions(request), business_id).note_ad_state(
-                change.account, change.target_ref.removeprefix(AD_PREFIX), state
-            )
+        if result.status is RollbackStatus.APPLIED:
+            await _note_restored(request, business_id, changed)
         return {"status": result.status.value}
 
     return router

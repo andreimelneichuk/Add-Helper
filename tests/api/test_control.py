@@ -351,6 +351,54 @@ async def test_schedule_change_goes_through_ledger_shows_and_undoes(
     assert (await client.get(f"{base}/display")).json()["schedule"] is None
 
 
+async def test_undo_shows_consequences_and_cancels_whole_request(
+    anna: Anna, both: FakePlatform, sessions: Sessions
+) -> None:
+    client, csrf, business = anna
+    _app(client).state.platform_for = lambda _b, _a: both
+    base = f"/api/businesses/{business}"
+    body = {"days": [0, 1, 2, 3, 4, 5], "start": 10, "end": 21, "request_id": "s1"}
+    await client.post(f"{base}/display/schedule", json=body, headers=csrf)
+    history = (await client.get(f"{base}/history")).json()
+    change_id = next(h["ref"] for h in history if h["kind"] == "set_schedule")
+    change_id = change_id.removeprefix("change-")
+
+    preview = await client.get(f"{base}/changes/{change_id}/rollback")
+    assert preview.status_code == 200
+    shown = preview.json()
+    assert shown["possible"] is True
+    assert shown["directions"] == 2
+    assert "Вернутся прежние часы показа: круглосуточно" in shown["text"]
+    assert "Просьба меняла 2 направления" in shown["text"]
+    # Предпросмотр ничего не меняет.
+    assert await _rows(sessions, business) == [("user", "set_schedule", "applied")] * 2
+
+    undo = await client.post(f"{base}/changes/{change_id}/rollback?whole=true", headers=csrf)
+    assert undo.status_code == 200
+    assert [r[0] for r in await _rows(sessions, business)].count("rollback") == 2
+    assert (await client.get(f"{base}/display")).json()["schedule_text"] == "круглосуточно"
+    lines = (await client.get(f"{base}/history")).json()
+    assert [line["reverted"] for line in lines if line["source"] == "user"] == [True, True]
+
+    again = (await client.get(f"{base}/changes/{change_id}/rollback")).json()
+    assert again == {
+        "possible": False,
+        "status": "already_reverted",
+        "text": "Это уже отменено",
+        "directions": 0,
+    }
+
+
+async def test_undo_preview_is_owners_only(
+    anna: Anna, browser: Browser, provider: FakeProvider
+) -> None:
+    _client, _csrf, business = anna
+    other = browser()
+    await _login(other, provider, BORIS)
+    response = await other.get(f"/api/businesses/{business}/changes/1/rollback")
+    assert response.status_code == 404
+
+
 async def test_schedule_yandex_would_reject_is_refused_without_ledger(
     anna: Anna, both: FakePlatform, sessions: Sessions
 ) -> None:

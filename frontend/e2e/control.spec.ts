@@ -104,7 +104,9 @@ test("регион показа меняется через журнал, вид
   const row = page.locator(".ah-hist-row", { hasText: "Изменил регион показов" }).first();
   await expect(row).toContainText("Санкт-Петербург");
   await row.getByRole("button", { name: "Отменить" }).click();
-  await page.getByRole("button", { name: "Да, отменить" }).click();
+  // Просьба меняла все направления: можно отменить целиком или только это.
+  await expect(row.locator(".ah-hist-note")).toContainText("Вернётся прежний регион показа");
+  await row.getByRole("button", { name: "Только это направление" }).click();
   await expect(notice(page)).toContainText("Отменил");
   // Отменено для одного направления: у остальных новый регион, общего значения больше нет.
   await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
@@ -421,6 +423,21 @@ test("чат: просьба становится командой из набо
   await expect(last).toContainText("У 1 направления часы ещё не прочитаны");
   await nav(page, "История").click();
   await expect(page.locator(".ah-hist-row", { hasText: "Изменил время показов" }).first()).toContainText("пн–сб");
+
+  // Отмена: сначала последствия от сервиса, затем просьба целиком по всем направлениям.
+  const changed = page.locator(".ah-hist-row", { hasText: "Изменил время показов" }).first();
+  await changed.getByRole("button", { name: "Отменить" }).click();
+  await expect(changed.locator(".ah-hist-note")).toContainText("Вернутся прежние часы показа");
+  await expect(changed.locator(".ah-hist-note")).toContainText("Просьба меняла 3 направления");
+  await changed.getByRole("button", { name: "Отменить для всех 3 направлений" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Отменил для всех 3 направлений" })).toBeVisible();
+  // Обе отмены записаны новыми строками, исходные помечены и больше не предлагают отмену.
+  await expect(page.locator(".ah-hist-row", { hasText: "Отмена. Изменил время показов" })).toHaveCount(3);
+  const originals = page.locator(".ah-hist-row", { hasText: "Показываю рекламу пн–сб" }).filter({ hasNotText: "Отмена." });
+  for (const row of [originals.nth(0), originals.nth(1), originals.nth(2)]) {
+    await expect(row).toContainText("Отменено");
+    await expect(row.getByRole("button", { name: "Отменить" })).toHaveCount(0);
+  }
 
   // Цена услуги: через профиль, старые объявления названы. Затем возвращаем прежнюю.
   // Педикюр не трогаем: правка его цены честно снимает ждущее «Педикюр за 2200 ₽» из parity.

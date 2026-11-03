@@ -169,6 +169,19 @@ class SqlChangeRepository:
         async with self._sessions() as session:
             return [_to_change(row) for row in await session.scalars(statement)]
 
+    async def with_key_prefix(self, account: str, prefix: str) -> Sequence[Change]:
+        statement = (
+            select(ChangeRow)
+            .where(
+                ChangeRow.business_id == self._business_id,
+                ChangeRow.account == account,
+                ChangeRow.idempotency_key.startswith(prefix, autoescape=True),
+            )
+            .order_by(ChangeRow.id)
+        )
+        async with self._sessions() as session:
+            return [_to_change(row) for row in await session.scalars(statement)]
+
     async def all(self) -> Sequence[Change]:
         statement = (
             select(ChangeRow)

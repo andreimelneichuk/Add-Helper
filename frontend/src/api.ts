@@ -108,6 +108,8 @@ export type HistoryLine = {
   before: Record<string, unknown>;
   after: Record<string, unknown> | null;
   rules_version: string | null;
+  /** Уже отменено новой записью журнала. */
+  reverted?: boolean;
 };
 
 // Откуда в объявлении факт: фрагмент текста и поле профиля.
@@ -228,6 +230,9 @@ export type Display = {
 };
 
 /** Как сервис понял сообщение чата. Ничего не меняет: выполняется после «да» владельца. */
+/** Что будет после отмены: текст собирает сервис из журнала, до нажатия. */
+export type UndoPreview = { possible: boolean; status: string; text: string; directions: number };
+
 export type ChatCommand = {
   kind: "pause" | "resume" | "set_budget" | "set_price" | "skip_days" | "ad_off" | "ad_on" | "rework_ad" | "undo_last" | "stats" | "history" | "unknown";
   rubles: number | null;
@@ -345,8 +350,9 @@ export function createApi(businessId: string, csrf: string) {
       request<{ goal: number }>(`${base}/goal`, { method: "POST", body: JSON.stringify({ rubles }) }, csrf),
     answerClients: (range: Range, clients: number) =>
       request<ClientAnswer>(`${base}/clients`, { method: "POST", body: JSON.stringify({ ...range, clients }) }, csrf),
-    rollback: (changeId: number) =>
-      request<{ status: string }>(`${base}/changes/${changeId}/rollback`, { method: "POST" }, csrf),
+    rollbackPreview: (changeId: number) => request<UndoPreview>(`${base}/changes/${changeId}/rollback`),
+    rollback: (changeId: number, whole = false) =>
+      request<{ status: string }>(`${base}/changes/${changeId}/rollback${whole ? "?whole=true" : ""}`, { method: "POST" }, csrf),
     confirmBalance: (account: string) =>
       request<{ confirmed: boolean }>(
         `${base}/balance/confirm`,

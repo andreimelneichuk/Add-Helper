@@ -60,8 +60,30 @@ describe("действия идут через сервис", () => {
     const store = await open(api);
     store.run({ action: "undo", value: "change-5" });
     await settled();
-    expect(api.rollback).toHaveBeenCalledWith(5);
+    expect(api.rollback).toHaveBeenCalledWith(5, false);
     expect(store.state.undone["change-5"]).toBe(true);
+  });
+
+  it("перед отменой спрашивает сервис о последствиях", async () => {
+    const api = fakeApi({ rollbackPreview: vi.fn(async () => ({ possible: true, status: "ready", text: "Вернутся прежние часы показа: круглосуточно. Для всех 2 направлений этой просьбы.", directions: 2 })) } as Partial<Api>);
+    const store = await open(api);
+    store.askUndo("change-5");
+    await settled();
+    expect(api.rollbackPreview).toHaveBeenCalledWith(5);
+    expect(store.state.asked["change-5"]).toBe(true);
+    expect(store.state.undoInfo["change-5"]?.directions).toBe(2);
+    store.run({ action: "undo", value: "change-5", whole: true });
+    await settled();
+    expect(api.rollback).toHaveBeenCalledWith(5, true);
+    expect(store.state.notice).toContain("для всех 2 направлений");
+  });
+
+  it("если отменить нельзя, показывает причину от сервиса", async () => {
+    const api = fakeApi({ rollbackPreview: vi.fn(async () => { throw new ApiError(503, "Кабинет Яндекса пока не подключён, поэтому ничего не изменилось"); }) } as Partial<Api>);
+    const store = await open(api);
+    store.askUndo("change-5");
+    await settled();
+    expect(store.state.undoInfo["change-5"]).toMatchObject({ possible: false, text: expect.stringContaining("не подключён") });
   });
 
   it("снимает паузу владельца через сервис и объясняет проверку бюджета", async () => {
