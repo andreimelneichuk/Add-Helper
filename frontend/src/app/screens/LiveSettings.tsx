@@ -272,8 +272,9 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Первый пришедший профиль и есть форма: поздний ответ не затирает то, что владелец уже ввёл.
   useEffect(() => {
-    api.profile().then(setProfile, (e: unknown) => setStatus(message(e)));
+    api.profile().then((loaded) => setProfile((current) => current ?? loaded), (e: unknown) => setStatus(message(e)));
   }, [api]);
   const [read, setRead] = useState<SiteRead | null>(null);
   const [reading, setReading] = useState(false);

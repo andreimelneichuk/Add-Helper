@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -25,6 +26,27 @@ describe("настройки на настоящих данных", () => {
     expect(api.saveProfile).toHaveBeenCalledWith(expect.objectContaining({ services: [{ name: "Маникюр", price: 1400 }, { name: "Педикюр", price: null }] }));
     // Профиль перечитан вместе с остальными данными: два раза при открытии экрана и загрузке, ещё раз после сохранения.
     expect(vi.mocked(api.profile).mock.calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("запоздавший ответ о профиле не затирает то, что владелец уже ввёл", async () => {
+    const base = await fakeApi().profile();
+    let late: (p: Profile) => void = () => undefined;
+    const profile = vi.fn()
+      .mockImplementationOnce(async () => base)
+      .mockImplementationOnce(async () => base)
+      .mockImplementationOnce(() => new Promise<Profile>((resolve) => { late = resolve; }))
+      .mockImplementation(async () => base);
+    const api = fakeApi({ profile } as Partial<Api>);
+    const store = await open(api);
+    // В режиме разработки эффект запускается дважды: второй ответ приходит, когда владелец уже печатает.
+    render(<StrictMode><Settings store={store} /></StrictMode>);
+    const price = await screen.findByLabelText("Цена услуги 1, ₽");
+    await userEvent.clear(price);
+    await userEvent.type(price, "1400");
+    late(base);
+    await settled();
+    expect(profile).toHaveBeenCalledTimes(3);
+    expect(screen.getByLabelText("Цена услуги 1, ₽")).toHaveValue("1400");
   });
 
   it("после правки цены называет объявления со старыми цифрами и что с ними будет", async () => {
