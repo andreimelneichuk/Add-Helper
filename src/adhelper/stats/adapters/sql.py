@@ -33,6 +33,8 @@ from adhelper.stats.domain.model import (
     HistoryLine,
     PeriodLine,
     Scope,
+    TestLine,
+    TestOffer,
     Totals,
 )
 
@@ -137,6 +139,7 @@ DECISIONS = table(
     "decisions",
     column("id", BigInteger),
     column("business_id", Uuid),
+    column("account", Text),
     column("object_ref", Text),
     column("verdict", Text),
     column("action", Text),
@@ -145,6 +148,16 @@ DECISIONS = table(
     column("rules_version", Text),
     column("decided_at", DateTime(timezone=True)),
 )
+EXPERIMENTS = table(
+    "experiments",
+    column("id", BigInteger),
+    column("business_id", Uuid),
+    column("account", Text),
+    column("control_ref", Text),
+    column("hypothesis", Text),
+    column("status", Text),
+)
+OPEN_TESTS = ("review", "running", "paused")
 # Закрытый период показываем ещё сутки: владелец должен увидеть, чем он кончился.
 SHOW_CLOSED_FOR = timedelta(days=1)
 
@@ -511,3 +524,72 @@ class SqlDashboard:
             for row in decision_rows
         ]
         return sorted(lines, key=lambda line: line.at, reverse=True)[:limit]
+
+    def _ad_title(self, account: ColumnElement[str], ref: ColumnElement[str]) -> Any:
+        """Название объявления по ссылке «ad:номер»; без витрины — сама ссылка."""
+        title = (
+            select(ADS.c.title)
+            .where(
+                ADS.c.business_id == self._business_id,
+                ADS.c.account == account,
+                literal("ad:") + ADS.c.ad_id == ref,
+            )
+            .limit(1)
+            .scalar_subquery()
+        )
+        return func.coalesce(title, ref)
+
+    async def test_offers(self) -> list[TestOffer]:
+        """Предложения теста, на которые владелец ещё не ответил: последняя запись по объекту."""
+        own = DECISIONS.c.business_id == self._business_id
+        latest = (
+            select(func.max(DECISIONS.c.id))
+            .where(own)
+            .group_by(DECISIONS.c.account, DECISIONS.c.object_ref)
+        )
+        statement = (
+            select(
+                DECISIONS.c.id,
+                self._ad_title(DECISIONS.c.account, DECISIONS.c.object_ref),
+                DECISIONS.c.inputs,
+            )
+            .where(
+                own,
+                DECISIONS.c.id.in_(latest),
+                DECISIONS.c.action == "start_test",
+                DECISIONS.c.status == "awaiting_confirmation",
+            )
+            .order_by(DECISIONS.c.id)
+        )
+        async with self._sessions() as session:
+            rows = (await session.execute(statement)).all()
+        return [
+            TestOffer(
+                decision_id=row[0],
+                ad_title=row[1],
+                hypothesis=str(row[2].get("hypothesis", "")),
+                spend=int(row[2].get("spend_micros", 0)),
+                leads=int(row[2].get("leads", 0)),
+                target=int(row[2].get("target_micros", 0)),
+                limit=int(row[2].get("limit_micros", 0)),
+            )
+            for row in rows
+        ]
+
+    async def open_tests(self) -> list[TestLine]:
+        statement = (
+            select(
+                EXPERIMENTS.c.id,
+                self._ad_title(EXPERIMENTS.c.account, EXPERIMENTS.c.control_ref),
+                EXPERIMENTS.c.hypothesis,
+                EXPERIMENTS.c.status,
+            )
+            .where(
+                EXPERIMENTS.c.business_id == self._business_id,
+                EXPERIMENTS.c.status.in_(OPEN_TESTS),
+            )
+            .order_by(EXPERIMENTS.c.id)
+        )
+        async with self._sessions() as session:
+            rows = (await session.execute(statement)).all()
+        return [TestLine(row[0], row[1], row[2], row[3]) for row in rows]

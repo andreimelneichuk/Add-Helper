@@ -38,6 +38,7 @@ class LoggedDecision:
     inputs: Mapping[str, Any]
     rules_version: str
     decided_at: datetime
+    account: str = ""
 
 
 class SqlDecisionLog:
@@ -73,6 +74,44 @@ class SqlDecisionLog:
             session.add(row)
             await session.flush()
             return row.id
+
+    @staticmethod
+    def _logged(row: DecisionRow) -> LoggedDecision:
+        return LoggedDecision(
+            row.id,
+            row.object_ref,
+            row.verdict,
+            row.action,
+            row.status,
+            row.inputs,
+            row.rules_version,
+            row.decided_at,
+            row.account,
+        )
+
+    async def get(self, decision_id: int) -> LoggedDecision | None:
+        statement = select(DecisionRow).where(
+            DecisionRow.business_id == self._business_id, DecisionRow.id == decision_id
+        )
+        async with self._sessions() as session:
+            row = (await session.scalars(statement)).one_or_none()
+        return self._logged(row) if row else None
+
+    async def latest(self, account: str, object_ref: str) -> LoggedDecision | None:
+        """Действующее решение по объекту: последняя запись."""
+        statement = (
+            select(DecisionRow)
+            .where(
+                DecisionRow.business_id == self._business_id,
+                DecisionRow.account == account,
+                DecisionRow.object_ref == object_ref,
+            )
+            .order_by(DecisionRow.id.desc())
+            .limit(1)
+        )
+        async with self._sessions() as session:
+            row = (await session.scalars(statement)).one_or_none()
+        return self._logged(row) if row else None
 
     async def recent(self, account: str, limit: int = 100) -> Sequence[LoggedDecision]:
         """Последнее состояние каждого объекта, новые сверху."""

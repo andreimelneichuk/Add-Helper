@@ -506,14 +506,14 @@ async def test_today_cards_come_ordered_from_rules(
     _app(client).state.platform_for = lambda _b, _a: platform
     base = f"/api/businesses/{business}"
     calm = (await client.get(f"{base}/today")).json()
-    assert calm["rules"] == "today-1"
+    assert calm["rules"] == "today-2"
     assert calm["cards"][0]["kind"] == "summary"
 
     await client.post(f"{base}/pause", json={"request_id": "p1"}, headers=csrf)
     paused = (await client.get(f"{base}/today")).json()["cards"]
     assert paused[0]["kind"] == "paused"
     assert paused[0]["action"] == "resume"
-    assert paused[0]["rules"] == "today-1"
+    assert paused[0]["rules"] == "today-2"
     assert len(paused) <= 5
 
 

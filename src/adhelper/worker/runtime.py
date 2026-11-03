@@ -7,6 +7,12 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from adhelper.autopilot.adapters.data import SqlAutopilotData, autopilot_accounts
+from adhelper.autopilot.adapters.ledgered import LedgeredActions
+from adhelper.autopilot.adapters.rules_file import load_rules as load_autopilot_rules
+from adhelper.autopilot.adapters.sql import SqlDecisionLog
+from adhelper.autopilot.adapters.tests import SqlTestPlanner
+from adhelper.autopilot.application.cycle import SCHEDULED_MODE, AutopilotCycle
 from adhelper.budget.adapters.ledgered import (
     LedgeredBudgetPlatform,
     PlatformChangeGateway,
@@ -57,6 +63,13 @@ from adhelper.notifications.application.service import (
 from adhelper.platforms.adapters.gateway import RoutingGateway
 
 MAX_CHANGE_ATTEMPTS = 3
+CURRENT_AUTOPILOT_RULES = "autopilot-2"
+CURRENT_EXPERIMENT_RULES = "experiments-1"
+
+
+async def _increase_needs_owner(account: str, campaign_id: str, new_limit: int) -> str:
+    # Лимит автопилот сейчас только предлагает: см. SCHEDULED_MODE.
+    return "awaiting_confirmation"
 
 
 def _utc_now() -> datetime:
@@ -172,6 +185,30 @@ class Runtime:
                 creative_rules,
                 self.clock(),
             )
+
+    def autopilot_cycle(self, business_id: UUID, account: str) -> AutopilotCycle:
+        rules = load_autopilot_rules(CURRENT_AUTOPILOT_RULES)
+        return AutopilotCycle(
+            SqlAutopilotData(self.sessions, business_id, rules),
+            SqlDecisionLog(self.sessions, business_id),
+            LedgeredActions(self.ledger_for(business_id, account), _increase_needs_owner),
+            SqlAlerts(self.sessions, business_id),
+            self.clock,
+            rules,
+            SqlTestPlanner(self.sessions, business_id, CURRENT_EXPERIMENT_RULES),
+        )
+
+    async def autopilot_run(self, only: UUID | None = None) -> int:
+        """Раз в сутки: анализ по отчётам и предложения владельцу. Возвращает число кабинетов."""
+        done = 0
+        for business_id, account, goal in await autopilot_accounts(self.sessions):
+            if only is not None and business_id != only:
+                continue
+            if self.platform_for(business_id, account) is None:
+                continue
+            await self.autopilot_cycle(business_id, account).run(account, goal, SCHEDULED_MODE)
+            done += 1
+        return done
 
     async def notifications_send(self) -> None:
         senders = {

@@ -19,7 +19,8 @@ class Window:
     spend: int
     leads: int
     clicks: int
-    visits: int
+    # None — визитов неоткуда взять (Метрика не подключена); проверки визитов пропускаются.
+    visits: int | None
 
 
 @dataclass(frozen=True)
@@ -47,7 +48,7 @@ def check_health(data: HealthInput, rules: AutopilotRules) -> HealthReport:
         reasons.append(HealthReason.PLATFORM_INCIDENT)
     if data.manual_hold:
         reasons.append(HealthReason.MANUAL_HOLD)
-    if recent.clicks >= rules.health_min_clicks:
+    if recent.visits is not None and recent.clicks >= rules.health_min_clicks:
         if recent.visits == 0:
             reasons.append(HealthReason.TRACKING_LOST)
         elif recent.visits * BASIS_POINTS < recent.clicks * rules.health_min_visit_share_bp:

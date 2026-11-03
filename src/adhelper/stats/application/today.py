@@ -35,5 +35,7 @@ async def today(
         prev_leads=view.previous.conversions,
         prev_cost=view.previous.cost,
         history=await dashboard.history(HISTORY),
+        offers=await dashboard.test_offers(),
+        tests=await dashboard.open_tests(),
     )
     return cards(facts, rules)

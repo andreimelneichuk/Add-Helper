@@ -21,6 +21,7 @@ from adhelper.api.cabinet import cabinet_router
 from adhelper.api.chat import chat_router
 from adhelper.api.control import control_router
 from adhelper.api.display import display_router
+from adhelper.api.experiments import experiments_router
 from adhelper.api.launch import launch_router
 from adhelper.api.notifications import notifications_router
 from adhelper.api.plan import plan_router
@@ -111,6 +112,7 @@ def create_app(
     app.include_router(rework_router())
     app.include_router(guest_ads_router())
     app.include_router(wizard_ads_router())
+    app.include_router(experiments_router())
     app.state.guest_secret = _guest_secret(settings)
     # Адаптер Директа появится в T5 (ждёт V1); пока действия с площадкой честно отвечают 503.
     app.state.platform_for = _no_platform

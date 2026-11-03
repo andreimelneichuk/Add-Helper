@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from adhelper.stats.domain.model import AlertLine, HistoryLine
+from adhelper.stats.domain.model import AlertLine, HistoryLine, TestLine, TestOffer
 
 MICROS_PER_RUB = 1_000_000
 # Что владелец может отменить из истории: совпадает с откатом журнала.
@@ -48,6 +48,8 @@ class TodayFacts:
     prev_leads: int
     prev_cost: int
     history: Sequence[HistoryLine]
+    offers: Sequence[TestOffer] = ()
+    tests: Sequence[TestLine] = ()
 
 
 @dataclass(frozen=True)
@@ -211,6 +213,67 @@ def _last_action(facts: TodayFacts, rules: TodayRules) -> Card | None:
     return None
 
 
+# Что проверит новый вариант. Только гипотезы, которые подтверждает профиль (docs/04 §5).
+HYPOTHESIS = {
+    "price": "с ценой из вашего профиля",
+    "benefit": "с вашим преимуществом из профиля",
+    "call_to_action": "с другим призывом к действию",
+}
+WAITS_FOR_API = (
+    "Новый вариант напишу и отправлю в Яндекс, когда сервис получит доступ к API Директа."
+    " До тех пор объявление работает как раньше."
+)
+
+
+def _offer(offer: TestOffer, rules: TodayRules) -> Card:
+    spent = f"«{offer.ad_title}» потратило {rub(offer.spend)}"
+    if offer.leads > 0:
+        result = (
+            f"{spent} и принесло {offer.leads} {leads_word(offer.leads)},"
+            f" по {rub(offer.spend // offer.leads)} при цели {rub(offer.target)}."
+        )
+    else:
+        result = f"{spent}, обращений пока нет. Цель — {rub(offer.target)} за обращение."
+    return Card(
+        "test_offer",
+        "info",
+        "Предлагаю проверить новый вариант объявления",
+        f"{result} Плохим его назвать нельзя, хорошим тоже, а данных для вывода мало."
+        f" Предлагаю A/B-тест: рядом встанет вариант {HYPOTHESIS.get(offer.hypothesis, '')},"
+        " показы будут чередоваться по дням от 7 до 21 дня. Бюджет не меняется."
+        " Отказаться можно сейчас, отменить — пока тест готовится.",
+        "test_offer",
+        str(offer.decision_id),
+        rules.version,
+    )
+
+
+def _test(line: TestLine, rules: TodayRules) -> Card | None:
+    what = f"«{line.ad_title}» против варианта {HYPOTHESIS.get(line.hypothesis, '')}."
+    if line.status == "review":
+        return Card(
+            "test_preparing",
+            "info",
+            "Готовлю A/B-тест",
+            f"{what} {WAITS_FOR_API} Другие тесты на этом направлении пока не начнутся.",
+            "test_cancel",
+            str(line.id),
+            rules.version,
+        )
+    if line.status in ("running", "paused"):
+        return Card(
+            "test_running",
+            "info",
+            "Идёт A/B-тест" if line.status == "running" else "A/B-тест приостановлен",
+            f"{what} Итог покажу, когда данных хватит для вывода."
+            " Промежуточные цифры выводом не считаются.",
+            None,
+            str(line.id),
+            rules.version,
+        )
+    return None
+
+
 def cards(facts: TodayFacts, rules: TodayRules) -> list[Card]:
     """Лента «Сегодня»: сначала то, что требует внимания; если всё хорошо — одна строка."""
     placed: list[tuple[int, Card]] = [_alert(a, facts.balance_gap, rules) for a in facts.alerts]
@@ -232,6 +295,12 @@ def cards(facts: TodayFacts, rules: TodayRules) -> list[Card]:
         )
     calm = not placed
     placed.append((rules.priority["summary"], _summary(facts, calm, rules)))
+    for offer in facts.offers:
+        placed.append((rules.priority["test_offer"], _offer(offer, rules)))
+    for line in facts.tests:
+        card = _test(line, rules)
+        if card is not None:
+            placed.append((rules.priority[card.kind], card))
     last = _last_action(facts, rules)
     if last is not None:
         placed.append((rules.priority["last_action"], last))

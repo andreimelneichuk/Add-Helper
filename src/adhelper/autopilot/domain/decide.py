@@ -28,6 +28,8 @@ class BlockReason(StrEnum):
     ONE_CHANGE_PER_CYCLE = "one_change_per_cycle"
     TEST_RUNNING = "test_running"
     ROLLED_BACK = "rolled_back"
+    BUDGET_TOO_SMALL = "budget_too_small"
+    TEST_DECLINED = "test_declined"
 
 
 @dataclass(frozen=True)
@@ -74,11 +76,13 @@ def _plan_campaign(
     good = [ad for ad in ads if evaluations[ad.ref].verdict is Verdict.EFFICIENT]
     middle = [ad for ad in ads if evaluations[ad.ref].verdict is Verdict.BORDERLINE]
 
+    # Пограничные тоже ждут: тест поверх идущего теста или свежего изменения смешал бы данные.
+    waiting = [ad.ref for ad in (*bad, *middle)]
     if campaign is not None and campaign.test_running:
-        return None, dict.fromkeys((ad.ref for ad in bad), BlockReason.TEST_RUNNING)
+        return None, dict.fromkeys(waiting, BlockReason.TEST_RUNNING)
     gap = timedelta(days=rules.min_change_gap_days)
     if campaign and campaign.last_change_at and now - campaign.last_change_at < gap:
-        return None, dict.fromkeys((ad.ref for ad in bad), BlockReason.CHANGED_RECENTLY)
+        return None, dict.fromkeys(waiting, BlockReason.CHANGED_RECENTLY)
 
     running = Counter(ad.group_id for ad in ads)
     chosen: Action | None = None
@@ -118,14 +122,14 @@ def _plan_campaign(
             ),
             blocked,
         )
-    if middle:
-        first = min(middle, key=lambda item: item.ref)
-        facts = _facts(first, evaluations[first.ref], target)
+    test = _plan_test(middle, campaign, evaluations, target, rules, blocked)
+    if test is not None:
+        facts, chosen_ad = test
         return (
             Action(
                 ActionKind.START_TEST,
-                first.ref,
-                first.campaign_id,
+                chosen_ad.ref,
+                chosen_ad.campaign_id,
                 facts,
                 rules.version,
                 needs_confirmation,
@@ -133,6 +137,35 @@ def _plan_campaign(
             blocked,
         )
     return None, blocked
+
+
+def _plan_test(
+    middle: Sequence[AdStats],
+    campaign: CampaignStats | None,
+    evaluations: Mapping[str, Evaluation],
+    target: int,
+    rules: AutopilotRules,
+    blocked: dict[str, BlockReason],
+) -> tuple[dict[str, int], AdStats] | None:
+    """Тест — только когда лимит за срок теста покрывает несколько цен обращения.
+
+    Иначе за срок теста обращений будет так мало, что вывода не получится, а деньги уйдут.
+    """
+    if not middle:
+        return None
+    limit = campaign.limit if campaign is not None else 0
+    if limit * rules.test_days < rules.test_min_target_multiple * target:
+        blocked.update(dict.fromkeys((ad.ref for ad in middle), BlockReason.BUDGET_TOO_SMALL))
+        return None
+    for ad in sorted(middle, key=lambda item: item.ref):
+        if ad.test_hold:
+            blocked[ad.ref] = BlockReason.TEST_DECLINED
+            continue
+        facts = _facts(ad, evaluations[ad.ref], target)
+        if campaign is not None:
+            facts["limit_micros"] = campaign.limit
+        return facts, ad
+    return None
 
 
 def plan_cycle(

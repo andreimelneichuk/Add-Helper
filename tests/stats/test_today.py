@@ -3,11 +3,12 @@
 from datetime import UTC, datetime, timedelta
 
 from adhelper.stats.adapters.rules_file import load_today_rules
-from adhelper.stats.domain.model import AlertLine, HistoryLine
+from adhelper.stats.domain.model import AlertLine, HistoryLine, TestLine, TestOffer
 from adhelper.stats.domain.today import TodayFacts, cards
 
 NOW = datetime(2026, 11, 10, 9, 0, tzinfo=UTC)
 RULES = load_today_rules("today-1")
+RULES_2 = load_today_rules("today-2")
 RUB = 1_000_000
 
 
@@ -111,3 +112,45 @@ def test_feed_is_finite_and_unknown_alert_is_not_lost() -> None:
 
 def test_every_card_carries_rules_version() -> None:
     assert {c.rules for c in cards(facts(paused=True), RULES)} == {"today-1"}
+
+
+OFFER = TestOffer(41, "Маникюр с покрытием", "price", 1200 * RUB, 3, 300 * RUB, 400 * RUB)
+
+
+def test_test_offer_names_numbers_hypothesis_and_how_to_refuse() -> None:
+    shown = cards(facts(offers=(OFFER,)), RULES_2)
+
+    offer = next(c for c in shown if c.kind == "test_offer")
+    assert offer.action == "test_offer" and offer.ref == "41"
+    text = plain(offer.text)
+    assert "«Маникюр с покрытием» потратило 1 200 ₽ и принесло 3 обращения" in text
+    assert "по 400 ₽ при цели 300 ₽" in text
+    assert "с ценой из вашего профиля" in text
+    assert "Бюджет не меняется" in text
+    assert offer.rules == "today-2"
+
+
+def test_offer_without_leads_does_not_divide_by_zero() -> None:
+    quiet = TestOffer(5, "Педикюр", "call_to_action", 900 * RUB, 0, 300 * RUB, 400 * RUB)
+    offer = next(c for c in cards(facts(offers=(quiet,)), RULES_2) if c.kind == "test_offer")
+    assert "обращений пока нет" in plain(offer.text)
+
+
+def test_preparing_test_says_what_waits_and_offers_cancel() -> None:
+    line = TestLine(9, "Маникюр с покрытием", "benefit", "review")
+    card = next(c for c in cards(facts(tests=(line,)), RULES_2) if c.kind == "test_preparing")
+    assert card.action == "test_cancel" and card.ref == "9"
+    assert "доступ к API Директа" in plain(card.text)
+    assert "работает как раньше" in plain(card.text)
+
+
+def test_running_test_shows_no_early_verdict() -> None:
+    line = TestLine(9, "Маникюр с покрытием", "benefit", "running")
+    card = next(c for c in cards(facts(tests=(line,)), RULES_2) if c.kind == "test_running")
+    assert card.action is None
+    assert "Промежуточные цифры" in plain(card.text)
+
+
+def test_offer_does_not_hide_a_problem() -> None:
+    shown = cards(facts(alerts=(alert("zero_balance"),), offers=(OFFER,)), RULES_2)
+    assert [c.kind for c in shown][:1] == ["alert:zero_balance"]

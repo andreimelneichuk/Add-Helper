@@ -19,3 +19,8 @@ class AutopilotRules:
     health_min_visit_share_bp: int
     health_min_expected_leads: int
     health_gap_share_bp: int
+    # A/B-тест по итогам анализа, docs/04-autopilot.md §5. Нули сохраняют решения autopilot-1:
+    # тогда пограничное объявление сразу получает тест, без проверки бюджета и отказов.
+    test_days: int = 7
+    test_min_target_multiple: int = 0
+    test_decline_hold_days: int = 0
