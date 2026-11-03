@@ -28,9 +28,15 @@ from pathlib import Path
 from pydantic import SecretStr
 
 from adhelper.creatives.adapters.openai_compatible import OpenAiCompatibleModel
-from adhelper.creatives.application.generate import ADS_SCHEMA, SYSTEM_PROMPT, build_prompt
+from adhelper.creatives.application.generate import (
+    ADS_SCHEMA,
+    SYSTEM_PROMPT,
+    _parse,
+    build_prompt,
+)
 from adhelper.creatives.domain.checks import profile_facts
-from adhelper.creatives.domain.model import AdDraft, ModelUnavailable, TextModel
+from adhelper.creatives.domain.facts import check_claims, keyed_facts
+from adhelper.creatives.domain.model import ModelUnavailable, TextModel
 from evals.dataset.authored import RULES
 from evals.dataset.build import (
     DATA,
@@ -47,7 +53,6 @@ from evals.dataset.build import (
     gold,
     load,
     normalized,
-    parse_ads,
     parse_votes,
     prompt_version,
     split_of,
@@ -100,6 +105,8 @@ LABEL_SCHEMA: dict[str, object] = {
 }
 LABEL_VERSION = prompt_version(LABEL_SYSTEM, json.dumps(LABEL_SCHEMA))
 WRITER_VERSION = prompt_version(SYSTEM_PROMPT, json.dumps(ADS_SCHEMA), RULES.version)
+# Буква в id объявления писателя: w — до AI2, f — писатель со ссылками на факты (AI2).
+WRITER_TAG = "f"
 
 
 def out(line: str = "") -> None:
@@ -140,7 +147,11 @@ async def write(args: argparse.Namespace) -> None:
     model = _model(args.model)
     gate = asyncio.Semaphore(PARALLEL)
     seen = {normalized(i.headline, i.text) for i in data.items.values()}
-    done = {i.profile_id for i in data.items.values() if i.origin == "writer"}
+    done = {
+        i.profile_id
+        for i in data.items.values()
+        if i.origin == "writer" and i.prompt_version == WRITER_VERSION
+    }
     counts: Counter[str] = Counter()
 
     async def one(profile_id: str) -> None:
@@ -150,21 +161,28 @@ async def write(args: argparse.Namespace) -> None:
                 text = await _ask(
                     model, SYSTEM_PROMPT, build_prompt(profile.business(), RULES), ADS_SCHEMA
                 )
-                ads = parse_ads(text)
+                candidates = _parse(text)
+                if candidates is None:
+                    raise BadReply("no_ads")
             except (ModelUnavailable, BadReply, ValueError) as error:
                 counts[f"failed:{type(error).__name__}"] += 1
                 return
         rows = []
-        for number, (headline, body) in enumerate(ads):
+        facts = keyed_facts(profile.business())
+        for number, candidate in enumerate(candidates):
+            headline, body = candidate.draft.headline, candidate.draft.text
             key = normalized(headline, body)
-            violations = code_violations(AdDraft(headline, body), profile.business(), RULES)
+            violations = code_violations(candidate.draft, profile.business(), RULES)
+            # Ссылки на факты проверяет код сервиса; снятое кодом до судьи не доходит.
+            unbound = check_claims(candidate.draft, candidate.claims, facts)
+            violations = sorted({*violations, *(v.kind.value for v in unbound)})
             if key in seen or not usable(violations):
                 counts["dropped"] += 1
                 continue
             seen.add(key)
             rows.append(
                 ItemRow(
-                    f"{profile_id}-w{number}",
+                    f"{profile_id}-{WRITER_TAG}{number}",
                     profile.batch,
                     split_of(SPLIT_SEED, profile_id),
                     profile_id,

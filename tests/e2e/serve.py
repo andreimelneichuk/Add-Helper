@@ -38,6 +38,7 @@ from adhelper.creatives.domain.model import ModelReply
 from adhelper.worker.demo import ADS, CAMPAIGNS, ENV_FILE, seed_demo, write_demo_env
 from adhelper.worker.runtime import Runtime, open_runtime
 from tests.budget.fake_platform import FakePlatform
+from tests.claims import with_claims
 
 DATABASE = "adhelper_e2e"
 PORT = 8011
@@ -106,13 +107,13 @@ STAND_ADS = [
 
 def _rework_ads(prompt: str) -> list[dict[str, str]]:
     """Варианты переделки строим из профиля в запросе: так они проходят проверку фактов."""
-    profile = json.loads(prompt.split("ПРОФИЛЬ:\n", 1)[1])
-    first = profile["услуги"][0]
-    price = f" за {first['цена_руб']} ₽" if first["цена_руб"] else ""
-    feature = (profile["особенности"] or [profile["адрес"]])[0]
+    facts = json.loads(prompt.rsplit("ФАКТЫ:\n", 1)[1])
+    price = facts.get("s1_price", "").rpartition(": ")[2]
+    priced = f" за {price}" if price else ""
+    feature = facts.get("f1") or facts.get("address", "")
     return [
-        {"headline": f"{first['услуга']}{price}", "text": f"Ждём вас: {profile['адрес']}."},
-        {"headline": first["услуга"], "text": f"{feature}."},
+        {"headline": f"{facts['s1']}{priced}", "text": f"Ждём вас: {facts.get('address', '')}."},
+        {"headline": facts["s1"], "text": f"{feature}."},
     ]
 
 
@@ -121,9 +122,11 @@ class StandModel:
         self, system: str, user: str, schema: dict[str, object], max_tokens: int
     ) -> ModelReply:
         if "ПОЖЕЛАНИЕ" in user:
-            return ModelReply(json.dumps({"ads": _rework_ads(user)}, ensure_ascii=False), 100)
+            reply = json.dumps({"ads": _rework_ads(user)}, ensure_ascii=False)
+            return ModelReply(with_claims(reply, user), 100)
         if "ads" in schema.get("properties", {}):  # type: ignore[operator]
-            return ModelReply(json.dumps({"ads": STAND_ADS}, ensure_ascii=False), 100)
+            reply = json.dumps({"ads": STAND_ADS}, ensure_ascii=False)
+            return ModelReply(with_claims(reply, user), 100)
         keys = ("field", "value", "quote", "price")
         facts = [dict(zip(keys, fact, strict=True)) for fact in SITE_FACTS]
         return ModelReply(json.dumps({"facts": facts}, ensure_ascii=False), 100)

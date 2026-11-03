@@ -35,7 +35,12 @@ from evals.score import CaseRun, metrics, misses_by_category, single_call_averag
 
 RESULTS = Path(__file__).parent / "results"
 RULES = load_rules("creatives-2")
-PARALLEL = 6
+# Бесплатный уровень Groq: 8000 токенов в минуту, а запрос резервирует и max_tokens:
+# два вызова судьи набора сразу уже упираются в лимит.
+PARALLEL = 1
+ATTEMPTS = 8
+# Пауза после вызова внутри очереди: около 2000 токенов на вызов, три вызова в минуту.
+PACE_SECONDS = 20.0
 
 
 def out(line: str = "") -> None:
@@ -64,22 +69,34 @@ async def _spent(settings: Settings) -> float | None:
 async def _judge_once(
     model: TextModel,
     variant: JudgeVariant,
-    case: Case,
+    cases: Sequence[Case],
     profile: BusinessProfile,
     gate: asyncio.Semaphore,
-) -> tuple[bool, str, int]:
-    async with gate:
-        try:
-            reply = await model.complete_json(
-                variant.system,
-                variant.build(case.draft, profile),
-                variant.schema,
-                RULES.judge_max_tokens,
-            )
-        except ModelUnavailable as error:
-            return True, f"judge_unavailable:{error}", 0
-    verdict = variant.read(reply.text, case.draft)
-    return verdict.blocked, verdict.reason, reply.tokens
+    pace: float = 0.0,
+) -> list[tuple[bool, str, int]]:
+    """Один вызов на объявление или, для судьи набора, на все объявления профиля."""
+    drafts = [case.draft for case in cases]
+    # Лимит провайдера — не ответ судьи: ждём и повторяем, а в замер идёт последний сбой.
+    for attempt in range(ATTEMPTS):
+        async with gate:
+            try:
+                reply = await model.complete_json(
+                    variant.system,
+                    variant.build(drafts, profile),
+                    variant.schema,
+                    RULES.judge_max_tokens * (len(drafts) if variant.per_set else 1),
+                )
+            except ModelUnavailable as error:
+                failure = error
+            else:
+                if pace:
+                    await asyncio.sleep(pace)
+                break
+        await asyncio.sleep(min(120, 10 * 2**attempt))
+    else:
+        return [(True, f"judge_unavailable:{failure}", 0) for _ in cases]
+    verdicts = variant.read(reply.text, drafts)
+    return [(v.blocked, v.reason, reply.tokens // len(cases)) for v in verdicts]
 
 
 async def judge_eval(
@@ -89,22 +106,76 @@ async def judge_eval(
     repeats: int,
     cases: Sequence[Case],
     profiles: Mapping[str, BusinessProfile] = PROFILES,
+    previous: Mapping[str, CaseRun] | None = None,
 ) -> list[CaseRun]:
+    """previous — прошлый прогон того же замера: готовые ответы не запрашиваем снова."""
     model = _model(settings, model_name)
-    gate = asyncio.Semaphore(PARALLEL)
-    tasks = [
-        [
-            _judge_once(model, PROMPTS[prompt], case, profiles[case.profile], gate)
-            for _ in range(repeats)
-        ]
-        for case in cases
-    ]
-    answers = [await asyncio.gather(*row) for row in tasks]
-    runs = []
-    for case, row in zip(cases, answers, strict=True):
-        code = bool(check_draft(case.draft, profiles[case.profile], RULES))
-        runs.append(CaseRun(case, tuple(a[0] for a in row), code, tuple(a[1] for a in row)))
+    variant = PROMPTS[prompt]
+    # Лимиты в минуту есть у бесплатного Groq; у OpenRouter платим за токены и не ждём.
+    limited = "groq.com" in settings.text_model_base_url
+    gate = asyncio.Semaphore(PARALLEL if limited else 8)
+    pace = PACE_SECONDS if limited and variant.per_set else 0.0
+    groups: list[list[Case]] = []
+    if variant.per_set:
+        by_profile: dict[str, list[Case]] = {}
+        for case in cases:
+            by_profile.setdefault(case.profile, []).append(case)
+        groups = list(by_profile.values())
+    else:
+        groups = [[case] for case in cases]
+    done = previous or {}
+    todo = [g for g in groups if not all(_answered(done.get(c.id), repeats) for c in g)]
+    answers = await asyncio.gather(
+        *(
+            asyncio.gather(
+                *(
+                    _judge_once(model, variant, group, profiles[group[0].profile], gate, pace)
+                    for _ in range(repeats)
+                )
+            )
+            for group in todo
+        )
+    )
+    tokens = sum(a[2] for row in answers for repeat in row for a in repeat)
+    out(f"токенов судьи: {tokens}, наборов запрошено {len(todo)} из {len(groups)}")
+    fresh = {id(group): row for group, row in zip(todo, answers, strict=True)}
+    runs: list[CaseRun] = []
+    for group in groups:
+        if id(group) not in fresh:
+            runs.extend(done[case.id] for case in group)
+            continue
+        row = fresh[id(group)]
+        for position, case in enumerate(group):
+            code = bool(check_draft(case.draft, profiles[case.profile], RULES))
+            votes = tuple(repeat[position][0] for repeat in row)
+            reasons = tuple(repeat[position][1] for repeat in row)
+            runs.append(CaseRun(case, votes, code, reasons))
     return runs
+
+
+def _answered(run: CaseRun | None, repeats: int) -> bool:
+    return (
+        run is not None
+        and len(run.votes) == repeats
+        and not any(r.startswith("judge_unavailable") for r in run.reasons)
+    )
+
+
+def _previous(name: str) -> dict[str, CaseRun]:
+    path = RESULTS / f"{name}.json"
+    if not path.exists():
+        return {}
+    saved = json.loads(path.read_text(encoding="utf-8"))["cases"]
+    fields = {f for f in Case.__dataclass_fields__}
+    return {
+        row["id"]: CaseRun(
+            Case(**{k: v for k, v in row.items() if k in fields}),
+            tuple(row["votes"]),
+            row["code_blocked"],
+            tuple(row["reasons"]),
+        )
+        for row in saved
+    }
 
 
 def report_judge(runs: Sequence[CaseRun], title: str) -> dict[str, object]:
@@ -141,6 +212,14 @@ async def run_judge(args: argparse.Namespace) -> None:
     if args.dataset:
         cases, profiles = to_cases(load_dataset(), args.dataset, args.labels)
         part = f"{args.dataset}-{args.labels}"
+        if args.writer:
+            # Только объявления писателя одной версии: w — до AI2, f — со ссылками на факты.
+            cases = [
+                c
+                for c in cases
+                if c.category == "writer" and c.id.rsplit("-", 1)[1].startswith(args.writer)
+            ]
+            part += f"-{args.writer}"
         if not cases:
             raise SystemExit(f"В выборке {part} нет размеченных объявлений")
     else:
@@ -149,11 +228,15 @@ async def run_judge(args: argparse.Namespace) -> None:
     before = await _spent(settings)
     for model_name in args.models:
         for prompt in args.prompts:
-            runs = await judge_eval(settings, model_name, prompt, args.repeats, cases, profiles)
+            name = f"judge--{_slug(model_name)}--{prompt}--{part}"
+            previous = _previous(name) if args.resume else {}
+            runs = await judge_eval(
+                settings, model_name, prompt, args.repeats, cases, profiles, previous
+            )
             title = f"{model_name} · {prompt} · {part} · повторов {args.repeats}"
             summary = report_judge(runs, title)
             _save(
-                f"judge--{_slug(model_name)}--{prompt}--{part}",
+                name,
                 {
                     "summary": summary,
                     "cases": [
@@ -252,6 +335,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     judge.add_argument("--split", default="all", choices=["all", "dev", "holdout", "fresh"])
     judge.add_argument("--dataset", default="", choices=["", "train", "val", "test", "all"])
     judge.add_argument("--labels", default="gold", choices=["gold", "human", "author"])
+    judge.add_argument("--writer", default="", choices=["", "w", "f"])
+    judge.add_argument("--resume", action="store_true", help="доспросить только сбои")
     generate = sub.add_parser("generate")
     generate.add_argument("--models", nargs="+", required=True)
     generate.add_argument("--judge", default="")

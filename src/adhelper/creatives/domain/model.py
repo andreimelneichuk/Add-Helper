@@ -10,6 +10,8 @@ class ViolationKind(StrEnum):
     UNCONFIRMED_NUMBER = "unconfirmed_number"
     UNCONFIRMED_CLAIM = "unconfirmed_claim"
     UNCONFIRMED_BY_JUDGE = "unconfirmed_by_judge"
+    # Ссылка писателя на факт неверна: нет ключа, фрагмента или число без факта.
+    UNBOUND_CLAIM = "unbound_claim"
     FORBIDDEN_WORD = "forbidden_word"
     FOREIGN_WORD = "foreign_word"
     TOO_SIMILAR = "too_similar"
