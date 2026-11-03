@@ -85,6 +85,16 @@ def test_price_matches_profile_service() -> None:
     assert parse("цена на маникюр выросла").question
 
 
+def test_service_named_fully_wins_over_longer_name() -> None:
+    # Сайт добавил «… гель-лаком»: «маникюр с покрытием» — это короткая услуга, а не ничья.
+    services = ("Маникюр с покрытием", "Маникюр с покрытием гель-лаком")
+    known = Known((), services)
+    short = by_rules("маникюр с покрытием теперь 1600", known, RULES.max_chars)
+    assert short.command.service == "Маникюр с покрытием"
+    long = by_rules("маникюр с покрытием гель-лаком теперь 1900", known, RULES.max_chars)
+    assert long.command.service == "Маникюр с покрытием гель-лаком"
+
+
 def test_ad_by_title_words() -> None:
     parsed = parse("отключи объявление про ресницы")
     assert parsed.command.kind is Kind.AD_OFF
