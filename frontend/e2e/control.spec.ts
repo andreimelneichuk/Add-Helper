@@ -51,6 +51,23 @@ test("пауза из шапки останавливает показы и пе
   await expect(page.locator(".ah-status")).toHaveText("На паузе");
 });
 
+test("«Сегодня»: карточки в порядке правил сервиса, пауза первой, финал ленты", async ({ page }) => {
+  await page.goto("/?new");
+  const business = (await (await page.request.get("/api/businesses")).json())[0];
+  const { rules, cards } = await (await page.request.get(`/api/businesses/${business.id}/today`)).json();
+  expect(rules).toBe("today-1");
+  // Пауза владельца из прошлого шага — первая карточка, итог недели ниже.
+  expect(cards[0].kind).toBe("paused");
+  expect(cards.map((c: { kind: string }) => c.kind)).toContain("summary");
+  expect(cards.length).toBeLessThanOrEqual(5);
+  const main = page.locator(".ov-attention");
+  await expect(main.getByRole("heading")).toHaveText(cards[0].title);
+  await expect(main.getByRole("button", { name: "Включить" })).toBeVisible();
+  const more = page.getByRole("region", { name: "Ещё на сегодня" });
+  await expect(more.getByRole("heading")).toHaveText(cards.slice(1).map((c: { title: string }) => c.title));
+  await expect(more).toContainText("На сегодня всё.");
+});
+
 test("пауза владельца снимается кнопкой, остановленное не владельцем остаётся", async ({ page }) => {
   await page.goto("/?new");
   await expect(page.locator(".ah-status")).toHaveText("На паузе");

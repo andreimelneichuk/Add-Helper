@@ -230,6 +230,9 @@ export type Display = {
 };
 
 /** Как сервис понял сообщение чата. Ничего не меняет: выполняется после «да» владельца. */
+/** Карточка «Сегодня»: набор и порядок решают правила сервиса, числа подставляет код. */
+export type TodayCard = { kind: string; tone: "bad" | "warn" | "info" | "good"; title: string; text: string; action: "balance" | "ads" | "settings" | "resume" | "history" | "undo" | null; ref: string | null; rules: string };
+
 /** Что будет после отмены: текст собирает сервис из журнала, до нажатия. */
 export type UndoPreview = { possible: boolean; status: string; text: string; directions: number };
 
@@ -280,6 +283,7 @@ export function createApi(businessId: string, csrf: string) {
   const part = encodeURIComponent;
   return {
     overview: (range?: Range | null) => request<Overview>(`${base}/overview${period(range)}`),
+    today: () => request<{ rules: string; cards: TodayCard[] }>(`${base}/today`),
     ads: (range?: Range | null) => request<AdLine[]>(`${base}/ads${period(range)}`),
     campaign: (account: string, id: string, range?: Range | null) =>
       request<CampaignDetail>(`${base}/campaigns/${part(account)}/${part(id)}${period(range)}`),

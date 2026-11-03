@@ -38,6 +38,7 @@ from adhelper.creatives.application.service import (
     withdraw,
 )
 from adhelper.notifications.adapters.sql import SqlAlerts
+from adhelper.stats.adapters.rules_file import load_today_rules
 from adhelper.stats.adapters.sql import SqlDashboard
 from adhelper.stats.application.clients import NoLeads, TooManyClients, record_clients
 from adhelper.stats.application.overview import (
@@ -52,6 +53,7 @@ from adhelper.stats.application.overview import (
     platform_today,
     window,
 )
+from adhelper.stats.application.today import today
 
 NOT_FOUND = "Бизнес не найден"
 # Объявление другого бизнеса тоже даёт 409, а не 404: состояние чужих строк не раскрываем.
@@ -84,6 +86,9 @@ MAX_CLIENT_DAYS = 31
 
 class ConfirmBody(BaseModel):
     account: str = Field(min_length=1, max_length=200)
+
+
+CURRENT_TODAY_RULES = "today-1"
 
 
 def _sessions(request: Request) -> async_sessionmaker[AsyncSession]:
@@ -150,6 +155,18 @@ def cabinet_router() -> APIRouter:
         answer = await SqlDashboard(_sessions(request), business_id).latest_clients()
         result["clients"] = asdict(answer) if answer else None
         return result
+
+    @router.get("/today")
+    async def get_today(request: Request, business_id: Owned) -> dict[str, Any]:
+        """Лента «Сегодня»: набор и порядок по правилам, числа от кода."""
+        rules = load_today_rules(CURRENT_TODAY_RULES)
+        found = await today(
+            SqlDashboard(_sessions(request), business_id),
+            _now(request),
+            lambda version: load_budget_rules(version).balance_tolerance_bp,
+            rules,
+        )
+        return {"rules": rules.version, "cards": [asdict(card) for card in found]}
 
     @router.post("/clients")
     async def post_clients(

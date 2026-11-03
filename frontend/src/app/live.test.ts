@@ -237,3 +237,21 @@ describe("действия идут через сервис", () => {
     expect(old.state.clients).toBeNull();
   });
 });
+
+describe("лента «Сегодня» от сервиса", () => {
+  const cards = [
+    { kind: "paused", tone: "bad" as const, title: "Реклама на паузе", text: "Вы поставили паузу.", action: "resume" as const, ref: null, rules: "today-1" },
+    { kind: "summary", tone: "info" as const, title: "12 обращений за 7 дней, по 420 ₽", text: "", action: null, ref: null, rules: "today-1" },
+    { kind: "last_action", tone: "info" as const, title: "Отключил объявление", text: "Вы попросили.", action: "undo" as const, ref: "change-5", rules: "today-1" },
+  ];
+
+  it("берёт карточки сервиса в его порядке", async () => {
+    const store = await open(fakeApi({ today: vi.fn(async () => ({ rules: "today-1", cards })) } as Partial<Api>));
+    expect(store.state.live?.cards?.map((c) => c.kind)).toEqual(["paused", "summary", "last_action"]);
+  });
+
+  it("без ленты сервиса экран не ломается", async () => {
+    const store = await open(fakeApi({ today: vi.fn(async () => { throw new ApiError(500, "сбой"); }) } as Partial<Api>));
+    expect(store.state.live?.cards).toBeUndefined();
+  });
+});

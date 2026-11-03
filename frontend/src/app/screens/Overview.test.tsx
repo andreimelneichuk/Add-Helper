@@ -1,8 +1,9 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DAYS, rub } from "../data";
 import type { Situation } from "../data";
 import { initialState, Store, week } from "../store";
+import { fakeApi, open } from "../testLive";
 import { Overview } from "./Overview";
 
 function show(situation: Situation = "running") {
@@ -177,5 +178,28 @@ describe("остальные блоки", () => {
     show("budget");
     expect(DAYS.budget).toHaveLength(27);
     expect(screen.getByText(/^На счёте 900 ₽\. Сверка: разница 0 ₽, сегодня в 9:40\./)).toBeInTheDocument();
+  });
+});
+
+describe("лента сервиса на «Сегодня»", () => {
+  it("первая карточка крупно, остальные по порядку, финал ленты", async () => {
+    const cards = [
+      { kind: "paused", tone: "bad" as const, title: "Реклама на паузе", text: "Вы поставили паузу.", action: "resume" as const, ref: null, rules: "today-1" },
+      { kind: "summary", tone: "info" as const, title: "12 обращений за 7 дней, по 420 ₽", text: "", action: null, ref: null, rules: "today-1" },
+      { kind: "last_action", tone: "info" as const, title: "Отключил объявление", text: "Вы попросили.", action: "undo" as const, ref: "change-5", rules: "today-1" },
+    ];
+    const api = fakeApi({ today: vi.fn(async () => ({ rules: "today-1", cards })) });
+    const store = await open(api);
+    render(<Overview store={store} />);
+    const banner = within(screen.getByRole("status"));
+    expect(banner.getByRole("heading", { name: "Реклама на паузе" })).toBeInTheDocument();
+    expect(banner.getByRole("button", { name: "Включить" })).toBeInTheDocument();
+    const more = within(screen.getByRole("region", { name: "Ещё на сегодня" }));
+    expect(more.getAllByRole("heading").map((h) => h.textContent)).toEqual(["12 обращений за 7 дней, по 420 ₽", "Отключил объявление"]);
+    expect(more.getByText("На сегодня всё.")).toBeInTheDocument();
+    fireEvent.click(more.getByRole("button", { name: "Отменить" }));
+    expect(store.state.view).toBe("history");
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    expect(api.rollbackPreview).toHaveBeenCalledWith(5);
   });
 });
