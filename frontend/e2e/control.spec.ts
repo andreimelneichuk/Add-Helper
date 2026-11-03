@@ -399,3 +399,41 @@ test("правка цены: объявления со старой ценой �
   const board = await (await request.get(`${base}/creatives`)).json();
   expect(board.creatives.filter((c: Row) => c.reason === "fact_changed" && c.state === "needs_owner" && c.headline.includes("1600"))).toHaveLength(0);
 });
+
+test("чат: просьба становится командой из набора и меняет только после «Применить», вне набора честный отказ", async ({ page }) => {
+  await page.goto("/?new");
+  await nav(page, "Чат с ИИ").click();
+  const input = page.getByLabel("Сообщение для ИИ");
+  const last = page.getByRole("log", { name: "Сообщения" }).locator(".ah-chat-msg-ai").last();
+  const say = async (text: string) => { await input.fill(text); await input.press("Enter"); };
+  const apply = () => page.getByRole("group", { name: "Подсказки" }).getByRole("button", { name: "Применить" }).click();
+
+  await say("сделай скидку 30% новым клиентам");
+  await expect(last).toContainText("Скидки и акции беру только из профиля");
+  await say("увеличь бюджет");
+  await expect(last).toContainText("Какой бюджет поставить?");
+
+  // Дни: каждое направление сохраняет свои часы, у «Наращивания» часы не прочитаны, его не трогаем.
+  await say("не показывай рекламу по воскресеньям");
+  await expect(last).toContainText("Понял так: не показывать рекламу: воскресенье.");
+  await apply();
+  await expect(last).toContainText("Больше не показываю рекламу: воскресенье");
+  await expect(last).toContainText("У 1 направления часы ещё не прочитаны");
+  await nav(page, "История").click();
+  await expect(page.locator(".ah-hist-row", { hasText: "Изменил время показов" }).first()).toContainText("пн–сб");
+
+  // Цена услуги: через профиль, старые объявления названы. Затем возвращаем прежнюю.
+  // Педикюр не трогаем: правка его цены честно снимает ждущее «Педикюр за 2200 ₽» из parity.
+  await nav(page, "Чат с ИИ").click();
+  await say("маникюр с покрытием теперь 1600");
+  await expect(last).toContainText("«Маникюр с покрытием» теперь");
+  await page.getByRole("group", { name: "Подсказки" }).getByRole("button", { name: "Не надо" }).click();
+  await expect(last).toContainText("ничего не меняю");
+  await say("маникюр с покрытием теперь 1600");
+  await apply();
+  await expect(last).toContainText("Цена «Маникюр с покрытием» в профиле теперь");
+  await expect(last).toContainText("«Маникюр с покрытием 1500 ₽» (1500)");
+  await say("маникюр с покрытием теперь 1500");
+  await apply();
+  await expect(last).toContainText("старых цифр нет");
+});

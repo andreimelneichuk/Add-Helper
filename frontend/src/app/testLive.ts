@@ -1,6 +1,6 @@
 // Поддельный API для тестов нового интерфейса на настоящих данных.
 import { vi } from "vitest";
-import type { AdLine, Api, Display, HistoryLine, Overview } from "../api";
+import type { AdLine, Api, ChatCommand, Display, HistoryLine, Overview } from "../api";
 import { LiveStore, loadLive } from "./live";
 
 export const MILLION = 1_000_000;
@@ -28,6 +28,12 @@ export const display = (): Display => ({
   goal: null,
   catalog: [{ id: 1, name: "Москва и область" }, { id: 213, name: "Москва" }, { id: 2, name: "Санкт-Петербург" }],
   min_weekly_hours: 8,
+});
+
+/** Ответ разборщика команд; по умолчанию — честный отказ. */
+export const said = (over: Partial<ChatCommand> = {}): ChatCommand => ({
+  kind: "unknown", rubles: null, ad: null, service: null, days: [], wish: "", confirm: "",
+  reply: "Этого я пока не умею, поэтому ничего не изменил.", source: "rules", rules: "commands-1", ...over,
 });
 
 export function fakeApi(over: Partial<Api> = {}) {
@@ -66,6 +72,7 @@ export function fakeApi(over: Partial<Api> = {}) {
     setSchedule: vi.fn(async () => ({ applied: ["anna:1"] })),
     setRegions: vi.fn(async () => ({ applied: ["anna:1"] })),
     setGoal: vi.fn(async (rubles: number) => ({ goal: rubles })),
+    command: vi.fn(async () => said()),
     ...over,
   } as unknown as Api;
 }
