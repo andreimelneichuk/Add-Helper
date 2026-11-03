@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { ApiError } from "../api";
-import type { AdDraftProfile, AdSet, AdvertiserKind, Api, ChatCommand, Me, Business, SiteFact, SiteRead, WizardAd } from "../api";
+import type { AdDraftProfile, AdSet, AdvertiserKind, Api, ChatCommand, Me, Business, SiteFact, SiteRead, UndoPreview, WizardAd } from "../api";
 import { clearDraft, clearWizard, draftProfile, loadWizard, saveDraft, loadDraft, transferDraft } from "./draft";
 import type { TransferDeps } from "./draft";
 import { ADS, DAYS, FACTS, histFor, leadsWord, MIN_BUDGET, OPENING, OPTIONS, rub, STATS, STEPS } from "./data";
@@ -11,7 +11,8 @@ export type Message = { id: number; who: Who; text: string; link?: { label: stri
 type Pending =
   | { action: "pause" }
   | { action: "setting"; value: [SettingKey, string | number] }
-  | { action: "undo"; value: string }
+  // whole: отменить просьбу по всем направлениям, а не одно.
+  | { action: "undo"; value: string; whole?: boolean }
   | { action: "price"; value: number }
   | { action: "ad"; value: string }
   | { action: "adSave"; value: Ad }
@@ -37,6 +38,8 @@ export type State = {
   hist: HistoryEntry[];
   undone: Record<string, boolean>;
   asked: Record<string, boolean>;
+  /** Последствия отмены от сервиса; в прототипе их нет, берём текст записи. */
+  undoInfo: Record<string, UndoPreview>;
   adsOff: Record<string, boolean>;
   ads: Ad[];
   /** Открытое объявление на экране рекламы; "new" у создания нового. */
@@ -143,7 +146,7 @@ export function initialState(stage: State["stage"] = "work", situation: Situatio
   return {
     live: null, stage, situation, mode: "panel", view: "overview", notice: "", price: null, step: 0, input: "", pending: null,
     msgs: [msg("ai", stage === "start" ? GREETING : OPENING[situation])],
-    hist: histFor(situation), undone: {}, asked: {}, adsOff: {}, ads: ADS, openAd: null, paused: false, topped: false, decided: null, extra: 0,
+    hist: histFor(situation), undone: {}, asked: {}, undoInfo: {}, adsOff: {}, ads: ADS, openAd: null, paused: false, topped: false, decided: null, extra: 0,
     metric: "cost", selDay: null, period: "week", filter: "all", clientsInput: "", clients: null,
     f: { services: "маникюр и педикюр", area: "Сокольники", hours: "в часы работы", goal: 400, budget: 20000 },
     site: "", codeCopied: false, inn: "", yandex: false, metrica: false, block: "", draftOff: {}, budgetDraft: null, facts: FACTS, factEdit: null, reading: null, budgetOptions: null, account: null, advertiser: { kind: "legal", name: "", phone: "", okved: "" }, marked: false, writing: null, adSet: null,
@@ -282,6 +285,8 @@ export class Store {
   writer: GuestWriter | null = null;
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
   getSnapshot = () => this.state;
+  /** Спросить про отмену записи истории или передумать. */
+  askUndo = (id: string) => this.set({ asked: { ...this.state.asked, [id]: !this.state.asked[id] } });
   set = (patch: Partial<State>) => { this.state = { ...this.state, ...patch }; this.listeners.forEach((fn) => fn()); };
 
   private entry(title: string, why: string, next: string, kind: HistoryKind, undo?: { note: string; revert: NonNullable<HistoryEntry["revert"]> }): HistoryEntry {

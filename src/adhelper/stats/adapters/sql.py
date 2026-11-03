@@ -130,6 +130,7 @@ CHANGES = table(
     column("explanation", Text),
     column("before", JSONB),
     column("after", JSONB),
+    column("reverts_change_id", BigInteger),
     column("created_at", DateTime(timezone=True)),
 )
 DECISIONS = table(
@@ -472,6 +473,13 @@ class SqlDashboard:
         async with self._sessions() as session:
             change_rows = (await session.execute(changes)).mappings().all()
             decision_rows = (await session.execute(decisions)).mappings().all()
+        # Отмены новее исходных записей, поэтому попадают в то же окно.
+        reverted = {
+            row["reverts_change_id"]
+            for row in change_rows
+            if row["reverts_change_id"] is not None
+            and row["status"] in ("planned", "applying", "applied")
+        }
         lines = [
             HistoryLine(
                 ref=f"change-{row['id']}",
@@ -484,6 +492,7 @@ class SqlDashboard:
                 before=row["before"],
                 after=row["after"],
                 rules_version=None,
+                reverted=row["id"] in reverted,
             )
             for row in change_rows
         ] + [

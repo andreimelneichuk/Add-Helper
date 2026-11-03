@@ -1,7 +1,7 @@
 // Новый интерфейс на настоящих данных: сводит ответы API к состоянию экранов и шлёт действия владельца.
 // Деньги приходят целыми микроединицами; в рубли переводим только здесь и только для показа.
 import { ApiError } from "../api";
-import type { AdLine, Alert, Api, ChatCommand, HistoryLine, Money, OutdatedAd, Overview, Profile } from "../api";
+import type { AdLine, Alert, Api, ChatCommand, HistoryLine, Money, OutdatedAd, Overview, Profile, UndoPreview } from "../api";
 import { ALERT } from "../cabinet/words";
 import { MICROS_PER_RUBLE } from "../money";
 import { leadsWord, rub } from "./data";
@@ -82,18 +82,18 @@ function kindOf(line: HistoryLine): HistoryKind {
 
 function toEntry(line: HistoryLine, ads: Ad[]): HistoryEntry {
   const about = ads.find((a) => line.target === `ad:${a.id.split("/").pop()}`);
-  const canUndo = line.ref.startsWith("change-") && line.status === "applied" && line.source !== "external" && line.source !== "rollback" && UNDOABLE.has(line.kind);
+  const canUndo = line.ref.startsWith("change-") && line.status === "applied" && line.source !== "external" && line.source !== "rollback" && UNDOABLE.has(line.kind) && !line.reverted;
   const when = new Date(line.at).toLocaleDateString("ru-RU", { day: "numeric", month: "short", timeZone: "Europe/Moscow" });
   return {
     id: line.ref,
     kind: kindOf(line),
     when,
-    title: about ? `${KIND_TITLE[line.kind] ?? "Изменил"}: «${about.name}»` : (KIND_TITLE[line.kind] ?? "Оценил результат"),
+    title: (line.source === "rollback" ? "Отмена. " : "") + (about ? `${KIND_TITLE[line.kind] ?? "Изменил"}: «${about.name}»` : (KIND_TITLE[line.kind] ?? "Оценил результат")),
     why: line.explanation,
     next: "",
     canUndo,
     undoNote: canUndo ? "Вернётся прежнее значение. Потраченные деньги не вернутся, общий бюджет не вырастет." : undefined,
-    state: canUndo ? undefined : (STATUS_WORD[line.status] ?? "Записано"),
+    state: canUndo ? undefined : line.reverted ? "Отменено" : (STATUS_WORD[line.status] ?? "Записано"),
     about: about?.id,
   };
 }
@@ -194,6 +194,15 @@ export class LiveStore extends Store {
     this.set(await loadLive(this.api, this.state.live?.name ?? ""));
   }
 
+  /** Перед вопросом «отменить?» узнаём у сервиса, что именно вернётся и можно ли вообще. */
+  override askUndo = (id: string) => {
+    if (this.state.asked[id]) return this.set({ asked: { ...this.state.asked, [id]: false } });
+    const show = (info: UndoPreview) => this.set({ undoInfo: { ...this.state.undoInfo, [id]: info }, asked: { ...this.state.asked, [id]: true } });
+    this.api.rollbackPreview(Number(id.replace("change-", ""))).then(show, (error: unknown) =>
+      show({ possible: false, status: "error", directions: 0, text: error instanceof ApiError ? error.message : "Сервис не ответил. Ничего не изменилось, попробуйте позже." }),
+    );
+  };
+
   /** Подробности открытого объявления; список их не отдаёт. */
   override openAdScreen = (id: string) => {
     this.set({ view: "ads", mode: "panel", openAd: id, notice: "" });
@@ -231,10 +240,11 @@ export class LiveStore extends Store {
       }
       case "undo": {
         const h = s.hist.find((x) => x.id === a.value);
-        const { status } = await this.api.rollback(Number(a.value.replace("change-", "")));
+        const { status } = await this.api.rollback(Number(a.value.replace("change-", "")), !!a.whole);
         if (status === "pending") return "Яндекс не ответил, отмена записана и будет повторена.";
         this.set({ undone: { ...this.state.undone, [a.value]: true } });
-        return `Отменил: ${h?.title ?? "изменение"}. Исходная запись осталась в истории.`;
+        const where = a.whole ? ` для всех ${s.undoInfo[a.value]?.directions ?? ""} направлений` : "";
+        return `Отменил${where}: ${h?.title ?? "изменение"}. Исходная запись осталась в истории.`;
       }
       case "setting": {
         const [key, value] = a.value;

@@ -45,6 +45,7 @@ export function fakeApi(over: Partial<Api> = {}) {
     ad: vi.fn(async () => ({ basis: { sources: [{ fragment: "1 200", label: "Цена", key: "price" }], unconfirmed: [] } })),
     setAdState: vi.fn(async () => ({ status: "applied" as const })),
     pause: vi.fn(async () => ({ stopped: ["1"] })),
+    rollbackPreview: vi.fn(async () => ({ possible: true, status: "ready", text: "Объявление снова включится и разделит бюджет с другими. Потраченные деньги не вернутся, общий бюджет не вырастет.", directions: 1 })),
     rollback: vi.fn(async () => ({ status: "applied" })),
     confirmBalance: vi.fn(async () => ({ confirmed: true })),
     saveProfile: vi.fn(async (p: unknown) => p),
