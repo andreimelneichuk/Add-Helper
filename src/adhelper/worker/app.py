@@ -20,6 +20,7 @@ PERIODIC_TASKS = (
     "site.tag_check",
     "autopilot.run",
     "experiments.run",
+    "ads.summary",
 )
 
 
@@ -116,3 +117,12 @@ async def autopilot_run(timestamp: int) -> None:
 async def experiments_run(timestamp: int) -> None:
     async with open_runtime(Settings()) as runtime:
         await runtime.experiments_run()
+
+
+# Сводка «что запущено» за вчерашние московские сутки, в 10:00 по Москве (07:00 UTC).
+# Повтор за тот же день письма не задваивает: сводка пишется один раз на день.
+@app.periodic(cron="0 7 * * *")
+@app.task(name="ads.summary", queue=NOTIFICATIONS_QUEUE, queueing_lock="ads.summary")
+async def ads_summary(timestamp: int) -> None:
+    async with open_runtime(Settings()) as runtime:
+        await runtime.ads_summary()

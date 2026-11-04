@@ -9,8 +9,9 @@ import logging
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
+from adhelper.budget.domain.calendar import moscow_period, platform_date
 from adhelper.budget.domain.ports import PlatformUnavailable
 from adhelper.creatives.domain.moderation import (
     Checking,
@@ -20,7 +21,7 @@ from adhelper.creatives.domain.moderation import (
     ad_marker,
     plan_moderation,
 )
-from adhelper.creatives.domain.ports import Attention, ModerationStore, Outgoing
+from adhelper.creatives.domain.ports import Attention, ModerationStore, Notices, Outgoing
 from adhelper.ledger.application.service import Ledger
 from adhelper.ledger.domain.model import (
     Change,
@@ -39,6 +40,7 @@ NEW_AD_PREFIX = "newad:"
 AD_PREFIX = "ad:"
 REPLACED_KEY = "replaced:"
 ATTENTION_KIND = "ads_rejected"
+LAUNCHED_KIND = "ads_launched"
 
 LedgerFor = Callable[[str], Ledger | None]
 PublisherFor = Callable[[str], AdPublisher | None]
@@ -242,3 +244,23 @@ async def check_moderation(
     else:
         await attention.resolve(ATTENTION_KIND)
     return ModerationPlan(tuple(accepted), tuple(rejected))
+
+
+def summary_day(now: datetime) -> date:
+    """Сводка утром за вчерашние московские сутки: так в неё попадают сутки целиком."""
+    return platform_date(now) - timedelta(days=1)
+
+
+async def send_launch_summary(store: ModerationStore, notices: Notices, day: date) -> int:
+    """Сводка «что запущено» за московские сутки: одобренные Яндексом объявления сервиса.
+
+    Запуск идёт без согласия владельца, поэтому он узнаёт о каждом и может снять его.
+    Возвращает 1, если сводка ушла, и 0, если запусков не было или её уже отправили.
+    """
+    since, until = moscow_period(day, 1)
+    headlines = list(await store.launched(since, until))
+    if not headlines:
+        return 0
+    details = {"day": day.isoformat(), "headlines": headlines, "count": len(headlines)}
+    sent = await notices.notice(LAUNCHED_KIND, f"{LAUNCHED_KIND}:{day.isoformat()}", details)
+    return 1 if sent else 0

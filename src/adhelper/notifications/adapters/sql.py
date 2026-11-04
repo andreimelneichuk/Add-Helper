@@ -131,6 +131,35 @@ class SqlAlerts:
                     CREATE_DELIVERIES, {"alert_id": alert_id, "business_id": self._business_id}
                 )
 
+    async def notice(self, kind: str, key: str, details: Mapping[str, Any]) -> bool:
+        """Сводка один раз на ключ: строка сразу закрыта, отправки создаются вместе с ней."""
+        async with self._sessions.begin() as session:
+            exists = await session.scalar(
+                select(AlertRow.id)
+                .where(
+                    AlertRow.business_id == self._business_id,
+                    AlertRow.kind == kind,
+                    AlertRow.details["key"].astext == key,
+                )
+                .limit(1)
+            )
+            if exists is not None:
+                return False
+            alert_id = await session.scalar(
+                insert(AlertRow)
+                .values(
+                    business_id=self._business_id,
+                    kind=kind,
+                    details={**details, "key": key},
+                    resolved_at=func.now(),
+                )
+                .returning(AlertRow.id)
+            )
+            await session.execute(
+                CREATE_DELIVERIES, {"alert_id": alert_id, "business_id": self._business_id}
+            )
+        return True
+
     async def resolve(self, kind: str) -> None:
         statement = (
             update(AlertRow)

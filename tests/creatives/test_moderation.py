@@ -3,7 +3,7 @@
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 import pytest
@@ -25,7 +25,12 @@ from adhelper.creatives.adapters.sql import (
     SqlProfiles,
     SqlProfileSource,
 )
-from adhelper.creatives.application.moderation import check_moderation, send_ready
+from adhelper.creatives.application.moderation import (
+    check_moderation,
+    send_launch_summary,
+    send_ready,
+    summary_day,
+)
 from adhelper.creatives.application.service import (
     CURRENT_REWORK_RULES,
     CURRENT_RULES,
@@ -455,3 +460,35 @@ async def test_rotation_pause_is_not_a_loss(stand: Stand) -> None:
     await stand.check()
     row = next(r for r in await stand.creatives() if r["id"] == creative)
     assert row["state"] == "running"
+
+
+class Notices:
+    def __init__(self) -> None:
+        self.sent: dict[str, Any] = {}
+
+    async def notice(self, kind: str, key: str, details: Any) -> bool:
+        if key in self.sent:
+            return False
+        self.sent[key] = (kind, dict(details))
+        return True
+
+
+async def test_launch_summary_lists_ads_accepted_that_moscow_day(stand: Stand) -> None:
+    await _running(stand)
+    notices = Notices()
+    assert await send_launch_summary(stand.store, notices, date(2026, 11, 3)) == 0
+    assert await send_launch_summary(stand.store, notices, date(2026, 11, 4)) == 1
+    assert notices.sent == {
+        "ads_launched:2026-11-04": (
+            "ads_launched",
+            {"day": "2026-11-04", "headlines": ["Маникюр у дома"], "count": 1},
+        )
+    }
+    # Повтор за тот же день ничего не отправляет.
+    assert await send_launch_summary(stand.store, notices, date(2026, 11, 4)) == 0
+
+
+def test_summary_covers_yesterday_by_moscow_clock() -> None:
+    # 23:30 UTC 4 ноября — уже 5 ноября в Москве: сводка за 4 ноября целиком.
+    assert summary_day(datetime(2026, 11, 4, 23, 30, tzinfo=UTC)) == date(2026, 11, 4)
+    assert summary_day(datetime(2026, 11, 5, 7, 0, tzinfo=UTC)) == date(2026, 11, 4)

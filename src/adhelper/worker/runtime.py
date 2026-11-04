@@ -48,7 +48,9 @@ from adhelper.creatives.adapters.sql import (
 from adhelper.creatives.application.moderation import (
     CURRENT_MODERATION_RULES,
     check_moderation,
+    send_launch_summary,
     send_ready,
+    summary_day,
 )
 from adhelper.creatives.application.service import (
     CURRENT_REWORK_RULES,
@@ -244,6 +246,18 @@ class Runtime:
                 CURRENT_REWORK_RULES,
                 self.clock(),
             )
+
+    async def ads_summary(self, only: UUID | None = None) -> int:
+        """Сводка «что запущено» за вчерашние московские сутки. Возвращает число писем."""
+        day = summary_day(self.clock())
+        sent = 0
+        for business_id in await SqlKeeperBusinesses(self.sessions).business_ids():
+            if only is not None and business_id != only:
+                continue
+            store = SqlModeration(self.sessions, business_id)
+            notices = SqlAlerts(self.sessions, business_id)
+            sent += await send_launch_summary(store, notices, day)
+        return sent
 
     def autopilot_cycle(self, business_id: UUID, account: str) -> AutopilotCycle:
         rules = load_autopilot_rules(CURRENT_AUTOPILOT_RULES)

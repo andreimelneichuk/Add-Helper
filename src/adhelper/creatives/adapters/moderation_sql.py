@@ -371,6 +371,30 @@ class SqlModeration:
             _set_state(row, CreativeState.STOPPED, LOST_TEST, now)
             await self._set_ad(session, account, ad_id, "suspended")
 
+    async def launched(self, since: datetime, until: datetime) -> Sequence[str]:
+        """Заголовки объявлений, которые Яндекс одобрил в окне: по истории строки."""
+        statement = (
+            select(CreativeRow.headline, CreativeRow.history)
+            .where(
+                CreativeRow.business_id == self._business_id,
+                CreativeRow.ad_id.is_not(None),
+                CreativeRow.updated_at >= since,
+            )
+            .order_by(CreativeRow.id)
+        )
+        async with self._sessions() as session:
+            rows = (await session.execute(statement)).all()
+        return [
+            str(headline)
+            for headline, history in rows
+            if any(
+                event.get("state") == CreativeState.RUNNING.value
+                and event.get("reason") == "accepted"
+                and since <= datetime.fromisoformat(event["at"]) < until
+                for event in history
+            )
+        ]
+
     async def _set_ad(self, session: AsyncSession, account: str, ad_id: str, state: str) -> None:
         await session.execute(
             update(ADS)
