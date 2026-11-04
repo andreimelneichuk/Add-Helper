@@ -89,7 +89,9 @@ services:
 
   # Только для сервера: docker compose --profile production up -d
   caddy:
-    image: caddy:2.8-alpine
+    build:
+      context: .
+      dockerfile: deploy/web.Dockerfile
     profiles: [production]
     environment:
       DOMAIN: ${DOMAIN:-}
@@ -97,7 +99,6 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
