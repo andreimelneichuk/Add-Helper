@@ -118,7 +118,7 @@ export type Basis = { sources: FactSource[]; unconfirmed: string[] };
 // Кому показываем: настройки направления на площадке. Пустое поле — площадка не задала.
 export type Audience = { placement: string; regions: string[]; phrases: string[]; schedule: string };
 
-export type CreativeState = "ready" | "reserve" | "launch_pending" | "needs_owner" | "stopped" | "withdrawn";
+export type CreativeState = "ready" | "reserve" | "launch_pending" | "needs_owner" | "stopped" | "withdrawn" | "moderation" | "running" | "rejected";
 export type Creative = {
   id: number;
   account: string;

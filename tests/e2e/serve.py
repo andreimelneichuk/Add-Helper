@@ -229,6 +229,42 @@ def _stand_router(app: Any) -> APIRouter:
         )
         return {"accounts": await runtime.autopilot_run(only=business_id)}
 
+    @router.post("/businesses/{business_id}/verdicts")
+    async def verdicts(business_id: uuid.UUID, body: dict[str, Any]) -> dict[str, int]:
+        """Итог проверки Яндекса для объявлений «на проверке», чей заголовок содержит `headline`.
+
+        Подставная площадка отвечает этим итогом, пока его не сменят: так ведёт себя Директ.
+        """
+        account = f"{STAND_LOGIN}-{str(business_id)[:8]}"
+        fake = app.state.platform_for(business_id, account)
+        async with app.state.sessions() as session:
+            rows = (
+                await session.execute(
+                    text(
+                        "SELECT ad_id FROM ads WHERE business_id = :b AND account = :a"
+                        " AND state = 'moderation' AND title LIKE :h"
+                    ),
+                    {"b": business_id, "a": account, "h": f"%{body['headline']}%"},
+                )
+            ).all()
+        for (ad_id,) in rows:
+            if body["state"] == "accepted":
+                fake.accept(ad_id)
+            else:
+                fake.reject(ad_id, *body.get("reasons", []))
+        return {"ads": len(rows)}
+
+    @router.post("/businesses/{business_id}/moderate")
+    async def moderate(business_id: uuid.UUID) -> dict[str, str]:
+        """Цикл отправки и проверки объявлений сейчас, а не раз в 5 минут: код воркера."""
+        runtime = Runtime(
+            sessions=app.state.sessions,
+            engine=app.state.engine,
+            platform_for=app.state.platform_for,
+        )
+        await runtime.ads_moderate(only=business_id)
+        return {"status": "done"}
+
     return router
 
 

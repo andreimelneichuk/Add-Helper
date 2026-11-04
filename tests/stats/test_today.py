@@ -72,6 +72,17 @@ def test_mismatch_names_the_gap_from_code() -> None:
     assert shown[0].action == "balance"
 
 
+def test_rejected_ad_names_headline_and_reason_from_alert() -> None:
+    details = {"count": 2, "headline": "Маникюр у дома", "reason": "Яндекс не смог открыть сайт"}
+    shown = cards(facts(alerts=(AlertLine("ads_rejected", details, NOW),)), RULES)[0]
+    assert shown.text.startswith("«Маникюр у дома» и ещё 1 не прошли проверку Яндекса.")
+    assert "Яндекс не смог открыть сайт." in shown.text
+    one = cards(facts(alerts=(AlertLine("ads_rejected", {**details, "count": 1}, NOW),)), RULES)
+    assert one[0].text.startswith("«Маникюр у дома» не прошло проверку Яндекса.")
+    bare = cards(facts(alerts=(alert("ads_rejected"),)), RULES)[0]
+    assert bare.text.startswith("Остальные объявления работают.")
+
+
 def test_owner_pause_card_offers_resume() -> None:
     shown = cards(facts(paused=True), RULES)
     assert shown[0].kind == "paused"

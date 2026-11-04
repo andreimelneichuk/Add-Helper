@@ -13,6 +13,7 @@ PERIODIC_TASKS = (
     "state.reconcile",
     "creatives.generate",
     "ads.keep",
+    "ads.moderate",
     "notifications.send",
     "telegram.poll",
     "site.read",
@@ -57,6 +58,15 @@ async def creatives_generate(timestamp: int) -> None:
 async def ads_keep(timestamp: int) -> None:
     async with open_runtime(Settings()) as runtime:
         await runtime.ads_keep()
+
+
+# Отправка занявших место объявлений через журнал и итог проверки Яндекса (docs/05 §8).
+# Очередь бюджета: здесь нет вызовов модели, а журнал кабинета общий с задачами бюджета.
+@app.periodic(cron="*/5 * * * *")
+@app.task(name="ads.moderate", queue=BUDGET_QUEUE, queueing_lock="ads.moderate")
+async def ads_moderate(timestamp: int) -> None:
+    async with open_runtime(Settings()) as runtime:
+        await runtime.ads_moderate()
 
 
 # Отправки тревог — строки notification_deliveries, их создаёт тревога в той же транзакции.
