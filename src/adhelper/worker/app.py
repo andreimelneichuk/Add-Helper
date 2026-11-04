@@ -19,6 +19,7 @@ PERIODIC_TASKS = (
     "site.read",
     "site.tag_check",
     "autopilot.run",
+    "experiments.run",
 )
 
 
@@ -106,3 +107,12 @@ async def site_tag_check(timestamp: int) -> None:
 async def autopilot_run(timestamp: int) -> None:
     async with open_runtime(Settings()) as runtime:
         await runtime.autopilot_run()
+
+
+# Ход A/B-тестов: вариант через журнал, проверка Яндекса, чередование по дням и итог.
+# Раз в час: переключение идёт по московским суткам, повтор внутри суток ничего не меняет.
+@app.periodic(cron="7 * * * *")
+@app.task(name="experiments.run", queue=BUDGET_QUEUE, queueing_lock="experiments.run")
+async def experiments_run(timestamp: int) -> None:
+    async with open_runtime(Settings()) as runtime:
+        await runtime.experiments_run()

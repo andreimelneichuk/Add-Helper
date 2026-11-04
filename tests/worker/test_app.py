@@ -34,6 +34,7 @@ def test_money_tasks_are_scheduled() -> None:
         "telegram.poll",
         "site.read",
         "site.tag_check",
+        "experiments.run",
     }
     assert expected <= set(PERIODIC_TASKS)
     assert set(app.tasks) >= expected

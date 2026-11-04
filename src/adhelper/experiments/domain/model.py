@@ -105,6 +105,16 @@ class VariantStats:
 
 
 @dataclass(frozen=True)
+class Observation:
+    """Наблюдение за тестом на момент шага: статистика групп, траты, доверие к данным."""
+
+    control: VariantStats
+    variant: VariantStats
+    spent: int
+    data_trusted: bool = True
+
+
+@dataclass(frozen=True)
 class Evaluation:
     outcome: Outcome
     winner: str | None

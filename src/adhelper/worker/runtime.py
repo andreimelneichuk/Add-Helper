@@ -58,6 +58,16 @@ from adhelper.creatives.application.service import (
     run_queued,
 )
 from adhelper.db import create_engine
+from adhelper.experiments.adapters.ledgered import LedgeredSwitch
+from adhelper.experiments.adapters.pipeline_sql import (
+    SqlObservations,
+    SqlVariantContext,
+    experiment_accounts,
+)
+from adhelper.experiments.adapters.rules_file import load_rules as load_experiment_rules
+from adhelper.experiments.adapters.sql import SqlExperimentStore
+from adhelper.experiments.application.pipeline import run_experiments
+from adhelper.experiments.application.service import ExperimentService
 from adhelper.ledger.adapters.sql import (
     PostgresAccountLock,
     SqlChangeRepository,
@@ -251,6 +261,33 @@ class Runtime:
             rules,
             SqlTestPlanner(self.sessions, business_id, CURRENT_EXPERIMENT_RULES),
         )
+
+    async def experiments_run(self, only: UUID | None = None) -> int:
+        """Открытые тесты: вариант, итог проверки, чередование. Возвращает число кабинетов."""
+        creative_rules = load_creative_rules(CURRENT_RULES)
+        rules = load_experiment_rules(CURRENT_EXPERIMENT_RULES)
+        done = 0
+        for business_id, account in await experiment_accounts(self.sessions):
+            if only is not None and business_id != only:
+                continue
+            platform = self.platform_for(business_id, account)
+            if platform is None:
+                continue
+            ledger = self.ledger_for(business_id, account)
+            store = SqlExperimentStore(self.sessions, business_id)
+            service = ExperimentService(store, LedgeredSwitch(ledger), platform, self.clock, rules)
+            await run_experiments(
+                account,
+                store,
+                service,
+                ledger,
+                platform,
+                SqlVariantContext(self.sessions, business_id),
+                SqlObservations(self.sessions, business_id),
+                creative_rules,
+            )
+            done += 1
+        return done
 
     async def autopilot_run(self, only: UUID | None = None) -> int:
         """Раз в сутки: анализ по отчётам и предложения владельцу. Возвращает число кабинетов."""
