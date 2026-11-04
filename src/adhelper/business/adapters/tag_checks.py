@@ -102,6 +102,20 @@ class SqlTagChecks:
             row.finished_at,
         )
 
+    async def counter(self) -> str | None:
+        """Счётчик Метрики из последней проверки, нашедшей код: по нему читаем визиты."""
+        async with self._sessions() as session:
+            counters = await session.scalar(
+                select(CHECKS.c.counters)
+                .where(
+                    CHECKS.c.business_id == self._business_id,
+                    CHECKS.c.status == TagStatus.FOUND.value,
+                )
+                .order_by(CHECKS.c.finished_at.desc(), CHECKS.c.id.desc())
+                .limit(1)
+            )
+        return str(counters[0]) if counters else None
+
 
 class SqlTagCheckQueue:
     """Очередь проверок для воркера, поверх всех бизнесов."""
