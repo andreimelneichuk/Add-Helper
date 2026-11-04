@@ -20,10 +20,13 @@ export default defineConfig({
         target: API,
         configure: (proxy) => {
           proxy.on("proxyReq", (request) => {
-            // Свой вход браузера (сквозной тест второго владельца) важнее демо-входа.
-            if (/(^|;\s*)ah_session=/.test(request.getHeader("cookie")?.toString() ?? "")) return;
+            // Свой вход браузера (сквозной тест второго владельца) важнее демо-входа,
+            // а `ah_guest` — гость стенда, который сам войдёт через подставной Яндекс ID.
+            const sent = request.getHeader("cookie")?.toString() ?? "";
+            if (/(^|;\s*)(ah_session|ah_guest)=/.test(sent)) return;
             const cookie = demoCookie();
-            if (cookie) request.setHeader("cookie", cookie);
+            // Дописываем, а не заменяем: cookie потока входа и возврата нужны сервису.
+            if (cookie) request.setHeader("cookie", sent ? `${sent}; ${cookie}` : cookie);
           });
         },
       },

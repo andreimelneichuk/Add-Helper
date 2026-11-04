@@ -17,6 +17,13 @@ class Settings(BaseSettings):
     # Пусто: вход отключён. Токены без шифрования хранить нельзя.
     token_encryption_keys: SecretStr | None = None
 
+    # Приложение Яндекс ID заказчика. Пусто: вход и подключение кабинета отвечают 503.
+    yandex_client_id: str = ""
+    yandex_client_secret: SecretStr | None = None
+    # Адреса Яндекс ID меняются только для стенда сквозных тестов.
+    yandex_oauth_url: str = "https://oauth.yandex.ru"
+    yandex_login_url: str = "https://login.yandex.ru"
+
     # Любой OpenAI-совместимый API. Без ключа или модели объявления собираются из шаблонов.
     text_model_base_url: str = "https://ai.api.cloud.yandex.net/v1"
     text_model_api_key: SecretStr | None = None

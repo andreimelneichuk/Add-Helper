@@ -333,11 +333,11 @@ test("после подключения кабинета мастер ведёт
 });
 
 
-test("новый владелец проходит мастер и запускает рекламу: кампания через журнал, видна в кабинете", async ({ page, context, request }) => {
-  // Свой владелец без бизнеса: стенд выдаёт ему вход, прокси Vite не подменяет его демо-входом.
-  const { cookie } = await (await request.post(`${STAND}/api/stand/owners`)).json();
-  await context.addCookies([{ name: "ah_session", value: cookie, url: "http://localhost:5175" }]);
-  launched = cookie;
+test("новый владелец проходит мастер и запускает рекламу: вход и кабинет через Яндекс ID, кампания через журнал", async ({ page, context }) => {
+  test.setTimeout(150_000);
+  // Гость без демо-входа: входит и подключает кабинет через подставной Яндекс ID стенда,
+  // тем же кодом обмена, PKCE и cookie, что в работе.
+  await context.addCookies([{ name: "ah_guest", value: "1", url: "http://localhost:5175" }]);
   await page.goto("/?new&start");
   await page.evaluate(() => {
     window.localStorage.removeItem("adhelper.startDraft");
@@ -350,21 +350,19 @@ test("новый владелец проходит мастер и запуск�
   await expect(page.getByText("Маникюр с покрытием гель-лаком за 1700 ₽ на Тверской, 7.")).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: "Нравится" }).click();
 
-  // Вход в Яндекс подменён: владелец уже вошёл, возвращаемся в мастер, как после настоящего входа.
-  await page.route("**/api/auth/yandex/login**", (route) => route.fulfill({ status: 302, headers: { location: "/?new&start" } }));
   await page.getByRole("button", { name: "Войти через Яндекс" }).click();
   await expect(page.getByRole("button", { name: "Подключить кабинет" })).toBeVisible();
+  const cookies = await context.cookies("http://localhost:5175");
+  launched = cookies.find((c) => c.name === "ah_session")?.value ?? "";
+  expect(launched).not.toBe("");
 
-  // OAuth Яндекса стенд не проходит: кабинет записывает стенд, мастер возвращается на `connect=ok`,
-  // как после настоящего подключения.
-  await page.route("**/accounts/connect**", async (route) => {
-    const business = (await (await page.request.get("/api/businesses")).json())[0];
-    await request.post(`${STAND}/api/stand/businesses/${business.id}/connect`);
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ authorize_url: "/?new&start&connect=ok" }) });
-  });
+  // Первый раз владелец отменяет в Яндексе: мастер говорит об этом и даёт повторить.
+  await page.request.post(`${STAND}/stand-yandex/deny`);
+  await page.getByRole("button", { name: "Подключить кабинет" }).click();
+  await expect(page.getByText(/отменили подключение/)).toBeVisible();
   await page.getByRole("button", { name: "Подключить кабинет" }).click();
   await expect(page).toHaveURL(/\/\?new&start$/);
-  await expect(page.getByText(/stand-direct/)).toBeVisible();
+  await expect(page.getByText(/stand-direct-\d+/)).toBeVisible();
   await page.getByRole("button", { name: "Продолжить" }).click();
 
   await page.getByLabel("ИНН для маркировки").fill("7707083893");
