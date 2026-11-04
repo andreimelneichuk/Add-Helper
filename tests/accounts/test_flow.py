@@ -525,3 +525,32 @@ async def test_connect_from_launch_returns_to_launch(
     # Цель одноразовая: следующее подключение из настроек вернётся на главную.
     again = await _connect(client, provider, csrf, business_id, ANNA)
     assert again.headers["location"] == "/?connect=ok"
+
+
+async def test_without_yandex_app_login_says_not_configured(api_settings: Settings) -> None:
+    settings = api_settings.model_copy(
+        update={"yandex_client_id": "", "yandex_client_secret": None}
+    )
+    app = create_app(settings)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url=BASE) as client:
+        assert (await client.get("/api/auth/yandex/login")).status_code == 503
+    await app.state.engine.dispose()
+
+
+async def test_configured_yandex_app_sends_owner_to_its_address(api_settings: Settings) -> None:
+    settings = api_settings.model_copy(
+        update={
+            "yandex_client_id": "app-id",
+            "yandex_client_secret": SecretStr("s"),
+            "yandex_oauth_url": "http://stand.test/oauth",
+        }
+    )
+    app = create_app(settings)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url=BASE) as client:
+        response = await client.get("/api/auth/yandex/login")
+    assert response.status_code in (302, 303, 307)
+    assert response.headers["location"].startswith("http://stand.test/oauth/authorize?")
+    assert "client_id=app-id" in response.headers["location"]
+    await app.state.engine.dispose()

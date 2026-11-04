@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from adhelper.accounts.adapters.crypto import AesGcmCipher
 from adhelper.accounts.adapters.sql import SqlAccountTokens, SqlIdentityStore, SqlUserScope
 from adhelper.accounts.adapters.unconfigured import UnconfiguredProvider
+from adhelper.accounts.adapters.yandex_oauth import YandexOAuth
 from adhelper.accounts.application.service import AccountsService, OAuthProvider
 from adhelper.api.accounts import accounts_router
 from adhelper.api.cabinet import cabinet_router
@@ -49,6 +50,19 @@ def _cipher(settings: Settings) -> AesGcmCipher | None:
     if keys is None or not keys.get_secret_value():
         return None
     return AesGcmCipher.from_config(keys.get_secret_value())
+
+
+def _yandex(settings: Settings) -> OAuthProvider | None:
+    secret = settings.yandex_client_secret
+    if not settings.yandex_client_id or secret is None or not secret.get_secret_value():
+        return None
+    return YandexOAuth(
+        settings.yandex_client_id,
+        secret,
+        _utc_now,
+        settings.yandex_oauth_url,
+        settings.yandex_login_url,
+    )
 
 
 def _accounts_service(
@@ -92,7 +106,8 @@ def create_app(
 
     app = FastAPI(title="Ad Helper", lifespan=lifespan)
     app.state.engine = engine
-    # Провайдер Яндекса появится после реального вызова (V1); до этого вход отвечает 503.
+    # Без приложения Яндекс ID в настройках вход честно отвечает 503.
+    oauth_provider = oauth_provider or _yandex(settings)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     app.state.sessions = sessions
     app.state.clock = _utc_now

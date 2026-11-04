@@ -52,15 +52,13 @@ test("отчёт направления и свой период берут ци
   await expect(page.getByText(/^Обращения$/).locator("xpath=following-sibling::dd")).not.toHaveText("");
 });
 
-test("подключение кабинета: отказ сервиса и возврат из Яндекса видны владельцу", async ({ page }) => {
+test("подключение кабинета: отказ в Яндексе виден владельцу, ничего не изменилось", async ({ page }) => {
   await page.goto("/?new");
   await settings(page).click();
   const account = page.getByRole("region", { name: "Кабинет Яндекса" });
+  // Подставной Яндекс ID стенда: владелец отказывает на его странице, сервис возвращает его домой.
+  await page.request.post("http://localhost:8011/stand-yandex/deny");
   await account.getByRole("button", { name: /^Подключить/ }).click();
-  // На стенде нет приложения Яндекса: сервис честно отказывает, а не делает вид, что подключил.
-  await expect(account.getByRole("alert")).toContainText("пока не настроено");
-
-  await page.goto("/?connect=denied");
   await expect(notice(page)).toContainText("Вы отменили подключение в Яндексе");
   await expect(page.getByRole("heading", { name: "Кабинет Яндекса" })).toBeVisible();
   await expect(page).toHaveURL(/\/\?new$/);

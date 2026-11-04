@@ -6,6 +6,8 @@
 """
 
 import asyncio
+import base64
+import hashlib
 import json
 import os
 import secrets
@@ -14,10 +16,12 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlencode
 
 import psycopg
 import uvicorn
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse, RedirectResponse
 from psycopg import sql
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
@@ -173,6 +177,90 @@ async def _serve(app: Any) -> None:
 
 # Логин кабинета, который стенд подключает новому владельцу вместо входа в Яндекс.
 STAND_LOGIN = "stand-direct"
+# Подставной Яндекс ID живёт в том же процессе: адреса задаёт конфигурация, как у заказчика.
+YANDEX_PATH = "/stand-yandex"
+YANDEX_SECRET = secrets.token_urlsafe(24)
+
+
+def _yandex_router() -> APIRouter:
+    """Строгий Яндекс ID для стенда: секрет приложения, PKCE S256, одноразовый код.
+
+    Права `direct:api` дают кабинет `stand-direct-N`, без них — нового владельца.
+    `POST …/deny` — следующий вход владелец отменит в Яндексе.
+    """
+    router = APIRouter(prefix=YANDEX_PATH)
+    codes: dict[str, tuple[str, dict[str, str]]] = {}
+    tokens: dict[str, dict[str, str]] = {}
+    deny = {"next": False}
+    counter = {"n": 0}
+
+    def person(scope: str) -> dict[str, str]:
+        counter["n"] += 1
+        n = counter["n"]
+        if "direct:api" in scope.split():
+            return {"id": f"stand-cabinet-{n}", "login": f"{STAND_LOGIN}-{n:04d}"}
+        return {
+            "id": f"stand-owner-{n}",
+            "login": f"owner-{n}",
+            "default_email": "owner@example.ru",
+        }
+
+    @router.get("/authorize")
+    async def authorize(
+        client_id: str,
+        redirect_uri: str,
+        state: str,
+        code_challenge: str,
+        code_challenge_method: str,
+        scope: str = "",
+    ) -> RedirectResponse:
+        if client_id != "stand-app" or code_challenge_method != "S256":
+            raise HTTPException(400, "bad request")
+        if deny["next"]:
+            deny["next"] = False
+            return RedirectResponse(
+                f"{redirect_uri}?{urlencode({'error': 'access_denied', 'state': state})}"
+            )
+        code = secrets.token_urlsafe(16)
+        codes[code] = (code_challenge, person(scope))
+        return RedirectResponse(f"{redirect_uri}?{urlencode({'code': code, 'state': state})}")
+
+    def issue(who: dict[str, str]) -> JSONResponse:
+        access, refresh = secrets.token_urlsafe(16), secrets.token_urlsafe(16)
+        tokens[access] = tokens[refresh] = who
+        return JSONResponse(
+            {"access_token": access, "refresh_token": refresh, "expires_in": 31536000}
+        )
+
+    @router.post("/token")
+    async def token(request: Request) -> JSONResponse:
+        # Форма без python-multipart: тело `application/x-www-form-urlencoded`.
+        form = {k: v[0] for k, v in parse_qs((await request.body()).decode()).items()}
+        if form.get("client_id") != "stand-app" or form.get("client_secret") != YANDEX_SECRET:
+            return JSONResponse({"error": "invalid_client"}, 401)
+        if form.get("grant_type") == "refresh_token":
+            who = tokens.get(str(form.get("refresh_token")))
+            return issue(who) if who else JSONResponse({"error": "invalid_grant"}, 400)
+        found = codes.pop(str(form.get("code")), None)
+        verifier = str(form.get("code_verifier", ""))
+        digest = hashlib.sha256(verifier.encode()).digest()
+        challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+        if found is None or found[0] != challenge:
+            return JSONResponse({"error": "invalid_grant"}, 400)
+        return issue(found[1])
+
+    @router.get("/info")
+    async def info(request: Request) -> JSONResponse:
+        header = request.headers.get("Authorization", "")
+        who = tokens.get(header.removeprefix("OAuth "))
+        return JSONResponse(who) if who else JSONResponse({}, 401)
+
+    @router.post("/deny")
+    async def deny_next() -> dict[str, bool]:
+        deny["next"] = True
+        return {"deny": True}
+
+    return router
 
 
 def _stand_router(app: Any) -> APIRouter:
@@ -235,7 +323,11 @@ def _stand_router(app: Any) -> APIRouter:
 
         Подставная площадка отвечает этим итогом, пока его не сменят: так ведёт себя Директ.
         """
-        account = f"{STAND_LOGIN}-{str(business_id)[:8]}"
+        async with app.state.sessions() as session:
+            account = await session.scalar(
+                text("SELECT external_login FROM ad_accounts WHERE business_id = :b"),
+                {"b": business_id},
+            )
         fake = app.state.platform_for(business_id, account)
         async with app.state.sessions() as session:
             rows = (
@@ -271,6 +363,13 @@ def _stand_router(app: Any) -> APIRouter:
 def main() -> None:
     STATE.mkdir(exist_ok=True)
     os.environ["POSTGRES_DB"] = DATABASE
+    # Вход и подключение кабинета идут через подставной Яндекс ID стенда, а не подменой в тесте.
+    os.environ["YANDEX_CLIENT_ID"] = "stand-app"
+    os.environ["YANDEX_CLIENT_SECRET"] = YANDEX_SECRET
+    os.environ["YANDEX_OAUTH_URL"] = f"http://localhost:{PORT}{YANDEX_PATH}"
+    os.environ["YANDEX_LOGIN_URL"] = f"http://localhost:{PORT}{YANDEX_PATH}"
+    # Возврат из Яндекса — на адрес интерфейса: cookie входа ставится там же, где браузер.
+    os.environ["PUBLIC_BASE_URL"] = "http://localhost:5175"
     _recreate_database()
     subprocess.run(["alembic", "upgrade", "head"], check=True)
     write_demo_env(STATE)
@@ -291,6 +390,7 @@ def main() -> None:
 
     app.state.platform_for = platform_for
     app.include_router(_stand_router(app))
+    app.include_router(_yandex_router())
     asyncio.run(_serve(app))
 
 
