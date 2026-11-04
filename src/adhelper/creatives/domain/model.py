@@ -80,6 +80,9 @@ class CreativeRules:
     sensitive_niches: tuple[str, ...]
     # Сколько наборов бизнес может запросить за сутки: каждый стоит вызовов модели.
     max_sets_per_day: int
+    # Рамка писателя (creatives-3): пусто — проверяются только ключи, фрагменты и числа.
+    fact_glue: tuple[str, ...] = ()
+    claim_stems: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

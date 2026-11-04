@@ -67,6 +67,20 @@ ADS_SCHEMA: dict[str, object] = {
 }
 
 
+# Рамка писателя для правил creatives-3: всё, что сказано о бизнесе, — слова факта.
+FRAME = (
+    "Объявление собирай из частей двух видов.\n"
+    "1. Факт: слова одного факта из ФАКТЫ. Можно менять окончания и порядок слов и добавлять "
+    "служебные слова («в», «на», «за», «у нас», «цена», «рублей»). Других слов к факту не "
+    "добавляй: ни «от», ни «ежедневно», ни «под ключ». Факт с числом (цена, скидка, часы, "
+    "адрес) пиши целиком, со всеми условиями и словами. Каждый такой фрагмент запиши в claims "
+    "с его ключом.\n"
+    "2. Без фактов: призыв или мысль о клиенте («Запишитесь», «Ногти снова в порядке?»). "
+    "В них нет чисел, дней, часов, графика, выезда, сроков, оплаты, условий и свойств "
+    "услуги.\n"
+)
+
+
 def build_prompt(profile: BusinessProfile, rules: CreativeRules, focus: str | None = None) -> str:
     facts = keyed_facts(profile)
     # Название направления — только тема. Факты по-прежнему берутся из профиля.
@@ -84,6 +98,7 @@ def build_prompt(profile: BusinessProfile, rules: CreativeRules, focus: str | No
         "объявление отклонят.\n"
         "Не добавляй оценок, которых нет в фактах: «качественный», «доступная цена», "
         "«быстро», «удобно», «профессиональный».\n"
+        f"{FRAME if rules.fact_glue else ''}"
         f"ФАКТЫ:\n{json.dumps(facts, ensure_ascii=False)}"
     )
 
@@ -120,7 +135,7 @@ def _select(
     for candidate in candidates:
         draft = candidate.draft
         violations = check_draft(draft, profile, rules) or check_claims(
-            draft, candidate.claims, facts
+            draft, candidate.claims, facts, rules
         )
         if not violations and too_similar_to_any(draft, kept, rules):
             violations = (Violation(ViolationKind.TOO_SIMILAR, draft.headline),)
