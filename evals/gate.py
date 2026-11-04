@@ -43,6 +43,17 @@ from adhelper.creatives.domain.model import (
 from evals.dataset.build import code_violations, prompt_version, split_of, upper_bound, usable
 from evals.dataset.build import load as load_dataset
 from evals.dataset.spec import SPLIT_SEED
+from evals.meter import (
+    DEFAULT_BUDGET_USD,
+    FREE,
+    MICRO,
+    BudgetSpent,
+    Meter,
+    Price,
+    fetch_prices,
+    usd,
+    worst_case_micro,
+)
 from evals.prompts import PROMPTS
 from evals.run import RESULTS
 
@@ -104,14 +115,20 @@ def verdict(data: GateInput, limit: float = LIMIT, confidence: float = CONFIDENC
 #
 #   OPENROUTER_API_KEY=… uv run python -m evals.gate \
 #       --writer groq:qwen/qwen3.8-27b --judge or:deepseek/deepseek-v4-flash \
-#       --auditor or:z-ai/glm-5.3-flash
+#       --auditor or:z-ai/glm-5.3-flash --budget 0.05
+#
+# Перед каждым этапом печатается худший случай, в конце — расход; на пределе прогон
+# останавливается (docs/13-model-spend.md).
 #
 # Писатель пишет по тестовым профилям, ответы кешируются в evals/results и в выборку не
 # попадают: эталон заморожен. Пропуск и ложные снятия судьи берутся из его замера на эталоне
 # (`evals.run judge --dataset test --prompts v4`), объявления нового писателя не размечаются.
 
 OPENROUTER = "https://openrouter.ai/api/v1"
+# Сбой провайдера (лимит, 5xx) не оплачен — ждём и повторяем. Оплаченный ответ не по форме
+# (не JSON, обрезан) повторяем не больше PAID_RETRIES раз: docs/13-model-spend.md.
 ATTEMPTS = 8
+PAID_RETRIES = 2
 GROQ_PACE_SECONDS = 20.0
 # Судье и аудитору набора на объявление, как в evals.run.
 JUDGE_MAX_TOKENS = 700
@@ -122,9 +139,11 @@ class _Endpoint:
     model: TextModel
     limited: bool
     gate: asyncio.Semaphore
+    meter: Meter
+    price: Price = FREE
 
 
-def _endpoint(spec: str) -> _Endpoint:
+def _endpoint(spec: str, meter: Meter, prices: dict[str, Price]) -> _Endpoint:
     provider, _, name = spec.partition(":")
     if provider == "groq":
         base, key = os.environ.get("OPENAI_BASE_URL", ""), os.environ.get("OPENAI_API_KEY", "")
@@ -135,27 +154,58 @@ def _endpoint(spec: str) -> _Endpoint:
     if not base or not key or not name:
         raise SystemExit(f"Нет адреса или ключа для {spec}")
     limited = provider == "groq"
-    model = OpenAiCompatibleModel(base, SecretStr(key), name)
-    return _Endpoint(model, limited, asyncio.Semaphore(1 if limited else 8))
+    # Бесплатный уровень Groq денег не берёт: токены считаем, стоимость ноль.
+    price = prices.get(name, FREE) if provider == "or" else FREE
+    model = OpenAiCompatibleModel(
+        base, SecretStr(key), name, on_usage=lambda usage: meter.record(price, usage)
+    )
+    return _Endpoint(model, limited, asyncio.Semaphore(1 if limited else 8), meter, price)
 
 
 async def _call(
     endpoint: _Endpoint, system: str, user: str, schema: dict[str, object], max_tokens: int
 ) -> str | None:
-    """Сбой провайдера и не-JSON повторяем; после всех попыток — None."""
+    """Сбой провайдера повторяем, оплаченный негодный ответ — до PAID_RETRIES раз.
+
+    После всех попыток или по исчерпании предела — None.
+    """
+    paid = 0
     for attempt in range(ATTEMPTS):
         async with endpoint.gate:
             try:
+                endpoint.meter.check()
+            except BudgetSpent:
+                return None
+            try:
                 reply = await endpoint.model.complete_json(system, user, schema, max_tokens)
                 json.loads(reply.text)
-            except (ModelUnavailable, ValueError):
-                pass
+            except ModelUnavailable as error:
+                wasted = error.tokens > 0
+            except ValueError:
+                wasted = True
             else:
                 if endpoint.limited:
                     await asyncio.sleep(GROQ_PACE_SECONDS)
                 return reply.text
+        if wasted:
+            endpoint.meter.paid_failures += 1
+            paid += 1
+            if paid > PAID_RETRIES:
+                return None
         await asyncio.sleep(min(120, 10 * 2**attempt))
     return None
+
+
+def _estimate(stage: str, endpoint: _Endpoint, prompts: Sequence[str], max_tokens: int) -> None:
+    """Худший случай этапа до запуска: каждый вызов исписывает max_tokens."""
+    if not prompts:
+        return
+    # Кириллица — около 2 символов на токен; берём с запасом.
+    input_tokens = max(len(p) for p in prompts) // 2
+    worst = worst_case_micro(endpoint.price, len(prompts), input_tokens, max_tokens)
+    left = endpoint.meter.budget_micro - endpoint.meter.spent_micro
+    note = "" if worst <= left else f", остаток предела {usd(left)}: прогон может остановиться"
+    sys.stdout.write(f"{stage}: вызовов {len(prompts)}, не дороже {usd(worst)}{note}\n")
 
 
 def _slug(spec: str) -> str:
@@ -214,7 +264,10 @@ async def _write(
             )
         cache[pid] = ads
 
-    await asyncio.gather(*(one(pid) for pid in sorted(profiles) if pid not in cache))
+    todo = [pid for pid in sorted(profiles) if pid not in cache]
+    prompts = [SYSTEM_PROMPT + build_prompt(profiles[pid], rules) for pid in todo]
+    _estimate("писатель", endpoint, prompts, rules.max_tokens_per_set)
+    await asyncio.gather(*(one(pid) for pid in todo))
 
 
 async def _check(
@@ -242,7 +295,14 @@ async def _check(
             {"blocked": v.blocked, "reason": v.reason} for v in variant.read(text, drafts)
         ]
 
-    await asyncio.gather(*(one(pid) for pid in sorted(sets) if sets[pid] and pid not in cache))
+    todo = [pid for pid in sorted(sets) if sets[pid] and pid not in cache]
+    if todo:
+        prompts = [
+            variant.system + variant.build(_drafts(sets[pid]), profiles[pid]) for pid in todo
+        ]
+        longest = max(len(sets[pid]) for pid in todo)
+        _estimate(prompt, endpoint, prompts, JUDGE_MAX_TOKENS * longest)
+    await asyncio.gather(*(one(pid) for pid in todo))
 
 
 def _reference(judge: str) -> GateInput:
@@ -286,13 +346,25 @@ async def run(args: argparse.Namespace) -> None:
     version = prompt_version(SYSTEM_PROMPT, build_prompt(BusinessProfile("", ()), rules))
     writer_name = f"gate--{_slug(args.writer)}--{rules.version}-{version[:8]}--{args.split}"
     written = _cache(writer_name)
-    await _write(_endpoint(args.writer), profiles, written, rules)
+    meter = Meter(round(args.budget * MICRO))
+    paid = [
+        spec.partition(":")[2]
+        for spec in (args.writer, args.judge, args.auditor)
+        if spec.startswith("or:")
+    ]
+    prices = fetch_prices(paid) if paid else {}
+    for name, price in prices.items():
+        sys.stdout.write(
+            f"цена {name}: {usd(price.input_micro_per_m)} и {usd(price.output_micro_per_m)}"
+            " за 1M входных и выходных\n"
+        )
+    await _write(_endpoint(args.writer, meter, prices), profiles, written, rules)
     _store(writer_name, written)
 
     to_judge = {pid: [ad for ad in ads if not ad["code"]] for pid, ads in written.items()}
     judge_name = f"{writer_name}--judge--{_slug(args.judge)}"
     judged = _cache(judge_name)
-    await _check(_endpoint(args.judge), "v4", profiles, to_judge, judged)
+    await _check(_endpoint(args.judge, meter, prices), "v4", profiles, to_judge, judged)
     _store(judge_name, judged)
 
     launched = {
@@ -302,10 +374,11 @@ async def run(args: argparse.Namespace) -> None:
     }
     audit_name = f"{writer_name}--audit--{_slug(args.auditor)}"
     audited = _cache(audit_name)
-    await _check(_endpoint(args.auditor), "a1", profiles, launched, audited)
+    await _check(_endpoint(args.auditor, meter, prices), "a1", profiles, launched, audited)
     _store(audit_name, audited)
 
     report(args, profiles, written, to_judge, judged, launched, audited, reference)
+    sys.stdout.write(f"\n{meter.summary()}\n")
 
 
 def report(
@@ -395,6 +468,12 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--auditor", required=True)
     parser.add_argument("--rules", default="creatives-3")
     parser.add_argument("--split", default="test", choices=["train", "val", "test"])
+    parser.add_argument(
+        "--budget",
+        type=float,
+        default=DEFAULT_BUDGET_USD,
+        help="предел прогона в долларах; выше $0.05 — только с согласия владельца",
+    )
     asyncio.run(run(parser.parse_args(argv)))
 
 
