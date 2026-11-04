@@ -20,6 +20,7 @@ import asyncio
 import dataclasses
 import json
 import os
+import re
 import sys
 from collections import Counter
 from collections.abc import Sequence
@@ -207,6 +208,8 @@ async def _write(
                     "headline": candidate.draft.headline,
                     "text": candidate.draft.text,
                     "code": sorted({*found, *(v.kind.value for v in unbound)}),
+                    "details": [v.detail for v in unbound],
+                    "claims": [[c.fragment, c.fact_key] for c in candidate.claims],
                 }
             )
         cache[pid] = ads
@@ -353,6 +356,13 @@ def report(
 def _codes(written: dict[str, list[dict[str, Any]]], launched: dict[str, Any]) -> None:
     reasons = Counter(r for pid in launched for ad in written[pid] for r in ad["code"])
     sys.stdout.write(f"причины кода: {dict(reasons.most_common())}\n")
+    details = Counter(
+        re.sub(r"«[^»]*»", "«…»", d).split(" из факта")[0].split(" не хватает")[0]
+        for pid in launched
+        for ad in written[pid]
+        for d in ad.get("details", [])
+    )
+    sys.stdout.write(f"подробности кода: {dict(details.most_common(8))}\n")
 
 
 def _judged(to_judge: dict[str, list[dict[str, Any]]], judged: dict[str, Any]) -> None:
