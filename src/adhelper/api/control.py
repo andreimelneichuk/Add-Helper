@@ -31,7 +31,7 @@ from adhelper.ledger.application.rollback import (
     rollback_change,
 )
 from adhelper.ledger.application.service import Ledger
-from adhelper.platforms.adapters.gateway import RoutingGateway
+from adhelper.platforms.adapters.gateway import AdvertiserSource, RoutingGateway
 from adhelper.stats.adapters.sql import SqlDashboard
 from adhelper.stats.application.overview import ad_detail
 
@@ -95,7 +95,12 @@ def _rubles(micros: int) -> str:
     return f"{whole:,}".replace(",", "\u00a0") + "\u00a0₽"
 
 
-def _ledger(request: Request, business_id: UUID, platform: Any) -> Ledger:
+def _ledger(
+    request: Request,
+    business_id: UUID,
+    platform: Any,
+    advertiser: AdvertiserSource | None = None,
+) -> Ledger:
     sessions = _sessions(request)
     return Ledger(
         repository=SqlChangeRepository(sessions, business_id),
@@ -105,6 +110,8 @@ def _ledger(request: Request, business_id: UUID, platform: Any) -> Ledger:
             platform,
             launcher=platform,
             publisher=platform,
+            registry=platform,
+            advertiser=advertiser,
         ),
         lock=PostgresAccountLock(request.app.state.engine),
         max_attempts=MAX_CHANGE_ATTEMPTS,

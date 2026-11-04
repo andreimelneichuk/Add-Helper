@@ -32,6 +32,7 @@ from adhelper.campaigns.adapters.rules_file import load_launch_rules
 from adhelper.campaigns.application.launch import (
     MOSCOW_TZ,
     PLACEMENT_WORDS,
+    Advertiser,
     LaunchInputs,
     LaunchPlan,
     LaunchProblem,
@@ -308,13 +309,23 @@ def launch_router() -> APIRouter:
         platform = request.app.state.platform_for(business_id, inputs.account)
         if platform is None:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, LAUNCH_LATER)
+        marking_store = _store(request, business_id)
+
+        async def advertiser() -> Advertiser | None:
+            found = await marking_store.get()
+            if found is None:
+                return None
+            return Advertiser(found.kind.value, found.inn, found.name, found.phone, found.okved)
+
+        current = await advertiser()
         result = await launch(
             SqlLaunches(_sessions(request), business_id),
-            _ledger(request, business_id, platform),
+            _ledger(request, business_id, platform, advertiser),
             inputs,
             load_launch_rules(),
             load_budget_rules("budget-1"),
             _now(request),
+            advertiser=None if current is None else current.card(),
         )
         return await _answer(request, business_id, inputs.account, result)
 

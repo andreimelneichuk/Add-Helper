@@ -1,4 +1,4 @@
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
 from adhelper.budget.domain.ports import PlatformUnavailable
@@ -11,11 +11,19 @@ from adhelper.campaigns.domain.ports import (
 from adhelper.campaigns.domain.targeting import Schedule
 from adhelper.ledger.domain.model import ChangeKind
 from adhelper.ledger.domain.ports import GatewayUnavailable, PlatformGateway
-from adhelper.platforms.domain.ports import AdControl, AdPublisher
+from adhelper.platforms.domain.ports import (
+    CLIENT_PREFIX,
+    AdControl,
+    AdPublisher,
+    Advertiser,
+    AdvertiserRegistry,
+)
 
 AD_PREFIX = "ad:"
 # Цель записи о новом объявлении: его ещё нет, находим по нашей метке.
 NEW_AD_PREFIX = "newad:"
+# Откуда исполнитель берёт реквизиты рекламодателя: в журнале их нет, только `card`.
+AdvertiserSource = Callable[[], Awaitable[Advertiser | None]]
 
 
 class RoutingGateway:
@@ -28,12 +36,44 @@ class RoutingGateway:
         targeting: TargetingControl | None = None,
         launcher: CampaignLauncher | None = None,
         publisher: AdPublisher | None = None,
+        registry: AdvertiserRegistry | None = None,
+        advertiser: AdvertiserSource | None = None,
     ) -> None:
         self._campaigns = campaigns
         self._ads = ads
         self._targeting = targeting
         self._launcher = launcher
         self._publisher = publisher
+        self._registry = registry
+        self._advertiser = advertiser
+
+    def _registry_control(self) -> AdvertiserRegistry:
+        if self._registry is None:
+            raise GatewayUnavailable("advertiser registry is not connected")
+        return self._registry
+
+    async def _read_client(self, account: str) -> Mapping[str, Any]:
+        if self._advertiser is None:
+            # Процесс без ключа реквизитов не берётся за запись: попытки не тратятся,
+            # её доведёт запуск, у которого ключ есть.
+            raise GatewayUnavailable("advertiser source is not connected")
+        found = await self._registry_control().read_advertiser(account)
+        return {} if found is None else found.card()
+
+    async def _apply_client(
+        self, account: str, kind: ChangeKind, planned: Mapping[str, Any]
+    ) -> None:
+        if kind is not ChangeKind.SET_ADVERTISER:
+            raise ValueError(f"{kind} не меняет рекламодателя")
+        registry = self._registry_control()
+        if self._advertiser is None:
+            raise GatewayUnavailable("advertiser source is not connected")
+        advertiser = await self._advertiser()
+        if advertiser is None or advertiser.card() != dict(planned):
+            # Владелец изменил данные после записи: эта запись исчерпает попытки и закроется,
+            # новые данные уйдут новой записью при следующем запуске.
+            raise GatewayUnavailable("advertiser changed after the change was recorded")
+        await registry.set_advertiser(account, advertiser)
 
     def _publisher_control(self) -> AdPublisher:
         if self._publisher is None:
@@ -84,6 +124,8 @@ class RoutingGateway:
                 return await self._read_launch(account, target_ref)
             if target_ref.startswith(NEW_AD_PREFIX):
                 return await self._read_new_ad(account, target_ref)
+            if target_ref.startswith(CLIENT_PREFIX):
+                return await self._read_client(account)
             if target_ref.startswith(AD_PREFIX):
                 return await self._ads.read_ad(account, target_ref)
             if target_ref.startswith(TARGETING_PREFIX):
@@ -121,6 +163,9 @@ class RoutingGateway:
                     str(planned["text"]),
                     str(planned["href"]),
                 )
+                return
+            if target_ref.startswith(CLIENT_PREFIX):
+                await self._apply_client(account, kind, planned)
                 return
             if target_ref.startswith(AD_PREFIX):
                 await self._ads.set_ad_active(account, target_ref, planned["active"])

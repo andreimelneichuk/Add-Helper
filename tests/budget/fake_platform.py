@@ -8,7 +8,12 @@ from adhelper.budget.domain.watch import SpendSnapshot
 from adhelper.campaigns.domain.launch import NewCampaign
 from adhelper.campaigns.domain.ports import CreatedCampaign, Targeting
 from adhelper.campaigns.domain.targeting import Schedule
-from adhelper.platforms.domain.ports import ModerationState, ModerationVerdict, PublishedAd
+from adhelper.platforms.domain.ports import (
+    Advertiser,
+    ModerationState,
+    ModerationVerdict,
+    PublishedAd,
+)
 
 # Новая кампания в Директе показывается круглосуточно; регион задаём Москвой.
 DEFAULT_TARGETING = Targeting(Schedule((0, 1, 2, 3, 4, 5, 6), 0, 24), (213,))
@@ -54,6 +59,8 @@ class FakePlatform:
         self.published: dict[str, PublishedAd] = {}
         self.create_ad_calls = 0
         self.verdicts: dict[str, ModerationVerdict] = {}
+        self.advertisers: dict[str, Advertiser] = {}
+        self.set_advertiser_calls = 0
         self._history = [(now, self.total_spent)]
 
     @property
@@ -151,6 +158,16 @@ class FakePlatform:
         self._check_fault("moderation", after_apply=False)
         waiting = ModerationState.MODERATION
         return [self.verdicts.get(ad_id, ModerationVerdict(ad_id, waiting)) for ad_id in ad_ids]
+
+    async def read_advertiser(self, account: str) -> Advertiser | None:
+        self._check_fault("read_advertiser", after_apply=False)
+        return self.advertisers.get(account)
+
+    async def set_advertiser(self, account: str, advertiser: Advertiser) -> None:
+        self._check_fault("set_advertiser", after_apply=False)
+        self.set_advertiser_calls += 1
+        self.advertisers[account] = advertiser
+        self._check_fault("set_advertiser", after_apply=True)
 
     def accept(self, ad_id: str) -> None:
         self.verdicts[ad_id] = ModerationVerdict(ad_id, ModerationState.ACCEPTED)

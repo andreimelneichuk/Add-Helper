@@ -23,6 +23,7 @@ export const CHANGE_KIND: Record<string, string> = {
   resume_ad: "Включено объявление",
   create_campaign: "Создана кампания",
   create_ad: "Объявление отправлено на проверку",
+  set_advertiser: "Данные для маркировки переданы в Яндекс",
 };
 
 export const VERDICT: Record<string, string> = {
