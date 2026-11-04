@@ -23,7 +23,14 @@ class CreativeSource(StrEnum):
 
 
 class ModelUnavailable(Exception):
-    """Модель не ответила, ответ обрезан или отклонён фильтром."""
+    """Модель не ответила, ответ обрезан или отклонён фильтром.
+
+    `tokens` — сколько токенов ответ всё же потратил: обрезанный ответ оплачен.
+    """
+
+    def __init__(self, reason: str = "", tokens: int = 0) -> None:
+        super().__init__(reason)
+        self.tokens = tokens
 
 
 @dataclass(frozen=True)
