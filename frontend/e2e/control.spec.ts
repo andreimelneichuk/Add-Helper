@@ -443,9 +443,10 @@ test("проверка Яндекса: отклонённое переписан
   await verdict(repair!.headline, "accepted");
   await request.post(`${stand}/moderate`);
   expect((await creatives()).find((c) => c.id === repair!.id)?.state).toBe("running");
+  // Отправку провёл стенд вне браузера: экран читает её после перезагрузки.
+  await page.reload();
   await nav(page, "История").click();
   await expect(page.getByRole("heading", { name: /^Отправил объявление на проверку/ }).first()).toBeVisible();
-  await page.reload();
   await nav(page, "Реклама").click();
   await expect(page.getByText("на проверке Яндекса")).toHaveCount(0);
 });
@@ -477,6 +478,8 @@ test("переделка объявления: выдумка отклонена
 });
 
 test("правка цены: объявления со старой ценой названы, замену пишет писатель и ждёт решения", async ({ page, request }) => {
+  // Две правки профиля, каждая с циклом хранителя, и писатель стенда между ними.
+  test.setTimeout(150_000);
   const settings = page.locator(".ah-bar").getByRole("button", { name: "Настройки" });
   await page.goto("/?new");
   await settings.click();
