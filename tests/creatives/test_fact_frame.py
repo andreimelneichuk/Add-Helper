@@ -75,7 +75,7 @@ def test_schedule_word_outside_facts_is_violation() -> None:
 
 
 def test_call_to_action_and_client_thought_pass() -> None:
-    assert found("Ногти снова в порядке?", "Запишитесь на маникюр.", ("маникюр", "s1")) == []
+    assert found("Ногти просят ухода?", "Запишитесь на маникюр.", ("маникюр", "s1")) == []
 
 
 def test_negation_is_significant() -> None:
@@ -123,3 +123,12 @@ def test_numbers_at_headline_and_text_border_stay_apart() -> None:
     draft = AdDraft("Мы на ул. Ленина, 5", "3 этаж.")
     claims = [Claim("ул. Ленина, 5", "address"), Claim("3 этаж", "address")]
     assert check_claims(draft, claims, keyed_facts(profile), RULES) == ()
+
+
+def test_result_promise_outside_facts_is_violation() -> None:
+    assert found("Маникюр", "Ногти снова в порядке.", ("Маникюр", "s1")) == ["«снова» без факта"]
+    assert found("Маникюр", "Руки будут ухоженными.", ("Маникюр", "s1")) == ["«будут» без факта"]
+
+
+def test_checkable_property_outside_facts_is_violation() -> None:
+    assert found("Маникюр", "Свежий взгляд на ногти.", ("Маникюр", "s1")) == ["«свежий» без факта"]
