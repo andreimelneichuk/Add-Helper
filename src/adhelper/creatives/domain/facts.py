@@ -84,8 +84,9 @@ def _common_prefix(left: str, right: str) -> str:
     return left[:size]
 
 
-def _frame(claim: Claim, fact: str, rules: CreativeRules) -> list[Violation]:
+def _frame(claim: Claim, fact: str, ad: str, rules: CreativeRules) -> list[Violation]:
     glue = set(rules.fact_glue)
+    ad_words = _tokens(ad)
     words = [t for t in _tokens(claim.fragment) if t not in glue]
     fact_words = [t for t in _tokens(fact) if t not in glue]
     found = [
@@ -94,8 +95,10 @@ def _frame(claim: Claim, fact: str, rules: CreativeRules) -> list[Violation]:
         if not any(_same_word(word, fact_word) for fact_word in fact_words)
     ]
     # Число тянет за собой весь факт: «скидка 10% по будням» без «до 12» — другое условие.
+    # Остальные слова факта могут стоять в другом месте объявления: «Круассан» в заголовке,
+    # «Цена 220 ₽» в тексте.
     if _numbers(claim.fragment) & _numbers(fact):
-        missing = [w for w in fact_words if not any(_same_word(t, w) for t in words)]
+        missing = [w for w in fact_words if not any(_same_word(t, w) for t in ad_words)]
         if missing:
             listed = ", ".join(f"«{w}»" for w in missing)
             found.append(
@@ -106,12 +109,21 @@ def _frame(claim: Claim, fact: str, rules: CreativeRules) -> list[Violation]:
     return found
 
 
-def _free_text(full: str, fragments: Sequence[str], rules: CreativeRules) -> list[Violation]:
-    """Текст вне фрагментов-фактов не говорит о графике, выезде, сроках и условиях."""
+def _free_text(
+    full: str, fragments: Sequence[str], used: Sequence[str], rules: CreativeRules
+) -> list[Violation]:
+    """Текст вне фрагментов-фактов не говорит о графике, выезде, сроках и условиях.
+
+    Слово из факта, на который объявление уже сослалось, допустимо и вне фрагмента:
+    заголовок часто повторяет часть текста.
+    """
     rest = full
     for fragment in fragments:
-        rest = rest.replace(fragment, " ", 1)
-    words = [t for t in _tokens(rest) if not t.isdigit()]
+        rest = rest.replace(fragment, " ")
+    known = [t for fact in used for t in _tokens(fact)]
+    words = [
+        t for t in _tokens(rest) if not t.isdigit() and not any(_same_word(t, k) for k in known)
+    ]
     phrases = [stem for stem in rules.claim_stems if " " in stem]
     stems = [stem for stem in rules.claim_stems if " " not in stem]
     found = [
@@ -137,7 +149,8 @@ def check_claims(
     found: list[Violation] = []
     framed = rules is not None and bool(rules.fact_glue)
     kept: list[str] = []
-    full = _squeeze(f"{draft.headline} {draft.text}")
+    used: list[str] = []
+    full = _squeeze(f"{draft.headline} | {draft.text}")
     bound: set[str] = set()
     for claim in claims:
         if claim.fact_key not in facts:
@@ -152,11 +165,13 @@ def check_claims(
         bound |= _numbers(claim.fragment) & _numbers(facts[claim.fact_key])
         if framed:
             assert rules is not None
-            found.extend(_frame(claim, facts[claim.fact_key], rules))
+            found.extend(_frame(claim, facts[claim.fact_key], full, rules))
             kept.append(fragment)
+            used.append(facts[claim.fact_key])
     if framed:
         assert rules is not None
-        found.extend(_free_text(full, kept, rules))
-    for number in sorted(_numbers(f"{draft.headline} {draft.text}") - bound):
+        # Название бизнеса можно упомянуть без ссылки: «Ночной механик» — не обещание ночи.
+        found.extend(_free_text(full, kept, [*used, facts.get("name", "")], rules))
+    for number in sorted(_numbers(f"{draft.headline} | {draft.text}") - bound):
         found.append(Violation(ViolationKind.UNBOUND_CLAIM, f"число {number} без факта"))
     return tuple(found)
