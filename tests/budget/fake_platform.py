@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from adhelper.budget.domain.limits import CampaignBudget, LimitChange, LimitDecision
 from adhelper.budget.domain.ports import PlatformUnavailable
@@ -61,6 +61,9 @@ class FakePlatform:
         self.verdicts: dict[str, ModerationVerdict] = {}
         self.advertisers: dict[str, Advertiser] = {}
         self.set_advertiser_calls = 0
+        # Визиты с рекламы по московским дням; дня нет — у Метрики нет данных за него.
+        self.visits: dict[date, int] = {}
+        self.visit_calls: list[tuple[str, date, date]] = []
         self._history = [(now, self.total_spent)]
 
     @property
@@ -225,3 +228,13 @@ class FakePlatform:
         self, account: str, change: LimitChange, decision: LimitDecision
     ) -> None:
         self.rejections.append(decision)
+
+    async def ad_visits(self, counter: str, since: date, until: date) -> int | None:
+        self.visit_calls.append((counter, since, until))
+        if self.unavailable:
+            raise PlatformUnavailable("metrika")
+        self._check_fault("ad_visits", after_apply=False)
+        days = [day for day in self.visits if since <= day <= until]
+        if not days:
+            return None
+        return sum(self.visits[day] for day in days)

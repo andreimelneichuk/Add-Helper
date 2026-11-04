@@ -13,6 +13,7 @@ from adhelper.autopilot.adapters.rules_file import load_rules as load_autopilot_
 from adhelper.autopilot.adapters.sql import SqlDecisionLog
 from adhelper.autopilot.adapters.tests import SqlTestPlanner
 from adhelper.autopilot.application.cycle import SCHEDULED_MODE, AutopilotCycle
+from adhelper.autopilot.application.visits import WithVisits
 from adhelper.budget.adapters.ledgered import (
     LedgeredBudgetPlatform,
     PlatformChangeGateway,
@@ -26,7 +27,7 @@ from adhelper.budget.application.watch_cycle import run_watch_cycle
 from adhelper.business.adapters.fetcher import SafeFetcher
 from adhelper.business.adapters.rules_file import load_site_rules, load_tag_rules
 from adhelper.business.adapters.site_reads import SqlSiteReadQueue
-from adhelper.business.adapters.tag_checks import SqlTagCheckQueue
+from adhelper.business.adapters.tag_checks import SqlTagCheckQueue, SqlTagChecks
 from adhelper.business.application.site import run_site_reads
 from adhelper.business.application.tag import run_tag_checks
 from adhelper.config import Settings
@@ -105,6 +106,8 @@ class Runtime:
     email: Any = None
     telegram: Any = None
     cabinet_url: str = "http://localhost:8000"
+    # Визиты Метрики (T6); без источника проверки визитов в автопилоте пропускаются.
+    visits_for: Callable[[UUID], Any] = lambda _business_id: None
 
     def ledger_for(self, business_id: UUID, account: str) -> Ledger:
         platform = self.platform_for(business_id, account)
@@ -234,8 +237,13 @@ class Runtime:
 
     def autopilot_cycle(self, business_id: UUID, account: str) -> AutopilotCycle:
         rules = load_autopilot_rules(CURRENT_AUTOPILOT_RULES)
+        data: Any = SqlAutopilotData(self.sessions, business_id, rules)
+        visits = self.visits_for(business_id)
+        if visits is not None:
+            counter = SqlTagChecks(self.sessions, business_id).counter
+            data = WithVisits(data, visits, counter, rules)
         return AutopilotCycle(
-            SqlAutopilotData(self.sessions, business_id, rules),
+            data,
             SqlDecisionLog(self.sessions, business_id),
             LedgeredActions(self.ledger_for(business_id, account), _increase_needs_owner),
             SqlAlerts(self.sessions, business_id),
