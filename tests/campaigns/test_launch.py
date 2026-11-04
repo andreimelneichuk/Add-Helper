@@ -26,6 +26,7 @@ from adhelper.ledger.application.rollback import RollbackStatus, rollback_change
 from adhelper.ledger.application.service import Ledger
 from adhelper.ledger.domain.model import ChangeKind, ChangeStatus
 from adhelper.platforms.adapters.gateway import RoutingGateway
+from adhelper.platforms.domain.ports import Advertiser
 from tests.budget.fake_platform import FakePlatform, Fault
 from tests.seed import seed_account
 
@@ -222,3 +223,135 @@ async def test_running_period_blocks_launch(
     assert result.status is LaunchStatus.REFUSED  # type: ignore[attr-defined]
     assert result.reason == "period_exists"  # type: ignore[attr-defined]
     assert platform.create_calls == 0
+
+
+ADVERTISER = Advertiser("legal", "7707083893", "ООО «Ноготок»", None, "96.02")
+
+
+def _marked_ledger(
+    platform: FakePlatform,
+    sessions: Sessions,
+    engine: AsyncEngine,
+    business: uuid.UUID,
+    source: Advertiser | None = ADVERTISER,
+) -> Ledger:
+    async def advertiser() -> Advertiser | None:
+        return source
+
+    return Ledger(
+        repository=SqlChangeRepository(sessions, business),
+        gateway=RoutingGateway(
+            PlatformChangeGateway(platform),
+            platform,
+            platform,
+            platform,
+            registry=platform,
+            advertiser=advertiser,
+        ),
+        lock=PostgresAccountLock(engine),
+        max_attempts=3,
+        preflight=StoredPeriodPreflight(
+            SqlPeriodStore(sessions), platform, business, lambda: platform.now, load_rules
+        ),
+    )
+
+
+async def _marked_launch(
+    platform: FakePlatform, sessions: Sessions, engine: AsyncEngine, business: uuid.UUID
+) -> object:
+    return await launch(
+        SqlLaunches(sessions, business),
+        _marked_ledger(platform, sessions, engine, business),
+        INPUTS,
+        RULES,
+        BUDGET,
+        NOW,
+        advertiser=ADVERTISER.card(),
+    )
+
+
+async def test_marking_goes_to_platform_before_campaigns_and_inn_stays_out_of_journal(
+    sessions: Sessions, engine: AsyncEngine, business: uuid.UUID
+) -> None:
+    platform = FakePlatform([], NOW)
+    result = await _marked_launch(platform, sessions, engine, business)
+    assert result.status is LaunchStatus.DONE  # type: ignore[attr-defined]
+    assert platform.advertisers["acc"] == ADVERTISER
+    async with sessions() as session:
+        rows = (
+            await session.execute(
+                text(
+                    "SELECT kind, status, planned::text, before::text, after::text FROM changes"
+                    " WHERE business_id = :b ORDER BY id"
+                ),
+                {"b": business},
+            )
+        ).all()
+    assert [row[0] for row in rows] == ["set_advertiser", "create_campaign"]
+    assert rows[0][1] == ChangeStatus.APPLIED.value
+    # Реквизиты не в журнале: только тип, конец ИНН и ОКВЭД.
+    assert all("7707083893" not in "".join(row[2:]) for row in rows)
+    assert "3893" in rows[0][2]
+
+
+async def test_lost_marking_reply_is_finished_by_reading_not_sent_twice(
+    sessions: Sessions, engine: AsyncEngine, business: uuid.UUID
+) -> None:
+    platform = FakePlatform([], NOW)
+    platform.faults.append(Fault("set_advertiser", after_apply=True))
+    first = await _marked_launch(platform, sessions, engine, business)
+    assert first.status is LaunchStatus.PENDING  # type: ignore[attr-defined]
+    assert platform.created == {}
+    again = await _marked_launch(platform, sessions, engine, business)
+    assert again.status is LaunchStatus.DONE  # type: ignore[attr-defined]
+    assert platform.set_advertiser_calls == 1
+
+
+async def test_marking_without_key_waits_and_campaign_waits_behind_it(
+    sessions: Sessions, engine: AsyncEngine, business: uuid.UUID
+) -> None:
+    # Процесс без ключа шифрования реквизитов (воркер) отправить их не может: запись ждёт.
+    platform = FakePlatform([], NOW)
+    ledger = _marked_ledger(platform, sessions, engine, business, source=None)
+    result = await launch(
+        SqlLaunches(sessions, business),
+        ledger,
+        INPUTS,
+        RULES,
+        BUDGET,
+        NOW,
+        advertiser=ADVERTISER.card(),
+    )
+    assert result.status is not LaunchStatus.DONE
+    assert platform.advertisers == {} and platform.created == {}
+
+
+async def test_marking_already_on_platform_is_not_sent_again(
+    sessions: Sessions, engine: AsyncEngine, business: uuid.UUID
+) -> None:
+    platform = FakePlatform([], NOW)
+    platform.advertisers["acc"] = ADVERTISER
+    result = await _marked_launch(platform, sessions, engine, business)
+    assert result.status is LaunchStatus.DONE  # type: ignore[attr-defined]
+    assert platform.set_advertiser_calls == 0
+
+
+async def test_marking_changed_after_recording_is_not_sent_and_campaigns_wait(
+    sessions: Sessions, engine: AsyncEngine, business: uuid.UUID
+) -> None:
+    # Запись журнала говорит об одном ИНН, а в хранилище уже другой: отправлять нельзя ни тот,
+    # ни другой, пока запуск не запишет новые данные новой записью.
+    platform = FakePlatform([], NOW)
+    other = Advertiser("legal", "7736050003", "ООО «Ноготок»", None, "96.02")
+    ledger = _marked_ledger(platform, sessions, engine, business, source=other)
+    result = await launch(
+        SqlLaunches(sessions, business),
+        ledger,
+        INPUTS,
+        RULES,
+        BUDGET,
+        NOW,
+        advertiser=ADVERTISER.card(),
+    )
+    assert result.status is LaunchStatus.PENDING
+    assert platform.advertisers == {} and platform.created == {}

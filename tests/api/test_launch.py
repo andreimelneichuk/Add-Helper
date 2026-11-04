@@ -214,13 +214,25 @@ async def test_launch_creates_campaign_and_shows_it_in_cabinet(
         kinds = (
             (
                 await session.execute(
-                    text("SELECT kind FROM changes WHERE business_id = :b"), {"b": business_id}
+                    text("SELECT kind FROM changes WHERE business_id = :b ORDER BY id"),
+                    {"b": business_id},
                 )
             )
             .scalars()
             .all()
         )
-    assert states == ["moderation"] and ads == 2 and kinds == ["create_campaign"]
+    assert states == ["moderation"] and ads == 2
+    # Маркировка ушла первой, кампании — после подтверждения чтением.
+    assert kinds == ["set_advertiser", "create_campaign"]
+    [sent] = platform.advertisers.values()
+    assert (sent.kind, sent.inn, sent.okved) == ("legal", LEGAL_INN, "96.02")
+    async with sessions() as session:
+        journal = (
+            await session.execute(
+                text("SELECT planned::text, before::text, after::text FROM changes")
+            )
+        ).all()
+    assert all(LEGAL_INN not in "".join(row) for row in journal)
 
 
 async def test_launch_without_platform_records_nothing(

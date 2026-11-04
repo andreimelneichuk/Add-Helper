@@ -5,10 +5,11 @@
 по метке и второй раз не создаётся.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
 from adhelper.budget.domain.calendar import MOSCOW as MOSCOW_TZ
 from adhelper.budget.domain.calendar import moscow_period, platform_date
@@ -35,11 +36,13 @@ from adhelper.ledger.domain.model import (
     ProposedChange,
 )
 from adhelper.ledger.domain.ports import GatewayUnavailable
+from adhelper.platforms.domain.ports import CLIENT_PREFIX, Advertiser
 
 # Типы домена нужны HTTP-слою, который сам домен не импортирует.
 __all__ = [
     "MOSCOW_TZ",
     "PLACEMENT_WORDS",
+    "Advertiser",
     "LaunchInputs",
     "LaunchPlan",
     "LaunchProblem",
@@ -121,6 +124,43 @@ def _plan(key: str, inputs: LaunchInputs, period: BudgetPeriod, rules: LaunchRul
     )
 
 
+def _marking(account: str, launch_id: int, card: Mapping[str, Any]) -> ProposedChange:
+    # Другие данные владельца — другая запись; те же — та же, повтор её не удваивает.
+    key = ":".join(str(card[name]) for name in sorted(card))
+    return ProposedChange(
+        account=account,
+        source=ChangeSource.USER,
+        kind=ChangeKind.SET_ADVERTISER,
+        target_ref=f"{CLIENT_PREFIX}{account}",
+        planned=dict(card),
+        explanation=(
+            f"Передал в Яндекс данные рекламодателя для маркировки, ИНН …{card['inn_tail']}."
+            " Почему: без них Яндекс не покажет рекламу. Дальше: Яндекс передаст их в ОРД."
+            " Отменить нельзя: исправьте данные в настройках, и я отправлю новые."
+        ),
+        idempotency_key=f"advertiser:{launch_id}:{key}",
+    )
+
+
+async def _marked(ledger: Ledger, stored: StoredLaunch, card: Mapping[str, Any]) -> bool:
+    """Данные рекламодателя на площадке: проверено чтением после записи в журнал."""
+
+    async def applied() -> bool:
+        changes = await ledger.changes_on_target(stored.account, f"{CLIENT_PREFIX}{stored.account}")
+        return any(
+            c.kind is ChangeKind.SET_ADVERTISER
+            and c.status is ChangeStatus.APPLIED
+            and dict(c.planned) == dict(card)
+            for c in changes
+        )
+
+    if await applied():
+        return True
+    await ledger.submit(_marking(stored.account, stored.id, card))
+    await ledger.execute_pending(stored.account)
+    return await applied()
+
+
 def _launched(change: Change) -> LaunchedCampaign:
     after = change.after or {}
     campaign = NewCampaign.from_planned(
@@ -189,7 +229,12 @@ async def launch(
     rules: LaunchRules,
     budget_rules: BudgetRules,
     now: datetime,
+    advertiser: Mapping[str, Any] | None = None,
 ) -> LaunchResult:
+    """`advertiser` — карточка маркировки без реквизитов (`Advertiser.card`).
+
+    Она уходит на площадку первой: журнал выполняет записи по порядку, и кампании ждут её.
+    """
     stored = await store.get()
     if stored is None:
         starts_at, ends_at = moscow_period(platform_date(now), rules.period_days)
@@ -210,6 +255,9 @@ async def launch(
     plan = _plan(str(stored.id), inputs, stored.period, rules)
     started = {c.target_ref for c in await _creations(ledger, stored)}
     try:
+        if advertiser is not None and not await _marked(ledger, stored, advertiser):
+            # Без маркировки Яндекс не покажет рекламу: кампании ждут, пока она дойдёт.
+            return LaunchResult(LaunchStatus.PENDING, ends_at=stored.period.ends_at)
         for campaign in plan.campaigns:
             if campaign.target_ref in started:
                 continue

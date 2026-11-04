@@ -394,6 +394,9 @@ test("новый владелец проходит мастер и запуск�
   await page.goto("/?new");
   await nav(page, "История").click();
   await expect(page.getByRole("heading", { name: /^Создал кампанию/ })).toBeVisible();
+  // Маркировка ушла в Яндекс до кампании, в истории без реквизитов: только конец ИНН.
+  await expect(page.getByRole("heading", { name: /^Передал данные для маркировки/ })).toBeVisible();
+  await expect(page.getByText("7707083893")).toHaveCount(0);
   await expect(page.getByText(/лимит 18\s000\s₽ до/)).toBeVisible();
 });
 

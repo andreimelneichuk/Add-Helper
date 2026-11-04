@@ -11,7 +11,7 @@ import type { Message, State } from "./store";
 
 const MONTHS = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
 const MONTHS_OF = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
-const KIND_TITLE: Record<string, string> = { set_limit: "Изменил дневной лимит", pause: "Остановил показы", resume: "Снял паузу", pause_ad: "Отключил объявление", resume_ad: "Включил объявление", set_schedule: "Изменил время показов", set_regions: "Изменил регион показов", create_campaign: "Создал кампанию", create_ad: "Отправил объявление на проверку" };
+const KIND_TITLE: Record<string, string> = { set_limit: "Изменил дневной лимит", pause: "Остановил показы", resume: "Снял паузу", pause_ad: "Отключил объявление", resume_ad: "Включил объявление", set_schedule: "Изменил время показов", set_regions: "Изменил регион показов", create_campaign: "Создал кампанию", create_ad: "Отправил объявление на проверку", set_advertiser: "Передал данные для маркировки" };
 const UNDOABLE = new Set(["set_limit", "resume", "pause_ad", "resume_ad", "set_schedule", "set_regions"]);
 const STATUS_WORD: Record<string, string> = { planned: "Запланировано", applying: "Применяется", failed: "Не удалось", rejected: "Отклонено правилами", conflict: "Изменено кем-то ещё" };
 const DAY_NAMES = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"];

@@ -53,3 +53,35 @@ class AdPublisher(Protocol):
     async def moderation(
         self, account: str, ad_ids: Sequence[str]
     ) -> Sequence[ModerationVerdict]: ...
+
+
+# Цель записи журнала о данных рекламодателя для маркировки: одна на кабинет.
+CLIENT_PREFIX = "client:"
+
+
+@dataclass(frozen=True)
+class Advertiser:
+    """Рекламодатель для маркировки (docs/03-integrations.md «Маркировка»).
+
+    ИНН и телефон — реквизиты: в журнал, логи и модели не попадают, в журнале только `card`.
+    """
+
+    kind: str
+    inn: str
+    name: str
+    phone: str | None
+    okved: str | None
+
+    def card(self) -> dict[str, Any]:
+        """Что можно хранить в журнале: по этому сверяем цель и результат."""
+        return {"kind": self.kind, "inn_tail": self.inn[-4:], "okved": self.okved}
+
+
+class AdvertiserRegistry(Protocol):
+    """Данные рекламодателя кабинета на площадке (в Директе `Clients.update`).
+
+    Повтор безопасен: запись заменяет прежние данные, повтор начинается с чтения.
+    """
+
+    async def read_advertiser(self, account: str) -> Advertiser | None: ...
+    async def set_advertiser(self, account: str, advertiser: Advertiser) -> None: ...
