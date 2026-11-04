@@ -6,8 +6,10 @@ v у нового писателя оцениваем по доле снятых
 ошибки проверки (Роган — Гладен): b = v(1 − m) + (1 − v)f. Ошибка среди запущенных —
 v·m / (v·m + (1 − v)(1 − f)).
 
-Границы берём худшие в своём направлении: верхние для b и m, нижнюю для f в оценке v и
-верхнюю для f в ошибке. Три границы по 1 − α/3 каждая дают вместе не меньше 1 − α.
+Точную поправку показываем для сведения, а в ворота идёт граница, которая не зависит от f:
+из b ≥ v(1 − m) следует v ≤ b / (1 − m). Ложные снятия на эталоне и на текстах нового
+писателя бывают разными, и большая f на эталоне иначе занизила бы v до нуля. Границы верхние
+для b, m и f (f в ошибке); три границы по 1 − α/3 каждая дают вместе не меньше 1 − α.
 Предположение: на текстах нового писателя судья ошибается не чаще, чем на эталоне. Его
 проверяет аудитор: расхождения аудитора с судьёй разбирает панель (evals.gate).
 """
@@ -37,12 +39,6 @@ from evals.run import RESULTS
 
 LIMIT = 0.01
 CONFIDENCE = 0.95
-
-
-def lower_bound(errors: int, total: int, confidence: float = CONFIDENCE) -> float:
-    if total == 0 or errors == 0:
-        return 0.0
-    return 1 - upper_bound(total - errors, total, confidence)
 
 
 def prevalence(blocked_share: float, miss: float, false_block: float) -> float:
@@ -88,10 +84,9 @@ def verdict(data: GateInput, limit: float = LIMIT, confidence: float = CONFIDENC
     f = data.false_blocks / data.clean if data.clean else 0.0
     b_up = upper_bound(data.blocked, data.written, each)
     m_up = upper_bound(data.misses, data.violations, each)
-    f_lo = lower_bound(data.false_blocks, data.clean, each)
     f_up = upper_bound(data.false_blocks, data.clean, each)
     v = prevalence(b, m, f)
-    v_up = prevalence(b_up, m_up, f_lo)
+    v_up = min(1.0, b_up / (1 - m_up)) if m_up < 1 else 1.0
     error_up = launched_error(v_up, m_up, f_up)
     return GateResult(v, v_up, m_up, launched_error(v, m, f), error_up, error_up <= limit)
 
