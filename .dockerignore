@@ -6,3 +6,9 @@
 !src/
 !migrations/
 **/__pycache__
+!frontend/
+!deploy/
+frontend/node_modules
+frontend/dist
+frontend/e2e
+frontend/test-results
