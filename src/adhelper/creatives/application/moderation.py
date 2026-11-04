@@ -177,6 +177,13 @@ async def follow_owner(store: ModerationStore, ledger: Ledger, account: str, now
             await store.owner_resumed(account, ad_id, now)
 
 
+async def follow_tests(store: ModerationStore, account: str, now: datetime) -> None:
+    """Проигравшее A/B-тест снято: тест уже выключил его через журнал, здесь только строка.
+    Пауза чередования не в счёт: проигравшим объявление становится лишь в применённом тесте."""
+    for ad_id in await store.lost_tests(account):
+        await store.lost_test(account, ad_id, now)
+
+
 async def check_moderation(
     store: ModerationStore,
     publisher_for: PublisherFor,
@@ -194,6 +201,7 @@ async def check_moderation(
         if ledger is not None:
             # Сначала решения владельца: снятое не проверяем, включённое проверим сейчас же.
             await follow_owner(store, ledger, account, now)
+        await follow_tests(store, account, now)
     by_account: dict[str, list[Checking]] = defaultdict(list)
     for ad in await store.checking():
         by_account[ad.account].append(ad)

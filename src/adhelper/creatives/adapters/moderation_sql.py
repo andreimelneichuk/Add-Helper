@@ -8,7 +8,7 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import and_, column, or_, select, table, update
+from sqlalchemy import and_, case, column, or_, select, table, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from adhelper.creatives.adapters.sql import (
@@ -34,6 +34,18 @@ ADS = table(
     column("href"),
     column("state"),
 )
+# Итог A/B-теста: выключенный проигравший. Читаем таблицу теста, а не пишем в неё.
+EXPERIMENTS = table(
+    "experiments",
+    column("business_id"),
+    column("account"),
+    column("control_ref"),
+    column("variant_ref"),
+    column("status"),
+    column("winner"),
+)
+LOST_TEST = "lost_test"
+AD_PREFIX = "ad:"
 # Причина набора ремонта и объявлений из него.
 REPAIR_REASON = "moderation_rejected"
 NEEDS_OWNER = "needs_owner"
@@ -321,6 +333,43 @@ class SqlModeration:
                 return
             _set_state(row, CreativeState.MODERATION, OWNER_RESUMED, now)
             await self._set_ad(session, account, ad_id, "moderation")
+
+    async def lost_tests(self, account: str) -> Sequence[str]:
+        """Объявления сервиса, проигравшие применённый тест и ещё не снятые."""
+        loser = case(
+            (EXPERIMENTS.c.winner == "A", EXPERIMENTS.c.variant_ref),
+            (EXPERIMENTS.c.winner == "B", EXPERIMENTS.c.control_ref),
+        )
+        statement = (
+            select(CreativeRow.ad_id)
+            .join(
+                EXPERIMENTS,
+                and_(
+                    EXPERIMENTS.c.business_id == CreativeRow.business_id,
+                    EXPERIMENTS.c.account == CreativeRow.account,
+                    loser == AD_PREFIX + CreativeRow.ad_id,
+                ),
+            )
+            .where(
+                CreativeRow.business_id == self._business_id,
+                CreativeRow.account == account,
+                CreativeRow.state == CreativeState.RUNNING.value,
+                EXPERIMENTS.c.status == "applied",
+            )
+            .distinct()
+            .order_by(CreativeRow.ad_id)
+        )
+        async with self._sessions() as session:
+            return [str(ad_id) for ad_id in (await session.scalars(statement)).all()]
+
+    async def lost_test(self, account: str, ad_id: str, now: datetime) -> None:
+        """Тест выключил проигравшее через журнал: место в направлении свободно."""
+        async with self._sessions.begin() as session:
+            row = await self._row_by_ad(session, account, ad_id)
+            if row is None or row.state != CreativeState.RUNNING.value:
+                return
+            _set_state(row, CreativeState.STOPPED, LOST_TEST, now)
+            await self._set_ad(session, account, ad_id, "suspended")
 
     async def _set_ad(self, session: AsyncSession, account: str, ad_id: str, state: str) -> None:
         await session.execute(
