@@ -34,7 +34,7 @@
 
 - Поднять окружение на чистом клоне: `make setup` (нужны `uv` и Docker).
 - Все проверки, как в CI: `make check` (`ruff`, `mypy`, `lint-imports`, `pytest`; нужна запущенная база).
-- Прототип интерфейса на тестовых данных: `make prototype` (нужен Node 22 или новее). Новый интерфейс открывается по адресу `/?new`, запуск по `/?new&start` (шаги 1–2 читают сайт через сервис), подставные данные по `/?new&mock`, подставной запуск по `/?new&start&mock`. Только интерфейс: `make check-web`.
+- Прототип интерфейса на тестовых данных: `make prototype` (нужен Node 22.12 или новее). Новый интерфейс открывается по адресу `/?new`, запуск по `/?new&start` (шаги 1–2 читают сайт через сервис), подставные данные по `/?new&mock`, подставной запуск по `/?new&start&mock`. Только интерфейс: `make check-web`.
 - Кабинет на демо-данных: `uv run adhelper demo-seed` (с `--mismatch` — расхождение со счётом), затем `uv run --env-file .demo-env uvicorn adhelper.api.app:create_app --factory --port 8010` и `npm --prefix frontend run dev`.
 - Настройки и база на сервере: `docker compose exec app adhelper check`.
 - Сравнить две версии правил автопилота на истории кабинета: `uv run adhelper simulate --business <id> --rules autopilot-1 --against autopilot-2`.
