@@ -1,9 +1,10 @@
 """Ворота выпуска без новой разметки (docs/12-agents.md §2, решение владельца 2026-11-04).
 
-Выдумка доходит до запуска, только если писатель её написал (доля v) и код с судьёй её
-пропустили (доля m). m и долю зря снятых f меряем один раз на замороженном эталоне (`test`).
-v у нового писателя оцениваем по доле снятых b среди его объявлений с поправкой на известные
-ошибки проверки (Роган — Гладен): b = v(1 − m) + (1 − v)f. Ошибка среди запущенных —
+Код детерминирован: снятое им до запуска не доходит. Среди прошедших код выдумка доходит до
+запуска, только если она там есть (доля v) и судья её пропустил (доля m). m и долю зря
+снятых f меряем один раз на замороженном эталоне (`test`) среди объявлений, которые код не
+снял. v оцениваем по доле снятых судьёй b среди прошедших код объявлений нового писателя:
+b = v(1 − m) + (1 − v)f (Роган — Гладен). Ошибка среди запущенных —
 v·m / (v·m + (1 − v)(1 − f)).
 
 Точную поправку показываем для сведения, а в ворота идёт граница, которая не зависит от f:
@@ -20,6 +21,7 @@ import dataclasses
 import json
 import os
 import sys
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -27,11 +29,17 @@ from typing import Any
 from pydantic import SecretStr
 
 from adhelper.creatives.adapters.openai_compatible import OpenAiCompatibleModel
+from adhelper.creatives.adapters.rules_file import load_rules
 from adhelper.creatives.application.generate import ADS_SCHEMA, SYSTEM_PROMPT, _parse, build_prompt
 from adhelper.creatives.domain.facts import check_claims, keyed_facts
-from adhelper.creatives.domain.model import AdDraft, BusinessProfile, ModelUnavailable, TextModel
-from evals.dataset.authored import RULES
-from evals.dataset.build import code_violations, split_of, upper_bound, usable
+from adhelper.creatives.domain.model import (
+    AdDraft,
+    BusinessProfile,
+    CreativeRules,
+    ModelUnavailable,
+    TextModel,
+)
+from evals.dataset.build import code_violations, prompt_version, split_of, upper_bound, usable
 from evals.dataset.build import load as load_dataset
 from evals.dataset.spec import SPLIT_SEED
 from evals.prompts import PROMPTS
@@ -57,10 +65,10 @@ def launched_error(violations: float, miss: float, false_block: float) -> float:
 
 @dataclass(frozen=True)
 class GateInput:
-    # Объявления нового писателя: снято кодом или судьёй из всех пригодных.
+    # Объявления нового писателя: снято судьёй из прошедших код.
     blocked: int
     written: int
-    # Эталон: пропущено нарушений из всех нарушений, зря снято чистых из всех чистых.
+    # Эталон без снятого кодом: пропущено нарушений из нарушений, зря снято чистых из чистых.
     misses: int
     violations: int
     false_blocks: int
@@ -104,6 +112,8 @@ def verdict(data: GateInput, limit: float = LIMIT, confidence: float = CONFIDENC
 OPENROUTER = "https://openrouter.ai/api/v1"
 ATTEMPTS = 8
 GROQ_PACE_SECONDS = 20.0
+# Судье и аудитору набора на объявление, как в evals.run.
+JUDGE_MAX_TOKENS = 700
 
 
 @dataclass(frozen=True)
@@ -167,16 +177,19 @@ def _drafts(ads: Sequence[dict[str, object]]) -> list[AdDraft]:
 
 
 async def _write(
-    endpoint: _Endpoint, profiles: dict[str, BusinessProfile], cache: dict[str, Any]
+    endpoint: _Endpoint,
+    profiles: dict[str, BusinessProfile],
+    cache: dict[str, Any],
+    rules: CreativeRules,
 ) -> None:
     async def one(pid: str) -> None:
         profile = profiles[pid]
         text = await _call(
             endpoint,
             SYSTEM_PROMPT,
-            build_prompt(profile, RULES),
+            build_prompt(profile, rules),
             ADS_SCHEMA,
-            RULES.max_tokens_per_set,
+            rules.max_tokens_per_set,
         )
         candidates = _parse(text) if text is not None else None
         if candidates is None:
@@ -184,11 +197,11 @@ async def _write(
         facts = keyed_facts(profile)
         ads = []
         for candidate in candidates:
-            found = code_violations(candidate.draft, profile, RULES)
+            found = code_violations(candidate.draft, profile, rules)
             # Негодное по форме (длина, пустота) сервис переписывает, в счёт выдумок не идёт.
             if not usable(found):
                 continue
-            unbound = check_claims(candidate.draft, candidate.claims, facts)
+            unbound = check_claims(candidate.draft, candidate.claims, facts, rules)
             ads.append(
                 {
                     "headline": candidate.draft.headline,
@@ -218,7 +231,7 @@ async def _check(
             variant.system,
             variant.build(drafts, profiles[pid]),
             variant.schema,
-            RULES.judge_max_tokens * len(drafts),
+            JUDGE_MAX_TOKENS * len(drafts),
         )
         if text is None:
             return
@@ -230,21 +243,24 @@ async def _check(
 
 
 def _reference(judge: str) -> GateInput:
-    """Пропуск и ложные снятия кода с судьёй на замороженном эталоне."""
+    """Пропуск и ложные снятия судьи на замороженном эталоне среди того, что код не снял."""
     path = RESULTS / f"judge--{_slug(judge.partition(':')[2])}--v4--test-gold.json"
     if not path.exists():
         raise SystemExit(
             f"Нет замера судьи на эталоне: {path.name}. "
             "Сначала evals.run judge --dataset test --prompts v4"
         )
-    combined = json.loads(path.read_text(encoding="utf-8"))["summary"]["combined"]
+    rows = json.loads(path.read_text(encoding="utf-8"))["cases"]
+    passed = [r for r in rows if not r["code_blocked"] and r["label"] != "ambiguous"]
+    violations = [r for r in passed if r["label"] == "block"]
+    clean = [r for r in passed if r["label"] != "block"]
     return GateInput(
         0,
         0,
-        combined["violations"] - combined["caught"],
-        combined["violations"],
-        combined["false_blocks"],
-        combined["clean"],
+        sum(1 for r in violations if not r["votes"][0]),
+        len(violations),
+        sum(1 for r in clean if r["votes"][0]),
+        len(clean),
     )
 
 
@@ -254,16 +270,20 @@ async def run(args: argparse.Namespace) -> None:
     }
     if len(vendors) < 3:
         raise SystemExit("Писатель, судья и аудитор должны быть от разных разработчиков")
-    reference = _reference(args.judge)
+    # На val и train ворот нет: там подгоняем, и печатаются только счётчики снятого.
+    reference = _reference(args.judge) if args.split == "test" else None
+    rules = load_rules(args.rules)
     data = load_dataset()
     profiles = {
         pid: row.business()
         for pid, row in data.profiles.items()
-        if split_of(SPLIT_SEED, pid) == "test"
+        if split_of(SPLIT_SEED, pid) == args.split
     }
-    writer_name = f"gate--{_slug(args.writer)}"
+    # Кеш привязан к промпту и правилам: правка инструкции писателя даёт новый прогон.
+    version = prompt_version(SYSTEM_PROMPT, build_prompt(BusinessProfile("", ()), rules))
+    writer_name = f"gate--{_slug(args.writer)}--{rules.version}-{version[:8]}--{args.split}"
     written = _cache(writer_name)
-    await _write(_endpoint(args.writer), profiles, written)
+    await _write(_endpoint(args.writer), profiles, written, rules)
     _store(writer_name, written)
 
     to_judge = {pid: [ad for ad in ads if not ad["code"]] for pid, ads in written.items()}
@@ -293,20 +313,28 @@ def report(
     judged: dict[str, list[dict[str, Any]]],
     launched: dict[str, list[dict[str, Any]]],
     audited: dict[str, list[dict[str, Any]]],
-    reference: GateInput,
+    reference: GateInput | None,
 ) -> None:
     missing = sorted(set(profiles) - set(launched))
     total = sum(len(written[pid]) for pid in launched)
     code_blocked = sum(len(written[pid]) - len(to_judge[pid]) for pid in launched)
     judge_blocked = sum(len(to_judge[pid]) - len(launched[pid]) for pid in launched)
-    data = GateInput(code_blocked + judge_blocked, total, *dataclasses.astuple(reference)[2:])
-    result = verdict(data)
     with_ads = sum(1 for pid in launched if launched[pid])
     out = sys.stdout.write
     out(f"\nписатель {args.writer}, судья {args.judge}, аудитор {args.auditor}\n")
+    out(f"правила {args.rules}, выборка {args.split}\n")
     if missing:
         out(f"без ответа {len(missing)} профилей: {', '.join(missing)} — запустите снова\n")
     out(f"объявлений {total}: снял код {code_blocked}, снял судья {judge_blocked}\n")
+    out(f"наборов хотя бы с одним объявлением модели: {with_ads} из {len(launched)}\n")
+    _codes(written, launched)
+    _disagreements(launched, audited)
+    _judged(to_judge, judged)
+    if reference is None:
+        return
+    passed = total - code_blocked
+    data = GateInput(judge_blocked, passed, *dataclasses.astuple(reference)[2:])
+    result = verdict(data)
     out(
         f"эталон: пропущено {data.misses} из {data.violations} нарушений, "
         f"зря снято {data.false_blocks} из {data.clean} чистых\n"
@@ -320,7 +348,23 @@ def report(
         f"ошибка среди запущенных {result.error:.2%}, верхняя граница {result.error_upper:.2%} "
         f"при пороге {LIMIT:.0%}: {'проходит' if result.passed else 'не проходит'}\n"
     )
-    out(f"наборов хотя бы с одним объявлением модели: {with_ads} из {len(launched)}\n")
+
+
+def _codes(written: dict[str, list[dict[str, Any]]], launched: dict[str, Any]) -> None:
+    reasons = Counter(r for pid in launched for ad in written[pid] for r in ad["code"])
+    sys.stdout.write(f"причины кода: {dict(reasons.most_common())}\n")
+
+
+def _judged(to_judge: dict[str, list[dict[str, Any]]], judged: dict[str, Any]) -> None:
+    sys.stdout.write("снял судья:\n")
+    for pid, ads in sorted(to_judge.items()):
+        for ad, v in zip(ads, judged.get(pid, []), strict=False):
+            if v["blocked"]:
+                sys.stdout.write(f"  {pid}: {ad['headline']} | {ad['text']}\n    → {v['reason']}\n")
+
+
+def _disagreements(launched: dict[str, list[dict[str, Any]]], audited: dict[str, Any]) -> None:
+    out = sys.stdout.write
     flagged = [
         (pid, ad, v["reason"])
         for pid, ads in launched.items()
@@ -339,6 +383,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--writer", required=True)
     parser.add_argument("--judge", required=True)
     parser.add_argument("--auditor", required=True)
+    parser.add_argument("--rules", default="creatives-3")
+    parser.add_argument("--split", default="test", choices=["train", "val", "test"])
     asyncio.run(run(parser.parse_args(argv)))
 
 
