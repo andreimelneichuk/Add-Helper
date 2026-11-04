@@ -33,6 +33,8 @@ from adhelper.creatives.application.service import (
 )
 from adhelper.creatives.domain.model import BusinessProfile, ModelUnavailable, Service
 from adhelper.ledger.adapters.sql import PostgresAccountLock, SqlChangeRepository
+from adhelper.ledger.application.owner import set_ad_active
+from adhelper.ledger.application.rollback import RollbackStatus, rollback_change
 from adhelper.ledger.application.service import Ledger
 from adhelper.ledger.domain.model import ChangeKind, ChangeStatus
 from adhelper.platforms.adapters.gateway import RoutingGateway
@@ -344,3 +346,70 @@ async def test_other_business_is_not_touched(stand: Stand, sessions: Sessions) -
     other = SqlModeration(sessions, uuid.uuid4())
     assert await other.outgoing() == []
     assert await other.checking() == []
+
+
+async def _running(stand: Stand) -> tuple[int, str]:
+    creative = await stand.place("Маникюр у дома")
+    await stand.send()
+    (published,) = stand.platform.published.values()
+    stand.platform.accept(published.ad_id)
+    await stand.check()
+    return creative, published.ad_id
+
+
+async def test_owner_stop_of_running_ad_goes_through_ledger_and_frees_place(stand: Stand) -> None:
+    creative, ad_id = await _running(stand)
+    assert await set_ad_active(stand.ledger, "lak", ad_id, "Маникюр у дома", False, "r1") == (
+        "applied"
+    )
+    assert stand.platform.ads[f"ad:{ad_id}"] is False
+    await stand.check()
+    row = next(r for r in await stand.creatives() if r["id"] == creative)
+    assert (row["state"], row["state_reason"]) == ("stopped", "owner_stopped")
+    assert (await stand.ad_states())[ad_id] == "suspended"
+    # Осталось только объявление запуска: место снятого свободно для хранителя.
+    (slots,) = await SqlAdSlots(stand.sessions, stand.business).campaigns()
+    assert len(slots.live) == 1
+    # Повтор цикла ничего не задваивает.
+    await stand.check()
+    assert len(await stand.ledger.changes_on_target("lak", f"ad:{ad_id}")) == 1
+
+
+async def test_undo_of_owner_stop_returns_ad_through_yandex_check(stand: Stand) -> None:
+    creative, ad_id = await _running(stand)
+    await set_ad_active(stand.ledger, "lak", ad_id, "Маникюр у дома", False, "r1")
+    await stand.check()
+    (stop,) = await stand.ledger.changes_on_target("lak", f"ad:{ad_id}")
+    result = await rollback_change(stand.ledger, stop.id)
+    assert result.status is RollbackStatus.APPLIED
+    assert stand.platform.ads[f"ad:{ad_id}"] is True
+    # Включённое снова читается у Яндекса: одобрено — показы идут.
+    await stand.check()
+    row = next(r for r in await stand.creatives() if r["id"] == creative)
+    assert row["state"] == "running"
+    assert (await stand.ad_states())[ad_id] == "on"
+
+
+async def test_owner_stop_of_held_rejected_ad_closes_alert(stand: Stand) -> None:
+    creative = await stand.place("Маникюр у дома")
+    await stand.send()
+    (published,) = stand.platform.published.values()
+    stand.platform.reject(published.ad_id, "Сайт недоступен")
+    await stand.check()
+    assert "ads_rejected" in stand.attention.open
+    await set_ad_active(stand.ledger, "lak", published.ad_id, "Маникюр у дома", False, "r2")
+    await stand.check()
+    row = next(r for r in await stand.creatives() if r["id"] == creative)
+    assert (row["state"], row["state_reason"]) == ("stopped", "owner_stopped")
+    assert "ads_rejected" not in stand.attention.open
+
+
+async def test_autopilot_pause_of_replaced_ad_is_not_owner_stop(stand: Stand) -> None:
+    await stand.place("Маникюр за 1500 ₽ у дома", replaces="9001")
+    await stand.send()
+    (published,) = stand.platform.published.values()
+    stand.platform.accept(published.ad_id)
+    await stand.check()
+    await stand.check()
+    reasons = [r["state_reason"] for r in await stand.creatives()]
+    assert "owner_stopped" not in reasons

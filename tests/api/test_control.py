@@ -544,3 +544,47 @@ async def test_today_is_owners_only(anna: Anna, browser: Browser, provider: Fake
     other = browser()
     await _login(other, provider, BORIS)
     assert (await other.get(f"/api/businesses/{business}/today")).status_code == 404
+
+
+async def _creative_state(sessions: Sessions, business_id: uuid.UUID) -> tuple[str, str]:
+    async with sessions() as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT state, state_reason FROM creatives"
+                    " WHERE business_id = :b AND ad_id = '11'"
+                ),
+                {"b": business_id},
+            )
+        ).one()
+    return str(row[0]), str(row[1])
+
+
+async def test_service_ad_stopped_by_owner_frees_place_and_undo_returns_it_to_check(
+    anna: Anna, platform: FakePlatform, sessions: Sessions
+) -> None:
+    client, csrf, business = anna
+    _app(client).state.platform_for = lambda _b, _a: platform
+    async with sessions.begin() as session:
+        await session.execute(
+            text(
+                "INSERT INTO creatives (business_id, account, campaign_id, headline, text, source,"
+                " auto_ok, reason, facts, sources, state, state_reason, history, ad_id,"
+                " created_at, updated_at) SELECT business_id, account, campaign_id, title, text,"
+                " 'template', true, 'refill', '[]', '[]', 'running', 'accepted', '[]', ad_id,"
+                " :n, :n FROM ads WHERE business_id = :b AND ad_id = '11'"
+            ),
+            {"b": business, "n": NOW},
+        )
+    base = f"/api/businesses/{business}"
+    await client.post(
+        f"{base}/ads/{LOGIN}/11/state", json={"active": False, "request_id": "r1"}, headers=csrf
+    )
+    assert await _creative_state(sessions, business) == ("stopped", "owner_stopped")
+
+    history = (await client.get(f"{base}/history")).json()
+    change = next(line["ref"] for line in history if line["kind"] == "pause_ad")
+    await client.post(f"{base}/changes/{change.removeprefix('change-')}/rollback", headers=csrf)
+    assert platform.ads["ad:11"] is True
+    # Включённое снова ждёт итога проверки Яндекса, а не считается одобренным заранее.
+    assert await _creative_state(sessions, business) == ("moderation", "owner_resumed")

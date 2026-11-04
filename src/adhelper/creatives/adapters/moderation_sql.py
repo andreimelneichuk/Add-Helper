@@ -39,6 +39,15 @@ REPAIR_REASON = "moderation_rejected"
 NEEDS_OWNER = "needs_owner"
 REPAIRING = "repairing"
 SUPERSEDED = "superseded"
+# Владелец снял объявление сам: место освобождается, отмена в истории возвращает его.
+OWNER_STOPPED = "owner_stopped"
+OWNER_RESUMED = "owner_resumed"
+# На площадке и ещё не снято: так объявление может снять владелец.
+ON_PLATFORM = (
+    CreativeState.MODERATION.value,
+    CreativeState.RUNNING.value,
+    CreativeState.REJECTED.value,
+)
 
 
 class SqlModeration:
@@ -270,6 +279,74 @@ class SqlModeration:
             )
             if row is not None:
                 _set_state(row, CreativeState.STOPPED, "replaced", now)
+
+    async def on_platform(self, account: str) -> Sequence[tuple[str, str, str]]:
+        """Объявления площадки со строкой `creatives`: номер, состояние и причина."""
+        statement = (
+            select(CreativeRow.ad_id, CreativeRow.state, CreativeRow.state_reason)
+            .where(
+                CreativeRow.business_id == self._business_id,
+                CreativeRow.account == account,
+                CreativeRow.ad_id.is_not(None),
+                or_(
+                    CreativeRow.state.in_(ON_PLATFORM),
+                    and_(
+                        CreativeRow.state == CreativeState.STOPPED.value,
+                        CreativeRow.state_reason == OWNER_STOPPED,
+                    ),
+                ),
+            )
+            .order_by(CreativeRow.id)
+        )
+        async with self._sessions() as session:
+            rows = (await session.execute(statement)).all()
+        return [(str(ad_id), str(state), str(reason)) for ad_id, state, reason in rows]
+
+    async def owner_stopped(self, account: str, ad_id: str, now: datetime) -> None:
+        """Журнал применил снятие владельцем: место в направлении свободно."""
+        async with self._sessions.begin() as session:
+            await self._set_ad(session, account, ad_id, "suspended")
+            row = await self._row_by_ad(session, account, ad_id)
+            if row is not None and row.state in ON_PLATFORM:
+                _set_state(row, CreativeState.STOPPED, OWNER_STOPPED, now)
+
+    async def owner_resumed(self, account: str, ad_id: str, now: datetime) -> None:
+        """Журнал включил снятое владельцем: итог проверки снова читаем у Яндекса."""
+        async with self._sessions.begin() as session:
+            row = await self._row_by_ad(session, account, ad_id)
+            if row is None or (row.state, row.state_reason) != (
+                CreativeState.STOPPED.value,
+                OWNER_STOPPED,
+            ):
+                return
+            _set_state(row, CreativeState.MODERATION, OWNER_RESUMED, now)
+            await self._set_ad(session, account, ad_id, "moderation")
+
+    async def _set_ad(self, session: AsyncSession, account: str, ad_id: str, state: str) -> None:
+        await session.execute(
+            update(ADS)
+            .where(
+                ADS.c.business_id == self._business_id,
+                ADS.c.account == account,
+                ADS.c.ad_id == ad_id,
+            )
+            .values(state=state)
+        )
+
+    async def _row_by_ad(
+        self, session: AsyncSession, account: str, ad_id: str
+    ) -> CreativeRow | None:
+        return await session.scalar(
+            select(CreativeRow)
+            .where(
+                CreativeRow.business_id == self._business_id,
+                CreativeRow.account == account,
+                CreativeRow.ad_id == ad_id,
+            )
+            .order_by(CreativeRow.id.desc())
+            .limit(1)
+            .with_for_update()
+        )
 
     async def waiting_owner(self) -> Sequence[Mapping[str, str]]:
         """Отклонённые объявления, о которых решает владелец: ремонт исчерпан или не поможет."""
