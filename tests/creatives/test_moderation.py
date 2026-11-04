@@ -413,3 +413,45 @@ async def test_autopilot_pause_of_replaced_ad_is_not_owner_stop(stand: Stand) ->
     await stand.check()
     reasons = [r["state_reason"] for r in await stand.creatives()]
     assert "owner_stopped" not in reasons
+
+
+async def _finished_test(stand: Stand, control: str, status: str, winner: str | None) -> None:
+    """Тест по направлению: контроль — объявление сервиса, вариант — объявление теста."""
+    async with stand.sessions.begin() as session:
+        await session.execute(
+            text(
+                "INSERT INTO experiments (business_id, account, campaign_id, control_ref,"
+                " variant_ref, hypothesis, status, winner, rules_version) VALUES (:b, 'lak',"
+                " '1', :c, 'ad:777', 'price', :s, :w, 'experiments-1')"
+            ),
+            {"b": stand.business, "c": f"ad:{control}", "s": status, "w": winner},
+        )
+
+
+async def test_ad_that_lost_test_is_stopped_and_frees_place(stand: Stand) -> None:
+    creative, ad_id = await _running(stand)
+    await _finished_test(stand, ad_id, "applied", "B")
+    await stand.check()
+    row = next(r for r in await stand.creatives() if r["id"] == creative)
+    assert (row["state"], row["state_reason"]) == ("stopped", "lost_test")
+    (slots,) = await SqlAdSlots(stand.sessions, stand.business).campaigns()
+    assert len(slots.live) == 1
+    # Повтор ничего не меняет, журнал площадки не трогаем: выключил сам тест.
+    await stand.check()
+    assert await stand.ledger.changes_on_target("lak", f"ad:{ad_id}") == []
+
+
+async def test_ad_that_won_or_rotates_keeps_running(stand: Stand) -> None:
+    creative, ad_id = await _running(stand)
+    await _finished_test(stand, ad_id, "applied", "A")
+    await stand.check()
+    row = next(r for r in await stand.creatives() if r["id"] == creative)
+    assert row["state"] == "running"
+
+
+async def test_rotation_pause_is_not_a_loss(stand: Stand) -> None:
+    creative, ad_id = await _running(stand)
+    await _finished_test(stand, ad_id, "running", None)
+    await stand.check()
+    row = next(r for r in await stand.creatives() if r["id"] == creative)
+    assert row["state"] == "running"
