@@ -20,6 +20,8 @@ from adhelper.budget.application.owner import (
 from adhelper.budget.application.preflight import StoredPeriodPreflight
 from adhelper.campaigns.adapters.rules_file import load_targeting_rules
 from adhelper.campaigns.application.targeting import TARGETING_PREFIX, vitrine_patch
+from adhelper.creatives.adapters.moderation_sql import SqlModeration
+from adhelper.creatives.application.moderation import follow_owner
 from adhelper.ledger.adapters.sql import PostgresAccountLock, SqlChangeRepository
 from adhelper.ledger.application.consequences import consequence
 from adhelper.ledger.application.owner import AD_PREFIX, set_ad_active
@@ -142,9 +144,12 @@ async def _ledger_for_change(
     return _ledger(request, business_id, platform), change
 
 
-async def _note_restored(request: Request, business_id: UUID, changes: list[Change]) -> None:
+async def _note_restored(
+    request: Request, business_id: UUID, ledger: Ledger, changes: list[Change]
+) -> None:
     """Витрина узнаёт прежние значения из снимка «до», без лишнего чтения площадки."""
     dashboard = SqlDashboard(_sessions(request), business_id)
+    followed: set[str] = set()
     for change in changes:
         if change.target_ref.startswith(TARGETING_PREFIX):
             restored = {key: change.before[key] for key in change.planned}
@@ -158,6 +163,12 @@ async def _note_restored(request: Request, business_id: UUID, changes: list[Chan
             await dashboard.note_ad_state(
                 change.account, change.target_ref.removeprefix(AD_PREFIX), state
             )
+            followed.add(change.account)
+    for account in sorted(followed):
+        # Объявление сервиса возвращается на своё место и снова проходит чтение проверки.
+        await follow_owner(
+            SqlModeration(_sessions(request), business_id), ledger, account, _now(request)
+        )
 
 
 def control_router() -> APIRouter:
@@ -179,8 +190,9 @@ def control_router() -> APIRouter:
         if view is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
         platform = _platform(request, business_id, account)
+        ledger = _ledger(request, business_id, platform)
         done = await set_ad_active(
-            _ledger(request, business_id, platform),
+            ledger,
             account,
             ad_id,
             view.ad.title,
@@ -194,6 +206,10 @@ def control_router() -> APIRouter:
         if done == "applied":
             dashboard = SqlDashboard(_sessions(request), business_id)
             await dashboard.note_ad_state(account, ad_id, "on" if body.active else "suspended")
+            # Снятое владельцем объявление сервиса освобождает место в направлении сразу.
+            await follow_owner(
+                SqlModeration(_sessions(request), business_id), ledger, account, _now(request)
+            )
         return {"status": done}
 
     @router.post("/pause")
@@ -341,7 +357,7 @@ def control_router() -> APIRouter:
         if result.status in FINAL_REFUSAL:
             raise HTTPException(status.HTTP_409_CONFLICT, FINAL_REFUSAL[result.status])
         if result.status is RollbackStatus.APPLIED:
-            await _note_restored(request, business_id, changed)
+            await _note_restored(request, business_id, ledger, changed)
         return {"status": result.status.value}
 
     return router

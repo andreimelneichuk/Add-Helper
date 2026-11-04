@@ -150,6 +150,33 @@ async def _finish_replaced(
             await store.replaced(account, change.target_ref.removeprefix(AD_PREFIX), now)
 
 
+# Снятие и включение объявления владельцем или отменой: решение человека, а не автопилота.
+OWNER_SOURCES = (ChangeSource.USER, ChangeSource.ROLLBACK)
+OWNER_KINDS = (ChangeKind.PAUSE_AD, ChangeKind.RESUME_AD)
+
+
+async def follow_owner(store: ModerationStore, ledger: Ledger, account: str, now: datetime) -> None:
+    """Строки объявлений следуют за журналом: снятое владельцем освобождает место,
+    отмена снятия возвращает объявление на проверку. Повтор безопасен."""
+    for ad_id, state, reason in await store.on_platform(account):
+        rows = await ledger.changes_on_target(account, f"{AD_PREFIX}{ad_id}")
+        done = [
+            row
+            for row in rows
+            if row.kind in OWNER_KINDS
+            and row.source in OWNER_SOURCES
+            and row.status is ChangeStatus.APPLIED
+        ]
+        if not done:
+            continue
+        last = max(done, key=lambda row: row.id)
+        stopped = state == "stopped" and reason == "owner_stopped"
+        if last.kind is ChangeKind.PAUSE_AD and not stopped:
+            await store.owner_stopped(account, ad_id, now)
+        elif last.kind is ChangeKind.RESUME_AD and stopped:
+            await store.owner_resumed(account, ad_id, now)
+
+
 async def check_moderation(
     store: ModerationStore,
     publisher_for: PublisherFor,
@@ -161,13 +188,19 @@ async def check_moderation(
     now: datetime,
 ) -> ModerationPlan:
     """Читает итог проверки и решает: показы, ремонт или владелец. Повтор безопасен."""
+    known = sorted(set(await store.accounts()))
+    for account in known:
+        ledger = ledger_for(account)
+        if ledger is not None:
+            # Сначала решения владельца: снятое не проверяем, включённое проверим сейчас же.
+            await follow_owner(store, ledger, account, now)
     by_account: dict[str, list[Checking]] = defaultdict(list)
     for ad in await store.checking():
         by_account[ad.account].append(ad)
     accepted: list[Checking] = []
     rejected: list[Rejection] = []
     last = dict(await store.last_rejections())
-    for account in sorted(set(by_account) | set(await store.accounts())):
+    for account in sorted(set(by_account) | set(known)):
         ledger = ledger_for(account)
         ads = by_account.get(account, [])
         publisher = publisher_for(account)
