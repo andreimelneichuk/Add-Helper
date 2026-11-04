@@ -1,5 +1,4 @@
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -10,10 +9,10 @@ from adhelper.experiments.domain.model import (
     Hypothesis,
     IllegalTransition,
     ModerationState,
+    Observation,
     Outcome,
     Status,
     TestAlreadyRunning,
-    VariantStats,
     active_variant,
     evaluate,
     pick_hypothesis,
@@ -36,14 +35,6 @@ __all__ = [
 DATA_REASON = "data_untrusted"
 OUTSIDE_REASON = "changed_outside_service"
 OWNER_REASON = "owner_cancelled"
-
-
-@dataclass(frozen=True)
-class Observation:
-    control: VariantStats
-    variant: VariantStats
-    spent: int
-    data_trusted: bool = True
 
 
 async def cancel_preparing(store: ExperimentStore, experiment_id: int) -> ExperimentRecord:

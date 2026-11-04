@@ -159,6 +159,10 @@ class SqlExperimentStore:
             values["explanation"] = explanation
         await self._update(experiment_id, **values)
 
+    async def set_variant(self, experiment_id: int, variant_ref: str) -> None:
+        """Вариант создан на площадке и ждёт проверки выключенным."""
+        await self._update(experiment_id, variant_ref=variant_ref)
+
     async def begin_switch(self, experiment_id: int, target: str) -> None:
         await self._update(experiment_id, switch_to=target, switch_seq=ExperimentRow.switch_seq + 1)
 
