@@ -4,6 +4,8 @@ import type { Page } from "@playwright/test";
 const notice = (page: Page) => page.locator(".ah-notice");
 const nav = (page: Page, name: string) => page.locator(".ah-rail").getByRole("button", { name });
 const STAND = "http://localhost:8011";
+// Вход владельца из сценария запуска: следующий сценарий проверяет его объявления у Яндекса.
+let launched = "";
 
 test.describe.configure({ mode: "serial" });
 
@@ -335,6 +337,7 @@ test("новый владелец проходит мастер и запуск�
   // Свой владелец без бизнеса: стенд выдаёт ему вход, прокси Vite не подменяет его демо-входом.
   const { cookie } = await (await request.post(`${STAND}/api/stand/owners`)).json();
   await context.addCookies([{ name: "ah_session", value: cookie, url: "http://localhost:5175" }]);
+  launched = cookie;
   await page.goto("/?new&start");
   await page.evaluate(() => {
     window.localStorage.removeItem("adhelper.startDraft");
@@ -392,6 +395,58 @@ test("новый владелец проходит мастер и запуск�
   await nav(page, "История").click();
   await expect(page.getByRole("heading", { name: /^Создал кампанию/ })).toBeVisible();
   await expect(page.getByText(/лимит 18\s000\s₽ до/)).toBeVisible();
+});
+
+test("проверка Яндекса: отклонённое переписано по правилам, после решения владельца проходит; отказ из-за сайта ждёт владельца", async ({ page, context, request }) => {
+  test.skip(!launched, "нужен запуск из прошлого сценария");
+  // Три цикла проверки и писатель стенда: дольше обычного сценария.
+  test.setTimeout(150_000);
+  await context.addCookies([{ name: "ah_session", value: launched, url: "http://localhost:5175" }]);
+  const business = (await (await page.request.get("/api/businesses")).json())[0];
+  const stand = `${STAND}/api/stand/businesses/${business.id}`;
+  const verdict = async (headline: string, state: string, reasons: string[] = []) => {
+    const reply = await (await request.post(`${stand}/verdicts`, { data: { headline, state, reasons } })).json();
+    expect(reply.ads).toBe(1);
+  };
+  type Row = { id: number; headline: string; text: string; state: string; reason: string };
+  const creatives = async (): Promise<Row[]> => (await (await page.request.get(`/api/businesses/${business.id}/creatives`)).json()).creatives;
+
+  await page.goto("/?new");
+  await nav(page, "Реклама").click();
+  await expect(page.getByText("на проверке Яндекса").first()).toBeVisible();
+
+  // Оба отклонены. Сайт текстом не починить: объявление ждёт владельца и держит место.
+  // Другое переписывает писатель по просьбе из правил, а не по тексту площадки; без судьи
+  // новый текст ждёт решения владельца.
+  await verdict("Маникюр с покрытием", "rejected", ["Сайт недоступен для проверки"]);
+  await verdict("Маникюр на Тверской", "rejected", ["Использование превосходной степени без подтверждения"]);
+  await request.post(`${stand}/moderate`);
+  let repair: Row | undefined;
+  await expect(async () => {
+    repair = (await creatives()).find((c) => c.reason === "moderation_rejected" && c.state === "needs_owner");
+    expect(repair).toBeDefined();
+  }).toPass({ timeout: 20_000 });
+  expect((await creatives()).some((c) => c.headline === "Маникюр на Тверской" && c.state === "rejected")).toBe(true);
+
+  await page.reload();
+  await expect(page.getByText(/«Маникюр с покрытием гель-лаком» не прошло проверку Яндекса/)).toBeVisible();
+  await nav(page, "Реклама").click();
+  await expect(page.getByText("отклонено Яндексом").first()).toBeVisible();
+  const card = page.getByRole("region", { name: "Нужно ваше решение" }).getByRole("article", { name: `Решение по «${repair!.headline}»` });
+  await card.getByRole("button", { name: "Запустить" }).click();
+  await expect(notice(page)).toContainText("Разрешил запуск");
+
+  // Сервис отправляет переписанное через журнал, Яндекс одобряет — начинаются показы.
+  await request.post(`${stand}/moderate`);
+  expect((await creatives()).find((c) => c.id === repair!.id)?.state).toBe("moderation");
+  await verdict(repair!.headline, "accepted");
+  await request.post(`${stand}/moderate`);
+  expect((await creatives()).find((c) => c.id === repair!.id)?.state).toBe("running");
+  await nav(page, "История").click();
+  await expect(page.getByRole("heading", { name: /^Отправил объявление на проверку/ }).first()).toBeVisible();
+  await page.reload();
+  await nav(page, "Реклама").click();
+  await expect(page.getByText("на проверке Яндекса")).toHaveCount(0);
 });
 
 test("переделка объявления: выдумка отклонена до писателя, выбранный вариант встаёт в очередь", async ({ page, request }) => {

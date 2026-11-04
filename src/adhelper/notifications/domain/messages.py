@@ -22,6 +22,7 @@ TITLES = {
     "platform_not_connected": "Кабинет Директа не подключён",
     "ads_no_profile": "Не о чем писать объявления",
     "ads_need_confirmation": "Новые объявления ждут вашего решения",
+    "ads_rejected": "Яндекс отклонил объявление",
 }
 
 
@@ -125,6 +126,24 @@ def _body(kind: str, money: MoneyFacts | None, details: dict[str, object]) -> li
             "объявления мы не запускаем без вас.",
             "Откройте «Объявления» и для каждого нажмите «Запустить» или «Не запускать».",
         ]
+    if kind == "ads_rejected":
+        headline = details.get("headline")
+        reason = details.get("reason")
+        count = details.get("count")
+        about = f"«{headline}»" if isinstance(headline, str) and headline else "объявление"
+        lines = [
+            f"Яндекс отклонил {about}. Мы переписывали его сами, но проверка снова не прошла"
+            " или текстом это не исправить.",
+        ]
+        if isinstance(reason, str) and reason:
+            lines.append(f"Причина: {reason}.")
+        if isinstance(count, int) and count > 1:
+            lines.append(f"Таких объявлений {count}.")
+        lines.append(
+            "Остальные объявления работают. Откройте отклонённое в разделе «Реклама»:"
+            " попросите переделать своими словами или отключите его."
+        )
+        return lines
     return ["Нужна ваша проверка: подробности в кабинете."]
 
 

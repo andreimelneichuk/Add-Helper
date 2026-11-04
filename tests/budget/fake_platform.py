@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 
@@ -7,6 +8,7 @@ from adhelper.budget.domain.watch import SpendSnapshot
 from adhelper.campaigns.domain.launch import NewCampaign
 from adhelper.campaigns.domain.ports import CreatedCampaign, Targeting
 from adhelper.campaigns.domain.targeting import Schedule
+from adhelper.platforms.domain.ports import ModerationState, ModerationVerdict, PublishedAd
 
 # Новая кампания в Директе показывается круглосуточно; регион задаём Москвой.
 DEFAULT_TARGETING = Targeting(Schedule((0, 1, 2, 3, 4, 5, 6), 0, 24), (213,))
@@ -48,6 +50,10 @@ class FakePlatform:
         # Кампании запуска по нашей метке; номера выдаёт площадка.
         self.created: dict[str, CreatedCampaign] = {}
         self.create_calls = 0
+        # Объявления, созданные по нашей метке, и итоги проверки; без итога — «на проверке».
+        self.published: dict[str, PublishedAd] = {}
+        self.create_ad_calls = 0
+        self.verdicts: dict[str, ModerationVerdict] = {}
         self._history = [(now, self.total_spent)]
 
     @property
@@ -123,6 +129,34 @@ class FakePlatform:
             self.ads[f"ad:{ad_id}"] = True
         self.limit_sums.append(self.limit_sum)
         self._check_fault("create_campaign", after_apply=True)
+
+    async def find_ad(self, account: str, marker: str) -> PublishedAd | None:
+        self._check_fault("find_ad", after_apply=False)
+        return self.published.get(marker)
+
+    async def create_ad(
+        self, account: str, campaign_id: str, marker: str, headline: str, text: str, href: str
+    ) -> None:
+        self._check_fault("create_ad", after_apply=False)
+        if campaign_id not in self.campaigns:
+            raise ValueError(f"нет кампании {campaign_id}")
+        self.create_ad_calls += 1
+        ad_id = str(7000 + len(self.published) + 1)
+        self.published[marker] = PublishedAd(ad_id, campaign_id, headline, text, href)
+        # Новое объявление включено, но показывается только после одобрения.
+        self.ads[f"ad:{ad_id}"] = True
+        self._check_fault("create_ad", after_apply=True)
+
+    async def moderation(self, account: str, ad_ids: Sequence[str]) -> list[ModerationVerdict]:
+        self._check_fault("moderation", after_apply=False)
+        waiting = ModerationState.MODERATION
+        return [self.verdicts.get(ad_id, ModerationVerdict(ad_id, waiting)) for ad_id in ad_ids]
+
+    def accept(self, ad_id: str) -> None:
+        self.verdicts[ad_id] = ModerationVerdict(ad_id, ModerationState.ACCEPTED)
+
+    def reject(self, ad_id: str, *reasons: str) -> None:
+        self.verdicts[ad_id] = ModerationVerdict(ad_id, ModerationState.REJECTED, reasons)
 
     async def read_campaigns(self, account: str) -> list[CampaignBudget]:
         self._check_fault("read_campaigns", after_apply=False)

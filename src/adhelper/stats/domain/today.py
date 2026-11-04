@@ -6,6 +6,7 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Any
 
 from adhelper.stats.domain.model import AlertLine, HistoryLine, TestLine, TestOffer
 
@@ -125,6 +126,13 @@ ALERTS = {
         "Посмотрите их в разделе «Реклама» и решите, запускать ли.",
         "ads",
     ),
+    "ads_rejected": AlertWords(
+        "Яндекс отклонил объявление, переписать не вышло",
+        "warn",
+        "Остальные объявления работают. Откройте отклонённое в разделе «Реклама»: попросите"
+        " переделать своими словами или отключите его.",
+        "ads",
+    ),
 }
 UNKNOWN_ALERT = AlertWords("Нужна ваша проверка", "warn", "Подробности в истории.", "history")
 
@@ -143,6 +151,19 @@ def leads_word(count: int) -> str:
     return "обращений"
 
 
+def _rejected(details: Mapping[str, Any]) -> str:
+    """Какое объявление и почему: заголовок из нашей строки, причина — текст правил, не площадки."""
+    headline = details.get("headline")
+    if not isinstance(headline, str) or not headline:
+        return ""
+    count = details.get("count")
+    more = count - 1 if isinstance(count, int) and count > 1 else 0
+    said = f"«{headline}» и ещё {more} не прошли" if more else f"«{headline}» не прошло"
+    reason = details.get("reason")
+    why = f" {reason}." if isinstance(reason, str) and reason else ""
+    return f"{said} проверку Яндекса.{why} "
+
+
 def _alert(line: AlertLine, gap: int | None, rules: TodayRules) -> tuple[int, Card]:
     words = ALERTS.get(line.kind, UNKNOWN_ALERT)
     text = words.text
@@ -151,6 +172,8 @@ def _alert(line: AlertLine, gap: int | None, rules: TodayRules) -> tuple[int, Ca
             f"Со счёта ушло на {rub(gap)} больше, чем реклама потратила по статистике Яндекса. "
             + text
         )
+    if line.kind == "ads_rejected":
+        text = _rejected(line.details) + text
     kind = f"alert:{line.kind}"
     place = rules.priority.get(kind, rules.unknown_alert)
     return place, Card(kind, words.tone, words.title, text, words.action, None, rules.version)

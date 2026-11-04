@@ -1,4 +1,5 @@
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID
@@ -23,6 +24,7 @@ from adhelper.creatives.domain.model import (
     CreativeSet,
     Rework,
 )
+from adhelper.creatives.domain.moderation import Checking, ModerationPlan, ModerationRules
 
 
 class ProfileSource(Protocol):
@@ -95,3 +97,34 @@ class ReworkStore(Protocol):
         variants: int,
         now: datetime,
     ) -> int: ...
+
+
+@dataclass(frozen=True)
+class Outgoing:
+    """Объявление, занявшее место и ждущее отправки на площадку."""
+
+    creative_id: int
+    account: str
+    campaign_id: str
+    draft: AdDraft
+    href: str
+
+
+class ModerationStore(Protocol):
+    """Отправка и проверка объявлений одного бизнеса. Каждый запрос ограничен business_id."""
+
+    async def accounts(self) -> Sequence[str]: ...
+    async def outgoing(self) -> Sequence[Outgoing]: ...
+    async def sent(self, creative_id: int, ad_id: str, href: str, now: datetime) -> bool: ...
+    async def checking(self) -> Sequence[Checking]: ...
+    async def last_rejections(self) -> Mapping[tuple[str, str], str]: ...
+    async def apply(
+        self,
+        plan: ModerationPlan,
+        rules: ModerationRules,
+        creative_rules: str,
+        rework_rules: str,
+        now: datetime,
+    ) -> Sequence[LiveAd]: ...
+    async def replaced(self, account: str, ad_id: str, now: datetime) -> None: ...
+    async def waiting_owner(self) -> Sequence[Mapping[str, str]]: ...

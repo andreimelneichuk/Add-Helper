@@ -82,6 +82,9 @@ ADS = table(
     column("state"),
 )
 WAITING = (SetStatus.QUEUED.value, SetStatus.RUNNING.value)
+# Состояния объявления в витрине, которые занимают место в направлении.
+LIVE_AD_STATES = ("on", "moderation")
+REJECTED_AD_STATE = "rejected"
 # Причина набора и объявлений переделки по просьбе владельца.
 REWORK_REASON = "rework"
 
@@ -152,7 +155,17 @@ class CreativeSetRow(Base):
 
 class CreativeRow(Base):
     __tablename__ = "creatives"
-    __table_args__ = (Index("ix_creatives_business_id_state", "business_id", "state"),)
+    __table_args__ = (
+        Index("ix_creatives_business_id_state", "business_id", "state"),
+        Index(
+            "ix_creatives_ad_id",
+            "business_id",
+            "account",
+            "ad_id",
+            unique=True,
+            postgresql_where=text("ad_id IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     business_id: Mapped[UUID]
@@ -171,6 +184,11 @@ class CreativeRow(Base):
     state_reason: Mapped[str] = mapped_column(Text)
     history: Mapped[list[dict[str, str]]] = mapped_column(JSONB)
     replaces: Mapped[str | None] = mapped_column(Text)
+    # Номер на площадке после отправки: миграция 0022.
+    ad_id: Mapped[str | None] = mapped_column(Text)
+    # Сколько раз цепочку чинили после отказа Яндекса и почему отклонено последнее.
+    repairs: Mapped[int] = mapped_column(Integer, server_default="0", default=0)
+    rejection: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
@@ -323,8 +341,12 @@ class SqlAdSlots:
                     account,
                     campaign_id,
                     running=state == "on",
-                    live=tuple(AdDraft(a.title, a.text) for a in own_ads if a.state == "on"),
+                    # Объявление на проверке Яндекса уже занимает место: иначе напишем лишнее.
+                    live=tuple(
+                        AdDraft(a.title, a.text) for a in own_ads if a.state in LIVE_AD_STATES
+                    ),
                     ever_had_ads=bool(own_ads) or (account, campaign_id) in written,
+                    held=sum(1 for a in own_ads if a.state == REJECTED_AD_STATE),
                 )
             )
         return result
@@ -812,14 +834,19 @@ class SqlCreativeQueue:
                 return
             replaces = row.rework["ad_id"] if row.rework else None
             auto = bool(row.rework and row.rework.get("auto"))
+            repairs = 0
+            if row.rework and "repair" in row.rework:
+                # Ремонт после отказа: заменяет то же, что заменяло отклонённое объявление.
+                replaces = row.rework.get("replaces")
+                repairs = int(row.rework["repair"])
             for item in new[:1] if auto else new:
                 state, why = CreativeState.READY, "written"
                 if auto:
-                    # Замена после правки факта: проверенный текст встаёт сам, иначе ждёт владельца.
+                    # Замена сервиса: проверенный текст встаёт сам, иначе ждёт владельца.
                     state = (
                         CreativeState.LAUNCH_PENDING if item.auto_ok else CreativeState.NEEDS_OWNER
                     )
-                    why = WriteReason.FACT_CHANGED.value
+                    why = row.reason or WriteReason.FACT_CHANGED.value
                 history = [_event(now, CreativeState.READY, "written")]
                 if state is not CreativeState.READY:
                     history.append(_event(now, state, why))
@@ -835,6 +862,7 @@ class SqlCreativeQueue:
                         # Вариант переделки по просьбе ставит в показы только владелец.
                         auto_ok=item.auto_ok and (replaces is None or auto),
                         replaces=replaces,
+                        repairs=repairs,
                         reason=row.reason or "refill",
                         facts=[s.key for s in item.sources],
                         sources=[asdict(s) for s in item.sources],

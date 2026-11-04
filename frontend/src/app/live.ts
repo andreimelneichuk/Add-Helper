@@ -11,7 +11,7 @@ import type { Message, State } from "./store";
 
 const MONTHS = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
 const MONTHS_OF = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
-const KIND_TITLE: Record<string, string> = { set_limit: "Изменил дневной лимит", pause: "Остановил показы", resume: "Снял паузу", pause_ad: "Отключил объявление", resume_ad: "Включил объявление", set_schedule: "Изменил время показов", set_regions: "Изменил регион показов", create_campaign: "Создал кампанию" };
+const KIND_TITLE: Record<string, string> = { set_limit: "Изменил дневной лимит", pause: "Остановил показы", resume: "Снял паузу", pause_ad: "Отключил объявление", resume_ad: "Включил объявление", set_schedule: "Изменил время показов", set_regions: "Изменил регион показов", create_campaign: "Создал кампанию", create_ad: "Отправил объявление на проверку" };
 const UNDOABLE = new Set(["set_limit", "resume", "pause_ad", "resume_ad", "set_schedule", "set_regions"]);
 const STATUS_WORD: Record<string, string> = { planned: "Запланировано", applying: "Применяется", failed: "Не удалось", rejected: "Отклонено правилами", conflict: "Изменено кем-то ещё" };
 const DAY_NAMES = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"];
@@ -69,9 +69,17 @@ export function periodStats(label: string, overview: Overview, since: string, un
   };
 }
 
+// Состояние объявления площадки словами владельца: проверка Яндекса тоже состояние.
+const AD_TAG: Record<string, [string, Ad["tagTone"]]> = {
+  suspended: ["отключено", "neutral"],
+  moderation: ["на проверке Яндекса", "accent"],
+  rejected: ["отклонено Яндексом", "bad"],
+  archived: ["заменено", "neutral"],
+};
+
 function toAd(line: AdLine): Ad {
-  const off = line.state === "suspended";
-  return { id: `${line.account}/${line.ad_id}`, name: line.title, tag: off ? "отключено" : "работает", tagTone: "neutral", leads: line.totals.conversions, cost: rubles(line.totals.cost), hook: line.title, title: line.title, text: line.text, facts: "" };
+  const [tag, tagTone] = AD_TAG[line.state] ?? ["работает", "neutral"];
+  return { id: `${line.account}/${line.ad_id}`, name: line.title, tag, tagTone, leads: line.totals.conversions, cost: rubles(line.totals.cost), hook: line.title, title: line.title, text: line.text, facts: "" };
 }
 
 function kindOf(line: HistoryLine): HistoryKind {
@@ -98,6 +106,13 @@ function toEntry(line: HistoryLine, ads: Ad[]): HistoryEntry {
   };
 }
 
+/** Причину и заголовок подставляет код сервиса по правилам; здесь только склейка. */
+function rejectedText(details: Record<string, unknown>): string {
+  const headline = typeof details.headline === "string" ? `«${details.headline}»` : "Объявление";
+  const reason = typeof details.reason === "string" ? ` ${details.reason}.` : "";
+  return `${headline} не прошло проверку Яндекса, переписать сам я не смог.${reason} Остальные работают. Попросите переделать его своими словами или отключите.`;
+}
+
 function alertOf(alert: Alert, money: Money | undefined): LiveAlert {
   const known = ALERT[alert.kind] ?? { title: "Нужна ваша проверка", tone: "warn" as const };
   const texts: Record<string, string> = {
@@ -110,6 +125,7 @@ function alertOf(alert: Alert, money: Money | undefined): LiveAlert {
     platform_not_connected: "Пока кабинет не подключён, изменения не дойдут до Яндекса. Подключить его можно в настройках.",
     ads_no_profile: "Добавьте услуги в профиль в настройках: в рекламу попадают только факты из него.",
     ads_need_confirmation: "Посмотрите их в разделе «Реклама» и решите, запускать ли.",
+    ads_rejected: rejectedText(alert.details),
   };
   return { kind: alert.kind, title: known.title, text: texts[alert.kind] ?? "Подробности в истории.", tone: known.tone === "error" ? "bad" : "warn" };
 }

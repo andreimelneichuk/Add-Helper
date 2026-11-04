@@ -14,6 +14,9 @@ class ChangeKind(StrEnum):
     SET_REGIONS = "set_regions"
     # Новая кампания запуска. Отмены нет: созданное останавливают паузой, а не удалением.
     CREATE_CAMPAIGN = "create_campaign"
+    # Новое объявление в работающей кампании: замена, ремонт после отказа или место в направлении.
+    # Отмены нет: объявление останавливают приостановкой, а не удалением.
+    CREATE_AD = "create_ad"
 
 
 class ChangeSource(StrEnum):

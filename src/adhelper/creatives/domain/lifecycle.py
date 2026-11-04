@@ -21,11 +21,17 @@ BASIS_POINTS = 10000
 class CreativeState(StrEnum):
     READY = "ready"
     RESERVE = "reserve"
-    # Заняло место и ждёт отправки в Директ: отправку сделает адаптер площадки (T6).
+    # Заняло место и ждёт отправки в Директ через журнал.
     LAUNCH_PENDING = "launch_pending"
     NEEDS_OWNER = "needs_owner"
     STOPPED = "stopped"
     WITHDRAWN = "withdrawn"
+    # Создано на площадке и ждёт итога проверки Яндексом.
+    MODERATION = "moderation"
+    # Яндекс одобрил: идут показы.
+    RUNNING = "running"
+    # Яндекс отклонил: ремонт или решение владельца, причина в `rejection`.
+    REJECTED = "rejected"
 
 
 # Эти объявления ещё не на площадке: их можно двигать без журнала.
@@ -67,9 +73,11 @@ class CampaignSlots:
     account: str
     campaign_id: str
     running: bool
-    # Тексты объявлений, которые сейчас идут на площадке.
+    # Тексты объявлений, которые идут на площадке или ждут проверки Яндекса.
     live: tuple[AdDraft, ...]
     ever_had_ads: bool
+    # Отклонённые Яндексом без ремонта: место за ними, пока ремонт или владелец не решат.
+    held: int = 0
 
 
 @dataclass(frozen=True)
@@ -264,7 +272,7 @@ def plan_slots(
         if not campaign.running:
             continue
         taken = [*campaign.live, *(c.draft for c in placed)]
-        free = rules.slots_per_campaign - len(taken)
+        free = rules.slots_per_campaign - len(taken) - campaign.held
         reserve = 0
         for item in (c for c in own if c.state not in PLACED):
             if _similar(item.draft, taken, rules):

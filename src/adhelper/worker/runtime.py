@@ -31,7 +31,12 @@ from adhelper.business.application.site import run_site_reads
 from adhelper.business.application.tag import run_tag_checks
 from adhelper.config import Settings
 from adhelper.creatives.adapters.factory import build_text_model
-from adhelper.creatives.adapters.rules_file import load_rework_rules, load_slot_rules
+from adhelper.creatives.adapters.moderation_sql import SqlModeration
+from adhelper.creatives.adapters.rules_file import (
+    load_moderation_rules,
+    load_rework_rules,
+    load_slot_rules,
+)
 from adhelper.creatives.adapters.rules_file import load_rules as load_creative_rules
 from adhelper.creatives.adapters.sql import (
     SqlAdSlots,
@@ -39,7 +44,13 @@ from adhelper.creatives.adapters.sql import (
     SqlKeeperBusinesses,
     SqlProfileSource,
 )
+from adhelper.creatives.application.moderation import (
+    CURRENT_MODERATION_RULES,
+    check_moderation,
+    send_ready,
+)
 from adhelper.creatives.application.service import (
+    CURRENT_REWORK_RULES,
     CURRENT_RULES,
     CURRENT_SLOT_RULES,
     keep_ads,
@@ -102,7 +113,14 @@ class Runtime:
         return Ledger(
             repository=SqlChangeRepository(self.sessions, business_id),
             # Просьбы владельца об объявлениях (ad:) повторяются здесь же, если Яндекс не ответил.
-            gateway=RoutingGateway(PlatformChangeGateway(platform), platform, platform),
+            # Создание кампаний и объявлений доводит до конца и согласование после сбоя.
+            gateway=RoutingGateway(
+                PlatformChangeGateway(platform),
+                platform,
+                platform,
+                launcher=platform,
+                publisher=platform,
+            ),
             lock=PostgresAccountLock(self.engine),
             max_attempts=MAX_CHANGE_ATTEMPTS,
             preflight=StoredPeriodPreflight(
@@ -183,6 +201,34 @@ class Runtime:
                 SqlAlerts(self.sessions, business_id),
                 slot_rules,
                 creative_rules,
+                self.clock(),
+            )
+
+    async def ads_moderate(self, only: UUID | None = None) -> None:
+        """Отправка занявших место объявлений и чтение итога проверки Яндекса."""
+        rules = load_moderation_rules(CURRENT_MODERATION_RULES)
+        for business_id in await SqlKeeperBusinesses(self.sessions).business_ids():
+            if only is not None and business_id != only:
+                continue
+
+            def ledger_for(account: str, business_id: UUID = business_id) -> Ledger | None:
+                if self.platform_for(business_id, account) is None:
+                    return None
+                return self.ledger_for(business_id, account)
+
+            def publisher_for(account: str, business_id: UUID = business_id) -> Any:
+                return self.platform_for(business_id, account)
+
+            store = SqlModeration(self.sessions, business_id)
+            await send_ready(store, ledger_for, self.clock())
+            await check_moderation(
+                store,
+                publisher_for,
+                ledger_for,
+                SqlAlerts(self.sessions, business_id),
+                rules,
+                CURRENT_RULES,
+                CURRENT_REWORK_RULES,
                 self.clock(),
             )
 
