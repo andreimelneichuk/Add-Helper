@@ -221,3 +221,20 @@ async def test_dashboard_money_matches_cabinet(sessions: Sessions, tmp_path: Pat
     assert facts is not None
     assert facts.balance_gap == 1_240 * M
     assert facts.tolerance == 800 * M
+
+
+async def test_launch_summary_is_sent_once_and_stays_out_of_problems(sessions: Sessions) -> None:
+    business, _ = await owner(sessions)
+    alerts = SqlAlerts(sessions, business)
+    details = {"day": "2026-11-04", "headlines": ["Маникюр у дома"], "count": 1}
+    assert await alerts.notice("ads_launched", "ads_launched:2026-11-04", details) is True
+    # Повтор задачи за тот же день второго письма не даёт.
+    assert await alerts.notice("ads_launched", "ads_launched:2026-11-04", details) is False
+    # Сводка — не проблема: в «Сегодня» её нет.
+    assert await alerts.open_kinds() == []
+    email = Recorder()
+    assert await send(sessions, {"email": email}) == 1
+    [(_, message)] = email.sent
+    assert "«Маникюр у дома»" in message.text
+    assert "04.11.2026" in message.text
+    assert "одним нажатием" in message.text
