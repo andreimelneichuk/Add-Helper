@@ -75,3 +75,21 @@ def test_call_budget_counts_per_business_and_day() -> None:
     assert not budget.take("b1", "2026-11-03", 1)
     assert budget.take("b2", "2026-11-03", 1)
     assert budget.take("b1", "2026-11-04", 1)
+
+
+async def test_two_requests_get_two_confirmations() -> None:
+    known = Known(
+        (KnownAd("acc/1", "Маникюр у метро"), KnownAd("acc/2", "Педикюр у метро")),
+        ("Маникюр", "Педикюр"),
+    )
+    model = FakeModel([])
+    rules = load_rules("commands-2")
+    answer = await interpret(
+        "убавь бюджет до 10к и отключи рекламу с педикюром", known, rules, model, always
+    )
+    assert answer.command.kind is Kind.SET_BUDGET
+    assert answer.confirm == "Понял так: бюджет 10\u00a0000\u00a0₽ в месяц. Применить?"
+    assert [more.command.kind for more in answer.more] == [Kind.AD_OFF]
+    assert "«Педикюр у метро»" in answer.more[0].confirm
+    assert answer.rules == "commands-2"
+    assert model.seen == []

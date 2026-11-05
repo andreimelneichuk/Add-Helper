@@ -208,3 +208,54 @@ def test_case_endings_do_not_drop_a_fact_but_new_words_do() -> None:
     )
     assert [f.value for f in kept] == ["Подология", "Лазерная эпиляция", "Маникюр"]
     assert problems == {FactProblem.VALUE_NOT_IN_QUOTE: 2}
+
+
+def test_site_3_asks_for_price_pairs_promotions_and_place() -> None:
+    rules = load_site_rules("site-3")
+    assert rules.version == "site-3"
+    prompt = rules.system_prompt
+    assert "Записаться" in prompt and "price = null" in prompt
+    assert "Акция" in prompt and "условие или срок" in prompt
+    assert "метро" in prompt and "Телефоны" in prompt
+    assert load_site_rules().version == "site-3"
+
+
+def test_promotion_and_place_from_card_layout_are_kept() -> None:
+    page = Page(
+        "https://podolog.ru/",
+        "Предложение действует до 1 января\n"
+        "Бесплатная консультация при работе с проблемной зоной в этот же день.\n"
+        "Гигиенический педикюр\nЗАПИСАТЬСЯ\n3 700 ₽\n"
+        "Основатель подологии в г. Тольятти. м. Курская, 5 минут пешком.",
+    )
+    facts, problems = check_facts(
+        [
+            fact(
+                "feature",
+                "Бесплатная консультация при работе с проблемной зоной",
+                "Бесплатная консультация при работе с проблемной зоной в этот же день.",
+            ),
+            fact(
+                "service",
+                "Гигиенический педикюр",
+                "Гигиенический педикюр\nЗАПИСАТЬСЯ\n3 700 ₽",
+                3700,
+            ),
+            fact("feature", "г. Тольятти", "подологии в г. Тольятти"),
+            fact("feature", "м. Курская, 5 минут пешком", "м. Курская, 5 минут пешком"),
+            # Скидки на странице нет: выдумку код отбрасывает.
+            fact("feature", "Скидка 20% на первый визит", "Скидка 20% на первый визит"),
+            fact("service", "Гигиенический педикюр", "Гигиенический педикюр", 3500),
+        ],
+        [page],
+        load_site_rules("site-3"),
+    )
+    assert [f.value for f in facts] == [
+        "Бесплатная консультация при работе с проблемной зоной",
+        "Гигиенический педикюр",
+        "г. Тольятти",
+        "м. Курская, 5 минут пешком",
+    ]
+    assert facts[1].price == 3700
+    assert problems[FactProblem.QUOTE_NOT_ON_PAGE] == 1
+    assert problems[FactProblem.PRICE_NOT_IN_QUOTE] == 1

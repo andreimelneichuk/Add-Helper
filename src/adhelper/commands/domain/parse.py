@@ -10,6 +10,7 @@ from collections.abc import Mapping, Sequence
 
 from adhelper.commands.domain.model import (
     Command,
+    CommandRules,
     Kind,
     Known,
     KnownAd,
@@ -42,6 +43,10 @@ QUESTION_SERVICE = (
 )
 QUESTION_LONG = (
     "Сообщение длинное. Напишите одну просьбу коротко, например «пауза» или «бюджет 20 000»."
+)
+QUESTION_ONE_EACH = (
+    "Здесь несколько похожих просьб. Напишите их по одной, например «бюджет 20 000», "
+    "а следующим сообщением «отключи объявление про педикюр»."
 )
 QUESTION_ALL_DAYS = (
     "Без показов во все дни — это пауза. Напишите «пауза», если нужно остановить всё."
@@ -153,6 +158,10 @@ def by_rules(message: str, known: Known, max_chars: int) -> Parsed:
             return _unknown(QUESTION_PRICE.format(service=service.lower()))
         return Parsed(Command(Kind.SET_PRICE, service=service, rubles=numbers[0]), Source.RULES)
 
+    # «Отключи рекламу с педикюром» — про одно объявление, а не про всю рекламу.
+    qualified = _qualified_ad(text, known)
+    if qualified is not None:
+        return qualified
     # Объявление: глагол и слово «объявление». Вся реклама: только явные слова, чтобы «убери
     # ту, что про руки» не стало паузой всего; такое разберёт модель или уточнит владелец.
     ad_off = re.search(r"пауз|останов|выключ|отключ|убери|убрать|сними", text)
@@ -173,6 +182,81 @@ def by_rules(message: str, known: Known, max_chars: int) -> Parsed:
     if pause:
         return Parsed(Command(Kind.PAUSE), Source.RULES)
     return _unknown()
+
+
+AD_OFF_WORDS = r"пауз|останов|выключ|отключ|убери|убрать|сними"
+AD_ON_WORDS = r"включ|возобнов|запусти|верни"
+QUALIFIED = re.compile(r"(?:реклам|показ)\S*\s+(?:(?:с|со|про|на|для|по|о|об|у|в)\s+)?(.+)")
+
+
+def _qualified_ad(text: str, known: Known) -> Parsed | None:
+    """«Отключи рекламу с педикюром»: уточнение после «рекламу» указывает на объявление.
+
+    Уточнение, похожее на слова объявлений, но не на одно из них, — вопрос: остановить
+    всю рекламу вместо одного объявления дороже, чем переспросить. «На неделю» и другие
+    слова не из объявлений остаются общей командой.
+    """
+    match = QUALIFIED.search(text)
+    off = re.search(AD_OFF_WORDS, text)
+    on = re.search(AD_ON_WORDS, text) and not off
+    if match is None or not (off or on):
+        return None
+    tail = match.group(1)
+    ad = find_ad(tail, known.ads)
+    if ad is not None:
+        return Parsed(Command(Kind.AD_OFF if off else Kind.AD_ON, ad=ad), Source.RULES)
+    words = _stems(tail)
+    if any(_stems(ad.name) & words for ad in known.ads):
+        return _unknown(QUESTION_AD)
+    return None
+
+
+# Границы просьб: знак препинания с пробелом после (не «1,5 тыс»), «и», «потом», «затем», «ещё».
+SPLIT = re.compile(
+    r"\s*[;,.](?=\s|$)\s*(?:а\s+)?(?:потом\s+|затем\s+|еще\s+|и\s+)?"
+    r"|\s+(?:а\s+)?(?:потом|затем|и|а также|еще)\s+"
+)
+
+
+def parse_all(message: str, known: Known, rules: CommandRules) -> tuple[Parsed, ...]:
+    """Несколько просьб в одном сообщении, каждая своей командой.
+
+    Сообщение делим, только если правила узнали каждую часть: «в субботу и воскресенье» —
+    одна просьба. Часть с уточнением останавливает всё сообщение: половину не выполняем.
+    Две команды одного вида или больше max_requests — просим писать по одной.
+    """
+    whole = by_rules(message, known, rules.max_chars)
+    if rules.max_requests <= 1 or len(message) > rules.max_chars:
+        return (whole,)
+    parts = [part for part in SPLIT.split(normalize(message)) if part]
+    parsed: list[Parsed] = []
+    for i, part in enumerate(parts):
+        one = by_rules(part, known, rules.max_chars)
+        if one.command.kind is Kind.REWORK_AD:
+            # Переделка забирает остаток как пожелание: «… и сделай короче» — не вторая просьба.
+            if i == 0:
+                return (whole,)
+            # Части взяты из нормализованного текста, хвост — оттуда же, с запятыми.
+            text = normalize(message)
+            tail = text[text.rfind(part) :]
+            parsed.append(by_rules(tail, known, rules.max_chars))
+            break
+        parsed.append(one)
+    if len(parsed) < 2:
+        return (whole,)
+    if any(p.command.kind is Kind.UNKNOWN and not p.question for p in parsed):
+        return (whole,)
+    question = next((p for p in parsed if p.question), None)
+    if question is not None:
+        return (question,)
+    kinds = [p.command.kind for p in parsed]
+    if len(parsed) > rules.max_requests or len(set(kinds)) < len(kinds):
+        if kinds.count(Kind.SET_PRICE) == len(kinds) and len(parsed) <= rules.max_requests:
+            services = [p.command.service for p in parsed]
+            if len(set(services)) == len(services):
+                return tuple(parsed)
+        return (_unknown(QUESTION_ONE_EACH),)
+    return tuple(parsed)
 
 
 # Схема ответа модели: только поля закрытого набора. Объявление — по номеру из списка,

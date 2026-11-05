@@ -75,6 +75,8 @@ class CommandRules:
     max_chars: int
     model_max_tokens: int
     model_calls_per_day: int
+    # Просьб в одном сообщении; в commands-1 — одна.
+    max_requests: int = 1
 
 
 @dataclass(frozen=True)

@@ -16,6 +16,7 @@ from adhelper.api.cabinet import OwnedChecked
 from adhelper.commands.adapters.rules_file import load_rules
 from adhelper.commands.application.service import (
     CURRENT_RULES,
+    Answer,
     CallBudget,
     interpret,
     known_from,
@@ -28,6 +29,22 @@ from adhelper.stats.application.overview import PLATFORM_ZONE, ads, platform_tod
 class CommandBody(BaseModel):
     # Длиннее правила всё равно попросят написать короче; предел защищает разбор и модель.
     text: str = Field(min_length=1, max_length=2000)
+
+
+def _shown(answer: Answer) -> dict[str, Any]:
+    command = answer.command
+    return {
+        "kind": command.kind.value,
+        "rubles": command.rubles,
+        "ad": asdict(command.ad) if command.ad else None,
+        "service": command.service,
+        "days": list(command.days),
+        "wish": command.wish,
+        "confirm": answer.confirm,
+        "reply": answer.reply,
+        "source": answer.source,
+        "rules": answer.rules,
+    }
 
 
 def chat_router() -> APIRouter:
@@ -57,18 +74,6 @@ def chat_router() -> APIRouter:
             request.app.state.command_model,
             lambda: calls.take(str(business_id), day, rules.model_calls_per_day),
         )
-        command = answer.command
-        return {
-            "kind": command.kind.value,
-            "rubles": command.rubles,
-            "ad": asdict(command.ad) if command.ad else None,
-            "service": command.service,
-            "days": list(command.days),
-            "wish": command.wish,
-            "confirm": answer.confirm,
-            "reply": answer.reply,
-            "source": answer.source,
-            "rules": answer.rules,
-        }
+        return {**_shown(answer), "next": [_shown(more) for more in answer.more]}
 
     return router

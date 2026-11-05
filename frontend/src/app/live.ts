@@ -202,6 +202,7 @@ function summary(s: State): string {
 }
 
 export class LiveStore extends Store {
+  private queue: ChatCommand[] = [];
   constructor(readonly api: Api, loaded: Partial<State>) {
     super({ ...initialState(), msgs: [], ...loaded });
     this.state = { ...this.state, msgs: [msg("ai", summary(this.state))] };
@@ -321,6 +322,19 @@ export class LiveStore extends Store {
       this.say(error instanceof ApiError ? error.message : NO_ANSWER);
       return;
     }
+    // Несколько просьб в одном сообщении: по одной, у каждой своё «да».
+    this.queue = [...(c.next ?? [])];
+    if (this.queue.length) this.say(`Вижу ${this.queue.length + 1} просьбы, спрошу про каждую по очереди.`);
+    this.handle(c);
+    this.nextRequest();
+  }
+
+  /** Следующая просьба из того же сообщения, когда прошлая решена. */
+  private nextRequest() {
+    while (!this.state.pending && this.queue.length) this.handle(this.queue.shift()!);
+  }
+
+  private handle(c: ChatCommand) {
     const s = this.state;
     switch (c.kind) {
       case "pause":
@@ -388,6 +402,7 @@ export class LiveStore extends Store {
       text = error instanceof ApiError ? error.message : "Сервис не ответил. Ничего не изменилось, попробуйте позже.";
     }
     this.set({ msgs: [...this.state.msgs, msg(fromChat ? "ai" : "note", text)], notice: this.state.mode === "panel" ? text : "" });
+    if (fromChat) this.nextRequest();
   }
 
   override send(raw: string) {
@@ -396,9 +411,13 @@ export class LiveStore extends Store {
     const s = this.state;
     const t = text.toLowerCase();
     if (s.pending) {
-      if (/(^|\s)(нет|не|отмен\S*|оставь)(\s|$)/.test(t)) return this.reply(text, "Хорошо, ничего не меняю.", { pending: null });
+      if (/(^|\s)(нет|не|отмен\S*|оставь)(\s|$)/.test(t)) {
+        this.reply(text, this.queue.length ? "Хорошо, это не меняю." : "Хорошо, ничего не меняю.", { pending: null });
+        return this.nextRequest();
+      }
       if (/(^|\s)(да|примени\S*|подтвер\S*)(\s|$)/.test(t)) { this.set({ input: "" }); return this.run(s.pending, text); }
     }
+    this.queue = [];
     this.set({ input: "", pending: null, msgs: [...s.msgs, msg("me", text)] });
     void this.understand(text);
   }

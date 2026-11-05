@@ -154,6 +154,26 @@ describe("действия идут через сервис", () => {
     expect(store.state.msgs.at(-1)?.text).toContain("Бюджет месяца теперь 15 000 ₽, был 20 000 ₽");
   });
 
+  it("две просьбы в одном сообщении: по очереди, у каждой своё «да»", async () => {
+    const api = fakeApi({ setBudget: vi.fn(async () => ({ status: "applied", cuts: 1 })) } as Partial<Api>);
+    const store = await open(api);
+    const pause = said({ kind: "pause", confirm: "Понял так: остановить все показы. Настройки сохранятся. Применить?" });
+    vi.mocked(api.command).mockResolvedValueOnce(said({ kind: "set_budget", rubles: 15000, next: [pause] }));
+    store.send("бюджет 15000 и останови рекламу");
+    await settled();
+    expect(store.state.msgs.some((m) => m.text.includes("Вижу 2 просьбы"))).toBe(true);
+    expect(store.state.pending).toEqual({ action: "setting", value: ["budget", 15000] });
+    store.send("нет");
+    await settled();
+    expect(api.setBudget).not.toHaveBeenCalled();
+    expect(store.state.pending).toEqual({ action: "pause" });
+    store.send("да");
+    await settled();
+    expect(api.pause).toHaveBeenCalledOnce();
+    expect(store.state.pending).toBeNull();
+    expect(api.command).toHaveBeenCalledOnce();
+  });
+
   it("включение из чата только после подтверждения", async () => {
     const api = fakeApi({
       resume: vi.fn(async () => ({ resumed: ["anna:1"], refused: [], failed: [] })),

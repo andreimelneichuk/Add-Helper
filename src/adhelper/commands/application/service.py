@@ -7,7 +7,7 @@
 import json
 import logging
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from adhelper.commands.domain.model import (
     CHANGING,
@@ -19,11 +19,11 @@ from adhelper.commands.domain.model import (
     Parsed,
     Source,
 )
-from adhelper.commands.domain.parse import SCHEMA, by_rules, from_model
+from adhelper.commands.domain.parse import SCHEMA, from_model, parse_all
 from adhelper.commands.domain.words import meaning, refusal
 from adhelper.creatives.domain.model import BusinessProfile, ModelUnavailable, TextModel
 
-CURRENT_RULES = "commands-1"
+CURRENT_RULES = "commands-2"
 logger = logging.getLogger(__name__)
 
 SYSTEM = (
@@ -48,6 +48,8 @@ class Answer:
     # Вопрос «Применить?» для меняющей команды, иначе ответ или уточнение.
     confirm: str
     reply: str
+    # Остальные просьбы того же сообщения: каждую владелец подтверждает отдельно, по очереди.
+    more: tuple["Answer", ...] = ()
 
 
 class CallBudget:
@@ -108,9 +110,21 @@ async def interpret(
     model: TextModel | None,
     may_call_model: Callable[[], bool],
 ) -> Answer:
-    parsed = by_rules(message, known, rules.max_chars)
-    if parsed.command.kind is Kind.UNKNOWN and not parsed.question and model and may_call_model():
-        parsed = await _ask_model(model, message, known, rules)
+    found = parse_all(message, known, rules)
+    first = found[0]
+    if (
+        len(found) == 1
+        and first.command.kind is Kind.UNKNOWN
+        and not first.question
+        and model
+        and may_call_model()
+    ):
+        first = await _ask_model(model, message, known, rules)
+    answers = [_answer(parsed, message, rules) for parsed in (first, *found[1:])]
+    return replace(answers[0], more=tuple(answers[1:]))
+
+
+def _answer(parsed: Parsed, message: str, rules: CommandRules) -> Answer:
     command = parsed.command
     if command.kind in CHANGING:
         return Answer(
