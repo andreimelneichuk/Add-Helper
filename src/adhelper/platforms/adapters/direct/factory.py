@@ -1,0 +1,91 @@
+"""Сборка площадки Директа для воркера и API: `platform_for(business_id, login)`.
+
+Токен кабинета берётся из хранилища своего бизнеса и расшифровывается только в `TokenVault`,
+поэтому кабинет чужого бизнеса не получит токен даже по известному логину.
+"""
+
+from collections.abc import Callable
+from datetime import datetime
+from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from adhelper.accounts.adapters.sql import SqlAccountTokens
+from adhelper.accounts.adapters.yandex_oauth import YandexOAuth
+from adhelper.accounts.application.service import OAuthProvider, ReconnectRequired, TokenVault
+from adhelper.accounts.domain.ports import TokenCipher
+from adhelper.config import Settings
+from adhelper.platforms.adapters.direct.platform import DirectPlatform
+from adhelper.platforms.adapters.direct.transport import (
+    DirectAuthError,
+    DirectHttpClient,
+    TokenSource,
+)
+
+
+def yandex_provider(settings: Settings, clock: Callable[[], datetime]) -> OAuthProvider | None:
+    secret = settings.yandex_client_secret
+    if not settings.yandex_client_id or secret is None or not secret.get_secret_value():
+        return None
+    return YandexOAuth(
+        settings.yandex_client_id,
+        secret,
+        clock,
+        settings.yandex_oauth_url,
+        settings.yandex_login_url,
+    )
+
+
+class DirectPlatforms:
+    """Один HTTP-клиент на процесс, площадка на каждый бизнес."""
+
+    def __init__(
+        self,
+        client: DirectHttpClient,
+        sessions: async_sessionmaker[AsyncSession],
+        provider: OAuthProvider,
+        cipher: TokenCipher,
+        clock: Callable[[], datetime],
+    ) -> None:
+        self._client = client
+        self._sessions = sessions
+        self._provider = provider
+        self._cipher = cipher
+        self._clock = clock
+
+    def _tokens(self, business_id: UUID) -> TokenSource:
+        vault = TokenVault(
+            SqlAccountTokens(self._sessions, business_id),
+            business_id,
+            self._provider,
+            self._cipher,
+            self._clock,
+        )
+
+        async def token_for(login: str) -> str:
+            try:
+                return await vault.access_token(login)
+            except ReconnectRequired as error:
+                raise DirectAuthError(None, "account needs reconnect") from error
+
+        return token_for
+
+    def __call__(self, business_id: UUID, login: str) -> DirectPlatform:
+        return DirectPlatform(self._client, self._tokens(business_id), self._clock)
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+
+def build_direct_platforms(
+    settings: Settings,
+    sessions: async_sessionmaker[AsyncSession],
+    provider: OAuthProvider | None,
+    cipher: TokenCipher | None,
+    clock: Callable[[], datetime],
+) -> DirectPlatforms | None:
+    """Без флага, ключей шифрования или приложения Яндекс ID площадки нет: тревога и 503."""
+    if not settings.direct_enabled or provider is None or cipher is None:
+        return None
+    client = DirectHttpClient(settings.direct_api_url, settings.direct_live_url)
+    return DirectPlatforms(client, sessions, provider, cipher, clock)

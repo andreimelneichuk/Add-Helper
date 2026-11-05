@@ -10,11 +10,14 @@ x-app: &app
     PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
     YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID:-}
     YANDEX_CLIENT_SECRET: ${YANDEX_CLIENT_SECRET:-}
-    TEXT_MODEL_BASE_URL: ${TEXT_MODEL_BASE_URL:-https://ai.api.cloud.yandex.net/v1}
+    DIRECT_ENABLED: ${DIRECT_ENABLED:-false}
+    DIRECT_API_URL: ${DIRECT_API_URL:-https://api.direct.yandex.com}
+    DIRECT_LIVE_URL: ${DIRECT_LIVE_URL:-https://api.direct.yandex.ru/live/v4/json/}
+    TEXT_MODEL_BASE_URL: ${TEXT_MODEL_BASE_URL:-https://openrouter.ai/api/v1}
     TEXT_MODEL_API_KEY: ${TEXT_MODEL_API_KEY:-}
     TEXT_MODEL_PROJECT: ${TEXT_MODEL_PROJECT:-}
-    TEXT_MODEL_NAME: ${TEXT_MODEL_NAME:-}
-    JUDGE_MODEL_NAME: ${JUDGE_MODEL_NAME:-}
+    TEXT_MODEL_NAME: ${TEXT_MODEL_NAME:-google/gemma-4-31b-it}
+    JUDGE_MODEL_NAME: ${JUDGE_MODEL_NAME:-deepseek/deepseek-v4.1-flash}
     SMTP_HOST: ${SMTP_HOST:-}
     SMTP_PORT: ${SMTP_PORT:-465}
     SMTP_STARTTLS: ${SMTP_STARTTLS:-false}

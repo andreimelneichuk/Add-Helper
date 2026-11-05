@@ -8,7 +8,6 @@ fail() { echo "НЕ ПРОШЛО: $1"; exit 1; }
 
 $CURL --fail "$BASE/" | grep -q '<div id="root">' || fail "интерфейс не отдаётся"
 $CURL --fail "$BASE/healthz" | grep -q '"ok"' || fail "API не отвечает на /healthz"
-$CURL --fail "$BASE/?new" | grep -q '<div id="root">' || fail "новый интерфейс не отдаётся"
 code=$($CURL -o /dev/null -w '%{http_code}' "$BASE/api/me")
 [ "$code" = 401 ] || fail "/api/me без входа ответил $code, а не 401"
 

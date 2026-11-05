@@ -15,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from adhelper.accounts.adapters.crypto import AesGcmCipher
 from adhelper.accounts.adapters.sql import SqlAccountTokens, SqlIdentityStore, SqlUserScope
 from adhelper.accounts.adapters.unconfigured import UnconfiguredProvider
-from adhelper.accounts.adapters.yandex_oauth import YandexOAuth
 from adhelper.accounts.application.service import AccountsService, OAuthProvider
 from adhelper.api.accounts import accounts_router
 from adhelper.api.cabinet import cabinet_router
@@ -33,6 +32,11 @@ from adhelper.commands.application.service import CallBudget
 from adhelper.config import Settings
 from adhelper.creatives.adapters.factory import build_text_model
 from adhelper.db import create_engine, ping
+from adhelper.platforms.adapters.direct.factory import (
+    DirectPlatforms,
+    build_direct_platforms,
+    yandex_provider,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,19 +54,6 @@ def _cipher(settings: Settings) -> AesGcmCipher | None:
     if keys is None or not keys.get_secret_value():
         return None
     return AesGcmCipher.from_config(keys.get_secret_value())
-
-
-def _yandex(settings: Settings) -> OAuthProvider | None:
-    secret = settings.yandex_client_secret
-    if not settings.yandex_client_id or secret is None or not secret.get_secret_value():
-        return None
-    return YandexOAuth(
-        settings.yandex_client_id,
-        secret,
-        _utc_now,
-        settings.yandex_oauth_url,
-        settings.yandex_login_url,
-    )
 
 
 def _accounts_service(
@@ -100,14 +91,17 @@ def create_app(
     engine = create_engine(settings)
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
+        platforms = getattr(app.state, "platform_for", None)
+        if isinstance(platforms, DirectPlatforms):
+            await platforms.aclose()
         await engine.dispose()
 
     app = FastAPI(title="Ad Helper", lifespan=lifespan)
     app.state.engine = engine
     # Без приложения Яндекс ID в настройках вход честно отвечает 503.
-    oauth_provider = oauth_provider or _yandex(settings)
+    oauth_provider = oauth_provider or yandex_provider(settings, _utc_now)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     app.state.sessions = sessions
     app.state.clock = _utc_now
@@ -129,8 +123,11 @@ def create_app(
     app.include_router(wizard_ads_router())
     app.include_router(experiments_router())
     app.state.guest_secret = _guest_secret(settings)
-    # Адаптер Директа появится в T5 (ждёт V1); пока действия с площадкой честно отвечают 503.
-    app.state.platform_for = _no_platform
+    # Без DIRECT_ENABLED действия с площадкой честно отвечают 503.
+    platforms = build_direct_platforms(
+        settings, sessions, oauth_provider, app.state.cipher, _utc_now
+    )
+    app.state.platform_for = platforms or _no_platform
     app.include_router(notifications_router())
     app.include_router(chat_router())
     # Разборщик команд: без ключа модели чат понимает только правила.

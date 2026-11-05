@@ -203,6 +203,23 @@ async def judge_eval(
     return runs
 
 
+def sample_sets(cases: Sequence[Case], size: int) -> list[Case]:
+    """Малая выборка для отсева (docs/13-model-spend.md, правило 4): наборы целиком,
+    сначала с нарушениями, по порядку профилей, пока не наберётся size объявлений; 0 — все."""
+    if not size:
+        return list(cases)
+    by_profile: dict[str, list[Case]] = {}
+    for case in cases:
+        by_profile.setdefault(case.profile, []).append(case)
+    order = sorted(by_profile, key=lambda p: (all(c.label != "block" for c in by_profile[p]), p))
+    picked: list[Case] = []
+    for profile in order:
+        if len(picked) >= size:
+            break
+        picked.extend(by_profile[profile])
+    return picked
+
+
 def _answered(run: CaseRun | None, repeats: int) -> bool:
     return (
         run is not None
@@ -270,6 +287,9 @@ async def run_judge(args: argparse.Namespace) -> None:
                 if c.category == "writer" and c.id.rsplit("-", 1)[1].startswith(args.writer)
             ]
             part += f"-{args.writer}"
+        if args.sample:
+            cases = sample_sets(cases, args.sample)
+            part += f"-s{args.sample}"
         if not cases:
             raise SystemExit(f"В выборке {part} нет размеченных объявлений")
     else:
@@ -394,6 +414,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     judge.add_argument("--labels", default="gold", choices=["gold", "human", "author"])
     judge.add_argument("--writer", default="", choices=["", "w", "f"])
     judge.add_argument("--resume", action="store_true", help="доспросить только сбои")
+    judge.add_argument("--sample", type=int, default=0, help="около N объявлений для отсева")
     generate = sub.add_parser("generate")
     generate.add_argument("--models", nargs="+", required=True)
     generate.add_argument("--judge", default="")

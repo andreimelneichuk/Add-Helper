@@ -1,0 +1,1157 @@
+[
+ {
+  "step": "find_before",
+  "url": "https://api.direct.yandex.com/json/v501/campaigns",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {},
+    "FieldNames": [
+     "Id",
+     "Name",
+     "Type",
+     "State",
+     "Status"
+    ],
+    "UnifiedCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ],
+    "TextCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "10/159819/160000"
+  },
+  "body": "{\"result\":{\"Campaigns\":[]}}"
+ },
+ {
+  "step": "create_campaign",
+  "url": "https://api.direct.yandex.com/json/v501/campaigns",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {},
+    "FieldNames": [
+     "Id",
+     "Name",
+     "Type",
+     "State",
+     "Status"
+    ],
+    "UnifiedCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ],
+    "TextCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "10/159809/160000"
+  },
+  "body": "{\"result\":{\"Campaigns\":[]}}"
+ },
+ {
+  "step": "create_campaign",
+  "url": "https://api.direct.yandex.com/json/v501/campaigns",
+  "request": {
+   "method": "add",
+   "params": {
+    "Campaigns": [
+     {
+      "Name": "Ad Helper проверка API (ah-probe-1)",
+      "StartDate": "2026-11-05",
+      "EndDate": "2026-11-10",
+      "UnifiedCampaign": {
+       "BiddingStrategy": {
+        "Network": {
+         "BiddingStrategyType": "NETWORK_DEFAULT"
+        },
+        "Search": {
+         "BiddingStrategyType": "WB_MAXIMUM_CLICKS",
+         "WbMaximumClicks": {
+          "CustomPeriodBudget": {
+           "SpendLimit": 300000000,
+           "StartDate": "2026-11-05",
+           "EndDate": "2026-11-10",
+           "AutoContinue": "NO"
+          }
+         }
+        }
+       }
+      }
+     }
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "15/159794/160000"
+  },
+  "body": "{\"result\":{\"AddResults\":[{\"Id\":715840559,\"Errors\":[]}]}}"
+ },
+ {
+  "step": "create_campaign",
+  "url": "https://api.direct.yandex.com/json/v501/adgroups",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "CampaignIds": [
+      715840559
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "CampaignId",
+     "Name",
+     "RegionIds"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "15/159779/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"AdGroups\":[]}}"
+ },
+ {
+  "step": "create_campaign",
+  "url": "https://api.direct.yandex.com/json/v501/adgroups",
+  "request": {
+   "method": "add",
+   "params": {
+    "AdGroups": [
+     {
+      "Name": "Ad Helper проверка API (ah-probe-1)",
+      "CampaignId": 715840559,
+      "RegionIds": [
+       213
+      ],
+      "UnifiedAdGroup": {
+       "OfferRetargeting": "NO"
+      }
+     }
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "40/159739/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"AddResults\":[{\"Id\":5820622013,\"Errors\":[]}]}}"
+ },
+ {
+  "step": "create_campaign",
+  "url": "https://api.direct.yandex.com/json/v501/ads",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "CampaignIds": [
+      715840559
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "CampaignId",
+     "AdGroupId",
+     "State",
+     "Status",
+     "StatusClarification"
+    ],
+    "TextAdFieldNames": [
+     "Title",
+     "Text",
+     "Href"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "15/159724/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{}}"
+ },
+ {
+  "step": "create_campaign",
+  "url": "https://api.direct.yandex.com/json/v501/ads",
+  "request": {
+   "method": "add",
+   "params": {
+    "Ads": [
+     {
+      "AdGroupId": 5820622013,
+      "TextAd": {
+       "Title": "Проверка подключения",
+       "Text": "Служебное объявление сервиса",
+       "Href": "https://example.com/",
+       "Mobile": "NO"
+      }
+     }
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "40/159684/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"AddResults\":[{\"Id\":1926157812444935901,\"Warnings\":[{\"Code\":10251,\"Message\":\"Создание текстовых баннеров закрыто. Баннер был добавлен как комбинаторный\"}],\"Errors\":[]}]}}"
+ },
+ {
+  "step": "create_campaign",
+  "url": "https://api.direct.yandex.com/json/v501/ads",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "CampaignIds": [
+      715840559
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "CampaignId",
+     "AdGroupId",
+     "State",
+     "Status",
+     "StatusClarification"
+    ],
+    "TextAdFieldNames": [
+     "Title",
+     "Text",
+     "Href"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "16/159668/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"Ads\":[{\"Id\":1926157812444935901,\"CampaignId\":715840559,\"AdGroupId\":5820622013,\"Status\":\"DRAFT\",\"State\":\"OFF\",\"StatusClarification\":\"Черновик.\",\"TextAd\":{\"Text\":\"Служебное объявление сервиса\",\"Title\":\"Проверка подключения\",\"Href\":\"https://example.com/\"}}]}}"
+ },
+ {
+  "step": "create_campaign",
+  "url": "https://api.direct.yandex.com/json/v501/ads",
+  "request": {
+   "method": "moderate",
+   "params": {
+    "SelectionCriteria": {
+     "Ids": [
+      1926157812444935901
+     ]
+    }
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "15/159653/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"ModerateResults\":[{\"Id\":1926157812444935901,\"Errors\":[]}]}}"
+ },
+ {
+  "step": "find_after",
+  "url": "https://api.direct.yandex.com/json/v501/campaigns",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {},
+    "FieldNames": [
+     "Id",
+     "Name",
+     "Type",
+     "State",
+     "Status"
+    ],
+    "UnifiedCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ],
+    "TextCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "11/159642/160000"
+  },
+  "body": "{\"result\":{\"Campaigns\":[{\"Id\":715840559,\"Name\":\"Ad Helper проверка API (ah-probe-1)\",\"Type\":\"UNIFIED_CAMPAIGN\",\"Status\":\"MODERATION\",\"State\":\"OFF\",\"UnifiedCampaign\":{\"BiddingStrategy\":{\"Search\":{\"BiddingStrategyType\":\"WB_MAXIMUM_CLICKS\",\"WbMaximumClicks\":{\"CustomPeriodBudget\":{\"SpendLimit\":300000000,\"StartDate\":\"2026-11-05\",\"EndDate\":\"2026-11-10\",\"AutoContinue\":\"NO\"},\"BudgetType\":\"CUSTOM_PERIOD_BUDGET\",\"BidCeiling\":null}},\"Network\":{\"BiddingStrategyType\":\"NETWORK_DEFAULT\"}},\"CounterIds\":null}}]}}"
+ },
+ {
+  "step": "find_after",
+  "url": "https://api.direct.yandex.com/json/v501/adgroups",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "CampaignIds": [
+      715840559
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "CampaignId",
+     "Name",
+     "RegionIds"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "16/159626/160000"
+  },
+  "body": "{\"result\":{\"AdGroups\":[{\"Id\":5820622013,\"Name\":\"Ad Helper проверка API (ah-probe-1)\",\"CampaignId\":715840559,\"RegionIds\":[213]}]}}"
+ },
+ {
+  "step": "find_after",
+  "url": "https://api.direct.yandex.com/json/v501/ads",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "CampaignIds": [
+      715840559
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "CampaignId",
+     "AdGroupId",
+     "State",
+     "Status",
+     "StatusClarification"
+    ],
+    "TextAdFieldNames": [
+     "Title",
+     "Text",
+     "Href"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "16/159610/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"Ads\":[{\"Id\":1926157812444935901,\"CampaignId\":715840559,\"AdGroupId\":5820622013,\"Status\":\"MODERATION\",\"State\":\"OFF\",\"StatusClarification\":\"Ожидает модерации.\",\"TextAd\":{\"Text\":\"Служебное объявление сервиса\",\"Title\":\"Проверка подключения\",\"Href\":\"https://example.com/\"}}]}}"
+ },
+ {
+  "step": "read_campaigns",
+  "url": "https://api.direct.yandex.com/json/v501/campaigns",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {},
+    "FieldNames": [
+     "Id",
+     "Name",
+     "Type",
+     "State",
+     "Status"
+    ],
+    "UnifiedCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ],
+    "TextCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "11/159599/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"Campaigns\":[{\"Id\":715840559,\"Name\":\"Ad Helper проверка API (ah-probe-1)\",\"Type\":\"UNIFIED_CAMPAIGN\",\"Status\":\"MODERATION\",\"State\":\"OFF\",\"UnifiedCampaign\":{\"BiddingStrategy\":{\"Search\":{\"BiddingStrategyType\":\"WB_MAXIMUM_CLICKS\",\"WbMaximumClicks\":{\"CustomPeriodBudget\":{\"SpendLimit\":300000000,\"StartDate\":\"2026-11-05\",\"EndDate\":\"2026-11-10\",\"AutoContinue\":\"NO\"},\"BudgetType\":\"CUSTOM_PERIOD_BUDGET\",\"BidCeiling\":null}},\"Network\":{\"BiddingStrategyType\":\"NETWORK_DEFAULT\"}},\"CounterIds\":null}}]}}"
+ },
+ {
+  "step": "read_campaigns",
+  "url": "https://api.direct.yandex.com/json/v5/reports",
+  "request": {
+   "params": {
+    "SelectionCriteria": {
+     "DateFrom": "2026-11-05",
+     "DateTo": "2026-11-05"
+    },
+    "FieldNames": [
+     "Date",
+     "CampaignId",
+     "Cost"
+    ],
+    "ReportType": "CAMPAIGN_PERFORMANCE_REPORT",
+    "DateRangeType": "CUSTOM_DATE",
+    "Format": "TSV",
+    "IncludeVAT": "YES",
+    "IncludeDiscount": "NO",
+    "ReportName": "ah-05ead0df68654d51e7d83531"
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "text/tab-separated-values; charset=utf-8"
+  },
+  "body": "Date\tCampaignId\tCost\n"
+ },
+ {
+  "step": "set_limit_same",
+  "url": "https://api.direct.yandex.com/json/v501/campaigns",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "Ids": [
+      715840559
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "Name",
+     "Type",
+     "State",
+     "Status"
+    ],
+    "UnifiedCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ],
+    "TextCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "11/159588/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"Campaigns\":[{\"Id\":715840559,\"Name\":\"Ad Helper проверка API (ah-probe-1)\",\"Type\":\"UNIFIED_CAMPAIGN\",\"Status\":\"MODERATION\",\"State\":\"OFF\",\"UnifiedCampaign\":{\"BiddingStrategy\":{\"Search\":{\"BiddingStrategyType\":\"WB_MAXIMUM_CLICKS\",\"WbMaximumClicks\":{\"CustomPeriodBudget\":{\"SpendLimit\":300000000,\"StartDate\":\"2026-11-05\",\"EndDate\":\"2026-11-10\",\"AutoContinue\":\"NO\"},\"BudgetType\":\"CUSTOM_PERIOD_BUDGET\",\"BidCeiling\":null}},\"Network\":{\"BiddingStrategyType\":\"NETWORK_DEFAULT\"}},\"CounterIds\":null}}]}}"
+ },
+ {
+  "step": "set_limit_same",
+  "url": "https://api.direct.yandex.com/json/v501/campaigns",
+  "request": {
+   "method": "update",
+   "params": {
+    "Campaigns": [
+     {
+      "Id": 715840559,
+      "UnifiedCampaign": {
+       "BiddingStrategy": {
+        "Search": {
+         "BiddingStrategyType": "WB_MAXIMUM_CLICKS",
+         "WbMaximumClicks": {
+          "CustomPeriodBudget": {
+           "SpendLimit": 300000000,
+           "StartDate": "2026-11-05",
+           "EndDate": "2026-11-10",
+           "AutoContinue": "NO"
+          }
+         }
+        }
+       }
+      }
+     }
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "13/159575/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"UpdateResults\":[{\"Id\":715840559,\"Errors\":[]}]}}"
+ },
+ {
+  "step": "read_campaigns_2",
+  "url": "https://api.direct.yandex.com/json/v501/campaigns",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {},
+    "FieldNames": [
+     "Id",
+     "Name",
+     "Type",
+     "State",
+     "Status"
+    ],
+    "UnifiedCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ],
+    "TextCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "11/159564/160000"
+  },
+  "body": "{\"result\":{\"Campaigns\":[{\"Id\":715840559,\"Name\":\"Ad Helper проверка API (ah-probe-1)\",\"Type\":\"UNIFIED_CAMPAIGN\",\"Status\":\"MODERATION\",\"State\":\"OFF\",\"UnifiedCampaign\":{\"BiddingStrategy\":{\"Search\":{\"BiddingStrategyType\":\"WB_MAXIMUM_CLICKS\",\"WbMaximumClicks\":{\"CustomPeriodBudget\":{\"SpendLimit\":300000000,\"StartDate\":\"2026-11-05\",\"EndDate\":\"2026-11-10\",\"AutoContinue\":\"NO\"},\"BudgetType\":\"CUSTOM_PERIOD_BUDGET\",\"BidCeiling\":null}},\"Network\":{\"BiddingStrategyType\":\"NETWORK_DEFAULT\"}},\"CounterIds\":null}}]}}"
+ },
+ {
+  "step": "read_campaigns_2",
+  "url": "https://api.direct.yandex.com/json/v5/reports",
+  "request": {
+   "params": {
+    "SelectionCriteria": {
+     "DateFrom": "2026-11-05",
+     "DateTo": "2026-11-05"
+    },
+    "FieldNames": [
+     "Date",
+     "CampaignId",
+     "Cost"
+    ],
+    "ReportType": "CAMPAIGN_PERFORMANCE_REPORT",
+    "DateRangeType": "CUSTOM_DATE",
+    "Format": "TSV",
+    "IncludeVAT": "YES",
+    "IncludeDiscount": "NO",
+    "ReportName": "ah-05ead0df68654d51e7d83531"
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "text/tab-separated-values; charset=utf-8"
+  },
+  "body": "Date\tCampaignId\tCost\n"
+ },
+ {
+  "step": "read_targeting",
+  "url": "https://api.direct.yandex.com/json/v501/campaigns",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "Ids": [
+      715840559
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "Name",
+     "Type",
+     "State",
+     "Status",
+     "TimeTargeting"
+    ],
+    "UnifiedCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ],
+    "TextCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "11/159553/160000"
+  },
+  "body": "{\"result\":{\"Campaigns\":[{\"Id\":715840559,\"Name\":\"Ad Helper проверка API (ah-probe-1)\",\"Type\":\"UNIFIED_CAMPAIGN\",\"Status\":\"MODERATION\",\"State\":\"OFF\",\"UnifiedCampaign\":{\"BiddingStrategy\":{\"Search\":{\"BiddingStrategyType\":\"WB_MAXIMUM_CLICKS\",\"WbMaximumClicks\":{\"CustomPeriodBudget\":{\"SpendLimit\":300000000,\"StartDate\":\"2026-11-05\",\"EndDate\":\"2026-11-10\",\"AutoContinue\":\"NO\"},\"BudgetType\":\"CUSTOM_PERIOD_BUDGET\",\"BidCeiling\":null}},\"Network\":{\"BiddingStrategyType\":\"NETWORK_DEFAULT\"}},\"CounterIds\":null},\"TimeTargeting\":{\"HolidaysSchedule\":null,\"Schedule\":{\"Items\":[\"1,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100\",\"2,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100\",\"3,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100\",\"4,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100\",\"5,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100\",\"6,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100\",\"7,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100\"]},\"ConsiderWorkingWeekends\":\"NO\"}}]}}"
+ },
+ {
+  "step": "read_targeting",
+  "url": "https://api.direct.yandex.com/json/v501/adgroups",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "CampaignIds": [
+      715840559
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "CampaignId",
+     "Name",
+     "RegionIds"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "16/159537/160000"
+  },
+  "body": "{\"result\":{\"AdGroups\":[{\"Id\":5820622013,\"Name\":\"Ad Helper проверка API (ah-probe-1)\",\"CampaignId\":715840559,\"RegionIds\":[213]}]}}"
+ },
+ {
+  "step": "set_schedule",
+  "url": "https://api.direct.yandex.com/json/v501/campaigns",
+  "request": {
+   "method": "update",
+   "params": {
+    "Campaigns": [
+     {
+      "Id": 715840559,
+      "TimeTargeting": {
+       "Schedule": {
+        "Items": [
+         "1,0,0,0,0,0,0,0,0,0,100,100,100,100,100,100,100,100,100,100,100,100,0,0,0",
+         "2,0,0,0,0,0,0,0,0,0,100,100,100,100,100,100,100,100,100,100,100,100,0,0,0",
+         "3,0,0,0,0,0,0,0,0,0,100,100,100,100,100,100,100,100,100,100,100,100,0,0,0",
+         "4,0,0,0,0,0,0,0,0,0,100,100,100,100,100,100,100,100,100,100,100,100,0,0,0",
+         "5,0,0,0,0,0,0,0,0,0,100,100,100,100,100,100,100,100,100,100,100,100,0,0,0",
+         "6,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
+         "7,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0"
+        ]
+       },
+       "ConsiderWorkingWeekends": "YES"
+      }
+     }
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "13/159524/160000"
+  },
+  "body": "{\"result\":{\"UpdateResults\":[{\"Id\":715840559,\"Errors\":[]}]}}"
+ },
+ {
+  "step": "set_regions",
+  "url": "https://api.direct.yandex.com/json/v501/adgroups",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "CampaignIds": [
+      715840559
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "CampaignId",
+     "Name",
+     "RegionIds"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "16/159508/160000"
+  },
+  "body": "{\"result\":{\"AdGroups\":[{\"Id\":5820622013,\"Name\":\"Ad Helper проверка API (ah-probe-1)\",\"CampaignId\":715840559,\"RegionIds\":[213]}]}}"
+ },
+ {
+  "step": "set_regions",
+  "url": "https://api.direct.yandex.com/json/v501/adgroups",
+  "request": {
+   "method": "update",
+   "params": {
+    "AdGroups": [
+     {
+      "Id": 5820622013,
+      "RegionIds": [
+       213
+      ]
+     }
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "40/159468/160000"
+  },
+  "body": "{\"result\":{\"UpdateResults\":[{\"Id\":5820622013,\"Errors\":[]}]}}"
+ },
+ {
+  "step": "read_targeting_2",
+  "url": "https://api.direct.yandex.com/json/v501/campaigns",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "Ids": [
+      715840559
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "Name",
+     "Type",
+     "State",
+     "Status",
+     "TimeTargeting"
+    ],
+    "UnifiedCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ],
+    "TextCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "11/159457/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"Campaigns\":[{\"Id\":715840559,\"Name\":\"Ad Helper проверка API (ah-probe-1)\",\"Type\":\"UNIFIED_CAMPAIGN\",\"Status\":\"MODERATION\",\"State\":\"OFF\",\"UnifiedCampaign\":{\"BiddingStrategy\":{\"Search\":{\"BiddingStrategyType\":\"WB_MAXIMUM_CLICKS\",\"WbMaximumClicks\":{\"CustomPeriodBudget\":{\"SpendLimit\":300000000,\"StartDate\":\"2026-11-05\",\"EndDate\":\"2026-11-10\",\"AutoContinue\":\"NO\"},\"BudgetType\":\"CUSTOM_PERIOD_BUDGET\",\"BidCeiling\":null}},\"Network\":{\"BiddingStrategyType\":\"NETWORK_DEFAULT\"}},\"CounterIds\":null},\"TimeTargeting\":{\"HolidaysSchedule\":null,\"Schedule\":{\"Items\":[\"1,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100\",\"2,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100\",\"3,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100\",\"4,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100\",\"5,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100\",\"6,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100\",\"7,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100\"]},\"ConsiderWorkingWeekends\":\"NO\"}}]}}"
+ },
+ {
+  "step": "read_targeting_2",
+  "url": "https://api.direct.yandex.com/json/v501/adgroups",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "CampaignIds": [
+      715840559
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "CampaignId",
+     "Name",
+     "RegionIds"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "16/159441/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"AdGroups\":[{\"Id\":5820622013,\"Name\":\"Ad Helper проверка API (ah-probe-1)\",\"CampaignId\":715840559,\"RegionIds\":[213]}]}}"
+ },
+ {
+  "step": "create_ad",
+  "url": "https://api.direct.yandex.com/json/v501/adgroups",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "CampaignIds": [
+      715840559
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "CampaignId",
+     "Name",
+     "RegionIds"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "16/159425/160000"
+  },
+  "body": "{\"result\":{\"AdGroups\":[{\"Id\":5820622013,\"Name\":\"Ad Helper проверка API (ah-probe-1)\",\"CampaignId\":715840559,\"RegionIds\":[213]}]}}"
+ },
+ {
+  "step": "create_ad",
+  "url": "https://api.direct.yandex.com/json/v501/ads",
+  "request": {
+   "method": "add",
+   "params": {
+    "Ads": [
+     {
+      "AdGroupId": 5820622013,
+      "TextAd": {
+       "Title": "Проверка объявления",
+       "Text": "Служебный текст сервиса",
+       "Href": "https://example.com/?utm_source=yandex&ah_ad=ahc-probe-1",
+       "Mobile": "NO"
+      }
+     }
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "40/159385/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"AddResults\":[{\"Id\":1926157827475857071,\"Warnings\":[{\"Code\":10251,\"Message\":\"Создание текстовых баннеров закрыто. Баннер был добавлен как комбинаторный\"}],\"Errors\":[]}]}}"
+ },
+ {
+  "step": "create_ad",
+  "url": "https://api.direct.yandex.com/json/v501/ads",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "Ids": [
+      1926157827475857071
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "CampaignId",
+     "AdGroupId",
+     "State",
+     "Status",
+     "StatusClarification"
+    ],
+    "TextAdFieldNames": [
+     "Title",
+     "Text",
+     "Href"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "16/159369/160000"
+  },
+  "body": "{\"result\":{\"Ads\":[{\"Id\":1926157827475857071,\"CampaignId\":715840559,\"AdGroupId\":5820622013,\"Status\":\"DRAFT\",\"State\":\"OFF\",\"StatusClarification\":\"Черновик.\",\"TextAd\":{\"Text\":\"Служебный текст сервиса\",\"Title\":\"Проверка объявления\",\"Href\":\"https://example.com/?utm_source=yandex&ah_ad=ahc-probe-1\"}}]}}"
+ },
+ {
+  "step": "create_ad",
+  "url": "https://api.direct.yandex.com/json/v501/ads",
+  "request": {
+   "method": "moderate",
+   "params": {
+    "SelectionCriteria": {
+     "Ids": [
+      1926157827475857071
+     ]
+    }
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "15/159354/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"ModerateResults\":[{\"Id\":1926157827475857071,\"Errors\":[]}]}}"
+ },
+ {
+  "step": "find_ad",
+  "url": "https://api.direct.yandex.com/json/v501/campaigns",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {},
+    "FieldNames": [
+     "Id",
+     "Name",
+     "Type",
+     "State",
+     "Status"
+    ],
+    "UnifiedCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ],
+    "TextCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "11/159343/160000"
+  },
+  "body": "{\"result\":{\"Campaigns\":[{\"Id\":715840559,\"Name\":\"Ad Helper проверка API (ah-probe-1)\",\"Type\":\"UNIFIED_CAMPAIGN\",\"Status\":\"MODERATION\",\"State\":\"OFF\",\"UnifiedCampaign\":{\"BiddingStrategy\":{\"Search\":{\"BiddingStrategyType\":\"WB_MAXIMUM_CLICKS\",\"WbMaximumClicks\":{\"CustomPeriodBudget\":{\"SpendLimit\":300000000,\"StartDate\":\"2026-11-05\",\"EndDate\":\"2026-11-10\",\"AutoContinue\":\"NO\"},\"BudgetType\":\"CUSTOM_PERIOD_BUDGET\",\"BidCeiling\":null}},\"Network\":{\"BiddingStrategyType\":\"NETWORK_DEFAULT\"}},\"CounterIds\":null}}]}}"
+ },
+ {
+  "step": "find_ad",
+  "url": "https://api.direct.yandex.com/json/v501/ads",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "CampaignIds": [
+      715840559
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "CampaignId",
+     "AdGroupId",
+     "State",
+     "Status",
+     "StatusClarification"
+    ],
+    "TextAdFieldNames": [
+     "Title",
+     "Text",
+     "Href"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "17/159326/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"Ads\":[{\"Id\":1926157812444935901,\"CampaignId\":715840559,\"AdGroupId\":5820622013,\"Status\":\"MODERATION\",\"State\":\"OFF\",\"StatusClarification\":\"Ожидает модерации.\",\"TextAd\":{\"Text\":\"Служебное объявление сервиса\",\"Title\":\"Проверка подключения\",\"Href\":\"https://example.com/\"}},{\"Id\":1926157827475857071,\"CampaignId\":715840559,\"AdGroupId\":5820622013,\"Status\":\"MODERATION\",\"State\":\"OFF\",\"StatusClarification\":\"Ожидает модерации.\",\"TextAd\":{\"Text\":\"Служебный текст сервиса\",\"Title\":\"Проверка объявления\",\"Href\":\"https://example.com/?utm_source=yandex&ah_ad=ahc-probe-1\"}}]}}"
+ },
+ {
+  "step": "moderation",
+  "url": "https://api.direct.yandex.com/json/v501/ads",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "Ids": [
+      1926157812444935901,
+      1926157827475857071
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "CampaignId",
+     "AdGroupId",
+     "State",
+     "Status",
+     "StatusClarification"
+    ],
+    "TextAdFieldNames": [
+     "Title",
+     "Text",
+     "Href"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "17/159309/160000"
+  },
+  "body": "{\"result\":{\"Ads\":[{\"Id\":1926157812444935901,\"CampaignId\":715840559,\"AdGroupId\":5820622013,\"Status\":\"MODERATION\",\"State\":\"OFF\",\"StatusClarification\":\"Ожидает модерации.\",\"TextAd\":{\"Text\":\"Служебное объявление сервиса\",\"Title\":\"Проверка подключения\",\"Href\":\"https://example.com/\"}},{\"Id\":1926157827475857071,\"CampaignId\":715840559,\"AdGroupId\":5820622013,\"Status\":\"MODERATION\",\"State\":\"OFF\",\"StatusClarification\":\"Ожидает модерации.\",\"TextAd\":{\"Text\":\"Служебный текст сервиса\",\"Title\":\"Проверка объявления\",\"Href\":\"https://example.com/?utm_source=yandex&ah_ad=ahc-probe-1\"}}]}}"
+ },
+ {
+  "step": "ad_suspend",
+  "url": "https://api.direct.yandex.com/json/v501/ads",
+  "request": {
+   "method": "suspend",
+   "params": {
+    "SelectionCriteria": {
+     "Ids": [
+      1926157812444935901
+     ]
+    }
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "15/159294/160000"
+  },
+  "body": "{\"result\":{\"SuspendResults\":[{\"Id\":1926157812444935901,\"Errors\":[]}]}}"
+ },
+ {
+  "step": "read_ad",
+  "url": "https://api.direct.yandex.com/json/v501/ads",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "Ids": [
+      1926157812444935901
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "CampaignId",
+     "AdGroupId",
+     "State",
+     "Status",
+     "StatusClarification"
+    ],
+    "TextAdFieldNames": [
+     "Title",
+     "Text",
+     "Href"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "16/159278/160000"
+  },
+  "body": "{\"result\":{\"Ads\":[{\"Id\":1926157812444935901,\"CampaignId\":715840559,\"AdGroupId\":5820622013,\"Status\":\"UNKNOWN\",\"State\":\"SUSPENDED\",\"StatusClarification\":\"Остановлено.\",\"TextAd\":{\"Text\":\"Служебное объявление сервиса\",\"Title\":\"Проверка подключения\",\"Href\":\"https://example.com/\"}}]}}"
+ },
+ {
+  "step": "pause",
+  "url": "https://api.direct.yandex.com/json/v501/campaigns",
+  "request": {
+   "method": "suspend",
+   "params": {
+    "SelectionCriteria": {
+     "Ids": [
+      715840559
+     ]
+    }
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "15/159263/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"SuspendResults\":[{\"Id\":715840559,\"Errors\":[]}]}}"
+ },
+ {
+  "step": "read_campaigns_3",
+  "url": "https://api.direct.yandex.com/json/v501/campaigns",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {},
+    "FieldNames": [
+     "Id",
+     "Name",
+     "Type",
+     "State",
+     "Status"
+    ],
+    "UnifiedCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ],
+    "TextCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "11/159252/160000"
+  },
+  "body": "{\"result\":{\"Campaigns\":[{\"Id\":715840559,\"Name\":\"Ad Helper проверка API (ah-probe-1)\",\"Type\":\"UNIFIED_CAMPAIGN\",\"Status\":\"MODERATION\",\"State\":\"SUSPENDED\",\"UnifiedCampaign\":{\"BiddingStrategy\":{\"Search\":{\"BiddingStrategyType\":\"WB_MAXIMUM_CLICKS\",\"WbMaximumClicks\":{\"CustomPeriodBudget\":{\"SpendLimit\":300000000,\"StartDate\":\"2026-11-05\",\"EndDate\":\"2026-11-10\",\"AutoContinue\":\"NO\"},\"BudgetType\":\"CUSTOM_PERIOD_BUDGET\",\"BidCeiling\":null}},\"Network\":{\"BiddingStrategyType\":\"NETWORK_DEFAULT\"}},\"CounterIds\":null}}]}}"
+ },
+ {
+  "step": "read_campaigns_3",
+  "url": "https://api.direct.yandex.com/json/v5/reports",
+  "request": {
+   "params": {
+    "SelectionCriteria": {
+     "DateFrom": "2026-11-05",
+     "DateTo": "2026-11-05"
+    },
+    "FieldNames": [
+     "Date",
+     "CampaignId",
+     "Cost"
+    ],
+    "ReportType": "CAMPAIGN_PERFORMANCE_REPORT",
+    "DateRangeType": "CUSTOM_DATE",
+    "Format": "TSV",
+    "IncludeVAT": "YES",
+    "IncludeDiscount": "NO",
+    "ReportName": "ah-05ead0df68654d51e7d83531"
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "text/tab-separated-values; charset=utf-8"
+  },
+  "body": "Date\tCampaignId\tCost\n"
+ },
+ {
+  "step": "fetch_spend",
+  "url": "https://api.direct.yandex.com/json/v5/reports",
+  "request": {
+   "params": {
+    "SelectionCriteria": {},
+    "FieldNames": [
+     "Cost"
+    ],
+    "ReportType": "ACCOUNT_PERFORMANCE_REPORT",
+    "DateRangeType": "ALL_TIME",
+    "Format": "TSV",
+    "IncludeVAT": "YES",
+    "IncludeDiscount": "NO",
+    "ReportName": "ah-f72008b6382809ebb78c463a"
+   }
+  },
+  "status": 201,
+  "headers": {
+   "retryin": "1",
+   "content-type": "text/json"
+  },
+  "body": ""
+ },
+ {
+  "step": "fetch_spend",
+  "url": "https://api.direct.yandex.com/json/v5/reports",
+  "request": {
+   "params": {
+    "SelectionCriteria": {},
+    "FieldNames": [
+     "Cost"
+    ],
+    "ReportType": "ACCOUNT_PERFORMANCE_REPORT",
+    "DateRangeType": "ALL_TIME",
+    "Format": "TSV",
+    "IncludeVAT": "YES",
+    "IncludeDiscount": "NO",
+    "ReportName": "ah-f72008b6382809ebb78c463a"
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "text/tab-separated-values; charset=utf-8"
+  },
+  "body": "Cost\n"
+ },
+ {
+  "step": "fetch_balance",
+  "url": "https://api.direct.yandex.ru/live/v4/json/",
+  "request": {
+   "method": "AccountManagement",
+   "locale": "ru",
+   "param": {
+    "Action": "Get",
+    "SelectionCriteria": {
+     "Logins": [
+      "andreimelneichuk"
+     ]
+    }
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json; charset=utf-8"
+  },
+  "body": "{\"data\": {\"ActionsResult\": [], \"Accounts\": [{\"EmailNotification\": {\"Email\": \"owner@example.ru\", \"PausedByDayBudget\": \"Yes\", \"MoneyWarningValue\": 20}, \"AgencyName\": null, \"Login\": \"andreimelneichuk\", \"AmountAvailableForTransfer\": \"0\", \"AccountDayBudget\": null, \"Amount\": \"0\", \"SmsNotification\": {\"MoneyOutSms\": \"No\", \"MoneyInSms\": \"No\", \"SmsTimeTo\": \"21:00\", \"PausedByDayBudgetSms\": \"Yes\", \"SmsTimeFrom\": \"09:00\"}, \"AccountID\": 715667972, \"Currency\": \"RUB\"}]}}"
+ }
+]

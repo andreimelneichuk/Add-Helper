@@ -1,10 +1,8 @@
 /* Система нового интерфейса: токены и общие детали. Экранные стили лежат рядом с экранами
    и задают только раскладку; цвет, размеры и форму элементов берут отсюда. */
-/* Токены только внутри .ah: имена совпадают со старыми стилями кабинета.
+/* Токены только внутри .ah.
    Один насыщенный кобальт на нейтральном светло-сером: весь цвет идёт в действия и состояние. */
 .ah {
-  /* Глобальное правило полей из styles.css берёт фон отсюда, иначе в тёмной теме ОС поле темнеет. */
-  --surface: #ffffff;
   --canvas: #f4f5f8;
   --panel: #ffffff;
   --line: #e6e8ef;
@@ -87,7 +85,7 @@
 .ah-chip:hover { border-color: var(--muted); }
 .ah-chip[aria-pressed="true"], .ah-chip[aria-current="true"] { border-color: var(--accent); background: var(--accent); color: var(--on-accent); font-weight: 500; }
 
-/* Поле: двойной класс сильнее глобального input:not(...) из styles.css */
+/* Поле */
 .ah .ah-input { box-sizing: border-box; width: 100%; min-width: 0; min-height: var(--control); padding: 0 16px; border: 1px solid var(--line-strong); border-radius: var(--r-field); background: var(--panel); color: var(--ink); }
 .ah .ah-input::placeholder { color: var(--muted); opacity: 1; }
 

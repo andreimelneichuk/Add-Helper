@@ -18,8 +18,8 @@ MICRO = 1_000_000
 CATALOG = "https://openrouter.ai/api/v1/models"
 # Предел прогона по умолчанию: выше — только после согласия владельца.
 DEFAULT_BUDGET_USD = 0.05
-# Решение владельца: модели не дороже $0.25 за 1M выходных токенов.
-MAX_OUTPUT_MICRO_PER_M = 250_000
+# Решение владельца: модели не дороже $1.50 за 1M выходных токенов.
+MAX_OUTPUT_MICRO_PER_M = 1_500_000
 
 
 class BudgetSpent(Exception):
@@ -113,6 +113,7 @@ def parse_prices(payload: Mapping[str, object], models: Iterable[str]) -> dict[s
 
 def fetch_prices(models: Iterable[str]) -> dict[str, Price]:
     """Каталог OpenRouter открыт без ключа и денег не тратит."""
-    response = httpx.get(CATALOG, timeout=30)
+    headers = {"User-Agent": "AdHelper/1.0 (evals price meter)"}
+    response = httpx.get(CATALOG, headers=headers, timeout=30)
     response.raise_for_status()
     return parse_prices(response.json(), models)

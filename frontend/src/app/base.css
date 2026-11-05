@@ -1,0 +1,4 @@
+/* Основа страницы под новым интерфейсом. Всё остальное задают токены внутри .ah (tokens.css). */
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; background: #f4f5f8; color: #141a2e; font-family: "Onest Variable", system-ui, sans-serif; }
+.ah-boot { margin: 0; padding: 24px 16px; font-size: 14px; }

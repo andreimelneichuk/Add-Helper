@@ -1,24 +1,17 @@
 import { StrictMode, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createApi, createBusiness, createGuestApi, openSession } from "./api";
-import { App } from "./App";
 import { AppShell } from "./app/AppShell";
 import { LiveStore, loadLive } from "./app/live";
 import { initialState, Store } from "./app/store";
 import { CONNECT_RESULT } from "./app/screens/LiveSettings";
-import { Cabinet } from "./cabinet/Cabinet";
-import "./styles.css";
+import "./app/base.css";
 
-type Session = Awaited<ReturnType<typeof openSession>>;
-
-// Есть сервис и вход — кабинет на его данных. Нет — прототип мастера на тестовых данных.
+// `/` — кабинет на данных сервиса, а без входа или бизнеса — запуск (`/?start`), шаги идут через сервис.
+// Подставной прототип (`/?mock`) есть только в сборке для разработки: владелец его не увидит.
 function Root() {
   const params = new URLSearchParams(window.location.search);
-  // Старый кабинет остаётся до конца этапа R7. Подключение кабинета начинают только в новом интерфейсе,
-  // а Яндекс возвращает на `/?connect=…`, поэтому итог показываем там же.
-  if (!params.has("new") && !params.has("connect")) return <Current />;
-  if (params.has("mock")) return <AppShell />;
-  // Шаги 1–4 запуска до входа идут через сервис: разбор сайта, бюджет, писатель объявлений.
+  if (import.meta.env.DEV && params.has("mock")) return <AppShell />;
   if (params.has("start")) return <GuestStart />;
   return <Live />;
 }
@@ -37,7 +30,7 @@ function GuestStart() {
     const params = new URLSearchParams(window.location.search);
     const login = params.get("login");
     const connect = params.get("connect");
-    if (login !== null || connect !== null) window.history.replaceState(null, "", "/?new&start");
+    if (login !== null || connect !== null) window.history.replaceState(null, "", "/?start");
     if (connect !== null) {
       // С подключения кабинета: черновик уже перенесён, мастер продолжает с бизнесом.
       void store.resumeConnect({ session: openSession, open: createApi }, connect === "ok" ? null : CONNECT_RESULT[connect] ?? CONNECT_RESULT.failed!);
@@ -48,43 +41,33 @@ function GuestStart() {
   return <AppShell store={store} />;
 }
 
-// Есть вход и бизнес: настоящие данные. Нет: прототип с видимой полосой ситуаций, спутать нельзя.
+// Есть вход и бизнес: настоящие данные. Нет: запуск с первого шага.
 function Live() {
-  const params = new URLSearchParams(window.location.search);
-  const [store, setStore] = useState<LiveStore | "mock" | "failed" | null>(null);
+  const [store, setStore] = useState<LiveStore | "start" | "failed" | null>(null);
   useEffect(() => {
     // В режиме разработки эффект запускается дважды. Без отмены второй магазин придёт позже
     // и заменит первый, в котором владелец уже успел перейти в другой раздел.
     let cancelled = false;
+    const params = new URLSearchParams(window.location.search);
     openSession().then(async (session) => {
       const business = session?.businesses[0];
-      if (!session || !business) return cancelled || setStore("mock");
+      if (!session || !business) return cancelled || setStore("start");
       const api = createApi(business.id, session.me.csrf_token);
       const live = new LiveStore(api, await loadLive(api, business.name));
       if (cancelled) return;
       const connect = params.get("connect");
       if (connect !== null) {
         live.set({ view: "settings", notice: CONNECT_RESULT[connect] ?? CONNECT_RESULT.failed! });
-        window.history.replaceState(null, "", "/?new");
+        window.history.replaceState(null, "", "/");
       }
       setStore(live);
     }).catch(() => cancelled || setStore("failed"));
     return () => { cancelled = true; };
   }, []);
-  if (store === null) return null;
-  if (store === "failed") return <p role="alert">Сервис не ответил. Обновите страницу через минуту.</p>;
-  return store === "mock" ? <AppShell /> : <AppShell store={store} />;
-}
-
-function Current() {
-  const [session, setSession] = useState<Session | "loading">("loading");
-  useEffect(() => {
-    openSession().then(setSession);
-  }, []);
-  if (session === "loading") return null;
-  const business = session?.businesses[0];
-  if (!session || !business) return <App />;
-  return <Cabinet me={session.me} business={business} />;
+  if (store === null) return <p className="ah-boot" role="status">Загружаем данные…</p>;
+  if (store === "failed") return <p className="ah-boot" role="alert">Сервис не ответил. Обновите страницу через минуту.</p>;
+  if (store === "start") return <GuestStart />;
+  return <AppShell store={store} />;
 }
 
 createRoot(document.getElementById("root") as HTMLElement).render(

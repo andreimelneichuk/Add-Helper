@@ -52,3 +52,23 @@ def test_metrics_count_misses_and_false_blocks() -> None:
     assert metrics(runs, "combined").false_blocks == 2
     recall, false_block = single_call_average(runs)
     assert round(recall) == 67 and round(false_block) == 17
+
+
+def test_sample_prefers_sets_with_violations_and_keeps_sets_whole() -> None:
+    from evals.cases import Case, Label
+    from evals.run import sample_sets
+
+    def case(i: str, profile: str, label: Label) -> Case:
+        return Case(i, profile, "h", "t", label, "writer")
+
+    cases = [
+        case("1", "a", "pass"),
+        case("2", "a", "pass"),
+        case("3", "b", "block"),
+        case("4", "b", "pass"),
+        case("5", "c", "block"),
+    ]
+    picked = sample_sets(cases, 3)
+    # Сначала наборы с нарушениями (b, c), набор берётся целиком, на пределе останавливаемся.
+    assert [c.id for c in picked] == ["3", "4", "5"]
+    assert sample_sets(cases, 0) == cases

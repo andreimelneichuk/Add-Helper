@@ -297,7 +297,6 @@ export function createApi(businessId: string, csrf: string) {
     saveProfile: (profile: Profile) =>
       request<SavedProfile>(`${base}/profile`, { method: "PUT", body: JSON.stringify(profile) }, csrf),
     creatives: () => request<Board>(`${base}/creatives`),
-    creative: (id: number) => request<CreativeReport>(`${base}/creatives/${id}`),
     launch: (id: number) => request<CreativeReport>(`${base}/creatives/${id}/launch`, { method: "POST" }, csrf),
     rework: (account: string, adId: string, wish: string) =>
       request<{ id: number; status: "queued" }>(`${base}/ads/${part(account)}/${part(adId)}/rework`, { method: "POST", body: JSON.stringify({ wish }) }, csrf),
@@ -395,7 +394,7 @@ export async function openSession(): Promise<{ me: Me; businesses: Business[] } 
     const businesses = await request<Business[]>("/api/businesses");
     return { me, businesses };
   } catch {
-    // Нет сервиса или входа: показываем прототип на тестовых данных.
+    // Нет сервиса или входа: открываем запуск с первого шага.
     return null;
   }
 }

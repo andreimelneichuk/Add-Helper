@@ -56,11 +56,13 @@ class FakeModel:
         self.replies = list(replies)
         self.tokens = tokens
         self.calls: list[tuple[str, str]] = []
+        self.limits: list[int] = []
 
     async def complete_json(
         self, system: str, user: str, schema: dict[str, object], max_tokens: int
     ) -> ModelReply:
         self.calls.append((system, user))
+        self.limits.append(max_tokens)
         reply = self.replies.pop(0)
         if isinstance(reply, Exception):
             raise reply
@@ -160,6 +162,22 @@ async def test_judge_sees_whole_set_in_one_call() -> None:
     assert len(judge.calls) == 1
     assert [d.headline for d in result.drafts] == [GOOD["headline"]]
     assert [r.draft.headline for r in result.rejected] == [OTHER["headline"]]
+
+
+async def test_judge_gets_token_budget_per_ad_like_release_gate() -> None:
+    # Ворота мерили судью с judge_max_tokens на каждое объявление набора: так же и в сервисе,
+    # иначе набор из пяти объявлений упирается в предел и снимается целиком.
+    model = FakeModel(ads(GOOD, OTHER))
+    judge = FakeModel(verdict("confirmed", "not_a_claim", "confirmed", "confirmed"))
+    await generate_ads(PROFILE, model, RULES, judge)
+    assert judge.limits == [RULES.judge_max_tokens * 2]
+
+
+async def test_judge_budget_never_exceeds_what_is_left_of_the_set() -> None:
+    model = FakeModel(ads(GOOD, OTHER), tokens=RULES.max_tokens_per_set - 900)
+    judge = FakeModel(verdict("confirmed", "not_a_claim", "confirmed", "confirmed"))
+    await generate_ads(PROFILE, model, RULES, judge)
+    assert judge.limits == [900]
 
 
 async def test_judge_keeps_confirmed_draft() -> None:
