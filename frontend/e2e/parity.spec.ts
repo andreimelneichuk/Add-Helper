@@ -10,7 +10,7 @@ test.describe.configure({ mode: "serial" });
 
 test("правка профиля сохраняется в базе", async ({ page }) => {
   // Цену наращивания цитирует только приостановленное объявление: ждущие решения правка не трогает.
-  await page.goto("/?new");
+  await page.goto("/");
   await settings(page).click();
   const price = page.getByLabel("Цена услуги 3, ₽");
   await expect(price).toHaveValue("2800");
@@ -24,7 +24,7 @@ test("правка профиля сохраняется в базе", async ({ 
 });
 
 test("объявление, ждущее владельца, запускается и уходит в очередь", async ({ page }) => {
-  await page.goto("/?new");
+  await page.goto("/");
   await nav(page, "Реклама").click();
   const decide = page.getByRole("region", { name: "Нужно ваше решение" });
   const card = decide.getByRole("article", { name: "Решение по «Педикюр в студии «Лак»»" });
@@ -39,7 +39,7 @@ test("объявление, ждущее владельца, запускает�
 });
 
 test("отчёт направления и свой период берут цифры у сервиса", async ({ page }) => {
-  await page.goto("/?new");
+  await page.goto("/");
   await nav(page, "Статистика").click();
   await page.getByRole("button", { name: "Отчёт по направлению «Маникюр — поиск»" }).click();
   await expect(page.getByRole("heading", { name: "Маникюр — поиск" })).toBeVisible();
@@ -53,7 +53,7 @@ test("отчёт направления и свой период берут ци
 });
 
 test("подключение кабинета: отказ в Яндексе виден владельцу, ничего не изменилось", async ({ page }) => {
-  await page.goto("/?new");
+  await page.goto("/");
   await settings(page).click();
   const account = page.getByRole("region", { name: "Кабинет Яндекса" });
   // Подставной Яндекс ID стенда: владелец отказывает на его странице, сервис возвращает его домой.
@@ -61,5 +61,5 @@ test("подключение кабинета: отказ в Яндексе ви
   await account.getByRole("button", { name: /^Подключить/ }).click();
   await expect(notice(page)).toContainText("Вы отменили подключение в Яндексе");
   await expect(page.getByRole("heading", { name: "Кабинет Яндекса" })).toBeVisible();
-  await expect(page).toHaveURL(/\/\?new$/);
+  await expect(page).toHaveURL(/:\d+\/$/);
 });

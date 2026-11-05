@@ -2,7 +2,7 @@
 // Цифры берём из ответа сервиса как есть; считаем только цену обращения для показа.
 import { useEffect, useState } from "react";
 import type { Api, CampaignDetail, Range } from "../../api";
-import { CAMPAIGN_STATE } from "../../cabinet/words";
+import { CAMPAIGN_STATE } from "../words";
 import { leadsWord, rub } from "../data";
 import type { PeriodStats } from "../data";
 import { dayAt, dayNumber, periodStats, rubles } from "../live";

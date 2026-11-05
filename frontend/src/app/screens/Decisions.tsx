@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { Api, Board } from "../../api";
-import { CREATIVE_NEXT, STATE_REASON, WRITE_REASON } from "../../cabinet/words";
+import { CREATIVE_NEXT, STATE_REASON, WRITE_REASON } from "../words";
 import type { LiveStore } from "../live";
 
 // Пока пишутся тексты, перечитываем: набор готов через минуту-другую.

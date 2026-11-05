@@ -504,7 +504,7 @@ export class Store {
     const id = loadWizard();
     const session = await deps.session().catch(() => null);
     const business = session?.businesses.find((b) => b.id === id);
-    if (!session || !business) return this.navigate("/?new");
+    if (!session || !business) return this.navigate("/");
     this.wizard = deps.open(business.id, session.me.csrf_token);
     this.set({ account: { email: session.me.email }, step: 4, block: problem ?? "" });
     await this.loadChosen();
@@ -565,10 +565,10 @@ export class Store {
   private nextReal(s: State) {
     if (s.step === 4 && !s.account) return this.set({ block: "Войдите через Яндекс: так профиль и бюджет сохранятся." });
     // Бизнес уже был: мастер его не трогает, дальше кабинет.
-    if (s.step >= 4 && !this.wizard) { clearDraft(); return this.navigate("/?new"); }
+    if (s.step >= 4 && !this.wizard) { clearDraft(); return this.navigate("/"); }
     if (s.step === 5) { void this.saveMarking(); return; }
     if (s.step === 6) return this.advance("Проверьте сводку: в ней видно, что готово и чего не хватает.");
-    if (s.step === STEPS.length - 1) { clearDraft(); clearWizard(); return this.navigate("/?new"); }
+    if (s.step === STEPS.length - 1) { clearDraft(); clearWizard(); return this.navigate("/"); }
     return this.advance();
   }
   /** Следующий шаг запуска; держит на шаге, пока не выполнены условия. */
