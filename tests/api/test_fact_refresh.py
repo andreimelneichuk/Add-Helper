@@ -65,7 +65,7 @@ async def test_new_price_orders_replacement_for_live_ad(
 
     # Первый набор — обычное пополнение пустого направления, второй — замена.
     model = FakeModel(
-        ads({"headline": "Маникюр на Ленина, 5", "text": "Стерильные инструменты."}),
+        ads({"headline": "Маникюр: ул. Ленина, 5", "text": "Стерильные инструменты."}),
         ads({"headline": "Маникюр 1700 ₽", "text": "Стерильные инструменты."}),
     )
     await run_queued(

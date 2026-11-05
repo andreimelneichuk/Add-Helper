@@ -59,8 +59,8 @@ cp .env.example .env
 | `DIRECT_API_URL`, `DIRECT_LIVE_URL` | Адреса Директ API v5/v501 и Live v4. Для песочницы `https://api-sandbox.direct.yandex.com` и `https://api-sandbox.direct.yandex.ru/live/v4/json/` |
 | `YANDEX_CLIENT_ID`, `YANDEX_CLIENT_SECRET` | Приложение в Яндекс ID с адресами возврата `PUBLIC_BASE_URL/api/auth/yandex/callback` и `PUBLIC_BASE_URL/api/accounts/yandex/callback`. Пусто — вход и подключение кабинета отвечают «пока не настроено» |
 | `YANDEX_OAUTH_URL`, `YANDEX_LOGIN_URL` | Адреса Яндекс ID, по умолчанию `https://oauth.yandex.ru` и `https://login.yandex.ru`. Менять только для стенда |
-| `TEXT_MODEL_BASE_URL`, `TEXT_MODEL_API_KEY`, `TEXT_MODEL_PROJECT`, `TEXT_MODEL_NAME` | Текстовая модель через любой OpenAI-совместимый API. По умолчанию адрес Yandex AI Studio; для него `TEXT_MODEL_PROJECT` — каталог, модель `gpt://<каталог>/yandexgpt/latest`. Без ключа или модели объявления собираются из шаблонов |
-| `JUDGE_MODEL_NAME` | Модель судьи смысла объявлений на том же API. Пусто — судья выключен |
+| `TEXT_MODEL_BASE_URL`, `TEXT_MODEL_API_KEY`, `TEXT_MODEL_PROJECT`, `TEXT_MODEL_NAME` | Текстовая модель через любой OpenAI-совместимый API. По умолчанию OpenRouter и писатель `google/gemma-4-31b-it`, прошедший ворота выпуска ([docs/12 §4](12-agents.md#4-агенты)); нужен только ключ. Для Yandex AI Studio `TEXT_MODEL_PROJECT` — каталог, модель `gpt://<каталог>/yandexgpt/latest`, но эта пара ворот не проходила. Без ключа объявления собираются из шаблонов |
+| `JUDGE_MODEL_NAME` | Модель судьи смысла объявлений на том же API, по умолчанию `deepseek/deepseek-v4.1-flash`. Пусто — судья выключен |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_STARTTLS`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM` | Письма о тревогах. Порт 465 — сразу TLS, 587 — с `SMTP_STARTTLS=true`. Пусто — письма ждут в очереди |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_NAME` | Бот от @BotFather, имя без `@`. Пусто — Telegram не подключить |
 | `POSTGRES_PORT`, `APP_PORT` | Порты базы и приложения на `127.0.0.1` сервера; наружу не публикуются |
