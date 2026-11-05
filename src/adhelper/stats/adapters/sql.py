@@ -35,6 +35,7 @@ from adhelper.stats.domain.model import (
     Scope,
     TestLine,
     TestOffer,
+    TestResult,
     Totals,
 )
 
@@ -154,8 +155,12 @@ EXPERIMENTS = table(
     column("business_id", Uuid),
     column("account", Text),
     column("control_ref", Text),
+    column("variant_ref", Text),
     column("hypothesis", Text),
     column("status", Text),
+    column("winner", Text),
+    column("explanation", Text),
+    column("finished_at", DateTime(timezone=True)),
 )
 OPEN_TESTS = ("review", "running", "paused")
 # Закрытый период показываем ещё сутки: владелец должен увидеть, чем он кончился.
@@ -593,3 +598,29 @@ class SqlDashboard:
         async with self._sessions() as session:
             rows = (await session.execute(statement)).all()
         return [TestLine(row[0], row[1], row[2], row[3]) for row in rows]
+
+    async def test_results(self, since: datetime) -> list[TestResult]:
+        """Тесты с итогом с `since`: свежие сверху."""
+        statement = (
+            select(
+                EXPERIMENTS.c.id,
+                self._ad_title(EXPERIMENTS.c.account, EXPERIMENTS.c.control_ref),
+                self._ad_title(EXPERIMENTS.c.account, EXPERIMENTS.c.variant_ref),
+                EXPERIMENTS.c.hypothesis,
+                EXPERIMENTS.c.winner,
+                EXPERIMENTS.c.explanation,
+                EXPERIMENTS.c.finished_at,
+            )
+            .where(
+                EXPERIMENTS.c.business_id == self._business_id,
+                EXPERIMENTS.c.status == "applied",
+                EXPERIMENTS.c.winner.is_not(None),
+                EXPERIMENTS.c.finished_at >= since,
+            )
+            .order_by(EXPERIMENTS.c.finished_at.desc())
+        )
+        async with self._sessions() as session:
+            rows = (await session.execute(statement)).all()
+        return [
+            TestResult(row[0], row[1], row[2], row[3], row[4], row[5] or "", row[6]) for row in rows
+        ]

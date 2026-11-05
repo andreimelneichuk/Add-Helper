@@ -139,6 +139,7 @@ class ExperimentRecord:
     explanation: str | None
     rules_version: str
     started_at: datetime | None
+    finished_at: datetime | None = None
 
 
 class ExperimentStore(Protocol):
@@ -160,18 +161,22 @@ class ExperimentStore(Protocol):
         started_at: datetime | None = None,
         winner: str | None = None,
         explanation: str | None = None,
+        finished_at: datetime | None = None,
+        rules_version: str | None = None,
     ) -> None: ...
     async def begin_switch(self, experiment_id: int, target: str) -> None: ...
     async def finish_switch(self, experiment_id: int, target: str) -> None: ...
 
 
-def balanced_schedule(days: int) -> str:
-    return "".join(active_variant(day) for day in range(days))
+# Какие варианты должны показываться: до старта только контроль, во время теста оба
+# в одной группе (Яндекс сам делит показы), после итога — победитель.
+CONTROL_ONLY = "A"
+BOTH = "AB"
 
 
-def active_variant(day: int) -> str:
-    """Последовательность Морса: A и B поровну и без длинных серий, дни недели перемешаны."""
-    return "B" if day.bit_count() % 2 else "A"
+def wanted(target: str) -> dict[str, bool]:
+    """Стороны теста и их нужное состояние; включаемые первыми: группа не остаётся пустой."""
+    return {side: side in target for side in sorted("AB", key=lambda side: side not in target)}
 
 
 def _log_beta(a: float, b: float) -> float:

@@ -1,5 +1,6 @@
-"""Тест по итогам анализа доходит до показов: вариант через журнал, проверка Яндекса,
-чередование и итог на подставной площадке. Сценарий 30 в docs/07-testing-acceptance.md.
+"""Тест по итогам анализа доходит до показов: вариант через журнал в группе контроля,
+проверка Яндекса, одновременный показ, отчёт по объявлениям и итог на подставной площадке.
+Сценарий 30 в docs/07-testing-acceptance.md.
 """
 
 import uuid
@@ -17,20 +18,25 @@ from adhelper.creatives.adapters.sql import SqlProfiles
 from adhelper.creatives.application.service import CURRENT_RULES
 from adhelper.creatives.domain.model import BusinessProfile, Service
 from adhelper.experiments.adapters.ledgered import LedgeredSwitch
-from adhelper.experiments.adapters.pipeline_sql import SqlObservations, SqlVariantContext
+from adhelper.experiments.adapters.pipeline_sql import (
+    SqlAdStats,
+    SqlObservations,
+    SqlVariantContext,
+)
 from adhelper.experiments.adapters.rules_file import load_rules
 from adhelper.experiments.adapters.sql import SqlExperimentStore
-from adhelper.experiments.application.pipeline import run_experiments
+from adhelper.experiments.application.pipeline import run_experiments, sync_test_stats
 from adhelper.experiments.application.service import ExperimentService
 from adhelper.ledger.adapters.sql import PostgresAccountLock, SqlChangeRepository
 from adhelper.ledger.application.service import Ledger
 from adhelper.ledger.domain.model import ChangeKind, ChangeSource
 from adhelper.platforms.adapters.gateway import RoutingGateway
+from adhelper.platforms.domain.ports import AdDay
 from tests.budget.fake_platform import FakePlatform, Fault
 from tests.seed import seed_account
 
 START = datetime(2026, 11, 2, 9, 0, tzinfo=UTC)
-RULES = load_rules("experiments-1")
+RULES = load_rules("experiments-2")
 CREATIVE_RULES = load_creative_rules(CURRENT_RULES)
 PROFILE = BusinessProfile(
     "Лак", (Service("Маникюр", 1500),), "ул. Ленина, 5", ("Стерильные инструменты",), "маникюр"
@@ -45,6 +51,7 @@ class Stand:
         self.now = START
         self.platform = FakePlatform([CampaignBudget("c1", 5_000_000_000, 0, True, None)], START)
         self.platform.ads = {"ad:500": True}
+        self.platform.groups["500"] = "g-500"
         self.ledger = Ledger(
             SqlChangeRepository(sessions, business),
             RoutingGateway(
@@ -68,6 +75,11 @@ class Stand:
             SqlVariantContext(self.sessions, self.business),
             SqlObservations(self.sessions, self.business),
             CREATIVE_RULES,
+        )
+
+    async def sync(self) -> int:
+        return await sync_test_stats(
+            "lak", self.store, self.platform, SqlAdStats(self.sessions, self.business), self.now
         )
 
     async def stats(self, ad_id: str, day: date, clicks: int, leads: int) -> None:
@@ -125,6 +137,8 @@ async def test_prepared_test_gets_price_variant_through_ledger_held_until_check(
     (published,) = stand.platform.published.values()
     assert "1500 ₽" in f"{published.headline} {published.text}"
     assert published.href == "https://lak.example/"
+    # Вариант встаёт в группу контроля: Яндекс делит показы внутри одной группы.
+    assert published.group_id == stand.platform.groups["500"] == "g-500"
     # Вариант ждёт проверки выключенным: до старта показывается только контроль.
     assert stand.platform.ads[f"ad:{published.ad_id}"] is False
     assert stand.platform.ads["ad:500"] is True
@@ -159,7 +173,7 @@ async def test_rejected_variant_cancels_test_and_control_keeps_running(stand: St
     assert stand.platform.ads["ad:500"] is True
 
 
-async def test_accepted_variant_rotates_by_schedule_and_winner_stays(stand: Stand) -> None:
+async def test_accepted_variant_runs_beside_control_and_report_decides(stand: Stand) -> None:
     await stand.run()
     (published,) = stand.platform.published.values()
     variant = published.ad_id
@@ -167,20 +181,21 @@ async def test_accepted_variant_rotates_by_schedule_and_winner_stays(stand: Stan
     await stand.run()
     (record,) = await stand.store.open_for("lak")
     assert record.status.value == "running"
+    assert stand.platform.ads == {"ad:500": True, f"ad:{variant}": True}
 
-    seen = []
     for day in range(1, 4):
         stand.now = START + timedelta(days=day)
         await stand.run()
-        seen.append((stand.platform.ads["ad:500"], stand.platform.ads[f"ad:{variant}"]))
-    # Расписание Морса: A, B, B, A — группа никогда не остаётся без показов.
-    assert seen == [(False, True), (False, True), (True, False)]
+        # Оба варианта показываются каждый день, паузы по дням не ставятся.
+        assert stand.platform.ads == {"ad:500": True, f"ad:{variant}": True}
 
+    # День старта неполный у варианта: в сравнение не идёт, иначе контроль получил бы фору.
+    await stand.stats("500", START.date(), 400, 40)
     # Вариант с ценой собирает обращения заметно лучше: итог после минимального срока.
-    for offset in range(8):
+    for offset in range(1, 8):
         stat_day = (START + timedelta(days=offset)).date()
-        await stand.stats("500", stat_day, 40, 0)
-        await stand.stats(variant, stat_day, 40, 3)
+        await stand.stats("500", stat_day, 10, 0)
+        await stand.stats(variant, stat_day, 10, 1)
     stand.now = START + timedelta(days=8)
     await stand.run()
     finished = await stand.store.get(record.id)
@@ -189,6 +204,40 @@ async def test_accepted_variant_rotates_by_schedule_and_winner_stays(stand: Stan
     assert stand.platform.ads[f"ad:{variant}"] is True
     assert stand.platform.ads["ad:500"] is False
     assert all(c.source is ChangeSource.EXPERIMENT for c in await stand.changes())
+
+
+async def test_daily_report_by_ad_fills_stats_of_running_tests(stand: Stand) -> None:
+    await stand.run()
+    (published,) = stand.platform.published.values()
+    stand.platform.accept(published.ad_id)
+    await stand.run()
+    first = (START + timedelta(days=1)).date()
+    stand.platform.ad_report = [
+        AdDay("500", first, 300, 12, 24_000_000, 1),
+        AdDay(published.ad_id, first, 280, 11, 22_000_000, 2),
+        AdDay("999", first, 1, 1, 1, 0),
+    ]
+    stand.now = START + timedelta(days=2)
+
+    assert await stand.sync() == 2
+    assert await stand.sync() == 2  # Повтор заменяет строки, а не складывает.
+
+    async with stand.sessions() as session:
+        rows = (
+            await session.execute(
+                text(
+                    "SELECT ad_id, day, impressions, clicks, cost_micros, conversions"
+                    " FROM ad_stats WHERE business_id = :b ORDER BY ad_id"
+                ),
+                {"b": stand.business},
+            )
+        ).all()
+    assert [tuple(row) for row in rows] == [
+        ("500", first, 300, 12, 24_000_000, 1),
+        (published.ad_id, first, 280, 11, 22_000_000, 2),
+    ]
+    # Отчёт спрошен по кампании теста с дня старта по вчера, по московским суткам.
+    assert stand.platform.ad_report_calls == [("lak", ("c1",), START.date(), first)] * 2
 
 
 async def test_without_fitting_variant_test_is_cancelled_honestly(

@@ -35,6 +35,7 @@ def test_money_tasks_are_scheduled() -> None:
         "site.read",
         "site.tag_check",
         "experiments.run",
+        "experiments.stats",
         "ads.summary",
     }
     assert expected <= set(PERIODIC_TASKS)

@@ -9,6 +9,7 @@ from adhelper.campaigns.domain.launch import NewCampaign
 from adhelper.campaigns.domain.ports import CreatedCampaign, Targeting
 from adhelper.campaigns.domain.targeting import Schedule
 from adhelper.platforms.domain.ports import (
+    AdDay,
     Advertiser,
     ModerationState,
     ModerationVerdict,
@@ -46,6 +47,11 @@ class FakePlatform:
         self.stats_frozen_at: datetime | None = None
         self.faults: list[Fault] = []
         self.ads: dict[str, bool] = {}
+        # Объявление → его группа на площадке.
+        self.groups: dict[str, str] = {}
+        # Отчёт по объявлениям и запросы к нему: (кабинет, кампании, с, по).
+        self.ad_report: list[AdDay] = []
+        self.ad_report_calls: list[tuple[str, tuple[str, ...], date, date]] = []
         # Только изменённые; остальные кампании показываются по DEFAULT_TARGETING.
         self.targeting: dict[str, Targeting] = {}
         self.schedule_calls = 0
@@ -145,17 +151,32 @@ class FakePlatform:
         return self.published.get(marker)
 
     async def create_ad(
-        self, account: str, campaign_id: str, marker: str, headline: str, text: str, href: str
+        self,
+        account: str,
+        campaign_id: str,
+        marker: str,
+        headline: str,
+        text: str,
+        href: str,
+        group_id: str | None = None,
     ) -> None:
         self._check_fault("create_ad", after_apply=False)
         if campaign_id not in self.campaigns:
             raise ValueError(f"нет кампании {campaign_id}")
         self.create_ad_calls += 1
         ad_id = str(7000 + len(self.published) + 1)
-        self.published[marker] = PublishedAd(ad_id, campaign_id, headline, text, href)
+        group = group_id or f"g-{campaign_id}"
+        self.published[marker] = PublishedAd(
+            ad_id, campaign_id, headline, text, href, group_id=group
+        )
+        self.groups[ad_id] = group
         # Новое объявление включено, но показывается только после одобрения.
         self.ads[f"ad:{ad_id}"] = True
         self._check_fault("create_ad", after_apply=True)
+
+    async def ad_group(self, account: str, ad_id: str) -> str | None:
+        self._check_fault("ad_group", after_apply=False)
+        return self.groups.get(ad_id)
 
     async def moderation(self, account: str, ad_ids: Sequence[str]) -> list[ModerationVerdict]:
         self._check_fault("moderation", after_apply=False)
@@ -228,6 +249,13 @@ class FakePlatform:
         self, account: str, change: LimitChange, decision: LimitDecision
     ) -> None:
         self.rejections.append(decision)
+
+    async def ad_days(
+        self, account: str, campaign_ids: Sequence[str], since: date, until: date
+    ) -> list[AdDay]:
+        self._check_fault("ad_days", after_apply=False)
+        self.ad_report_calls.append((account, tuple(campaign_ids), since, until))
+        return [row for row in self.ad_report if since <= row.day <= until]
 
     async def ad_visits(self, counter: str, since: date, until: date) -> int | None:
         self.visit_calls.append((counter, since, until))

@@ -43,6 +43,8 @@ class ExperimentRow(Base):
     explanation: Mapped[str | None] = mapped_column(Text)
     rules_version: Mapped[str] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Когда тест получил итог: по нему «Сегодня» показывает карточку итога неделю.
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[Any] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -63,6 +65,7 @@ def _record(row: ExperimentRow) -> ExperimentRecord:
         row.explanation,
         row.rules_version,
         row.started_at,
+        row.finished_at,
     )
 
 
@@ -150,6 +153,8 @@ class SqlExperimentStore:
         started_at: datetime | None = None,
         winner: str | None = None,
         explanation: str | None = None,
+        finished_at: datetime | None = None,
+        rules_version: str | None = None,
     ) -> None:
         values: dict[str, Any] = {"status": status.value, "reason": reason}
         if started_at is not None:
@@ -157,6 +162,11 @@ class SqlExperimentStore:
         if winner is not None:
             values["winner"] = winner
             values["explanation"] = explanation
+        if finished_at is not None:
+            values["finished_at"] = finished_at
+        if rules_version is not None:
+            # Итог решили эти правила: тест мог начаться на прежней версии.
+            values["rules_version"] = rules_version
         await self._update(experiment_id, **values)
 
     async def set_variant(self, experiment_id: int, variant_ref: str) -> None:
