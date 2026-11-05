@@ -1,7 +1,7 @@
 """Расчёт ворот выпуска без новой разметки (docs/12-agents.md §2). Сеть не нужна."""
 
 import pytest
-from evals.gate import GateInput, launched_error, prevalence, verdict
+from evals.gate import GateInput, _by_text, _key, _passed, launched_error, prevalence, verdict
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -54,3 +54,17 @@ def test_many_false_blocks_do_not_hide_violations() -> None:
     # Если на эталоне судья часто снимает зря, точная поправка дала бы v = 0 и открыла ворота
     # при любом пропуске. Граница v ≤ b / (1 − m) от f не зависит.
     assert not verdict(GateInput(30, 329, 14, 114, 58, 346)).passed
+
+
+def test_old_cache_is_keyed_by_ad_text() -> None:
+    # Прежний кеш хранил решения списком по проверенным объявлениям; после пересчёта кода
+    # список сдвинулся бы, поэтому решения переводятся в словарь по тексту.
+    a = {"headline": "А", "text": "1"}
+    b = {"headline": "Б", "text": "2"}
+    old = {"p": [{"blocked": False, "reason": ""}, {"blocked": True, "reason": "выдумка"}]}
+    keyed = _by_text(old, {"p": [a, b]})
+    assert keyed["p"][_key(b)]["blocked"]
+    # Код теперь снимает «А»: решение по «Б» остаётся при своём объявлении.
+    assert _passed({"p": [b]}, keyed) == {"p": []}
+    # Набор без решения хотя бы по одному объявлению в запуск не идёт.
+    assert _passed({"p": [a, {"headline": "В", "text": "3"}]}, keyed) == {}
