@@ -248,6 +248,8 @@ export type ChatCommand = {
   reply: string;
   source: "rules" | "model";
   rules: string;
+  /** Остальные просьбы того же сообщения, по очереди после этой. */
+  next?: ChatCommand[];
 };
 
 export type Channels = {

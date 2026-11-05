@@ -2,7 +2,15 @@ import pytest
 
 from adhelper.commands.adapters.rules_file import load_rules
 from adhelper.commands.domain.model import Kind, Known, KnownAd, Source
-from adhelper.commands.domain.parse import amounts, by_rules, days_in, from_model
+from adhelper.commands.domain.parse import (
+    QUESTION_AD,
+    QUESTION_ONE_EACH,
+    amounts,
+    by_rules,
+    days_in,
+    from_model,
+    parse_all,
+)
 
 ADS = (
     KnownAd("acc/1", "Маникюр у метро Профсоюзная"),
@@ -11,6 +19,7 @@ ADS = (
 )
 KNOWN = Known(ADS, ("Маникюр", "Педикюр", "Наращивание ресниц"))
 RULES = load_rules("commands-1")
+RULES2 = load_rules("commands-2")
 
 
 def parse(text: str):  # type: ignore[no-untyped-def]
@@ -162,3 +171,60 @@ def test_model_ad_by_number() -> None:
 )
 def test_pause_needs_plain_words(text: str, kind: Kind) -> None:
     assert parse(text).command.kind is kind
+
+
+def test_ad_named_after_advertising_word_is_not_a_full_pause() -> None:
+    # Ошибка: «отключи рекламу с педикюром» правила понимали как паузу всей рекламы.
+    off = parse("отключи рекламу с педикюром")
+    assert off.command.kind is Kind.AD_OFF
+    assert off.command.ad == ADS[1]
+    assert parse("выключи рекламу про маникюр").command.ad == ADS[0]
+    assert parse("включи рекламу на ресницы").command.kind is Kind.AD_ON
+    # Слово похоже на объявления, но не одно из них: спрашиваем, а не останавливаем всё.
+    assert parse("отключи рекламу у метро").question == QUESTION_AD
+    assert parse("отключи рекламу").command.kind is Kind.PAUSE
+    assert parse("включи обратно рекламу ресниц").command.ad == ADS[2]
+    assert parse("включи рекламу обратно").command.kind is Kind.RESUME
+    assert parse("останови рекламу на неделю").command.kind is Kind.PAUSE
+
+
+def kinds(text: str) -> list[Kind]:
+    return [p.command.kind for p in parse_all(text, KNOWN, RULES2)]
+
+
+def test_two_requests_in_one_message() -> None:
+    parsed = parse_all("убавь бюджет до 10к и отключи рекламу с педикюром", KNOWN, RULES2)
+    assert [p.command.kind for p in parsed] == [Kind.SET_BUDGET, Kind.AD_OFF]
+    assert parsed[0].command.rubles == 10000
+    assert parsed[1].command.ad == ADS[1]
+    assert kinds("поставь бюджет 20 000, потом включи рекламу") == [Kind.SET_BUDGET, Kind.RESUME]
+    assert kinds("маникюр теперь 1600; педикюр теперь 2100") == [Kind.SET_PRICE, Kind.SET_PRICE]
+    # Переделка забирает всё, что после неё, как пожелание; просьба до неё не теряется.
+    both = parse_all(
+        "подними бюджет до 30000, а еще переделай объявление про ресницы", KNOWN, RULES2
+    )
+    assert [p.command.kind for p in both] == [Kind.SET_BUDGET, Kind.REWORK_AD]
+    assert both[1].command.ad == ADS[2]
+
+
+def test_one_request_with_and_stays_whole() -> None:
+    assert parse_all("не показывай в субботу и воскресенье", KNOWN, RULES2)[0].command.days == (
+        6,
+        7,
+    )
+    assert kinds("не показывай в субботу и воскресенье") == [Kind.SKIP_DAYS]
+    rework = parse_all("переделай объявление про педикюр и сделай короче", KNOWN, RULES2)
+    assert [p.command.kind for p in rework] == [Kind.REWORK_AD]
+    assert rework[0].command.wish == "переделай объявление про педикюр и сделай короче"
+    assert kinds("сделай как у конкурентов и побыстрее") == [Kind.UNKNOWN]
+    assert parse_all("бюджет 1,5 тыс", KNOWN, RULES2)[0].command.rubles == 1500
+
+
+def test_unclear_part_stops_the_whole_message() -> None:
+    # Половину просьбы не выполняем: сначала уточнение.
+    parsed = parse_all("бюджет 10к и отключи рекламу у метро", KNOWN, RULES2)
+    assert len(parsed) == 1 and parsed[0].question == QUESTION_AD
+    same = parse_all("бюджет 10к и бюджет 20к", KNOWN, RULES2)
+    assert len(same) == 1 and same[0].question == QUESTION_ONE_EACH
+    many = parse_all("пауза, включи, бюджет 10к, как дела", KNOWN, RULES2)
+    assert len(many) == 1 and many[0].question == QUESTION_ONE_EACH

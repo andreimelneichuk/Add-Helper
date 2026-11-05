@@ -68,7 +68,7 @@ async def test_request_is_queued_once_and_read_by_worker(
                 text("SELECT model, rules_version, tokens_used, dropped FROM site_reads")
             )
         ).one()
-    assert tuple(row) == ("qwen-test", "site-2", 321, {"quote_not_on_page": 1})
+    assert tuple(row) == ("qwen-test", "site-3", 321, {"quote_not_on_page": 1})
     # Готовый разбор второй раз не берётся.
     assert await _run(sessions, Model(GOOD)) == 0
 

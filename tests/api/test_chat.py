@@ -36,7 +36,7 @@ async def test_rules_understand_without_changing_anything(
     days = await _say(client, csrf, business, "Не показывай рекламу по воскресеньям")
     assert days["kind"] == "skip_days" and days["days"] == [7]
     assert days["confirm"].endswith("Применить?")
-    assert days["source"] == "rules" and days["rules"] == "commands-1"
+    assert days["source"] == "rules" and days["rules"] == "commands-2" and days["next"] == []
 
     price = await _say(client, csrf, business, "педикюр теперь 2200")
     assert (price["kind"], price["service"], price["rubles"]) == ("set_price", "Педикюр", 2200)
