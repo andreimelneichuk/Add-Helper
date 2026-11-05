@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -21,7 +22,17 @@ from adhelper.worker.demo import seed_demo
 from tests.seed import seed_account
 
 Sessions = async_sessionmaker[AsyncSession]
-NOW = datetime(2026, 11, 2, 9, 0, tzinfo=UTC)
+# Тревоги создаются по часам базы: зашитая дата перестаёт работать, как только наступит.
+# Считаем перед каждым тестом: при импорте она устаревала, если прогон шёл дольше 5 минут.
+NOW = datetime.now(UTC) + timedelta(minutes=5)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_now() -> None:
+    global NOW
+    NOW = datetime.now(UTC) + timedelta(minutes=5)
+
+
 URL = "https://adhelper.example"
 M = 1_000_000
 
@@ -78,8 +89,8 @@ async def statuses(sessions: Sessions) -> list[tuple[str, str, int]]:
         return [(r[0], r[1], r[2]) for r in rows]
 
 
-async def send(sessions: Sessions, senders: dict[str, Any], now: datetime = NOW) -> int:
-    return await deliver_pending(SqlOutbox(sessions), senders, FixedMoney(), now, URL)
+async def send(sessions: Sessions, senders: dict[str, Any], now: datetime | None = None) -> int:
+    return await deliver_pending(SqlOutbox(sessions), senders, FixedMoney(), now or NOW, URL)
 
 
 async def test_alert_creates_one_email_delivery_and_sends_numbers(sessions: Sessions) -> None:
@@ -210,3 +221,20 @@ async def test_dashboard_money_matches_cabinet(sessions: Sessions, tmp_path: Pat
     assert facts is not None
     assert facts.balance_gap == 1_240 * M
     assert facts.tolerance == 800 * M
+
+
+async def test_launch_summary_is_sent_once_and_stays_out_of_problems(sessions: Sessions) -> None:
+    business, _ = await owner(sessions)
+    alerts = SqlAlerts(sessions, business)
+    details = {"day": "2026-11-04", "headlines": ["Маникюр у дома"], "count": 1}
+    assert await alerts.notice("ads_launched", "ads_launched:2026-11-04", details) is True
+    # Повтор задачи за тот же день второго письма не даёт.
+    assert await alerts.notice("ads_launched", "ads_launched:2026-11-04", details) is False
+    # Сводка — не проблема: в «Сегодня» её нет.
+    assert await alerts.open_kinds() == []
+    email = Recorder()
+    assert await send(sessions, {"email": email}) == 1
+    [(_, message)] = email.sent
+    assert "«Маникюр у дома»" in message.text
+    assert "04.11.2026" in message.text
+    assert "одним нажатием" in message.text

@@ -17,19 +17,32 @@ from adhelper.api.accounts import CheckedSession, CurrentSession, Service
 from adhelper.budget.adapters.rules_file import load_rules as load_budget_rules
 from adhelper.budget.adapters.sql import SqlPeriodStore
 from adhelper.budget.application.watch_cycle import confirm_balance
-from adhelper.creatives.adapters.sql import SqlCreatives, SqlProfiles
+from adhelper.creatives.adapters.rules_file import load_rules as load_creative_rules
+from adhelper.creatives.adapters.rules_file import load_slot_rules
+from adhelper.creatives.adapters.sql import (
+    SqlAdSlots,
+    SqlCreatives,
+    SqlProfiles,
+    SqlProfileSource,
+)
 from adhelper.creatives.application.service import (
+    CURRENT_RULES,
+    CURRENT_SLOT_RULES,
     WrongState,
     board,
     confirm,
     creative_report,
     live_ad_context,
     profile_from,
+    refresh_after_profile,
     withdraw,
 )
 from adhelper.notifications.adapters.sql import SqlAlerts
+from adhelper.stats.adapters.rules_file import load_today_rules
 from adhelper.stats.adapters.sql import SqlDashboard
+from adhelper.stats.application.clients import NoLeads, TooManyClients, record_clients
 from adhelper.stats.application.overview import (
+    PLATFORM_ZONE,
     BadPeriod,
     Window,
     ad_detail,
@@ -40,6 +53,7 @@ from adhelper.stats.application.overview import (
     platform_today,
     window,
 )
+from adhelper.stats.application.today import today
 
 NOT_FOUND = "Бизнес не найден"
 # Объявление другого бизнеса тоже даёт 409, а не 404: состояние чужих строк не раскрываем.
@@ -60,8 +74,21 @@ class ProfileBody(BaseModel):
     website: str = Field(default="", max_length=300)
 
 
+class ClientsBody(BaseModel):
+    since: date
+    until: date
+    clients: int = Field(ge=0, le=1_000_000)
+
+
+# Владелец отвечает по журналу записи за неделю-другую, не за год.
+MAX_CLIENT_DAYS = 31
+
+
 class ConfirmBody(BaseModel):
     account: str = Field(min_length=1, max_length=200)
+
+
+CURRENT_TODAY_RULES = "today-2"
 
 
 def _sessions(request: Request) -> async_sessionmaker[AsyncSession]:
@@ -125,7 +152,45 @@ def cabinet_router() -> APIRouter:
         )
         result = asdict(view)
         result["campaigns"] = _with_ratios(view.campaigns)
+        answer = await SqlDashboard(_sessions(request), business_id).latest_clients()
+        result["clients"] = asdict(answer) if answer else None
         return result
+
+    @router.get("/today")
+    async def get_today(request: Request, business_id: Owned) -> dict[str, Any]:
+        """Лента «Сегодня»: набор и порядок по правилам, числа от кода."""
+        rules = load_today_rules(CURRENT_TODAY_RULES)
+        found = await today(
+            SqlDashboard(_sessions(request), business_id),
+            _now(request),
+            lambda version: load_budget_rules(version).balance_tolerance_bp,
+            rules,
+        )
+        return {"rules": rules.version, "cards": [asdict(card) for card in found]}
+
+    @router.post("/clients")
+    async def post_clients(
+        request: Request, body: ClientsBody, business_id: OwnedChecked
+    ) -> dict[str, Any]:
+        """Ответ владельца — данные, а не решение о деньгах: площадку он не меняет."""
+        today = _now(request).astimezone(PLATFORM_ZONE).date()
+        days = (body.until - body.since).days + 1
+        if days < 1 or days > MAX_CLIENT_DAYS or body.until > today:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Неверные даты")
+        dashboard = SqlDashboard(_sessions(request), business_id)
+        try:
+            answer = await record_clients(dashboard, body.since, body.until, body.clients)
+        except NoLeads:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "За эти дни обращений не было, клиентов считать не из чего",
+            ) from None
+        except TooManyClients as error:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"Обращений было {error.leads}, поэтому клиентов не больше {error.leads}",
+            ) from None
+        return asdict(answer)
 
     @router.get("/ads")
     async def get_ads(request: Request, business_id: Owned, period: Period) -> list[dict[str, Any]]:
@@ -202,9 +267,33 @@ def cabinet_router() -> APIRouter:
             body.features,
             body.niche,
         )
-        profiles = SqlProfiles(_sessions(request), business_id)
-        await profiles.save(profile, body.website.strip())
-        return await get_profile(request, business_id)
+        sessions = _sessions(request)
+        await SqlProfiles(sessions, business_id).save(profile, body.website.strip())
+        # Правка факта сразу доходит до объявлений: устаревшие ожидающие снимаются,
+        # работающим со старым фактом заказывается замена.
+        outdated = await refresh_after_profile(
+            business_id,
+            SqlAdSlots(sessions, business_id),
+            SqlProfileSource(sessions),
+            SqlAlerts(sessions, business_id),
+            load_slot_rules(CURRENT_SLOT_RULES),
+            load_creative_rules(CURRENT_RULES),
+            _now(request),
+        )
+        return {
+            **(await get_profile(request, business_id)),
+            "outdated": [
+                {
+                    "account": item.ad.account,
+                    "ad_id": item.ad.ad_id,
+                    "headline": item.ad.draft.headline,
+                    "text": item.ad.draft.text,
+                    "numbers": list(item.numbers),
+                    "replacing": item.replacing,
+                }
+                for item in outdated
+            ],
+        }
 
     @router.get("/creatives")
     async def get_creatives(request: Request, business_id: Owned) -> dict[str, Any]:

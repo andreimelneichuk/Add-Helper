@@ -81,6 +81,46 @@ class AlertLine:
 
 
 @dataclass(frozen=True)
+class ClientAnswer:
+    """Сколько обращений за окно дат стали клиентами, со слов владельца."""
+
+    since: date
+    until: date
+    leads: int
+    clients: int
+
+
+class ClientAnswers(Protocol):
+    async def leads(self, since: date, until: date) -> int: ...
+    async def save_clients(self, answer: ClientAnswer) -> None: ...
+
+
+@dataclass(frozen=True)
+class TestOffer:
+    """Предложение автопилота провести тест: ждёт ответа владельца."""
+
+    __test__ = False
+    decision_id: int
+    ad_title: str
+    hypothesis: str
+    spend: int
+    leads: int
+    target: int
+    limit: int
+
+
+@dataclass(frozen=True)
+class TestLine:
+    """Тест, который готовится или идёт."""
+
+    __test__ = False
+    id: int
+    ad_title: str
+    hypothesis: str
+    status: str
+
+
+@dataclass(frozen=True)
 class HistoryLine:
     """Изменение площадки из журнала или решение автопилота."""
 
@@ -94,6 +134,8 @@ class HistoryLine:
     before: Mapping[str, Any]
     after: Mapping[str, Any] | None
     rules_version: str | None
+    # Изменение уже отменено новой записью журнала: кнопку отмены не показываем.
+    reverted: bool = False
 
 
 class Dashboard(Protocol):
@@ -105,3 +147,5 @@ class Dashboard(Protocol):
     async def ads(self, since: date, until: date, scope: Scope) -> list[AdLine]: ...
     async def days(self, since: date, until: date, scope: Scope) -> list[DayLine]: ...
     async def history(self, limit: int) -> list[HistoryLine]: ...
+    async def test_offers(self) -> list[TestOffer]: ...
+    async def open_tests(self) -> list[TestLine]: ...

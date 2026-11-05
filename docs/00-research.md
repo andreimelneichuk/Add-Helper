@@ -29,6 +29,9 @@
 - После одобрения приложением может пользоваться неограниченное число пользователей. **[Док]**
 - Документация требует кампанию в Директ Про перед открытием настроек API, но на новом кабинете без кампаний страница и форма заявки открылись (2026-10-31). **[Кабинет]**
 - Тип приложения «Для доступа к API или отладки» имеет неизменяемый Redirect URI `https://oauth.yandex.ru/verification_code` и подпись «Нет доступа к данным пользователей». Тип «Для авторизации пользователей» ограничивает число доступов. Какой тип нужен для подключения чужих кабинетов, не проверено. **[Кабинет]**
+- Изменить `redirect_uri` у приложения «Для доступа к API» нельзя, токены выдаются только через `verification_code` ([Яндекс ID](https://yandex.ru/dev/id/doc/ru/register-api)). Свои Redirect URI на платформе «Веб-сервисы» и права `login:info`, `login:email` есть только у типа «Для авторизации пользователей» ([Яндекс ID](https://yandex.ru/dev/id/doc/ru/register-auth)). **[Док]** Сервис запрашивает `login:info` и `login:email` и возвращает пользователя на свои адреса, поэтому ему нужен второй тип. В списке «Дополнительные» у этого типа есть `direct:api` (2026-11-05). **[Кабинет]**
+- Аккаунт без верификации через Госуслуги не создаёт второе приложение: на последнем шаге создания открывается окно верификации со строкой «Можно будет создать больше приложений», приложение не появляется (2026-11-05). **[Кабинет]**
+- Заявка на доступ к API привязана к ClientID. Новое приложение требует новой заявки, а правка заявки отправляет её на повторное рассмотрение, при этом до одобрения действуют прежние параметры. Срок рассмотрения до 7 дней ([Директ](https://yandex.ru/dev/direct/doc/ru/concepts/register)). **[Док]**
 
 ### Кампании
 - Управление через v5: `TEXT_CAMPAIGN`, `SMART_CAMPAIGN`, `DYNAMIC_TEXT_CAMPAIGN`, `MOBILE_APP_CAMPAIGN`, `CPM_BANNER_CAMPAIGN`. Единая перфоманс-кампания `UNIFIED_CAMPAIGN` — через `https://api.direct.yandex.com/v501/`. **[Док]**
@@ -46,6 +49,12 @@
 - Видео: MP4/WebM/MOV и другие, до 100 МБ, 5–60 секунд, 16:9/1:1/9:16, рекомендовано 1080p, от 20 кадров в секунду, H.264, стерео от 44 кГц. **[Док]**
 - В группе бывает до 50 объявлений, в кампании до 1000 групп. **[Втор]**
 - Ручное управление ставками в РСЯ отключено с 1 июля 2024 года. **[Док]**
+
+### Время и место показа
+- Временной таргетинг: «Общее время показов должно составлять не менее 8 часов в неделю»; отдельного порога для рабочих дней нет. Прежнее наше предположение «40 часов в будни» неверно. **[Док]** [справка](https://yandex.ru/support/direct/ru/efficiency/timetargeting.md), 2026-11-02.
+- У кампании один часовой пояс, расписание считается по нему. Для городов в разных поясах нужны разные кампании. Статистика и дата старта идут по Москве. **[Док]** там же.
+- В API расписание задаётся в `Campaigns.update` → `TimeTargeting`: строка на день с коэффициентами по часам, `0` выключает час; есть `ConsiderWorkingWeekends` и `HolidaysSchedule`. **[Док]** [пример](https://yandex.com/dev/direct/doc/ru/curl-campaigns-timetargeting). Поля в нашем адаптере не проверены вызовом (`S12`).
+- Регион задаётся у группы (`AdGroups`, `RegionIds`), справочник — `Dictionaries.get` (`GeoRegions`). Номера в `targeting-1.toml` (213 — Москва, 2 — Санкт-Петербург и другие) взяты по памяти. **[Гипотеза]** до `S12`.
 
 ### Отчёты и лимиты
 - `Reports`: `CUSTOM_REPORT` и другие типы; онлайн-/офлайн-режимы (200/201/202); до 20 запросов за 10 секунд; очередь до пяти офлайн-отчётов; параметры `IncludeVAT` и `IncludeDiscount`. **[Док]**
@@ -65,6 +74,7 @@
 - Цели создаются через `POST management/v1/counter/{counterId}/goals`; для управления нужен `metrika:write`. **[Док]**
 - Офлайн-конверсии загружаются CSV, связка по `yclid`, ClientId, UserId или PurchaseId. **[Док]**
 - Квоты: 30 запросов в секунду с IP, три параллельных на пользователя, 5000 в сутки на пользователя, 200 запросов отчётов за 5 минут. **[Док]**
+- Код счётчика загружает `https://mc.yandex.ru/metrika/tag.js` и вызывает `ym(НОМЕР, "init", {...})`. **[Док]** Блок `<noscript>` с картинкой `mc.yandex.ru/watch/НОМЕР` и старый `yaCounterНОМЕР` встречаются на сайтах, но на странице справки их нет. **[Втор]** Код, поставленный через Tag Manager, в разметке страницы не виден, поэтому установку окончательно подтверждают визиты через API.
 
 ## 5. Маркировка и право
 
@@ -106,12 +116,13 @@
 | S9 | VK: подключение чужого кабинета, маркировка, лимиты | Чтение документации, письмо на `ads_api@vk.team` |
 | S10 | Срок жизни токенов и их обновление | Документация Яндекс ID |
 | S11 | Отчёт Метрики по целям с разбивкой по кампаниям и его совпадение с `Reports` | Сравнение на живом счётчике |
+| S12 | Номера регионов, формат `TimeTargeting`, часовой пояс кампании и чтение их обратно | `Dictionaries.get GeoRegions`, `Campaigns.update` и `AdGroups.update` в песочнице |
 
 ## Источники
 
 - Директ API: [обзор](https://yandex.ru/dev/direct/doc/ru/concepts/overview), [кампании](https://yandex.ru/dev/direct/doc/ru/objects/campaign), [регистрация](https://yandex.ru/dev/direct/doc/ru/concepts/register), [заявка](https://yandex.ru/dev/direct/doc/ru/troubleshooting/register), [баллы](https://yandex.ru/dev/direct/doc/ru/concepts/units), [журнал изменений](https://yandex.ru/dev/direct/doc/en/changelog), [`campaigns.add`](https://yandex.ru/dev/direct/doc/en/campaigns/add), [`UnifiedCampaign`](https://yandex.ru/dev/direct/doc/en/campaigns/add-unified-campaign), [`ads.add`](https://yandex.ru/dev/direct/doc/en/ads/add), [стратегии](https://yandex.ru/dev/direct/doc/en/annex/strategies), [`Reports`](https://yandex.ru/dev/direct/doc/en/reports), [ограничения отчётов](https://yandex.ru/dev/direct/doc/en/restrictions), [актуальность статистики](https://yandex.ru/dev/direct/doc/en/actual), [рекомендации](https://yandex.ru/dev/direct/doc/en/optimize), [`Clients.update`](https://yandex.ru/dev/direct/doc/en/clients/update)
 - Справка Директа: [бюджет в стратегиях](https://yandex.ru/support/direct/en/strategies/budgets-in-strategies), [A/B-эксперименты](https://yandex.ru/support/direct/en/campaigns/experiments), [эксперименты с кампаниями](https://yandex.ru/support/direct/ru/efficiency/experiments), [маркировка](https://yandex.ru/support/direct/en/technologies-and-services/ad-labelingl), [технические ограничения](https://yandex.ru/support/direct/en/moderation/technical-restrictions), [вопросы по статистике](https://yandex.com/support/direct/en/troubleshooting/stat)
 - Новости Яндекса: [устройство экспериментов](https://b2b.yandex.ru/adv/edu/materials/kak-ustroeny-ab-eksperimenty-v-direct-pro), [сбой, 15 октября](https://b2b.yandex.ru/adv/news/dostup-k-kabinetu-direkta-vosstanavlivaetsya), [восстановление, 20 октября](https://b2b.yandex.ru/adv/news/redaktirovanie-kampaniy-direkt-dostupno)
-- Метрика: [квоты](https://yandex.ru/dev/metrika/ru/intro/quotas), [создание цели](https://yandex.com/dev/metrika/en/management/openapi/goal/addGoal), [офлайн-конверсии](https://yandex.ru/dev/metrika/ru/management/conversion.md)
+- Метрика: [инициализация счётчика](https://yandex.ru/support/metrica/code/counter-initialize.html), [квоты](https://yandex.ru/dev/metrika/ru/intro/quotas), [создание цели](https://yandex.com/dev/metrika/en/management/openapi/goal/addGoal), [офлайн-конверсии](https://yandex.ru/dev/metrika/ru/management/conversion.md)
 - VK: [доступ к API](https://ads.vk.ru/help/features/help_api), [оглавление API](https://ads.vk.ru/doc/api)
 - Вторичные: [ppc.world о бюджетах](https://ppc.world/articles/nuzhno-obyazatelno-ogranichivat-byudzhet-v-direkte-no-kak/), [ppc.world об иностранных словах](https://ppc.world/articles/zakon-o-zaprete-inostrannyh-slov-chto-delat-biznesu-razbor-i-poshagovyy-plan-deystviy/), [Yandex AI Studio: тарифы](https://aistudio.yandex.ru/docs/en/ai-studio/pricing), [VK Ads MCP](https://mcpservers.org/servers/askads/mcp-vk-ads)

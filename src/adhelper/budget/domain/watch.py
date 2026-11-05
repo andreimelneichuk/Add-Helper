@@ -99,6 +99,13 @@ def evaluate_watch(
     )
 
 
+def freshest(snapshot: SpendSnapshot, history: Sequence[SpendSnapshot]) -> SpendSnapshot:
+    """Площадка могла вернуть данные старше уже виденных: тогда верим прежним."""
+    if history and history[-1].data_as_of > snapshot.data_as_of:
+        return history[-1]
+    return snapshot
+
+
 def burn_from_history(snapshots: Sequence[SpendSnapshot]) -> BurnRate:
     """Скорость расхода по двум последним снимкам, от старого к новому."""
     if len(snapshots) < 2:

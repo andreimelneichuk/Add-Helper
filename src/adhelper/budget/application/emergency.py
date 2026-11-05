@@ -21,7 +21,12 @@ class StopReport:
 
 
 async def stop_account(
-    account: str, platform: BudgetPlatform, ledger: Ledger, report: StopReport
+    account: str,
+    platform: BudgetPlatform,
+    ledger: Ledger,
+    report: StopReport,
+    explanation: str = EXPLANATION,
+    key_prefix: str = "emergency",
 ) -> None:
     """Сбой одной кампании не мешает остановить остальные; итог определяет чтение площадки."""
     try:
@@ -37,8 +42,8 @@ async def stop_account(
             kind=ChangeKind.PAUSE,
             target_ref=campaign_id,
             planned={"active": False},
-            explanation=EXPLANATION,
-            idempotency_key=f"emergency:{campaign_id}",
+            explanation=explanation,
+            idempotency_key=f"{key_prefix}:{campaign_id}",
         )
         try:
             await ledger.submit(proposed)

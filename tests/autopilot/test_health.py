@@ -46,3 +46,9 @@ def test_platform_incident_and_manual_hold_block_trust() -> None:
     normal = Window(2_000_000_000, 9, 1000, 900)
     assert health(normal, incident=True) == {HealthReason.PLATFORM_INCIDENT}
     assert health(normal, hold=True) == {HealthReason.MANUAL_HOLD}
+
+
+def test_unknown_visits_skip_only_the_visit_checks() -> None:
+    # Без Метрики визитов нет вовсе: это не «код удалён», а отсутствие источника.
+    assert health(Window(2_000_000_000, 9, 1000, None)) == set()
+    assert HealthReason.CONVERSION_GAP in health(Window(2_000_000_000, 1, 1000, None))

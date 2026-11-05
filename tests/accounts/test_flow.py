@@ -463,3 +463,94 @@ async def test_journal_constraint_exists(engine: AsyncEngine) -> None:
             text("SELECT count(*) FROM pg_constraint WHERE conname = 'fk_changes_business_account'")
         )
     assert found == 1
+
+
+async def test_login_from_launch_returns_to_launch(
+    browser: Browser, provider: FakeProvider
+) -> None:
+    # Мастер запуска уходит на вход Яндекса с черновиком в браузере и должен вернуться к нему.
+    client = browser()
+    start = await client.get("/api/auth/yandex/login", params={"then": "start"})
+    query = _query(start.headers["location"])
+    code = provider.approve(query["code_challenge"], query["redirect_uri"], ANNA)
+    done = await client.get(
+        "/api/auth/yandex/callback", params={"state": query["state"], "code": code}
+    )
+    assert done.headers["location"] == "/?new&start"
+
+
+async def test_login_ignores_unknown_return_target(
+    browser: Browser, provider: FakeProvider
+) -> None:
+    # Куда вернуться, выбираем из своего списка: чужой адрес не принимаем.
+    client = browser()
+    start = await client.get("/api/auth/yandex/login", params={"then": "https://evil.test/"})
+    query = _query(start.headers["location"])
+    code = provider.approve(query["code_challenge"], query["redirect_uri"], ANNA)
+    done = await client.get(
+        "/api/auth/yandex/callback", params={"state": query["state"], "code": code}
+    )
+    assert done.headers["location"] == "/"
+
+
+async def test_denied_login_from_launch_returns_to_launch(
+    browser: Browser, provider: FakeProvider
+) -> None:
+    client = browser()
+    start = await client.get("/api/auth/yandex/login", params={"then": "start"})
+    query = _query(start.headers["location"])
+    done = await client.get(
+        "/api/auth/yandex/callback", params={"state": query["state"], "error": "access_denied"}
+    )
+    assert done.headers["location"] == "/?new&start&login=denied"
+
+
+async def test_connect_from_launch_returns_to_launch(
+    browser: Browser, provider: FakeProvider
+) -> None:
+    client = browser()
+    csrf = await _login(client, provider, ANNA)
+    business_id = await _business(client, csrf)
+    start = await client.post(
+        f"/api/businesses/{business_id}/accounts/connect",
+        params={"then": "start"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    query = _query(start.json()["authorize_url"])
+    code = provider.approve(query["code_challenge"], query["redirect_uri"], ANNA)
+    done = await client.get(
+        "/api/accounts/yandex/callback", params={"state": query["state"], "code": code}
+    )
+    assert done.headers["location"] == "/?new&start&connect=ok"
+    # Цель одноразовая: следующее подключение из настроек вернётся на главную.
+    again = await _connect(client, provider, csrf, business_id, ANNA)
+    assert again.headers["location"] == "/?connect=ok"
+
+
+async def test_without_yandex_app_login_says_not_configured(api_settings: Settings) -> None:
+    settings = api_settings.model_copy(
+        update={"yandex_client_id": "", "yandex_client_secret": None}
+    )
+    app = create_app(settings)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url=BASE) as client:
+        assert (await client.get("/api/auth/yandex/login")).status_code == 503
+    await app.state.engine.dispose()
+
+
+async def test_configured_yandex_app_sends_owner_to_its_address(api_settings: Settings) -> None:
+    settings = api_settings.model_copy(
+        update={
+            "yandex_client_id": "app-id",
+            "yandex_client_secret": SecretStr("s"),
+            "yandex_oauth_url": "http://stand.test/oauth",
+        }
+    )
+    app = create_app(settings)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url=BASE) as client:
+        response = await client.get("/api/auth/yandex/login")
+    assert response.status_code in (302, 303, 307)
+    assert response.headers["location"].startswith("http://stand.test/oauth/authorize?")
+    assert "client_id=app-id" in response.headers["location"]
+    await app.state.engine.dispose()

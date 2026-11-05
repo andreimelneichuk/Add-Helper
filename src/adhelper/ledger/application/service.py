@@ -60,6 +60,9 @@ class Ledger:
     async def changes_on_target(self, account: str, target_ref: str) -> Sequence[Change]:
         return await self._repository.on_target(account, target_ref)
 
+    async def changes_with_key_prefix(self, account: str, prefix: str) -> Sequence[Change]:
+        return await self._repository.with_key_prefix(account, prefix)
+
     async def read_target(self, account: str, target_ref: str) -> Mapping[str, Any]:
         return await self._gateway.read(account, target_ref)
 

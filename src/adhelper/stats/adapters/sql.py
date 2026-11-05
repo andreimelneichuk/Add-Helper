@@ -1,6 +1,7 @@
 """Чтение для экранов поверх таблиц других модулей. Только SELECT и только одного бизнеса."""
 
 from datetime import date, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
@@ -13,11 +14,13 @@ from sqlalchemy import (
     Uuid,
     column,
     func,
+    literal,
     select,
     table,
     true,
 )
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.sql import ColumnElement, TableClause
 
@@ -25,10 +28,13 @@ from adhelper.stats.domain.model import (
     AdLine,
     AlertLine,
     CampaignLine,
+    ClientAnswer,
     DayLine,
     HistoryLine,
     PeriodLine,
     Scope,
+    TestLine,
+    TestOffer,
     Totals,
 )
 
@@ -63,6 +69,15 @@ ALERTS = table(
     column("created_at", DateTime(timezone=True)),
     column("resolved_at", DateTime(timezone=True)),
 )
+CLIENTS = table(
+    "client_answers",
+    column("business_id", Uuid),
+    column("since", Date),
+    column("until", Date),
+    column("leads", Integer),
+    column("clients", Integer),
+    column("answered_at", DateTime(timezone=True)),
+)
 CAMPAIGNS = table(
     "campaigns",
     column("business_id", Uuid),
@@ -71,6 +86,7 @@ CAMPAIGNS = table(
     column("name", Text),
     column("state", Text),
     column("limit_micros", BigInteger),
+    column("targeting", JSONB),
 )
 STATS = table(
     "campaign_stats",
@@ -116,12 +132,14 @@ CHANGES = table(
     column("explanation", Text),
     column("before", JSONB),
     column("after", JSONB),
+    column("reverts_change_id", BigInteger),
     column("created_at", DateTime(timezone=True)),
 )
 DECISIONS = table(
     "decisions",
     column("id", BigInteger),
     column("business_id", Uuid),
+    column("account", Text),
     column("object_ref", Text),
     column("verdict", Text),
     column("action", Text),
@@ -130,6 +148,16 @@ DECISIONS = table(
     column("rules_version", Text),
     column("decided_at", DateTime(timezone=True)),
 )
+EXPERIMENTS = table(
+    "experiments",
+    column("id", BigInteger),
+    column("business_id", Uuid),
+    column("account", Text),
+    column("control_ref", Text),
+    column("hypothesis", Text),
+    column("status", Text),
+)
+OPEN_TESTS = ("review", "running", "paused")
 # Закрытый период показываем ещё сутки: владелец должен увидеть, чем он кончился.
 SHOW_CLOSED_FOR = timedelta(days=1)
 
@@ -151,6 +179,133 @@ class SqlDashboard:
     def __init__(self, sessions: async_sessionmaker[AsyncSession], business_id: UUID) -> None:
         self._sessions = sessions
         self._business_id = business_id
+
+    async def leads(self, since: date, until: date) -> int:
+        """Обращения по статистике площадки за окно дат включительно."""
+        statement = select(func.coalesce(func.sum(STATS.c.conversions), 0)).where(
+            STATS.c.business_id == self._business_id,
+            STATS.c.day >= since,
+            STATS.c.day <= until,
+        )
+        async with self._sessions() as session:
+            return int(await session.scalar(statement) or 0)
+
+    async def save_clients(self, answer: ClientAnswer) -> None:
+        values = {
+            "business_id": self._business_id,
+            "since": answer.since,
+            "until": answer.until,
+            "leads": answer.leads,
+            "clients": answer.clients,
+        }
+        statement = (
+            pg_insert(CLIENTS)
+            .values(**values)
+            .on_conflict_do_update(
+                index_elements=["business_id", "since", "until"],
+                set_={"leads": answer.leads, "clients": answer.clients, "answered_at": func.now()},
+            )
+        )
+        async with self._sessions() as session, session.begin():
+            await session.execute(statement)
+
+    async def latest_clients(self) -> ClientAnswer | None:
+        statement = (
+            select(CLIENTS.c.since, CLIENTS.c.until, CLIENTS.c.leads, CLIENTS.c.clients)
+            .where(CLIENTS.c.business_id == self._business_id)
+            .order_by(CLIENTS.c.until.desc(), CLIENTS.c.answered_at.desc())
+            .limit(1)
+        )
+        async with self._sessions() as session:
+            row = (await session.execute(statement)).one_or_none()
+        return ClientAnswer(*row) if row else None
+
+    async def note_ad_state(self, account: str, ad_id: str, state: str) -> None:
+        """Результат, прочитанный журналом. Полную сверку с площадкой делает синхронизация (T6)."""
+        await self._note(ADS, account, ADS.c.ad_id == ad_id, state)
+
+    async def note_campaign_state(self, account: str, campaign_id: str, state: str) -> None:
+        await self._note(CAMPAIGNS, account, CAMPAIGNS.c.campaign_id == campaign_id, state)
+
+    async def note_targeting(self, account: str, campaign_id: str, patch: dict[str, Any]) -> None:
+        """После применённого изменения показа: иначе экран до синхронизации покажет старое."""
+        current = func.coalesce(CAMPAIGNS.c.targeting, literal({}, JSONB))
+        statement = (
+            CAMPAIGNS.update()
+            .where(
+                CAMPAIGNS.c.business_id == self._business_id,
+                CAMPAIGNS.c.account == account,
+                CAMPAIGNS.c.campaign_id == campaign_id,
+            )
+            .values(targeting=current.op("||")(literal(patch, JSONB)))
+        )
+        async with self._sessions() as session, session.begin():
+            await session.execute(statement)
+
+    async def note_created_campaign(
+        self,
+        account: str,
+        campaign_id: str,
+        name: str,
+        limit: int,
+        ads: list[tuple[str, str, str, str]],
+    ) -> None:
+        """Кампания запуска, прочитанная журналом: до синхронизации она уже видна в кабинете.
+
+        Новое в Директе сначала проходит проверку, поэтому состояние «moderation».
+        Объявления: номер, заголовок, текст, ссылка. Повтор ничего не дублирует.
+        """
+        campaign = (
+            pg_insert(CAMPAIGNS)
+            .values(
+                business_id=self._business_id,
+                account=account,
+                campaign_id=campaign_id,
+                name=name,
+                state="moderation",
+                limit_micros=limit,
+            )
+            .on_conflict_do_nothing(index_elements=["business_id", "account", "campaign_id"])
+        )
+        async with self._sessions() as session, session.begin():
+            await session.execute(campaign)
+            for ad_id, title, body, href in ads:
+                await session.execute(
+                    pg_insert(ADS)
+                    .values(
+                        business_id=self._business_id,
+                        account=account,
+                        ad_id=ad_id,
+                        campaign_id=campaign_id,
+                        title=title,
+                        text=body,
+                        href=href,
+                        state="moderation",
+                    )
+                    .on_conflict_do_nothing(index_elements=["business_id", "account", "ad_id"])
+                )
+
+    async def targetings(self, account: str | None = None) -> list[tuple[str, str, dict[str, Any]]]:
+        """Кабинет, кампания и что о её показе известно."""
+        statement = (
+            select(CAMPAIGNS.c.account, CAMPAIGNS.c.campaign_id, CAMPAIGNS.c.targeting)
+            .where(CAMPAIGNS.c.business_id == self._business_id)
+            .order_by(CAMPAIGNS.c.account, CAMPAIGNS.c.campaign_id)
+        )
+        if account is not None:
+            statement = statement.where(CAMPAIGNS.c.account == account)
+        async with self._sessions() as session:
+            rows = (await session.execute(statement)).all()
+        return [(row.account, row.campaign_id, dict(row.targeting or {})) for row in rows]
+
+    async def _note(self, target: Any, account: str, which: Any, state: str) -> None:
+        statement = (
+            target.update()
+            .where(target.c.business_id == self._business_id, target.c.account == account, which)
+            .values(state=state)
+        )
+        async with self._sessions() as session, session.begin():
+            await session.execute(statement)
 
     async def periods(self, now: datetime) -> list[PeriodLine]:
         latest = (
@@ -331,6 +486,13 @@ class SqlDashboard:
         async with self._sessions() as session:
             change_rows = (await session.execute(changes)).mappings().all()
             decision_rows = (await session.execute(decisions)).mappings().all()
+        # Отмены новее исходных записей, поэтому попадают в то же окно.
+        reverted = {
+            row["reverts_change_id"]
+            for row in change_rows
+            if row["reverts_change_id"] is not None
+            and row["status"] in ("planned", "applying", "applied")
+        }
         lines = [
             HistoryLine(
                 ref=f"change-{row['id']}",
@@ -343,6 +505,7 @@ class SqlDashboard:
                 before=row["before"],
                 after=row["after"],
                 rules_version=None,
+                reverted=row["id"] in reverted,
             )
             for row in change_rows
         ] + [
@@ -361,3 +524,72 @@ class SqlDashboard:
             for row in decision_rows
         ]
         return sorted(lines, key=lambda line: line.at, reverse=True)[:limit]
+
+    def _ad_title(self, account: ColumnElement[str], ref: ColumnElement[str]) -> Any:
+        """Название объявления по ссылке «ad:номер»; без витрины — сама ссылка."""
+        title = (
+            select(ADS.c.title)
+            .where(
+                ADS.c.business_id == self._business_id,
+                ADS.c.account == account,
+                literal("ad:") + ADS.c.ad_id == ref,
+            )
+            .limit(1)
+            .scalar_subquery()
+        )
+        return func.coalesce(title, ref)
+
+    async def test_offers(self) -> list[TestOffer]:
+        """Предложения теста, на которые владелец ещё не ответил: последняя запись по объекту."""
+        own = DECISIONS.c.business_id == self._business_id
+        latest = (
+            select(func.max(DECISIONS.c.id))
+            .where(own)
+            .group_by(DECISIONS.c.account, DECISIONS.c.object_ref)
+        )
+        statement = (
+            select(
+                DECISIONS.c.id,
+                self._ad_title(DECISIONS.c.account, DECISIONS.c.object_ref),
+                DECISIONS.c.inputs,
+            )
+            .where(
+                own,
+                DECISIONS.c.id.in_(latest),
+                DECISIONS.c.action == "start_test",
+                DECISIONS.c.status == "awaiting_confirmation",
+            )
+            .order_by(DECISIONS.c.id)
+        )
+        async with self._sessions() as session:
+            rows = (await session.execute(statement)).all()
+        return [
+            TestOffer(
+                decision_id=row[0],
+                ad_title=row[1],
+                hypothesis=str(row[2].get("hypothesis", "")),
+                spend=int(row[2].get("spend_micros", 0)),
+                leads=int(row[2].get("leads", 0)),
+                target=int(row[2].get("target_micros", 0)),
+                limit=int(row[2].get("limit_micros", 0)),
+            )
+            for row in rows
+        ]
+
+    async def open_tests(self) -> list[TestLine]:
+        statement = (
+            select(
+                EXPERIMENTS.c.id,
+                self._ad_title(EXPERIMENTS.c.account, EXPERIMENTS.c.control_ref),
+                EXPERIMENTS.c.hypothesis,
+                EXPERIMENTS.c.status,
+            )
+            .where(
+                EXPERIMENTS.c.business_id == self._business_id,
+                EXPERIMENTS.c.status.in_(OPEN_TESTS),
+            )
+            .order_by(EXPERIMENTS.c.id)
+        )
+        async with self._sessions() as session:
+            rows = (await session.execute(statement)).all()
+        return [TestLine(row[0], row[1], row[2], row[3]) for row in rows]

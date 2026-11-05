@@ -11,6 +11,7 @@ from adhelper.db import Base
 from adhelper.experiments.domain.model import ExperimentRecord, Status, TestAlreadyRunning
 
 ONE_TEST_INDEX = "uq_experiments_open_business_campaign"
+OPEN = (Status.REVIEW.value, Status.RUNNING.value, Status.PAUSED.value)
 
 
 class ExperimentRow(Base):
@@ -30,7 +31,8 @@ class ExperimentRow(Base):
     account: Mapped[str] = mapped_column(Text)
     campaign_id: Mapped[str] = mapped_column(Text)
     control_ref: Mapped[str] = mapped_column(Text)
-    variant_ref: Mapped[str] = mapped_column(Text)
+    # Пусто, пока вариант не написан и не создан на площадке.
+    variant_ref: Mapped[str | None] = mapped_column(Text)
     hypothesis: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text)
     reason: Mapped[str | None] = mapped_column(Text)
@@ -74,7 +76,7 @@ class SqlExperimentStore:
         account: str,
         campaign_id: str,
         control_ref: str,
-        variant_ref: str,
+        variant_ref: str | None,
         hypothesis: str,
         rules_version: str,
     ) -> int:
@@ -97,6 +99,29 @@ class SqlExperimentStore:
             if ONE_TEST_INDEX in str(error.orig):
                 raise TestAlreadyRunning from None
             raise
+
+    async def open_for(self, account: str) -> list[ExperimentRecord]:
+        """Тесты, которые ещё идут или готовятся."""
+        statement = (
+            select(ExperimentRow)
+            .where(
+                ExperimentRow.business_id == self._business_id,
+                ExperimentRow.account == account,
+                ExperimentRow.status.in_(OPEN),
+            )
+            .order_by(ExperimentRow.id)
+        )
+        async with self._sessions() as session:
+            return [_record(row) for row in await session.scalars(statement)]
+
+    async def tried(self, account: str, control_ref: str) -> set[str]:
+        statement = select(ExperimentRow.hypothesis).where(
+            ExperimentRow.business_id == self._business_id,
+            ExperimentRow.account == account,
+            ExperimentRow.control_ref == control_ref,
+        )
+        async with self._sessions() as session:
+            return set(await session.scalars(statement))
 
     async def get(self, experiment_id: int) -> ExperimentRecord | None:
         statement = select(ExperimentRow).where(
@@ -133,6 +158,10 @@ class SqlExperimentStore:
             values["winner"] = winner
             values["explanation"] = explanation
         await self._update(experiment_id, **values)
+
+    async def set_variant(self, experiment_id: int, variant_ref: str) -> None:
+        """Вариант создан на площадке и ждёт проверки выключенным."""
+        await self._update(experiment_id, variant_ref=variant_ref)
 
     async def begin_switch(self, experiment_id: int, target: str) -> None:
         await self._update(experiment_id, switch_to=target, switch_seq=ExperimentRow.switch_seq + 1)

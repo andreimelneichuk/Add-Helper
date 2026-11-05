@@ -1,5 +1,6 @@
 """Предложения и ограничения: docs/04-autopilot.md §4 «Действия и ограничения»."""
 
+import dataclasses
 from datetime import UTC, datetime, timedelta
 
 from hypothesis import given
@@ -170,3 +171,82 @@ def test_action_undone_by_user_is_not_repeated() -> None:
     plan = plan_cycle([held, good()], [], TARGET, TRUSTED, Mode.AUTO, NOW, RULES)
     assert not [a for a in plan.actions if a.ref == "ad:bad"]
     assert plan.blocked["ad:bad"] is BlockReason.ROLLED_BACK
+
+
+RULES_2 = load_rules("autopilot-2")
+
+
+def middle(ref: str = "ad:m", hold: bool = False) -> AdStats:
+    return AdStats(ref, "c1", "g1", TARGET * 3, 3, 30, active=True, test_hold=hold)
+
+
+def daily(limit: int) -> CampaignStats:
+    return CampaignStats("c1", limit, budget_limited=False, last_change_at=None)
+
+
+def test_test_is_proposed_when_budget_covers_minimal_volume() -> None:
+    # 7 дней по лимиту должны покрыть 4 цены обращения: иначе тест не даст вывода.
+    enough = -(-TARGET * RULES_2.test_min_target_multiple // RULES_2.test_days)
+    plan = plan_cycle([middle()], [daily(enough)], TARGET, TRUSTED, Mode.CONFIRM, NOW, RULES_2)
+
+    action = plan.actions[0]
+    assert action.kind is ActionKind.START_TEST
+    assert action.needs_confirmation
+    assert action.facts["limit_micros"] == enough
+    assert action.rules_version == "autopilot-2"
+
+
+def test_small_budget_gives_no_test_and_says_why() -> None:
+    small = -(-TARGET * RULES_2.test_min_target_multiple // RULES_2.test_days) - 1
+    plan = plan_cycle([middle()], [daily(small)], TARGET, TRUSTED, Mode.CONFIRM, NOW, RULES_2)
+
+    assert plan.actions == []
+    assert plan.blocked == {"ad:m": BlockReason.BUDGET_TOO_SMALL}
+
+
+def test_unknown_budget_gives_no_test() -> None:
+    plan = plan_cycle([middle()], [], TARGET, TRUSTED, Mode.CONFIRM, NOW, RULES_2)
+    assert plan.actions == []
+    assert plan.blocked == {"ad:m": BlockReason.BUDGET_TOO_SMALL}
+
+
+def test_declined_test_is_not_proposed_again_while_on_hold() -> None:
+    plan = plan_cycle(
+        [middle(hold=True), middle("ad:n")],
+        [daily(10**10)],
+        TARGET,
+        TRUSTED,
+        Mode.CONFIRM,
+        NOW,
+        RULES_2,
+    )
+    assert [a.ref for a in plan.actions] == ["ad:n"]
+    assert plan.blocked["ad:m"] is BlockReason.TEST_DECLINED
+
+
+def test_test_waits_for_recent_change_like_other_actions() -> None:
+    changed = CampaignStats("c1", 10**10, False, NOW - timedelta(days=1))
+    plan = plan_cycle([middle()], [changed], TARGET, TRUSTED, Mode.CONFIRM, NOW, RULES_2)
+    assert plan.actions == []
+
+
+def test_first_version_keeps_its_decisions() -> None:
+    # Прежние решения воспроизводимы: autopilot-1 не знал проверки бюджета теста.
+    plan = plan_cycle([middle()], [], TARGET, TRUSTED, Mode.CONFIRM, NOW, RULES)
+    assert [a.kind for a in plan.actions] == [ActionKind.START_TEST]
+
+
+def test_no_test_right_after_change_and_reason_is_named() -> None:
+    # После изменения данные смешаны: тест подождёт, а журнал назовёт причину.
+    changed = CampaignStats("c1", 10**10, budget_limited=False, last_change_at=NOW)
+    plan = plan_cycle([middle()], [changed], TARGET, TRUSTED, Mode.CONFIRM, NOW, RULES_2)
+    assert plan.actions == []
+    assert plan.blocked == {"ad:m": BlockReason.CHANGED_RECENTLY}
+
+
+def test_no_second_test_while_one_runs_and_reason_is_named() -> None:
+    running = CampaignStats("c1", 10**10, budget_limited=False, last_change_at=None)
+    running = dataclasses.replace(running, test_running=True)
+    plan = plan_cycle([middle()], [running], TARGET, TRUSTED, Mode.CONFIRM, NOW, RULES_2)
+    assert plan.actions == []
+    assert plan.blocked == {"ad:m": BlockReason.TEST_RUNNING}

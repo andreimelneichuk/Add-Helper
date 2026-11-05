@@ -1,25 +1,18 @@
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Any, Protocol
 
 from adhelper.autopilot.domain.decide import Action, ActionKind, Mode, plan_cycle
 from adhelper.autopilot.domain.explain import explain
-from adhelper.autopilot.domain.health import HealthInput, Window, check_health
-from adhelper.autopilot.domain.model import AdStats, CampaignStats, Verdict
+from adhelper.autopilot.domain.health import HealthInput, check_health
+from adhelper.autopilot.domain.model import AccountData, Verdict
 from adhelper.autopilot.domain.rules import AutopilotRules
 
+__all__ = ["AccountData", "AutopilotCycle", "Mode", "TestPlanner"]
+
 DATA_ALERT = "data_untrusted"
-
-
-@dataclass(frozen=True)
-class AccountData:
-    ads: Sequence[AdStats]
-    campaigns: Sequence[CampaignStats]
-    recent: Window
-    baseline: Window
-    platform_incident: bool
-    manual_hold: bool
+# До калибровки порогов на пилоте (T7) автопилот только предлагает: решает владелец.
+SCHEDULED_MODE = Mode.CONFIRM
 
 
 class AutopilotData(Protocol):
@@ -47,6 +40,15 @@ class Actions(Protocol):
     async def increase_limit(self, account: str, campaign_id: str, new_limit: int) -> str: ...
 
 
+class TestPlanner(Protocol):
+    """Гипотеза по фактам профиля и подготовка теста. docs/04-autopilot.md §5."""
+
+    async def hypothesis(self, account: str, ad_ref: str) -> str | None: ...
+    async def prepare(
+        self, account: str, campaign_id: str, ad_ref: str, hypothesis: str, decision_id: int
+    ) -> str: ...
+
+
 class DataAlerts(Protocol):
     async def raise_alert(self, kind: str, details: Mapping[str, Any]) -> None: ...
     async def resolve(self, kind: str) -> None: ...
@@ -63,7 +65,9 @@ class AutopilotCycle:
         alerts: DataAlerts,
         clock: Callable[[], datetime],
         rules: AutopilotRules,
+        tests: TestPlanner | None = None,
     ) -> None:
+        self._tests = tests
         self._data = data
         self._decisions = decisions
         self._actions = actions
@@ -122,11 +126,11 @@ class AutopilotCycle:
             ActionKind.INCREASE_LIMIT: Verdict.EFFICIENT,
             ActionKind.START_TEST: Verdict.BORDERLINE,
         }[action.kind]
+        if action.kind is ActionKind.START_TEST:
+            await self._start_test(account, action, now)
+            return
         if action.needs_confirmation:
             await self._log(account, action, verdict, "awaiting_confirmation", now)
-            return
-        if action.kind is ActionKind.START_TEST:
-            await self._log(account, action, verdict, "test_needed", now)
             return
         if action.kind is ActionKind.PAUSE_AD:
             decision_id = await self._log(account, action, verdict, "planned", now)
@@ -140,10 +144,36 @@ class AutopilotCycle:
         status = await self._actions.increase_limit(account, action.ref, action.new_limit)
         await self._log(account, action, verdict, status, now)
 
+    async def _start_test(self, account: str, action: Action, now: datetime) -> None:
+        """Тест меняет показы, поэтому в режиме подтверждения ждёт согласия владельца."""
+        verdict = Verdict.BORDERLINE
+        if self._tests is None:
+            await self._log(account, action, verdict, "test_needed", now)
+            return
+        hypothesis = await self._tests.hypothesis(account, action.ref)
+        if hypothesis is None:
+            await self._log(account, action, verdict, "no_hypothesis", now)
+            return
+        extra = {"hypothesis": hypothesis, "campaign_id": action.campaign_id}
+        if action.needs_confirmation:
+            await self._log(account, action, verdict, "awaiting_confirmation", now, extra)
+            return
+        decision_id = await self._log(account, action, verdict, "planned", now, extra)
+        status = await self._tests.prepare(
+            account, action.campaign_id, action.ref, hypothesis, decision_id
+        )
+        await self._log(account, action, verdict, status, now, extra)
+
     async def _log(
-        self, account: str, action: Action, verdict: Verdict, status: str, now: datetime
+        self,
+        account: str,
+        action: Action,
+        verdict: Verdict,
+        status: str,
+        now: datetime,
+        extra: Mapping[str, str] | None = None,
     ) -> int:
-        inputs = dict(action.facts)
+        inputs: dict[str, Any] = dict(action.facts) | dict(extra or {})
         if action.new_limit is not None:
             inputs["new_limit_micros"] = action.new_limit
         return await self._decisions.record(

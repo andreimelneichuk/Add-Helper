@@ -1,9 +1,22 @@
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from adhelper.budget.domain.limits import CampaignBudget, LimitChange, LimitDecision
 from adhelper.budget.domain.ports import PlatformUnavailable
 from adhelper.budget.domain.watch import SpendSnapshot
+from adhelper.campaigns.domain.launch import NewCampaign
+from adhelper.campaigns.domain.ports import CreatedCampaign, Targeting
+from adhelper.campaigns.domain.targeting import Schedule
+from adhelper.platforms.domain.ports import (
+    Advertiser,
+    ModerationState,
+    ModerationVerdict,
+    PublishedAd,
+)
+
+# Новая кампания в Директе показывается круглосуточно; регион задаём Москвой.
+DEFAULT_TARGETING = Targeting(Schedule((0, 1, 2, 3, 4, 5, 6), 0, 24), (213,))
 
 
 @dataclass
@@ -33,9 +46,24 @@ class FakePlatform:
         self.stats_frozen_at: datetime | None = None
         self.faults: list[Fault] = []
         self.ads: dict[str, bool] = {}
+        # Только изменённые; остальные кампании показываются по DEFAULT_TARGETING.
+        self.targeting: dict[str, Targeting] = {}
+        self.schedule_calls = 0
         self.set_limit_calls: list[LimitChange] = []
         self.rejections: list[LimitDecision] = []
         self.limit_sums = [self.limit_sum]
+        # Кампании запуска по нашей метке; номера выдаёт площадка.
+        self.created: dict[str, CreatedCampaign] = {}
+        self.create_calls = 0
+        # Объявления, созданные по нашей метке, и итоги проверки; без итога — «на проверке».
+        self.published: dict[str, PublishedAd] = {}
+        self.create_ad_calls = 0
+        self.verdicts: dict[str, ModerationVerdict] = {}
+        self.advertisers: dict[str, Advertiser] = {}
+        self.set_advertiser_calls = 0
+        # Визиты с рекламы по московским дням; дня нет — у Метрики нет данных за него.
+        self.visits: dict[date, int] = {}
+        self.visit_calls: list[tuple[str, date, date]] = []
         self._history = [(now, self.total_spent)]
 
     @property
@@ -75,6 +103,80 @@ class FakePlatform:
     async def set_ad_active(self, account: str, ad_ref: str, active: bool) -> None:
         self._check_fault("set_ad_active", after_apply=False)
         self.ads[ad_ref] = active
+
+    async def read_targeting(self, account: str, campaign_id: str) -> Targeting | None:
+        self._check_fault("read_targeting", after_apply=False)
+        if campaign_id not in self.campaigns:
+            return None
+        return self.targeting.get(campaign_id, DEFAULT_TARGETING)
+
+    async def set_schedule(self, account: str, campaign_id: str, schedule: Schedule) -> None:
+        self._check_fault("set_schedule", after_apply=False)
+        current = self.targeting.get(campaign_id, DEFAULT_TARGETING)
+        self.targeting[campaign_id] = replace(current, schedule=schedule)
+        self.schedule_calls += 1
+        self._check_fault("set_schedule", after_apply=True)
+
+    async def set_regions(self, account: str, campaign_id: str, regions: tuple[int, ...]) -> None:
+        self._check_fault("set_regions", after_apply=False)
+        current = self.targeting.get(campaign_id, DEFAULT_TARGETING)
+        self.targeting[campaign_id] = replace(current, regions=regions)
+        self._check_fault("set_regions", after_apply=True)
+
+    async def find_campaign(self, account: str, marker: str) -> CreatedCampaign | None:
+        self._check_fault("find_campaign", after_apply=False)
+        return self.created.get(marker)
+
+    async def create_campaign(self, account: str, campaign: NewCampaign) -> None:
+        self._check_fault("create_campaign", after_apply=False)
+        self.create_calls += 1
+        campaign_id = str(900 + len(self.created) + 1)
+        ad_ids = tuple(f"{campaign_id}0{i + 1}" for i in range(len(campaign.ads)))
+        self.created[campaign.marker] = CreatedCampaign(campaign_id, campaign, ad_ids)
+        # Новая кампания тратит в пределах своего лимита, как остальные.
+        self.campaigns[campaign_id] = CampaignBudget(campaign_id, campaign.limit, 0, True, None)
+        for ad_id in ad_ids:
+            self.ads[f"ad:{ad_id}"] = True
+        self.limit_sums.append(self.limit_sum)
+        self._check_fault("create_campaign", after_apply=True)
+
+    async def find_ad(self, account: str, marker: str) -> PublishedAd | None:
+        self._check_fault("find_ad", after_apply=False)
+        return self.published.get(marker)
+
+    async def create_ad(
+        self, account: str, campaign_id: str, marker: str, headline: str, text: str, href: str
+    ) -> None:
+        self._check_fault("create_ad", after_apply=False)
+        if campaign_id not in self.campaigns:
+            raise ValueError(f"нет кампании {campaign_id}")
+        self.create_ad_calls += 1
+        ad_id = str(7000 + len(self.published) + 1)
+        self.published[marker] = PublishedAd(ad_id, campaign_id, headline, text, href)
+        # Новое объявление включено, но показывается только после одобрения.
+        self.ads[f"ad:{ad_id}"] = True
+        self._check_fault("create_ad", after_apply=True)
+
+    async def moderation(self, account: str, ad_ids: Sequence[str]) -> list[ModerationVerdict]:
+        self._check_fault("moderation", after_apply=False)
+        waiting = ModerationState.MODERATION
+        return [self.verdicts.get(ad_id, ModerationVerdict(ad_id, waiting)) for ad_id in ad_ids]
+
+    async def read_advertiser(self, account: str) -> Advertiser | None:
+        self._check_fault("read_advertiser", after_apply=False)
+        return self.advertisers.get(account)
+
+    async def set_advertiser(self, account: str, advertiser: Advertiser) -> None:
+        self._check_fault("set_advertiser", after_apply=False)
+        self.set_advertiser_calls += 1
+        self.advertisers[account] = advertiser
+        self._check_fault("set_advertiser", after_apply=True)
+
+    def accept(self, ad_id: str) -> None:
+        self.verdicts[ad_id] = ModerationVerdict(ad_id, ModerationState.ACCEPTED)
+
+    def reject(self, ad_id: str, *reasons: str) -> None:
+        self.verdicts[ad_id] = ModerationVerdict(ad_id, ModerationState.REJECTED, reasons)
 
     async def read_campaigns(self, account: str) -> list[CampaignBudget]:
         self._check_fault("read_campaigns", after_apply=False)
@@ -116,7 +218,23 @@ class FakePlatform:
             self.campaigns[campaign_id] = replace(self.campaigns[campaign_id], active=False)
         self._check_fault("pause_campaigns", after_apply=True)
 
+    async def resume_campaigns(self, account: str, campaign_ids: list[str]) -> None:
+        self._check_fault("resume_campaigns", after_apply=False)
+        for campaign_id in campaign_ids:
+            self.campaigns[campaign_id] = replace(self.campaigns[campaign_id], active=True)
+        self._check_fault("resume_campaigns", after_apply=True)
+
     async def record_rejection(
         self, account: str, change: LimitChange, decision: LimitDecision
     ) -> None:
         self.rejections.append(decision)
+
+    async def ad_visits(self, counter: str, since: date, until: date) -> int | None:
+        self.visit_calls.append((counter, since, until))
+        if self.unavailable:
+            raise PlatformUnavailable("metrika")
+        self._check_fault("ad_visits", after_apply=False)
+        days = [day for day in self.visits if since <= day <= until]
+        if not days:
+            return None
+        return sum(self.visits[day] for day in days)

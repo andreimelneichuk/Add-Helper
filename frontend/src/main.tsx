@@ -1,7 +1,11 @@
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { openSession } from "./api";
+import { createApi, createBusiness, createGuestApi, openSession } from "./api";
 import { App } from "./App";
+import { AppShell } from "./app/AppShell";
+import { LiveStore, loadLive } from "./app/live";
+import { initialState, Store } from "./app/store";
+import { CONNECT_RESULT } from "./app/screens/LiveSettings";
 import { Cabinet } from "./cabinet/Cabinet";
 import "./styles.css";
 
@@ -9,6 +13,70 @@ type Session = Awaited<ReturnType<typeof openSession>>;
 
 // Есть сервис и вход — кабинет на его данных. Нет — прототип мастера на тестовых данных.
 function Root() {
+  const params = new URLSearchParams(window.location.search);
+  // Старый кабинет остаётся до конца этапа R7. Подключение кабинета начинают только в новом интерфейсе,
+  // а Яндекс возвращает на `/?connect=…`, поэтому итог показываем там же.
+  if (!params.has("new") && !params.has("connect")) return <Current />;
+  if (params.has("mock")) return <AppShell />;
+  // Шаги 1–4 запуска до входа идут через сервис: разбор сайта, бюджет, писатель объявлений.
+  if (params.has("start")) return <GuestStart />;
+  return <Live />;
+}
+
+function GuestStart() {
+  const store = useMemo(() => {
+    const created = new Store(initialState("start"));
+    created.reader = createGuestApi();
+    created.writer = created.reader as ReturnType<typeof createGuestApi>;
+    return created;
+  }, []);
+  useEffect(() => {
+    const guest = createGuestApi();
+    // Без ответа сервиса остаются пределы прототипа; сервис всё равно проверит сумму при сохранении.
+    guest.budgetOptions().then((budgetOptions) => store.set({ budgetOptions }), () => undefined);
+    const params = new URLSearchParams(window.location.search);
+    const login = params.get("login");
+    const connect = params.get("connect");
+    if (login !== null || connect !== null) window.history.replaceState(null, "", "/?new&start");
+    if (connect !== null) {
+      // С подключения кабинета: черновик уже перенесён, мастер продолжает с бизнесом.
+      void store.resumeConnect({ session: openSession, open: createApi }, connect === "ok" ? null : CONNECT_RESULT[connect] ?? CONNECT_RESULT.failed!);
+      return;
+    }
+    void store.resume({ session: openSession, createBusiness, business: createApi, open: createApi }, login);
+  }, [store]);
+  return <AppShell store={store} />;
+}
+
+// Есть вход и бизнес: настоящие данные. Нет: прототип с видимой полосой ситуаций, спутать нельзя.
+function Live() {
+  const params = new URLSearchParams(window.location.search);
+  const [store, setStore] = useState<LiveStore | "mock" | "failed" | null>(null);
+  useEffect(() => {
+    // В режиме разработки эффект запускается дважды. Без отмены второй магазин придёт позже
+    // и заменит первый, в котором владелец уже успел перейти в другой раздел.
+    let cancelled = false;
+    openSession().then(async (session) => {
+      const business = session?.businesses[0];
+      if (!session || !business) return cancelled || setStore("mock");
+      const api = createApi(business.id, session.me.csrf_token);
+      const live = new LiveStore(api, await loadLive(api, business.name));
+      if (cancelled) return;
+      const connect = params.get("connect");
+      if (connect !== null) {
+        live.set({ view: "settings", notice: CONNECT_RESULT[connect] ?? CONNECT_RESULT.failed! });
+        window.history.replaceState(null, "", "/?new");
+      }
+      setStore(live);
+    }).catch(() => cancelled || setStore("failed"));
+    return () => { cancelled = true; };
+  }, []);
+  if (store === null) return null;
+  if (store === "failed") return <p role="alert">Сервис не ответил. Обновите страницу через минуту.</p>;
+  return store === "mock" ? <AppShell /> : <AppShell store={store} />;
+}
+
+function Current() {
   const [session, setSession] = useState<Session | "loading">("loading");
   useEffect(() => {
     openSession().then(setSession);

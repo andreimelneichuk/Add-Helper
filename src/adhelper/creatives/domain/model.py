@@ -10,6 +10,8 @@ class ViolationKind(StrEnum):
     UNCONFIRMED_NUMBER = "unconfirmed_number"
     UNCONFIRMED_CLAIM = "unconfirmed_claim"
     UNCONFIRMED_BY_JUDGE = "unconfirmed_by_judge"
+    # Ссылка писателя на факт неверна: нет ключа, фрагмента или число без факта.
+    UNBOUND_CLAIM = "unbound_claim"
     FORBIDDEN_WORD = "forbidden_word"
     FOREIGN_WORD = "foreign_word"
     TOO_SIMILAR = "too_similar"
@@ -21,7 +23,14 @@ class CreativeSource(StrEnum):
 
 
 class ModelUnavailable(Exception):
-    """Модель не ответила, ответ обрезан или отклонён фильтром."""
+    """Модель не ответила, ответ обрезан или отклонён фильтром.
+
+    `tokens` — сколько токенов ответ всё же потратил: обрезанный ответ оплачен.
+    """
+
+    def __init__(self, reason: str = "", tokens: int = 0) -> None:
+        super().__init__(reason)
+        self.tokens = tokens
 
 
 @dataclass(frozen=True)
@@ -78,6 +87,9 @@ class CreativeRules:
     sensitive_niches: tuple[str, ...]
     # Сколько наборов бизнес может запросить за сутки: каждый стоит вызовов модели.
     max_sets_per_day: int
+    # Рамка писателя (creatives-3): пусто — проверяются только ключи, фрагменты и числа.
+    fact_glue: tuple[str, ...] = ()
+    claim_stems: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -113,11 +125,40 @@ class SetStatus(StrEnum):
 
 
 @dataclass(frozen=True)
+class Rework:
+    """Что переделываем: объявление площадки, его текст сейчас и просьба владельца."""
+
+    ad_id: str
+    base: AdDraft
+    wish: str
+    # Замена после правки факта: просьба наша, малая правка допустима, нужен один вариант.
+    auto: bool = False
+
+
+@dataclass(frozen=True)
 class ClaimedSet:
     id: int
-    business_id: UUID
+    # У набора мастера до входа бизнеса ещё нет.
+    business_id: UUID | None
     rules_version: str
-    # Место, для которого пишем. У наборов до §8 его нет.
+    # Место, для которого пишем. У наборов до §8 и у наборов мастера его нет.
     account: str | None = None
     campaign_id: str | None = None
     campaign_name: str | None = None
+    # Факты черновика мастера: пишем по ним, а не по профилю бизнеса.
+    profile: BusinessProfile | None = None
+    # Переделка одного объявления по просьбе владельца.
+    rework: Rework | None = None
+    rework_rules: str | None = None
+
+
+@dataclass(frozen=True)
+class WizardRules:
+    """Объявления в мастере до входа: лимиты гостя и размер черновика профиля."""
+
+    version: str
+    max_guest_sets_per_address: int
+    max_guest_sets_per_day: int
+    max_services: int
+    max_features: int
+    max_fact_chars: int

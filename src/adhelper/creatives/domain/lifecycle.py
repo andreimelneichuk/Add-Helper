@@ -21,11 +21,17 @@ BASIS_POINTS = 10000
 class CreativeState(StrEnum):
     READY = "ready"
     RESERVE = "reserve"
-    # Заняло место и ждёт отправки в Директ: отправку сделает адаптер площадки (T6).
+    # Заняло место и ждёт отправки в Директ через журнал.
     LAUNCH_PENDING = "launch_pending"
     NEEDS_OWNER = "needs_owner"
     STOPPED = "stopped"
     WITHDRAWN = "withdrawn"
+    # Создано на площадке и ждёт итога проверки Яндексом.
+    MODERATION = "moderation"
+    # Яндекс одобрил: идут показы.
+    RUNNING = "running"
+    # Яндекс отклонил: ремонт или решение владельца, причина в `rejection`.
+    REJECTED = "rejected"
 
 
 # Эти объявления ещё не на площадке: их можно двигать без журнала.
@@ -67,9 +73,11 @@ class CampaignSlots:
     account: str
     campaign_id: str
     running: bool
-    # Тексты объявлений, которые сейчас идут на площадке.
+    # Тексты объявлений, которые идут на площадке или ждут проверки Яндекса.
     live: tuple[AdDraft, ...]
     ever_had_ads: bool
+    # Отклонённые Яндексом без ремонта: место за ними, пока ремонт или владелец не решат.
+    held: int = 0
 
 
 @dataclass(frozen=True)
@@ -171,6 +179,58 @@ def is_stale(candidate: Candidate, profile: BusinessProfile) -> bool:
     return any(key not in current for key in candidate.facts)
 
 
+@dataclass(frozen=True)
+class LiveAd:
+    """Объявление, которое сейчас показывается на площадке."""
+
+    account: str
+    campaign_id: str
+    ad_id: str
+    draft: AdDraft
+
+
+@dataclass(frozen=True)
+class Replacement:
+    """Ожидающая замена объявления площадки: ещё не отправлена в Директ."""
+
+    id: int
+    ad_id: str
+    state: CreativeState
+    draft: AdDraft
+
+
+@dataclass(frozen=True)
+class FactPlan:
+    # Замены, которые сами устарели: снять.
+    stop: tuple[int, ...]
+    # Объявления, которым заказываем замену сейчас.
+    rewrite: tuple[LiveAd, ...]
+    # Устарели, но лимит наборов на сутки исчерпан: закажем в следующем цикле.
+    later: tuple[LiveAd, ...]
+
+
+def plan_fact_updates(
+    profile: BusinessProfile,
+    live: Sequence[LiveAd],
+    replacements: Sequence[Replacement],
+    writing: frozenset[str],
+    sets_left: int,
+) -> FactPlan:
+    """Работающее объявление с числом не из профиля получает замену, по одной на объявление.
+
+    Старое объявление продолжает показываться до отправки замены: остановить его без
+    замены значит оставить направление пустым, это решает владелец.
+    """
+    stop = tuple(
+        r.id for r in replacements if r.state in WAITING and unconfirmed_numbers(r.draft, profile)
+    )
+    covered = writing | {r.ad_id for r in replacements if r.state in WAITING and r.id not in stop}
+    outdated = [ad for ad in live if unconfirmed_numbers(ad.draft, profile)]
+    pending = [ad for ad in outdated if ad.ad_id not in covered]
+    room = max(sets_left, 0)
+    return FactPlan(stop, tuple(pending[:room]), tuple(pending[room:]))
+
+
 def _similar(draft: AdDraft, others: Iterable[AdDraft], rules: SlotRules) -> bool:
     return any(similarity_bp(draft, other) > rules.similarity_max_bp for other in others)
 
@@ -212,7 +272,7 @@ def plan_slots(
         if not campaign.running:
             continue
         taken = [*campaign.live, *(c.draft for c in placed)]
-        free = rules.slots_per_campaign - len(taken)
+        free = rules.slots_per_campaign - len(taken) - campaign.held
         reserve = 0
         for item in (c for c in own if c.state not in PLACED):
             if _similar(item.draft, taken, rules):
