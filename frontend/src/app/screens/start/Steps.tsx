@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ComponentType } from "react";
 import { ACCOUNT, MIN_BUDGET, rub } from "../../data";
+import type { Fact } from "../../data";
 import { AdArt, Compose } from "../AdDetail";
 import { RealAds, RealCode, RealLaunch, RealMarking, RealYandex } from "./RealSteps";
 import type { State, Store } from "../../store";
@@ -35,14 +36,50 @@ function AboutStep({ store, s }: StepProps) {
   );
 }
 
+const FACT_CATEGORIES: [NonNullable<Fact["field"]>, string][] = [
+  ["service", "Услуга"],
+  ["feature", "Особенность"],
+  ["address", "Адрес"],
+  ["niche", "Сфера"],
+];
+
 function FactEditor({ store, s, label, id }: StepProps & { label: string; id: string | null }) {
   const value = s.factEdit?.value ?? "";
+  const existing = id !== null ? s.facts.find((f) => f.id === id) : null;
+  const currentField: Fact["field"] = s.factEdit?.field ?? existing?.field ?? "service";
+  const categoryTitle = FACT_CATEGORIES.find(([cat]) => cat === currentField)?.[1];
+  const userChangedCategory = s.factEdit?.field !== undefined && s.factEdit.field !== existing?.field;
+  const displayLabel = userChangedCategory ? categoryTitle ?? label : label;
   return (
     <div className="st-fact st-fact-editing">
+      <div className="st-fact-types">
+        {FACT_CATEGORIES.map(([cat, title]) => (
+          <button
+            key={cat}
+            type="button"
+            className={currentField === cat ? "ah-btn ah-btn-primary is-on" : "ah-btn"}
+            onClick={() => store.set({ factEdit: { id, value, field: cat } })}
+          >
+            {title}
+          </button>
+        ))}
+      </div>
       <label className="st-field">
-        <span className="ah-label">{label}</span>
+        <span className="ah-label">{displayLabel}</span>
         {/* Шаг это форма: Enter здесь сохраняет факт, а не ведёт дальше. */}
-        <input className="ah-input" autoFocus value={value} onChange={(e) => store.set({ factEdit: { id, value: e.target.value } })} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); store.saveFact(); } }} />
+        <input
+          className="ah-input"
+          autoFocus
+          placeholder={currentField === "service" ? "Например, Стрижка, 1 500 ₽" : ""}
+          value={value}
+          onChange={(e) => store.set({ factEdit: { id, field: currentField, value: e.target.value } })}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              store.saveFact();
+            }
+          }}
+        />
       </label>
       <div className="st-fact-actions">
         <button type="button" className="ah-btn ah-btn-primary" disabled={!value.trim()} onClick={store.saveFact}>Сохранить</button>
@@ -55,20 +92,30 @@ function FactEditor({ store, s, label, id }: StepProps & { label: string; id: st
 
 function ProfileStep({ store, s }: StepProps) {
   const adding = s.factEdit?.id === null;
+  const hasService = s.facts.some((f) => f.field === "service" || f.id === "prices");
   return (
     <>
+      {!hasService && (
+        <p className="st-need-service-hint" role="note">
+          Добавьте хотя бы одну услугу: объявления пишутся по вашим услугам.
+        </p>
+      )}
       <div className="st-grid-2">
         {s.facts.map((f) => (s.factEdit?.id === f.id ? <FactEditor key={f.id} store={store} s={s} label={f.label} id={f.id} /> : (
           <div key={f.id} className="st-fact">
             <div className="st-fact-head"><span>{f.label}</span><span>{f.source}</span></div>
             <div className="st-fact-value">{f.value}</div>
             {f.quote && <blockquote className="st-fact-quote">«{f.quote}»</blockquote>}
-            <button type="button" className="ah-btn st-fact-edit" aria-label={`Изменить: ${f.label}`} onClick={() => store.set({ factEdit: { id: f.id, value: f.value }, block: "" })}>Изменить</button>
+            <button type="button" className="ah-btn st-fact-edit" aria-label={`Изменить: ${f.label}`} onClick={() => store.set({ factEdit: { id: f.id, value: f.value, field: f.field }, block: "" })}>Изменить</button>
           </div>
         )))}
         {adding && <FactEditor store={store} s={s} label="Новый факт" id={null} />}
       </div>
-      {!adding && <button type="button" className="ah-btn st-fact-add" onClick={() => store.set({ factEdit: { id: null, value: "" }, block: "" })}>Добавить факт</button>}
+      {!adding && (
+        <button type="button" className="ah-btn st-fact-add" onClick={() => store.set({ factEdit: { id: null, value: "" }, block: "" })}>
+          Добавить факт
+        </button>
+      )}
     </>
   );
 }
@@ -93,7 +140,13 @@ function BudgetStep({ store, s }: StepProps) {
         <input className="ah-input" inputMode="numeric" autoComplete="off" placeholder={`От ${min}`} value={s.budgetDraft ?? ""} onChange={(e) => {
           const draft = e.target.value.replace(/\D/g, "").slice(0, 8);
           const n = Number(draft);
-          store.set({ budgetDraft: draft || null, block: "", ...(n >= min && n <= max ? { f: { ...s.f, budget: n } } : {}) });
+          const presets = s.budgetOptions?.presets ?? PRESETS;
+          const defaultPreset = presets[0] ?? MIN_BUDGET;
+          store.set({
+            budgetDraft: draft || null,
+            block: "",
+            ...(!draft ? { f: { ...s.f, budget: defaultPreset } } : n >= min && n <= max ? { f: { ...s.f, budget: n } } : {}),
+          });
         }} />
         {custom && <span className="ah-muted">{typed >= min ? perDay(typed) : `Минимум ${rub(min)}`}</span>}
       </label>
@@ -159,7 +212,7 @@ function YandexStep({ store, s }: StepProps) {
     <div className="st-link">
       <div className="st-link-text">
         <div className="st-link-title">Кабинет Яндекса</div>
-        <div className="ah-muted">{s.yandex ? "Подключён: логин salon-primer" : "Вход и доступ к кабинету одним согласием. Кабинета нет? Покажу, как завести за 3 минуты."}</div>
+        <div className="ah-muted">{s.yandex ? "Подключён: логин salon-primer" : "Вход и доступ к кабинету одним согласием. Кабинет подключим после входа."}</div>
       </div>
       <button type="button" className={s.yandex ? "ah-btn st-link-done" : "ah-btn ah-btn-primary"} onClick={() => store.set({ yandex: true, block: "" })}>{s.yandex ? "Подключено" : "Войти через Яндекс"}</button>
     </div>

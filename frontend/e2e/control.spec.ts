@@ -232,7 +232,7 @@ test("до входа объявления пишет писатель серв�
   await page.getByRole("button", { name: "Продолжить" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Вот ваши объявления" })).toBeVisible();
   // Подставных объявлений прототипа нет: текст написан по цене и адресу с сайта.
-  await expect(page.getByText("Маникюр с покрытием гель-лаком за 1700 ₽ на Тверской, 7.")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Маникюр с покрытием гель-лаком за 1700 ₽. Москва, ул. Тверская, 7.")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText(/Опирается на: цена услуги «Маникюр с покрытием гель-лаком»/)).toBeVisible();
   await expect(page.getByText("Скидка 20% на первый визит")).toHaveCount(0);
   await page.getByRole("button", { name: "Убрать «Маникюр на Тверской»" }).click();
@@ -347,7 +347,7 @@ test("новый владелец проходит мастер и запуск�
   await page.getByRole("button", { name: "Изучить" }).click();
   await page.getByRole("button", { name: "Всё верно" }).click({ timeout: 15_000 });
   await page.getByRole("button", { name: "Продолжить" }).click();
-  await expect(page.getByText("Маникюр с покрытием гель-лаком за 1700 ₽ на Тверской, 7.")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Маникюр с покрытием гель-лаком за 1700 ₽. Москва, ул. Тверская, 7.")).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: "Нравится" }).click();
 
   await page.getByRole("button", { name: "Войти через Яндекс" }).click();

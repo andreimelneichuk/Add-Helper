@@ -3,7 +3,8 @@ import { ApiError } from "../api";
 import type { Api, Profile } from "../api";
 import { fakeApi, line, open, overview, said, settled } from "./testLive";
 import { rub } from "./data";
-import { statusText, week } from "./store";
+import { statusText, Store, week } from "./store";
+import { liveApi, savedText } from "./live";
 
 describe("живые данные", () => {
   it("переводит микроединицы в рубли только для показа и заполняет дни без статистики", async () => {
@@ -280,5 +281,465 @@ describe("лента «Сегодня» от сервиса", () => {
   it("без ленты сервиса экран не ломается", async () => {
     const store = await open(fakeApi({ today: vi.fn(async () => { throw new ApiError(500, "сбой"); }) } as Partial<Api>));
     expect(store.state.live?.cards).toBeUndefined();
+  });
+});
+
+describe("сетевые ошибки и граничные сценарии (500, 503, 401, CSRF)", () => {
+  it("обрабатывает 401 Unauthorized и 403 CSRF", async () => {
+    const api = fakeApi({
+      pause: vi.fn(async () => { throw new ApiError(401, "Сессия истекла"); }),
+      setAdState: vi.fn(async () => { throw new ApiError(403, "Неверный CSRF-токен"); }),
+    } as Partial<Api>);
+    const store = await open(api);
+
+    store.run({ action: "pause" });
+    await settled();
+    expect(store.state.notice).toContain("Сессия истекла");
+
+    store.run({ action: "ad", value: "anna/11" });
+    await settled();
+    expect(store.state.notice).toContain("Неверный CSRF-токен");
+  });
+
+  it("обрабатывает 500, 503 и сетевой сбой без ApiError", async () => {
+    const api = fakeApi({
+      setBudget: vi.fn(async () => { throw new ApiError(500, "Внутренняя ошибка сервиса"); }),
+      rollback: vi.fn(async () => { throw new ApiError(503, "Сервис временно недоступен"); }),
+      command: vi.fn(async () => { throw new TypeError("Failed to fetch"); }),
+    } as Partial<Api>);
+    const store = await open(api);
+
+    store.run({ action: "setting", value: ["budget", 25000] });
+    await settled();
+    expect(store.state.notice).toContain("Внутренняя ошибка сервиса");
+
+    store.run({ action: "undo", value: "change-5" });
+    await settled();
+    expect(store.state.notice).toContain("Сервис временно недоступен");
+
+    store.send("любое сообщение");
+    await settled();
+    expect(store.state.msgs.at(-1)?.text).toContain("Сервис не ответил. Ничего не изменилось, попробуйте позже.");
+  });
+
+  it("сверка баланса подтверждает баланс через API", async () => {
+    const api = fakeApi({ confirmBalance: vi.fn(async () => ({ confirmed: true })) } as unknown as Partial<Api>);
+    const store = await open(api);
+    store.run({ action: "balance" });
+    await settled();
+    expect(api.confirmBalance).toHaveBeenCalledWith("anna");
+    expect(store.state.notice).toContain("Сверка начнётся заново");
+  });
+
+  it("ответ на предложение теста: согласие, отказ и отмена", async () => {
+    const api = fakeApi({
+      answerTest: vi.fn(async (_id: number, agree: boolean) => ({
+        status: "ok",
+        text: agree ? "Тест согласован" : "Тест отклонён",
+      })),
+      cancelTest: vi.fn(async () => ({ status: "cancelled", text: "Тест успешно отменён" })),
+    } as Partial<Api>);
+    const store = await open(api);
+
+    store.run({ action: "test", value: "10", answer: "agree" });
+    await settled();
+    expect(api.answerTest).toHaveBeenCalledWith(10, true);
+    expect(store.state.notice).toContain("Тест согласован");
+
+    store.run({ action: "test", value: "10", answer: "decline" });
+    await settled();
+    expect(api.answerTest).toHaveBeenCalledWith(10, false);
+    expect(store.state.notice).toContain("Тест отклонён");
+
+    store.run({ action: "test", value: "10", answer: "cancel" });
+    await settled();
+    expect(api.cancelTest).toHaveBeenCalledWith(10);
+    expect(store.state.notice).toContain("Тест успешно отменён");
+  });
+
+  it("статусы pending при отмене и переключении объявления", async () => {
+    const api = fakeApi({
+      rollback: vi.fn(async () => ({ status: "pending" })),
+      setAdState: vi.fn(async () => ({ status: "pending" as const })),
+    } as Partial<Api>);
+    const store = await open(api);
+
+    store.run({ action: "undo", value: "change-5" });
+    await settled();
+    expect(store.state.notice).toContain("отмена записана и будет повторена");
+
+    store.run({ action: "ad", value: "anna/11" });
+    await settled();
+    expect(store.state.notice).toContain("Яндекс ещё применяет его");
+  });
+
+  it("пауза при отсутствии идущих показов и отказ по части направлений при возобновлении", async () => {
+    const api = fakeApi({
+      pause: vi.fn(async () => ({ stopped: [] })),
+      resume: vi.fn(async () => ({ resumed: ["1"], refused: ["2"], failed: [] })),
+    } as Partial<Api>);
+    const store = await open(api);
+
+    store.run({ action: "pause" });
+    await settled();
+    expect(store.state.notice).toContain("Идущих показов нет");
+
+    store.set({ paused: true });
+    store.run({ action: "pause" });
+    await settled();
+    expect(store.state.notice).toContain("Часть направлений не включил");
+  });
+
+  it("неподдерживаемое действие сообщает об этом", async () => {
+    const store = await open(fakeApi());
+    store.run({ action: "setting", value: ["hours" as any, "24/7"] });
+    await settled();
+    expect(store.state.notice).toContain("ещё не подключено к сервису");
+  });
+
+  it("команды чата: undo_last, rework_ad, history, stats, ad_on, unknown", async () => {
+    const api = fakeApi({
+      command: vi.fn()
+        .mockResolvedValueOnce(said({ kind: "undo_last" }))
+        .mockResolvedValueOnce(said({ kind: "undo_last" }))
+        .mockResolvedValueOnce(said({ kind: "rework_ad", ad: { id: "anna/11", name: "Маникюр" } }))
+        .mockResolvedValueOnce(said({ kind: "history" }))
+        .mockResolvedValueOnce(said({ kind: "stats" }))
+        .mockResolvedValueOnce(said({ kind: "ad_on", ad: { id: "anna/11", name: "Маникюр" } }))
+        .mockResolvedValueOnce(said({ kind: "ad_on", ad: { id: "anna/11", name: "Маникюр" }, confirm: "Включить?" }))
+        .mockResolvedValueOnce(said({ kind: "unknown", reply: "Не понял команду" })),
+    } as Partial<Api>);
+    const store = await open(api);
+
+    // undo_last с доступной записью
+    store.send("отмени последнее");
+    await settled();
+    expect(store.state.pending).toEqual({ action: "undo", value: "change-5" });
+
+    // undo_last когда отменять нечего
+    store.set({ pending: null, hist: [] });
+    store.send("откатить действие");
+    await settled();
+    expect(store.state.msgs.at(-1)?.text).toContain("Отменять пока нечего");
+
+    // rework_ad
+    store.send("переделай объявление");
+    await settled();
+    expect(store.state.msgs.at(-1)?.text).toContain("Переделка — на экране объявления");
+    expect(store.state.msgs.at(-1)?.link?.view).toBe("ads");
+
+    // history
+    store.send("история");
+    await settled();
+    expect(store.state.msgs.at(-1)?.text).toContain("В истории все изменения с причинами");
+    expect(store.state.msgs.at(-1)?.link?.view).toBe("history");
+
+    // stats
+    store.send("статистика");
+    await settled();
+    expect(store.state.msgs.at(-1)?.link?.view).toBe("stats");
+
+    // ad_on когда уже работает
+    store.set({ adsOff: {} });
+    store.send("включи маникюр");
+    await settled();
+    expect(store.state.msgs.at(-1)?.text).toContain("уже работает");
+
+    // ad_on когда отключено
+    store.set({ adsOff: { "anna/11": true } });
+    store.send("включи маникюр");
+    await settled();
+    expect(store.state.pending).toEqual({ action: "ad", value: "anna/11" });
+
+    // unknown команда
+    store.send("абракадабра");
+    await settled();
+    expect(store.state.msgs.at(-1)?.text).toContain("Не понял команду");
+  });
+
+  it("чат: повторный pause когда уже на паузе и resume когда уже активен", async () => {
+    const api = fakeApi({
+      command: vi.fn()
+        .mockResolvedValueOnce(said({ kind: "pause" }))
+        .mockResolvedValueOnce(said({ kind: "resume" })),
+    } as Partial<Api>);
+    const store = await open(api);
+
+    store.set({ paused: true });
+    store.send("пауза");
+    await settled();
+    expect(store.state.msgs.at(-1)?.text).toContain("Реклама уже на паузе");
+
+    store.set({ paused: false });
+    store.send("включи");
+    await settled();
+    expect(store.state.msgs.at(-1)?.text).toContain("Реклама и так идёт");
+  });
+
+  it("chat set_price для несуществующей услуги и skip_days без изменений", async () => {
+    const api = fakeApi({
+      skipDays: vi.fn(async () => ({ applied: [], unknown: [], unchanged: [] })),
+    } as Partial<Api>);
+    const store = await open(api);
+
+    store.run({ action: "chat", value: said({ kind: "set_price", service: "Косметология", rubles: 2000 }) });
+    await settled();
+    expect(store.state.notice).toContain("уже нет в профиле");
+
+    store.run({ action: "chat", value: said({ kind: "skip_days", days: [1] }) });
+    await settled();
+    expect(store.state.notice).toContain("Реклама и так не показывается");
+
+    store.run({ action: "chat", value: said({ kind: "unknown" }) });
+    await settled();
+    expect(store.state.notice).toContain("ещё не подключено к сервису");
+  });
+
+  it("различные типы тревог (Alerts)", async () => {
+    const alerts = [
+      { kind: "balance_mismatch", details: {}, created_at: "" },
+      { kind: "budget_stopped", details: {}, created_at: "" },
+      { kind: "budget_stop_pending", details: {}, created_at: "" },
+      { kind: "budget_near_limit", details: {}, created_at: "" },
+      { kind: "platform_unavailable", details: {}, created_at: "" },
+      { kind: "platform_not_connected", details: {}, created_at: "" },
+      { kind: "ads_no_profile", details: {}, created_at: "" },
+      { kind: "ads_need_confirmation", details: {}, created_at: "" },
+      { kind: "ads_rejected", details: { headline: "Тест", reason: "Запрещённая тема" }, created_at: "" },
+      { kind: "ads_rejected", details: {}, created_at: "" },
+      { kind: "unknown_kind", details: {}, created_at: "" },
+    ];
+    const base = overview(alerts);
+    const store = await open(fakeApi({ overview: vi.fn(async () => ({ ...base, money: [] })) } as Partial<Api>));
+    expect(store.state.live?.alerts.length).toBe(alerts.length);
+  });
+
+  it("подробности открытого объявления openAdScreen и повторный askUndo", async () => {
+    const api = fakeApi({
+      ad: vi.fn(async () => ({
+        basis: { sources: [{ fragment: "1200", label: "цена", key: "price" }], unconfirmed: [] },
+      })),
+    } as unknown as Partial<Api>);
+    const store = await open(api);
+
+    store.openAdScreen("invalid-id");
+    expect(store.state.openAd).toBe("invalid-id");
+
+    store.openAdScreen("anna/11");
+    await settled();
+    expect(api.ad).toHaveBeenCalledWith("anna", "11");
+    expect(store.state.ads.find((a) => a.id === "anna/11")?.facts).toContain("Цена");
+
+    // Повторный askUndo переключает asked в false
+    store.askUndo("change-5");
+    await settled();
+    expect(store.state.asked["change-5"]).toBe(true);
+    store.askUndo("change-5");
+    expect(store.state.asked["change-5"]).toBe(false);
+  });
+
+  it("хэндлер отказа в чате отменяет ожидающее действие", async () => {
+    const store = await open(fakeApi());
+    store.set({ pending: { action: "pause" } });
+    store.send("нет, не надо");
+    expect(store.state.pending).toBeNull();
+    expect(store.state.msgs.at(-1)?.text).toContain("ничего не меняю");
+  });
+
+  it("проверяет ветки kindOf, toEntry, toAd и profile failure", async () => {
+    const historyLines = [
+      { ref: "change-1", at: "2026-11-01T10:00:00Z", source: "experiment", kind: "test", target: "ad:99", status: "applied", explanation: "Тест", before: {}, after: {}, rules_version: null },
+      { ref: "change-2", at: "2026-11-01T10:00:00Z", source: "system", kind: "set_limit", target: "camp:1", status: "conflict", explanation: "Лимит", before: {}, after: {}, rules_version: null },
+      { ref: "change-3", at: "2026-11-01T10:00:00Z", source: "system", kind: "pause", target: "camp:1", status: "failed", explanation: "Пауза", before: {}, after: {}, rules_version: null },
+      { ref: "change-4", at: "2026-11-01T10:00:00Z", source: "rollback", kind: "pause_ad", target: "ad:11", status: "applied", explanation: "Откат", before: {}, after: {}, rules_version: null, reverted: true },
+      { ref: "change-6", at: "2026-11-01T10:00:00Z", source: "system", kind: "create_campaign", target: "camp:1", status: "planned", explanation: "Создание", before: {}, after: {}, rules_version: null },
+    ];
+    const adLines = [
+      line({ ad_id: "21", state: "suspended" }),
+      line({ ad_id: "22", state: "moderation" }),
+      line({ ad_id: "23", state: "rejected" }),
+      line({ ad_id: "24", state: "archived" }),
+      line({ ad_id: "25", campaign_id: "999" }), // неизвестное направление
+    ];
+    const api = fakeApi({
+      history: vi.fn(async () => historyLines as any),
+      ads: vi.fn(async () => adLines),
+      profile: vi.fn(async () => { throw new Error("нет профиля"); }),
+      ad: vi.fn(async () => ({ basis: { sources: [], unconfirmed: [] } })),
+    } as unknown as Partial<Api>);
+
+    const store = await open(api);
+    expect(store.state.live?.profile).toEqual([]);
+    expect(store.state.hist.some((h) => h.kind === "tests")).toBe(true);
+    expect(store.state.hist.some((h) => h.kind === "money")).toBe(true);
+    expect(store.state.ads.some((a) => a.tag === "на проверке Яндекса")).toBe(true);
+    expect(store.state.ads.some((a) => a.tag === "отклонено Яндексом")).toBe(true);
+
+    // openAdScreen с пустыми sources
+    store.openAdScreen("anna/21");
+    await settled();
+    expect(store.state.ads.find((a) => a.id === "anna/21")?.facts).toBe("В тексте нет фактов из профиля");
+
+    // openAdScreen с ошибкой сети
+    vi.mocked(api.ad).mockRejectedValueOnce(new Error("network error"));
+    store.openAdScreen("anna/21");
+    await settled();
+
+    // askUndo с сетевой ошибкой
+    vi.mocked(api.rollbackPreview).mockRejectedValueOnce(new Error("network error"));
+    store.askUndo("change-2");
+    await settled();
+    expect(store.state.undoInfo["change-2"]?.text).toContain("Сервис не ответил");
+  });
+
+  it("проверяет ветки cuts, unknown skipDays, пустой send и liveApi", async () => {
+    const api = fakeApi({
+      setBudget: vi.fn().mockResolvedValueOnce({ cuts: 2 }).mockResolvedValueOnce({ cuts: 0 }),
+      skipDays: vi.fn().mockResolvedValueOnce({ applied: ["anna:1"], unknown: ["anna:2", "anna:3"], unchanged: [] }),
+    } as Partial<Api>);
+    const store = await open(api);
+
+    // cuts > 1
+    store.run({ action: "setting", value: ["budget", 30000] });
+    await settled();
+    expect(store.state.notice).toContain("2 направлений");
+
+    // cuts === 0
+    store.run({ action: "setting", value: ["budget", 30000] });
+    await settled();
+    expect(store.state.notice).toContain("Лимиты в Яндексе не менялись");
+
+    // skipDays с несколькими unknown
+    store.run({ action: "chat", value: said({ kind: "skip_days", days: [1, 2] }) });
+    await settled();
+    expect(store.state.notice).toContain("2 направлений");
+
+    // пустой ввод
+    store.send("   ");
+    expect(store.state.msgs.at(-1)?.who).not.toBe("me");
+
+    // liveApi
+    expect(liveApi(store)).toBe(api);
+    expect(liveApi(new Store())).toBeNull();
+
+    // skipDays с ровно 1 unknown направлением
+    vi.mocked(api.skipDays).mockResolvedValueOnce({ applied: ["anna:1"], unknown: ["anna:2"], unchanged: [] });
+    store.run({ action: "chat", value: said({ kind: "skip_days", days: [1] }) });
+    await settled();
+    expect(store.state.notice).toContain("1 направления");
+
+    // set_price с null в c.rubles
+    vi.mocked(api.profile).mockResolvedValueOnce({ niche: "маникюр", address: "Москва", services: [{ name: "Маникюр", price: 1000 }], features: [], website: "" });
+    vi.mocked(api.saveProfile).mockResolvedValueOnce({ niche: "маникюр", address: "Москва", services: [{ name: "Маникюр", price: 1000 }], features: [], website: "", outdated: [] });
+    store.run({ action: "chat", value: said({ kind: "set_price", service: "Маникюр", rubles: null }) });
+    await settled();
+    expect(store.state.notice).toContain("0 ₽");
+
+    // finish при state.mode === "chat" (notice остаётся пустым)
+    store.set({ mode: "chat", notice: "" });
+    store.run({ action: "setting", value: ["budget", 30000] });
+    await settled();
+    expect(store.state.notice).toBe("");
+
+    // Очередь команд: c.next не пустой
+    const c2 = said({ kind: "pause", confirm: "Остановить все показы?" });
+    const c1 = said({ kind: "set_budget", rubles: 25000, confirm: "Поставить бюджет 25 000 ₽?", next: [c2] });
+    vi.mocked(api.command).mockResolvedValueOnce(c1);
+    store.send("сделай бюджет 25000 и поставь на паузу");
+    await settled();
+    expect(store.state.msgs.some((m) => m.text.includes("Вижу 2 просьбы"))).toBe(true);
+    // Отказываемся от первой, переходит ко второй
+    store.send("нет");
+    await settled();
+    expect(store.state.msgs.some((m) => m.text.includes("Хорошо, это не меняю"))).toBe(true);
+    expect(store.state.pending?.action).toBe("pause");
+    // Подтверждаем вторую
+    store.send("да");
+    await settled();
+  });
+
+  it("проверяет savedText и summary в граничных случаях", async () => {
+    expect(savedText([])).toContain("в идущих старых цифр нет");
+    const laterAd = { account: "anna", ad_id: "1", headline: "Текст", text: "", numbers: ["100"], replacing: false };
+    const nowAd = { account: "anna", ad_id: "2", headline: "Текст 2", text: "", numbers: ["200"], replacing: true };
+    expect(savedText([laterAd])).toContain("лимит текстов на сегодня исчерпан");
+    expect(savedText([nowAd, laterAd])).toContain("Пишу замену");
+
+    // summary при нулях показов и трат
+    const zeroOverview = overview();
+    zeroOverview.days = [];
+    const storeZero = await open(fakeApi({ overview: vi.fn(async () => zeroOverview) } as Partial<Api>));
+    expect(storeZero.state.msgs[0]?.text).toContain("показов и трат не было");
+
+    // summary при тратах без обращений
+    const spendNoLeads = overview();
+    spendNoLeads.days = [{ day: "2026-11-15", totals: { impressions: 10, clicks: 1, cost: 500 * 1_000_000, conversions: 0 } }];
+    const storeSpend = await open(fakeApi({ overview: vi.fn(async () => spendNoLeads) } as Partial<Api>));
+    expect(storeSpend.state.msgs[0]?.text).toContain("обращений пока нет");
+  });
+
+  it("проверяет оставшиеся ветки perform, undo, ad_off, higher budget и подтверждения", async () => {
+    const store = await open(fakeApi());
+
+    // default в perform
+    store.run({ action: "price", value: 1500 });
+    await settled();
+    expect(store.state.notice).toContain("ещё не подключено к сервису");
+
+    // undo без undoInfo и без записи в истории
+    store.set({ hist: [], undoInfo: {} });
+    store.run({ action: "undo", value: "change-99", whole: true });
+    await settled();
+    expect(store.state.notice).toContain("направлений: изменение");
+
+    // ad без найденного объявления
+    store.set({ ads: [] });
+    store.run({ action: "ad", value: "anna/99" });
+    await settled();
+    expect(store.state.notice).toContain("«»");
+
+    // set_budget с суммой выше текущего бюджета (lower = false)
+    const apiHigh = fakeApi({
+      command: vi.fn(async () => said({ kind: "set_budget", rubles: 25000 })),
+    } as Partial<Api>);
+    const storeHigh = await open(apiHigh);
+    storeHigh.send("поставь бюджет 25000");
+    await settled();
+    expect(storeHigh.state.msgs.at(-1)?.text).not.toContain("Сначала снижу");
+
+    // ad_off когда есть другие активные объявления (refusal = false)
+    const twoAds = [line({ ad_id: "1" }), line({ ad_id: "2" })];
+    const apiTwo = fakeApi({
+      ads: vi.fn(async () => twoAds),
+      command: vi.fn(async () => said({ kind: "ad_off", ad: { id: "anna/1", name: "Объявление 1" }, confirm: "Отключить объявление 1?" })),
+    } as Partial<Api>);
+    const storeTwo = await open(apiTwo);
+    storeTwo.send("отключи объявление 1");
+    await settled();
+    expect(storeTwo.state.pending).toEqual({ action: "ad", value: "anna/1" });
+
+    // подтверждение в чате через "да"
+    storeTwo.send("да, подтверждаю");
+    await settled();
+    expect(storeTwo.state.pending).toBeNull();
+
+    // finish с обычной ошибкой сети (не ApiError)
+    vi.mocked(apiTwo.pause).mockRejectedValueOnce(new Error("Generic network failure"));
+    storeTwo.run({ action: "pause" });
+    await settled();
+    expect(storeTwo.state.notice).toContain("Сервис не ответил");
+
+    // set_budget без указания рублей (rubles: null)
+    vi.mocked(apiTwo.command).mockResolvedValueOnce(said({ kind: "set_budget", rubles: null }));
+    storeTwo.send("поставь бюджет");
+    await settled();
+    expect(storeTwo.state.msgs.at(-1)?.text).toContain("уже потрачено");
+
+    // set_price без указания рублей (rubles: null)
+    vi.mocked(apiTwo.command).mockResolvedValueOnce(said({ kind: "set_price", service: "Маникюр", rubles: null, confirm: "Маникюр без цены?" }));
+    storeTwo.send("маникюр бесплатно");
+    await settled();
+    storeTwo.send("да");
+    await settled();
   });
 });

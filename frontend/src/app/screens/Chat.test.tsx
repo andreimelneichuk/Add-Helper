@@ -94,5 +94,18 @@ describe("чат", () => {
     fireEvent.click(screen.getByRole("button", { name: "20 000 ₽ в месяц" }));
     expect(store.state.f.budget).toBe(20000);
     expect(screen.getByText("Поставил 20 000 ₽ в месяц.")).toBeInTheDocument();
+
+    // Шаг 3: подсказок нет
+    say("дальше");
+    expect(store.state.step).toBe(3);
+    expect(screen.queryByRole("group", { name: "Подсказки" })).toBeNull();
+  });
+
+  it("показывает подсказки живого кабинета при наличии live", () => {
+    const store = new Store(initialState());
+    store.set({ live: { budget: 20000, spent: 5000 } as any });
+    store.openChat();
+    render(<Chat store={store} />);
+    expect(screen.getByRole("button", { name: "Поставь на паузу" })).toBeInTheDocument();
   });
 });

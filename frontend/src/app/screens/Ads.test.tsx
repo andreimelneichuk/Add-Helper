@@ -117,4 +117,24 @@ describe("экран рекламы", () => {
     expect(screen.getByRole("button", { name: "Включить «Педикюр рядом с домом»" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Открыть «Первый визит со скидкой»" })).toBeNull();
   });
+
+  it("показывает сообщения при пустых списках фильтров и открывает AdMaker", async () => {
+    // filter "off" когда нет отключённых
+    const store = new Store();
+    render(<Ads store={store} />);
+    await userEvent.click(screen.getByRole("button", { name: "Отключены 0" }));
+    expect(screen.getByText("Отключённых объявлений нет.")).toBeInTheDocument();
+
+    // filter "on" когда все отключены
+    cleanup();
+    const storeAllOff = new Store({ ...initialState(), adsOff: { a1: true, a2: true, a3: true } });
+    render(<Ads store={storeAllOff} />);
+    await userEvent.click(screen.getByRole("button", { name: "Работают 0" }));
+    expect(screen.getByText("Сейчас ни одно объявление не показывается.")).toBeInTheDocument();
+
+    // Открытие создания нового объявления
+    await userEvent.click(screen.getByRole("button", { name: "Все 3" }));
+    await userEvent.click(screen.getByRole("button", { name: "Новое объявление" }));
+    expect(screen.getByRole("heading", { level: 2, name: "Новое объявление" })).toBeInTheDocument();
+  });
 });

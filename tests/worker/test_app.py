@@ -86,4 +86,5 @@ async def test_worker_runs_money_tasks_from_real_database(
         "telegram.poll": "succeeded",
         "site.read": "succeeded",
         "site.tag_check": "succeeded",
+        "experiments.run": "succeeded",
     }

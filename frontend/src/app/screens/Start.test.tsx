@@ -707,4 +707,34 @@ describe("объявления мастера на сервисе", () => {
     expect(screen.queryByRole("button", { name: /Убрать/ })).not.toBeInTheDocument();
     expect(screen.getByText(/Выбор сохранён в сервисе/)).toBeInTheDocument();
   });
+
+  it("без услуг в профиле дальше не пускает, позволяет добавить услугу и перейти дальше", async () => {
+    const factsWithoutServices = [
+      { id: "f1", field: "niche" as const, label: "Чем занимаетесь", value: "Салон красоты", source: "от вас" },
+      { id: "f2", field: "address" as const, label: "Где", value: "Пермь", source: "от вас" },
+    ];
+    const { store, user } = setup({ step: 1, facts: factsWithoutServices });
+
+    expect(screen.getByText(/Добавьте хотя бы одну услугу/)).toBeInTheDocument();
+
+    await user.click(button("Всё верно"));
+    expect(store.state.step).toBe(1);
+    expect(screen.getByRole("alert")).toHaveTextContent("Добавьте хотя бы одну услугу");
+
+    await user.click(button("Добавить факт"));
+    await user.type(screen.getByLabelText("Новый факт"), "Стрижка, 1 500 ₽");
+    await user.click(button("Сохранить"));
+
+    expect(screen.getByText("Стрижка, 1 500 ₽")).toBeInTheDocument();
+
+    await user.click(button("Всё верно"));
+    expect(store.state.step).toBe(2);
+  });
+
+  it("на шаге объявлений при ошибке есть кнопка возврата в профиль", async () => {
+    const { store, user } = setup({ step: 3, ads: [], block: "Добавьте хотя бы одну услугу: объявления пишу по услугам" });
+    expect(screen.getByText("К услугам")).toBeInTheDocument();
+    await user.click(screen.getByText("К услугам"));
+    expect(store.state.step).toBe(1);
+  });
 });

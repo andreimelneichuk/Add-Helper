@@ -61,7 +61,16 @@ export function Start({ store }: { store: Store }) {
           <div className="st-actions">
             <button type="submit" className="ah-btn ah-btn-primary st-next">{store.reader && s.step === STEPS.length - 1 ? "Открыть кабинет" : step.cta}</button>
             {s.step > 0 && <button type="button" className="ah-btn" onClick={() => store.set({ step: s.step - 1, block: "" })}>Назад</button>}
-            {s.block && <p role="alert" className="st-block">{s.block}</p>}
+            {s.block && (
+              <span className="st-block-wrap">
+                <span role="alert" className="st-block">{s.block}</span>
+                {s.step === 3 && (
+                  <button type="button" className="ah-btn st-block-action" onClick={() => store.set({ step: 1, block: "" })}>
+                    К услугам
+                  </button>
+                )}
+              </span>
+            )}
           </div>
           <button type="button" className="ah-btn st-hint" onClick={() => store.openChat()}>Можно спросить в чате</button>
         </form>

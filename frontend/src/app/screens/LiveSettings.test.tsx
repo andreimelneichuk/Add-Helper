@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../api";
@@ -345,5 +345,210 @@ describe("план бюджета до запуска", () => {
     expect(api.archivePhoto).toHaveBeenCalledWith(1);
     expect(await screen.findByRole("status")).toHaveTextContent("работают дальше");
     expect(screen.getByRole("button", { name: "Добавить фото" })).toBeDisabled();
+  });
+
+  it("подключение кабинета и обработка сбоев", async () => {
+    const assign = vi.fn();
+    vi.stubGlobal("location", { assign });
+    const api = fakeApi({
+      accounts: vi.fn(async () => []),
+      connect: vi.fn().mockRejectedValueOnce(new ApiError(503, "Яндекс недоступен")).mockResolvedValue({ authorize_url: "https://ya.ru/auth" }),
+    } as unknown as Partial<Api>);
+
+    render(<Settings store={await open(api)} />);
+    expect(await screen.findByText(/Кабинет ещё не подключён/)).toBeInTheDocument();
+    const connectBtn = screen.getByRole("button", { name: "Подключить кабинет" });
+
+    // Ошибка при первой попытке подключения
+    await userEvent.click(connectBtn);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Яндекс недоступен");
+
+    // Успешный редирект при второй попытке
+    await userEvent.click(connectBtn);
+    expect(assign).toHaveBeenCalledWith("https://ya.ru/auth");
+  });
+
+  it("выход из кабинета и обработка ошибки выхода", async () => {
+    const assign = vi.fn();
+    vi.stubGlobal("location", { assign });
+    const api = fakeApi({
+      logout: vi.fn().mockRejectedValueOnce(new ApiError(500, "Сбой выхода")).mockResolvedValue({}),
+    } as unknown as Partial<Api>);
+
+    render(<Settings store={await open(api)} />);
+    const logoutBtn = await screen.findByRole("button", { name: "Выйти" });
+
+    // Ошибка при выходе
+    await userEvent.click(logoutBtn);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Сбой выхода");
+
+    // Успешный выход
+    await userEvent.click(logoutBtn);
+    expect(assign).toHaveBeenCalledWith("/");
+  });
+
+  it("повышение бюджета показывает пояснение об автопилоте и отменяется кнопкой «Не менять»", async () => {
+    const api = fakeApi({});
+    const store = await open(api);
+    render(<Settings store={store} />);
+    const input = await screen.findByLabelText("Бюджет в месяц, ₽");
+    await userEvent.clear(input);
+    await userEvent.type(input, "60000");
+    await userEvent.click(screen.getByRole("button", { name: "Изменить бюджет" }));
+
+    expect(screen.getByText(/Лимиты в Яндексе не изменятся сразу/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Не менять" }));
+    expect(screen.queryByText(/Лимиты в Яндексе не изменятся сразу/)).toBeNull();
+    expect(input).toHaveValue("20000");
+  });
+
+  it("уведомления: отключение привязанного Telegram, отсутствие почты и недоступный бот", async () => {
+    const unlinkTelegram = vi.fn().mockResolvedValue({});
+    const channels = vi.fn().mockResolvedValue({
+      email: null,
+      telegram: { available: true, linked: true },
+    });
+    const api = fakeApi({ channels, unlinkTelegram } as Partial<Api>);
+    render(<Settings store={await open(api)} />);
+
+    expect(await screen.findByText(/Нет адреса/)).toBeInTheDocument();
+    expect(screen.getByText(/Тревоги приходят и в Telegram/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Отключить" }));
+    expect(unlinkTelegram).toHaveBeenCalled();
+
+    // Бот недоступен на сервере
+    cleanup();
+    const apiUnavailable = fakeApi({
+      channels: vi.fn().mockResolvedValue({ email: "user@ya.ru", telegram: { available: false, linked: false } }),
+    } as Partial<Api>);
+    render(<Settings store={await open(apiUnavailable)} />);
+    expect(await screen.findByText(/Бот пока не настроен на сервере/)).toBeInTheDocument();
+  });
+
+  it("проверяет ветки ProfileForm: правка цены, добавление/удаление услуги, правка особенностей", async () => {
+    const api = fakeApi({});
+    render(<Settings store={await open(api)} />);
+
+    // Добавление услуги
+    const addBtn = await screen.findByRole("button", { name: "Добавить услугу" });
+    await userEvent.click(addBtn);
+
+    // Правка названия и цены новой услуги
+    const serviceInputs = screen.getAllByRole("textbox", { name: /Услуга \d+/ });
+    const newServiceInput = serviceInputs[serviceInputs.length - 1]!;
+    await userEvent.type(newServiceInput, "Массаж");
+
+    const priceInputs = screen.getAllByRole("textbox", { name: /Цена услуги \d+/ });
+    const newPriceInput = priceInputs[priceInputs.length - 1]!;
+    await userEvent.type(newPriceInput, "2500");
+
+    // Удаление услуги кнопкой "Убрать"
+    const removeBtns = screen.getAllByRole("button", { name: /Убрать услугу/ });
+    await userEvent.click(removeBtns[0]!);
+
+    // Правка textarea особенностей
+    const featuresArea = screen.getByRole("textbox", { name: /Чем вы отличаетесь/ });
+    await userEvent.type(featuresArea, "\nНовая особенность");
+
+    // DisplayForm: когда goal не задана
+    cleanup();
+    const apiNoGoal = fakeApi({
+      display: vi.fn().mockResolvedValue({
+        campaigns: 1, schedule: null, schedule_text: null, regions: null, regions_text: null,
+        goal: null, catalog: [], min_weekly_hours: 40,
+      }),
+    } as Partial<Api>);
+    render(<Settings store={await open(apiNoGoal)} />);
+    expect(await screen.findByText(/Пока не задана/)).toBeInTheDocument();
+  });
+
+  it("проверяет SiteDraft без фактов, сбой без текста и лимиты mergeFacts", () => {
+    // mergeFacts с дубликатом особенности и превышением лимитов
+    const initialProfile: Profile = {
+      niche: "салон", address: "город", website: "https://old.ru",
+      services: Array.from({ length: 30 }, (_, i) => ({ name: `Услуга ${i}`, price: 100 })),
+      features: Array.from({ length: 20 }, (_, i) => `Особенность ${i}`),
+    };
+    const merged = mergeFacts(initialProfile, [
+      { field: "service", value: "Услуга 31", quote: "q", price: 200, page: "/" },
+      { field: "feature", value: "Особенность 0", quote: "q", price: null, page: "/" }, // дубликат
+      { field: "feature", value: "Особенность 21", quote: "q", price: null, page: "/" }, // сверх лимита
+    ], "https://new.ru");
+    expect(merged.services).toHaveLength(30);
+    expect(merged.features).toHaveLength(20);
+    expect(merged.website).toBe("https://old.ru");
+  });
+
+  it("проверяет SiteDraft снятие всех галочек и кнопку «Не переносить»", async () => {
+    const siteRead = vi.fn().mockResolvedValue({
+      id: 2, status: "ready",
+      facts: [{ field: "service", value: "Маникюр", quote: "Цитата", price: 1200, page: "/" }],
+    });
+    const api = fakeApi({ siteRead } as Partial<Api>);
+    render(<Settings store={await open(api)} />);
+
+    const field = await screen.findByPlaceholderText("salon.ru");
+    await userEvent.clear(field);
+    await userEvent.type(field, "salon-primer.ru");
+    await userEvent.click(screen.getByRole("button", { name: "Заполнить с сайта" }));
+
+    const transferBtn = await screen.findByRole("button", { name: "Перенести в профиль" });
+    expect(transferBtn).toBeEnabled();
+
+    // Снимаем галочку - кнопка становится disabled
+    const checkbox = screen.getByRole("checkbox", { name: /Услуга: Маникюр/ });
+    await userEvent.click(checkbox);
+    expect(transferBtn).toBeDisabled();
+
+    // Кнопка "Не переносить" закрывает плашку
+    await userEvent.click(screen.getByRole("button", { name: "Не переносить" }));
+    expect(screen.queryByRole("group", { name: "Нашёл на сайте" })).toBeNull();
+  });
+
+  it("проверяет ошибку при отключении Telegram и клик по кнопке «Добавить фото»", async () => {
+    const unlinkTelegram = vi.fn().mockRejectedValue(new ApiError(500, "Не удалось отключить Telegram"));
+    const api = fakeApi({
+      channels: vi.fn().mockResolvedValue({ email: "u@ya.ru", telegram: { available: true, linked: true } }),
+      unlinkTelegram,
+    } as Partial<Api>);
+    render(<Settings store={await open(api)} />);
+
+    const unlinkBtn = await screen.findByRole("button", { name: "Отключить" });
+    await userEvent.click(unlinkBtn);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось отключить Telegram");
+
+    // Клик по кнопке "Добавить фото"
+    const consentBox = screen.getByLabelText(/согласны на рекламу/);
+    await userEvent.click(consentBox);
+    const addPhotoBtn = screen.getByRole("button", { name: "Добавить фото" });
+    await userEvent.click(addPhotoBtn);
+  });
+
+  it("проверяет ошибку readSite, правку ниши и адреса, и блокировку неизменённого бюджета", async () => {
+    const api = fakeApi({
+      readSite: vi.fn().mockRejectedValue(new ApiError(400, "Сайт не открылся")),
+    } as Partial<Api>);
+    render(<Settings store={await open(api)} />);
+
+    // Кнопка изменения бюджета заблокирована при неизменённой сумме
+    const changeBudgetBtn = await screen.findByRole("button", { name: "Изменить бюджет" });
+    expect(changeBudgetBtn).toBeDisabled();
+
+    // Правка ниши и адреса
+    const nicheInput = screen.getByPlaceholderText("маникюр");
+    await userEvent.clear(nicheInput);
+    await userEvent.type(nicheInput, "Барбершоп");
+
+    const addressInput = screen.getByLabelText("Адрес");
+    await userEvent.clear(addressInput);
+    await userEvent.type(addressInput, "ул. Ленина, 10");
+
+    // Ошибка чтения сайта
+    const siteInput = screen.getByPlaceholderText("salon.ru");
+    await userEvent.clear(siteInput);
+    await userEvent.type(siteInput, "bad-site.ru");
+    await userEvent.click(screen.getByRole("button", { name: "Заполнить с сайта" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Сайт не открылся");
   });
 });

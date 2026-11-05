@@ -38,7 +38,7 @@ export function AppShell({ store: given }: { store?: Store }) {
 
   return (
     <div className="ah">
-      <header className="ah-bar">
+      <header className={starting ? "ah-bar is-start" : "ah-bar"}>
         <strong className="ah-brand">
           {starting ? (
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>

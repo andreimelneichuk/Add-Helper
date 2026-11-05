@@ -109,6 +109,7 @@
 
 /* Верхняя полоса парит над страницей */
 .ah-bar { display: flex; align-items: center; gap: var(--gap); flex: none; min-height: 56px; box-sizing: border-box; margin: var(--gap) var(--gutter) 0; padding: 8px 10px 8px 22px; border-radius: var(--r-control); background: var(--panel); color: var(--ink); }
+.ah-bar.is-start { justify-content: center; }
 .ah-brand { flex: 0 1 auto; min-width: 0; overflow: hidden; font-size: var(--t-title); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .ah-status { display: inline-flex; align-items: center; flex: none; gap: 6px; padding: 3px 10px; border-radius: var(--r-control); font-size: var(--t-caption); font-weight: 500; white-space: nowrap; }
 .ah-status i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }

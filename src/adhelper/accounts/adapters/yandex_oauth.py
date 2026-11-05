@@ -13,7 +13,9 @@
 Токены, код и секрет в исключения и журнал не попадают: наружу только тип ошибки и код ответа.
 """
 
+import functools
 import logging
+import ssl
 from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
 from typing import Any
@@ -33,6 +35,14 @@ LOGIN = "https://login.yandex.ru"
 TIMEOUT_SECONDS = 15
 # Ошибки, после которых повтор того же кода или токена бесполезен: нужен новый вход.
 REJECTED = {"invalid_grant", "invalid_client", "unauthorized_client", "bad_verification_code"}
+
+
+@functools.cache
+def _yandex_ssl_context() -> ssl.SSLContext:
+    """SSL-контекст с TLS 1.2: шлюзы Яндекс ID / Passport зависают на TLS 1.3 ClientHello OpenSSL 3."""
+    ctx = ssl.create_default_context()
+    ctx.maximum_version = ssl.TLSVersion.TLSv1_2
+    return ctx
 
 
 class YandexOAuth:
@@ -74,7 +84,9 @@ class YandexOAuth:
         try:
             if self._client is not None:
                 return await self._client.request(method, url, **kwargs)
-            async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
+            async with httpx.AsyncClient(
+                verify=_yandex_ssl_context(), timeout=TIMEOUT_SECONDS
+            ) as client:
                 return await client.request(method, url, **kwargs)
         except httpx.HTTPError as error:
             raise ProviderUnavailable(type(error).__name__) from None

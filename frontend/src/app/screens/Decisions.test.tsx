@@ -64,4 +64,56 @@ describe("решения по объявлениям на настоящих д�
     render(<Ads store={await open(fakeApi({ creatives: vi.fn(async () => board([], writing)) } as Partial<Api>))} />);
     expect(await screen.findByRole("status", { name: "Что с объявлениями сейчас" })).toHaveTextContent("Пишу новые на освободившееся место «Маникюр».");
   });
+
+  it("кнопка «Не запускать» на карточке решения отклоняет объявление", async () => {
+    const api = fakeApi({
+      creatives: vi.fn(async () => board([creative(9, "needs_owner", "Новое объявление")])),
+      withdraw: vi.fn(async () => ({})),
+    } as unknown as Partial<Api>);
+    const store = await open(api);
+    render(<Ads store={store} />);
+    const decide = await screen.findByRole("region", { name: "Нужно ваше решение" });
+    await userEvent.click(within(decide).getByRole("button", { name: "Не запускать" }));
+    expect(api.withdraw).toHaveBeenCalledWith(9);
+    expect(store.state.notice).toContain("Не запускаю «Новое объявление»");
+  });
+
+  it("проверяет plural и варианты статуса очереди", async () => {
+    // 2 объявления (few), без имени направления и с решением без фактов
+    const cr2 = [
+      { ...creative(1, "launch_pending", "Объявление 1"), campaign_name: null, campaign_id: "3", sources: [] },
+      { ...creative(2, "launch_pending", "Объявление 2"), campaign_name: null, campaign_id: "3", sources: [] },
+      { ...creative(3, "needs_owner", "Объявление 3"), campaign_name: null, campaign_id: "3", sources: [] },
+    ];
+    const api = fakeApi({ creatives: vi.fn(async () => board(cr2)) } as unknown as Partial<Api>);
+    render(<Ads store={await open(api)} />);
+    const status = await screen.findByRole("status", { name: "Что с объявлениями сейчас" });
+    expect(status).toHaveTextContent("2 объявления готовлю к запуску");
+    expect(screen.getAllByText("Направление № 3, уйдёт в Яндекс первым").length).toBeGreaterThan(0);
+    expect(screen.getByText("В тексте нет фактов из профиля")).toBeInTheDocument();
+  });
+
+  it("ошибка загрузки доски решений выводит алерт", async () => {
+    const api = fakeApi({ creatives: vi.fn(async () => { throw new ApiError(500, "Сервер креативов упал"); }) } as unknown as Partial<Api>);
+    render(<Ads store={await open(api)} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Сервер креативов упал");
+  });
+
+  it("проверяет plural для 11 и 21 элементов, неизвестную причину написания и строковую ошибку", async () => {
+    // 11 элементов: tail >= 11 && tail <= 14 -> many ("объявлений готовлю")
+    const cr11 = Array.from({ length: 11 }, (_, i) => creative(i + 10, "launch_pending", `Объявление ${i}`));
+    const writing = [{ id: 99, account: "anna", campaign_id: "1", reason: "unknown_custom_reason", wanted: 1, status: "running", created_at: "", campaign_name: "Маникюр" }];
+    const api = fakeApi({
+      creatives: vi.fn(async () => board(cr11, writing)),
+      withdraw: vi.fn(async () => { throw "network string failure"; }),
+    } as unknown as Partial<Api>);
+    render(<Ads store={await open(api)} />);
+    const status = await screen.findByRole("status", { name: "Что с объявлениями сейчас" });
+    expect(status).toHaveTextContent("11 объявлений готовлю к запуску");
+    expect(status).toHaveTextContent("пишу новые «Маникюр»");
+
+    // Строковая ошибка в действии
+    await userEvent.click(screen.getByRole("button", { name: "Не запускать «Объявление 0»" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Сервис не ответил");
+  });
 });
