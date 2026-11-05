@@ -20,6 +20,27 @@ PRIVATE_SUFFIXES = (".localhost", ".local", ".internal", ".lan", ".home.arpa")
 
 
 @dataclass(frozen=True)
+class RenderRules:
+    """Чтение сайта браузером, когда статического текста мало (site-2)."""
+
+    # Меньше этого текста или нет цен — статический текст считаем бедным.
+    below_chars: int
+    # Следы конструкторов и виджетов записи в разметке: их прайсы рисует скрипт.
+    markers: tuple[str, ...]
+    timeout_seconds: float
+    # Весь сбор страниц одного сайта, со скачиванием и браузером.
+    site_budget_seconds: float
+    max_requests: int
+    max_resource_bytes: int
+    max_total_bytes: int
+    max_frames: int
+    # Картинки, шрифты, видео и пинги тексту не нужны.
+    blocked_types: tuple[str, ...]
+    # Счётчики посещаемости: визит сервиса не должен попасть в статистику владельца.
+    blocked_hosts: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class SiteRules:
     version: str
     max_pages: int
@@ -39,6 +60,8 @@ class SiteRules:
     # Ссылки с такими словами ведут на страницы цен, услуг и контактов.
     link_words: tuple[str, ...]
     system_prompt: str
+    # Нет — сайт читается только статически, как в site-1.
+    render: RenderRules | None = None
 
 
 class UrlProblem(StrEnum):
@@ -239,6 +262,21 @@ def _check_one(raw: object, pages: Sequence[tuple[Page, str]]) -> SiteFact | Fac
         if not _has_number(n_quote, price):
             return FactProblem.PRICE_NOT_IN_QUOTE
     return SiteFact(kind, value, quote, page.url, price)
+
+
+# Число и рубли рядом: «1 500 ₽», «от 2000 руб.», «900 р.», «700р».
+_PRICE = re.compile(r"\d[\d   ]*\s?(?:₽|руб|р\.|р\b)", re.IGNORECASE)
+
+
+def has_price(text: str) -> bool:
+    return _PRICE.search(text) is not None
+
+
+def needs_render(text: str, builders: Sequence[str], rules: RenderRules) -> bool:
+    """Статический текст беден или сайт собран конструктором — читаем браузером."""
+    if builders:
+        return True
+    return len(text) < rules.below_chars or not has_price(text)
 
 
 def check_facts(

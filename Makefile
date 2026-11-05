@@ -3,6 +3,8 @@
 # Поднимает окружение на чистом клоне; повторный запуск безопасен.
 setup: .env
 	uv sync --locked
+	# Браузер для чтения сайтов и его тестов; системные библиотеки ставятся только на Linux.
+	uv run playwright install --with-deps --only-shell chromium
 	docker compose up --detach --wait --build
 
 .env:

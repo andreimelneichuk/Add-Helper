@@ -9,7 +9,8 @@ import asyncio
 import re
 import socket
 import ssl
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass
 from typing import Any
 
 import anyio
@@ -98,24 +99,109 @@ def _decode(body: bytes, header_charset: str | None) -> str:
     return body.decode("utf-8", errors="replace")
 
 
+UrlCheck = Callable[[str, SiteRules], tuple[str, UrlProblem | None]]
+
+
+def checked_url(url: str, rules: SiteRules, url_check: UrlCheck = check_url) -> str:
+    normalized, problem = url_check(url, rules)
+    if problem is UrlProblem.PRIVATE:
+        raise SiteUnavailable(FetchProblem.PRIVATE)
+    if problem is not None:
+        raise SiteUnavailable(FetchProblem.BAD_URL)
+    return normalized
+
+
+@dataclass(frozen=True)
+class Resource:
+    status: int
+    headers: list[tuple[str, str]]
+    body: bytes
+
+
+class TooBig(Exception):
+    """Ответ больше лимита: обрезанный скрипт браузеру не нужен."""
+
+
+# Заголовки соединения задаёт наш клиент, а не браузер. Тело браузер получает распакованным:
+# лимит считается по распакованным байтам, поэтому сжатая «бомба» его не обходит.
+HOP_HEADERS = frozenset(
+    {
+        "host",
+        "connection",
+        "content-length",
+        "accept-encoding",
+        "content-encoding",
+        "transfer-encoding",
+        "keep-alive",
+    }
+)
+
+
+class GuardedClient:
+    """Один запрос без перехода по перенаправлению: им пользуется браузер (docs/02, SSRF).
+
+    Перенаправление браузер выполняет новым запросом, и тот проходит ту же проверку.
+    """
+
+    def __init__(
+        self,
+        rules: SiteRules,
+        allow_address: Callable[[str], bool] = is_public_address,
+        url_check: UrlCheck = check_url,
+    ) -> None:
+        self._rules = rules
+        self._url_check = url_check
+        self._client = httpx.AsyncClient(
+            transport=_GuardedTransport(GuardedBackend(allow_address)),
+            timeout=rules.timeout_seconds,
+            follow_redirects=False,
+            trust_env=False,
+        )
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+    async def request(
+        self, method: str, url: str, headers: Mapping[str, str], body: bytes | None, max_bytes: int
+    ) -> Resource:
+        target = checked_url(url, self._rules, self._url_check)
+        sent = {k: v for k, v in headers.items() if k.lower() not in HOP_HEADERS}
+        sent["Accept-Encoding"] = "identity"
+        try:
+            async with self._client.stream(
+                method, target, headers=sent, content=body or None
+            ) as response:
+                data = bytearray()
+                async for chunk in response.aiter_bytes():
+                    data += chunk
+                    if len(data) > max_bytes:
+                        raise TooBig(url)
+                kept = [
+                    (k, v)
+                    for k, v in response.headers.multi_items()
+                    if k.lower() not in HOP_HEADERS
+                ]
+                return Resource(response.status_code, kept, bytes(data))
+        except BlockedAddress:
+            raise SiteUnavailable(FetchProblem.PRIVATE) from None
+        except httpx.HTTPError:
+            raise SiteUnavailable(FetchProblem.UNREACHABLE) from None
+
+
 class SafeFetcher:
     def __init__(
         self,
         rules: SiteRules,
         allow_address: Callable[[str], bool] = is_public_address,
-        url_check: Callable[[str, SiteRules], tuple[str, UrlProblem | None]] = check_url,
+        url_check: UrlCheck = check_url,
     ) -> None:
         self._rules = rules
         self._backend = GuardedBackend(allow_address)
         self._url_check = url_check
+        self._markers = rules.render.markers if rules.render else ()
 
     def _checked(self, url: str) -> str:
-        normalized, problem = self._url_check(url, self._rules)
-        if problem is UrlProblem.PRIVATE:
-            raise SiteUnavailable(FetchProblem.PRIVATE)
-        if problem is not None:
-            raise SiteUnavailable(FetchProblem.BAD_URL)
-        return normalized
+        return checked_url(url, self._rules, self._url_check)
 
     async def fetch(self, url: str) -> FetchedPage:
         try:
@@ -170,4 +256,4 @@ class SafeFetcher:
         text = _decode(bytes(body), response.charset_encoding)
         if mime == "text/plain":
             return page_from_text(url, text)
-        return page_from_html(url, text)
+        return page_from_html(url, text, self._markers)

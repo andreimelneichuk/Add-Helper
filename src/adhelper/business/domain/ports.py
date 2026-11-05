@@ -38,11 +38,22 @@ class FetchedPage:
     links: Sequence[Link] = ()
     # Номера счётчиков Метрики из разметки: в текст для модели скрипты не попадают.
     counters: tuple[int, ...] = ()
+    # Следы конструкторов и виджетов записи из правил, найденные в разметке.
+    builders: tuple[str, ...] = ()
 
 
 class SiteFetcher(Protocol):
     async def fetch(self, url: str) -> FetchedPage:
         """Скачивает одну страницу с лимитами. Ошибка — SiteUnavailable."""
+        ...
+
+
+class PageRenderer(Protocol):
+    async def render(self, url: str) -> FetchedPage:
+        """Открывает страницу в браузере и снимает текст после скриптов. Ошибка — SiteUnavailable.
+
+        В сеть браузер ходит только через ту же защиту, что и скачивание.
+        """
         ...
 
 

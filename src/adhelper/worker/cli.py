@@ -21,6 +21,7 @@ from adhelper.autopilot.adapters.rules_file import load_rules as load_autopilot_
 from adhelper.autopilot.application.simulator import Difference, compare
 from adhelper.budget.adapters.rules_file import load_rules as load_budget_rules
 from adhelper.budget.application.emergency import StopReport, stop_account
+from adhelper.business.adapters.browser import browser_starts
 from adhelper.business.adapters.rules_file import load_site_rules
 from adhelper.config import Settings
 from adhelper.creatives.adapters.factory import build_text_model
@@ -48,6 +49,7 @@ RULE_LOADERS = (
     (load_creative_rules, "creatives-3"),
     (load_slot_rules, "ads-1"),
     (load_site_rules, "site-1"),
+    (load_site_rules, "site-2"),
 )
 
 
@@ -189,6 +191,17 @@ def _rules_check() -> CheckResult:
     return CheckResult("rules", CheckStatus.OK, "Файлы правил читаются")
 
 
+async def _browser_check() -> CheckResult:
+    if await browser_starts():
+        return CheckResult("browser", CheckStatus.OK, "Браузер для сайтов на скриптах запускается")
+    detail = (
+        "Браузер не запускается: сайты на Tilda и Taplink читаются только скачиванием, "
+        "часто это «почти нет текста». Установите: playwright install --with-deps "
+        "--only-shell chromium"
+    )
+    return CheckResult("browser", CheckStatus.WARN, detail)
+
+
 async def run_checks(settings: Settings) -> list[CheckResult]:
     return [
         *await _database_checks(settings),
@@ -199,6 +212,7 @@ async def run_checks(settings: Settings) -> list[CheckResult]:
         _email_check(settings),
         _telegram_check(settings),
         _rules_check(),
+        await _browser_check(),
     ]
 
 

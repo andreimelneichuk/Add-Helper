@@ -132,6 +132,15 @@
 | S11 | Отчёт Метрики по целям с разбивкой по кампаниям и его совпадение с `Reports` | Сравнение на живом счётчике |
 | S12 | Номера регионов, формат `TimeTargeting`, часовой пояс кампании и чтение их обратно | `Dictionaries.get GeoRegions`, `Campaigns.update` и `AdGroups.update` в песочнице |
 
+## 9. Сайты малого бизнеса на конструкторах
+
+Проверено 2026-11-05 скачиванием сервиса (`SafeFetcher`) и браузером (`ChromiumRenderer`, правила `site-2`) на открытых страницах.
+
+- **Taplink рисует всю страницу скриптом.** **[API]** Скачивание `taplink.cc/nogti`, `/brovi`, `/lashmaker`, `/barber` и других даёт только заголовок вида «Nogti at Taplink» (16–21 символ). Браузер за 1,4–4,2 с получает 500–1300 символов, у `nogti` это прайс из 18 услуг с ценами в «р.». Данные страницы приходят с `taplink.cc` и `*.taplink.st`. `page.evaluate` на этих страницах возвращает `None`: скрипты страницы ломают сериализацию, поэтому текст снимаем из DOM средствами Playwright (`page.content()`).
+- **Tilda чаще всего отдаёт текст без скриптов.** **[API]** На `nogti.tilda.ws`, `manikyur.tilda.ws`, `barber.tilda.ws` прайс есть в скачанной разметке (`t-records`). Браузер добавил около 10 % текста на `nogti.tilda.ws` и ничего на остальных. Перед Tilda стоит QRATOR, а ответ содержит два заголовка `Cache-Control`. Склеенные через перевод строки, они не давали Chromium открыть страницу, теперь повторы склеиваются через запятую.
+- **Время.** **[API]** Сбор страниц укладывается в общий срок `site_budget_seconds = 9`: Taplink 1,4–4,2 с, Tilda 3–7,4 с с запуском браузера. Вызов извлекателя `google/gemma-4-31b-it` через OpenRouter занимал 15–70 с, это время модели, а не сбора.
+- **Виджеты записи YClients, Dikidi и Altegio** открываются кнопкой во фрейме. Текст фреймов страницы читается, но до нажатия прайса в нём нет. **[Гипотеза]** Нажатий браузер не делает, на настоящем виджете это не проверено.
+
 ## Источники
 
 - Директ API: [обзор](https://yandex.ru/dev/direct/doc/ru/concepts/overview), [кампании](https://yandex.ru/dev/direct/doc/ru/objects/campaign), [регистрация](https://yandex.ru/dev/direct/doc/ru/concepts/register), [заявка](https://yandex.ru/dev/direct/doc/ru/troubleshooting/register), [баллы](https://yandex.ru/dev/direct/doc/ru/concepts/units), [журнал изменений](https://yandex.ru/dev/direct/doc/en/changelog), [`campaigns.add`](https://yandex.ru/dev/direct/doc/en/campaigns/add), [`UnifiedCampaign`](https://yandex.ru/dev/direct/doc/en/campaigns/add-unified-campaign), [`ads.add`](https://yandex.ru/dev/direct/doc/en/ads/add), [стратегии](https://yandex.ru/dev/direct/doc/en/annex/strategies), [`Reports`](https://yandex.ru/dev/direct/doc/en/reports), [ограничения отчётов](https://yandex.ru/dev/direct/doc/en/restrictions), [актуальность статистики](https://yandex.ru/dev/direct/doc/en/actual), [рекомендации](https://yandex.ru/dev/direct/doc/en/optimize), [`Clients.update`](https://yandex.ru/dev/direct/doc/en/clients/update)
