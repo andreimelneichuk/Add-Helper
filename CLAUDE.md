@@ -28,6 +28,7 @@
 - Факты о площадках и проверки `S1`–`S11`: [docs/00-research.md](docs/00-research.md)
 - Расход на платные модели в прогонах `evals`: [docs/13-model-spend.md](docs/13-model-spend.md)
 - Анализ проекта, точки роста и финансово-вероятностная модель: [docs/14-project-analysis.md](docs/14-project-analysis.md)
+- Внутренний трекинг разработки (задачи и баги): [docs/tasks/README.md](docs/tasks/README.md) и [docs/bugs/](docs/bugs/) (внутренние, игнорируются git)
 
 Меняется решение — правь документ в том же коммите, что и код.
 
