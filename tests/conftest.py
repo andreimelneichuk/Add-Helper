@@ -43,6 +43,10 @@ def settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[Settings]:
     # Каналы тревог тоже: тест не должен отправить письмо через SMTP разработчика.
     monkeypatch.setenv("SMTP_HOST", "")
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "")
+    # Приложение Яндекса и ключ шифрования тоже: тесты, которым они нужны, задают свои.
+    monkeypatch.setenv("YANDEX_CLIENT_ID", "")
+    monkeypatch.setenv("YANDEX_CLIENT_SECRET", "")
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEYS", "")
     yield Settings()
     with psycopg.connect(admin_dsn, autocommit=True) as admin:
         admin.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name)))
