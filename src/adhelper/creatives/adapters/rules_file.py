@@ -1,6 +1,7 @@
 import tomllib
 from importlib.resources import files
 
+from adhelper.creatives.domain.images import ImageRules, Scene
 from adhelper.creatives.domain.lifecycle import SlotRules
 from adhelper.creatives.domain.model import CreativeRules, WizardRules
 from adhelper.creatives.domain.moderation import ModerationRules, RejectionKind
@@ -36,6 +37,17 @@ def load_wizard_rules(version: str) -> WizardRules:
 def load_rework_rules(version: str) -> ReworkRules:
     resource = files("adhelper.creatives.adapters") / "rules" / f"{version}.toml"
     return ReworkRules(**tomllib.loads(resource.read_text(encoding="utf-8")))
+
+
+def load_image_rules(version: str) -> ImageRules:
+    resource = files("adhelper.creatives.adapters") / "rules" / f"{version}.toml"
+    data = tomllib.loads(resource.read_text(encoding="utf-8"))
+    for key in ("banned_prompt_words", "no_people_niches", "people_words"):
+        data[key] = tuple(data[key])
+    data["scenes"] = tuple(
+        Scene(tuple(scene["stems"]), scene["scene"]) for scene in data.get("scenes", [])
+    )
+    return ImageRules(**data)
 
 
 def load_moderation_rules(version: str) -> ModerationRules:

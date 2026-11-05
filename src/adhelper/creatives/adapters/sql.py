@@ -13,7 +13,10 @@ from sqlalchemy import (
     Identity,
     Index,
     Integer,
+    LargeBinary,
+    PrimaryKeyConstraint,
     Text,
+    UniqueConstraint,
     and_,
     column,
     func,
@@ -153,6 +156,55 @@ class CreativeSetRow(Base):
     rework: Mapped[dict[str, str] | None] = mapped_column(JSONB)
 
 
+# Картинки объявлений: миграция 0023, хранилище в images_sql.py.
+ACTIVE_IMAGE = "active"
+
+
+class CreativeImageRow(Base):
+    __tablename__ = "creative_images"
+    __table_args__ = (
+        UniqueConstraint("business_id", "sha256", name="uq_creative_images_sha256"),
+        Index("ix_creative_images_business_state", "business_id", "state", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    business_id: Mapped[UUID] = mapped_column(
+        ForeignKey("businesses.id", name="fk_creative_images_business")
+    )
+    sha256: Mapped[str] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(Text)
+    account: Mapped[str | None] = mapped_column(Text)
+    campaign_id: Mapped[str | None] = mapped_column(Text)
+    width: Mapped[int] = mapped_column(Integer)
+    height: Mapped[int] = mapped_column(Integer)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    prompt: Mapped[str | None] = mapped_column(Text)
+    prompt_source: Mapped[str | None] = mapped_column(Text)
+    model: Mapped[str | None] = mapped_column(Text)
+    rules_version: Mapped[str] = mapped_column(Text)
+    cost_micro_usd: Mapped[int | None] = mapped_column(BigInteger)
+    consent: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    state: Mapped[str] = mapped_column(Text, server_default=ACTIVE_IMAGE)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PlatformImageRow(Base):
+    __tablename__ = "platform_images"
+    __table_args__ = (
+        PrimaryKeyConstraint("business_id", "account", "sha256", name="pk_platform_images"),
+        Index("ix_platform_images_hash", "business_id", "account", "image_hash"),
+    )
+
+    business_id: Mapped[UUID] = mapped_column(
+        ForeignKey("businesses.id", name="fk_platform_images_business"), primary_key=True
+    )
+    account: Mapped[str] = mapped_column(Text, primary_key=True)
+    sha256: Mapped[str] = mapped_column(Text, primary_key=True)
+    image_hash: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class CreativeRow(Base):
     __tablename__ = "creatives"
     __table_args__ = (
@@ -189,6 +241,8 @@ class CreativeRow(Base):
     # Сколько раз цепочку чинили после отказа Яндекса и почему отклонено последнее.
     repairs: Mapped[int] = mapped_column(Integer, server_default="0", default=0)
     rejection: Mapped[str | None] = mapped_column(Text)
+    # Картинка объявления: миграция 0023. Пусто — объявление без картинки.
+    image_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("creative_images.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
