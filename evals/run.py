@@ -22,7 +22,7 @@ from pathlib import Path
 import httpx
 
 from adhelper.config import Settings
-from adhelper.creatives.adapters.factory import build_text_model
+from adhelper.creatives.adapters.openai_compatible import OpenAiCompatibleModel
 from adhelper.creatives.adapters.rules_file import load_rules
 from adhelper.creatives.application.generate import generate_ads
 from adhelper.creatives.domain.checks import check_draft
@@ -30,6 +30,17 @@ from adhelper.creatives.domain.model import BusinessProfile, ModelUnavailable, T
 from evals.cases import CASES, PROFILES, Case
 from evals.dataset.build import load as load_dataset
 from evals.dataset.build import to_cases
+from evals.meter import (
+    DEFAULT_BUDGET_USD,
+    FREE,
+    MICRO,
+    BudgetSpent,
+    Meter,
+    Price,
+    fetch_prices,
+    usd,
+    worst_case_micro,
+)
 from evals.prompts import PROMPTS, JudgeVariant
 from evals.score import CaseRun, metrics, misses_by_category, single_call_average
 
@@ -39,6 +50,8 @@ RULES = load_rules("creatives-2")
 # два вызова судьи набора сразу уже упираются в лимит.
 PARALLEL = 1
 ATTEMPTS = 8
+# Оплаченный негодный ответ (обрезан, пуст) повторяем не больше двух раз: docs/13-model-spend.md.
+PAID_RETRIES = 2
 # Пауза после вызова внутри очереди: около 2000 токенов на вызов, три вызова в минуту.
 PACE_SECONDS = 20.0
 
@@ -47,23 +60,34 @@ def out(line: str = "") -> None:
     sys.stdout.write(line + "\n")
 
 
-def _model(settings: Settings, name: str) -> TextModel:
-    model = build_text_model(
-        settings.text_model_base_url, settings.text_model_api_key, name, settings.text_model_project
-    )
-    if model is None:
+def _model(settings: Settings, name: str, meter: Meter) -> tuple[TextModel, Price]:
+    """Модель с учётом расхода: цена из каталога OpenRouter, у других провайдеров ноль."""
+    key = settings.text_model_api_key
+    if key is None or not key.get_secret_value() or not name:
         raise SystemExit("Нет ключа модели в .env")
-    return model
+    paid = "openrouter.ai" in settings.text_model_base_url
+    price = fetch_prices([name])[name] if paid else FREE
+    out(f"цена {name}: {usd(price.input_micro_per_m)} и {usd(price.output_micro_per_m)} за 1M")
+    model = OpenAiCompatibleModel(
+        settings.text_model_base_url,
+        key,
+        name,
+        settings.text_model_project,
+        on_usage=lambda usage: meter.record(price, usage),
+    )
+    return model, price
 
 
-async def _spent(settings: Settings) -> float | None:
-    """Расход ключа по данным OpenRouter; у других провайдеров не считаем."""
+async def _spent(settings: Settings) -> tuple[float, str] | None:
+    """Расход и предел ключа по данным OpenRouter; у других провайдеров не считаем."""
     if "openrouter.ai" not in settings.text_model_base_url or not settings.text_model_api_key:
         return None
     headers = {"Authorization": f"Bearer {settings.text_model_api_key.get_secret_value()}"}
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.get("https://openrouter.ai/api/v1/key", headers=headers)
-    return float(response.json()["data"]["usage"])
+    data = response.json()["data"]
+    limit = data.get("limit")
+    return float(data["usage"]), "без предела" if limit is None else f"${float(limit):.2f}"
 
 
 async def _judge_once(
@@ -72,13 +96,20 @@ async def _judge_once(
     cases: Sequence[Case],
     profile: BusinessProfile,
     gate: asyncio.Semaphore,
+    meter: Meter,
     pace: float = 0.0,
 ) -> list[tuple[bool, str, int]]:
     """Один вызов на объявление или, для судьи набора, на все объявления профиля."""
     drafts = [case.draft for case in cases]
     # Лимит провайдера — не ответ судьи: ждём и повторяем, а в замер идёт последний сбой.
+    paid = 0
+    failure: Exception = ModelUnavailable("no_attempts")
     for attempt in range(ATTEMPTS):
         async with gate:
+            try:
+                meter.check()
+            except BudgetSpent:
+                return [(True, "judge_unavailable:budget", 0) for _ in cases]
             try:
                 reply = await model.complete_json(
                     variant.system,
@@ -92,6 +123,11 @@ async def _judge_once(
                 if pace:
                     await asyncio.sleep(pace)
                 break
+        if isinstance(failure, ModelUnavailable) and failure.tokens:
+            meter.paid_failures += 1
+            paid += 1
+            if paid > PAID_RETRIES:
+                return [(True, f"judge_unavailable:{failure}", 0) for _ in cases]
         await asyncio.sleep(min(120, 10 * 2**attempt))
     else:
         return [(True, f"judge_unavailable:{failure}", 0) for _ in cases]
@@ -107,9 +143,11 @@ async def judge_eval(
     cases: Sequence[Case],
     profiles: Mapping[str, BusinessProfile] = PROFILES,
     previous: Mapping[str, CaseRun] | None = None,
+    meter: Meter | None = None,
 ) -> list[CaseRun]:
     """previous — прошлый прогон того же замера: готовые ответы не запрашиваем снова."""
-    model = _model(settings, model_name)
+    meter = meter or Meter(round(DEFAULT_BUDGET_USD * MICRO))
+    model, price = _model(settings, model_name, meter)
     variant = PROMPTS[prompt]
     # Лимиты в минуту есть у бесплатного Groq; у OpenRouter платим за токены и не ждём.
     limited = "groq.com" in settings.text_model_base_url
@@ -125,11 +163,23 @@ async def judge_eval(
         groups = [[case] for case in cases]
     done = previous or {}
     todo = [g for g in groups if not all(_answered(done.get(c.id), repeats) for c in g)]
+    if todo:
+        longest = max(len(g) for g in todo) if variant.per_set else 1
+        prompt_chars = max(
+            len(variant.system + variant.build([c.draft for c in g], profiles[g[0].profile]))
+            for g in todo
+        )
+        worst = worst_case_micro(
+            price, len(todo) * repeats, prompt_chars // 2, RULES.judge_max_tokens * longest
+        )
+        out(f"{model_name} · {prompt}: вызовов {len(todo) * repeats}, не дороже {usd(worst)}")
     answers = await asyncio.gather(
         *(
             asyncio.gather(
                 *(
-                    _judge_once(model, variant, group, profiles[group[0].profile], gate, pace)
+                    _judge_once(
+                        model, variant, group, profiles[group[0].profile], gate, meter, pace
+                    )
                     for _ in range(repeats)
                 )
             )
@@ -225,13 +275,14 @@ async def run_judge(args: argparse.Namespace) -> None:
     else:
         cases = [c for c in CASES if args.split == "all" or c.split == args.split]
         profiles, part = PROFILES, args.split
+    meter = Meter(round(args.budget * MICRO))
     before = await _spent(settings)
     for model_name in args.models:
         for prompt in args.prompts:
             name = f"judge--{_slug(model_name)}--{prompt}--{part}"
             previous = _previous(name) if args.resume else {}
             runs = await judge_eval(
-                settings, model_name, prompt, args.repeats, cases, profiles, previous
+                settings, model_name, prompt, args.repeats, cases, profiles, previous, meter
             )
             title = f"{model_name} · {prompt} · {part} · повторов {args.repeats}"
             summary = report_judge(runs, title)
@@ -250,20 +301,25 @@ async def run_judge(args: argparse.Namespace) -> None:
                     ],
                 },
             )
+    out(f"\n{meter.summary()}")
     after = await _spent(settings)
     if before is not None and after is not None:
-        out(f"\nпотрачено: ${after - before:.4f}, всего по ключу ${after:.4f} из $1")
+        out(f"по ключу: за прогон ${after[0] - before[0]:.4f}, всего ${after[0]:.4f} из {after[1]}")
 
 
 async def run_generate(args: argparse.Namespace) -> None:
     settings = Settings()
+    meter = Meter(round(args.budget * MICRO))
     before = await _spent(settings)
     for model_name in args.models:
-        model = _model(settings, model_name)
-        judge = _model(settings, args.judge or model_name)
+        model, _ = _model(settings, model_name, meter)
+        judge, _ = _model(settings, args.judge or model_name, meter)
         rows = []
         for key, profile in PROFILES.items():
             for attempt in range(args.repeats):
+                if meter.spent_micro >= meter.budget_micro:
+                    meter.stopped = True
+                    break
                 result = await generate_ads(profile, model, RULES, judge)
                 rows.append(
                     {
@@ -293,9 +349,10 @@ async def run_generate(args: argparse.Namespace) -> None:
             f"generate--{_slug(model_name)}",
             {"model": model_name, "judge": args.judge or model_name, "rows": rows},
         )
+    out(f"\n{meter.summary()}")
     after = await _spent(settings)
     if before is not None and after is not None:
-        out(f"\nпотрачено: ${after - before:.4f}, всего по ключу ${after:.4f} из $1")
+        out(f"по ключу: за прогон ${after[0] - before[0]:.4f}, всего ${after[0]:.4f} из {after[1]}")
 
 
 def _slug(name: str) -> str:
@@ -341,6 +398,13 @@ def main(argv: Sequence[str] | None = None) -> None:
     generate.add_argument("--models", nargs="+", required=True)
     generate.add_argument("--judge", default="")
     generate.add_argument("--repeats", type=int, default=2)
+    for command in (judge, generate):
+        command.add_argument(
+            "--budget",
+            type=float,
+            default=DEFAULT_BUDGET_USD,
+            help="предел прогона в долларах; выше $0.05 — только с согласия владельца",
+        )
     code = sub.add_parser("code")
     code.add_argument("--rules", nargs="+", default=["creatives-1", "creatives-2"])
     args = parser.parse_args(argv)
