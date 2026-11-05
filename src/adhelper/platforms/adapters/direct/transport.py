@@ -29,6 +29,8 @@ SERVICE_VERSIONS: Mapping[str, str] = {
     "campaigns": "v501",
     "adgroups": "v501",
     "ads": "v501",
+    # Картинки есть только в v5: /json/v5/adimages.
+    "adimages": "v5",
     "keywords": "v5",
     "clients": "v5",
     "dictionaries": "v5",

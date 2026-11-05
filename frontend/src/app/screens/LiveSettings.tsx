@@ -1,7 +1,7 @@
 // Настройки на настоящих данных: профиль, уведомления, кабинет Яндекса и выход.
 // Правка профиля не трогает площадку, поэтому идёт прямо в API, а не через журнал.
-import { useCallback, useEffect, useState } from "react";
-import type { AdAccount, Api, Channels as ChannelsData, Display, Profile, SiteFact, SiteRead } from "../../api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { AdAccount, Api, Channels as ChannelsData, Display, Photos as PhotosData, Profile, SiteFact, SiteRead } from "../../api";
 import { rub } from "../data";
 import { liveApi, savedText } from "../live";
 import type { LiveStore } from "../live";
@@ -466,6 +466,72 @@ function Accounts({ api }: { api: Api }) {
   );
 }
 
+/** Свои фото для объявлений. Яндекс показывает картинку рядом с текстом; без фото объявления идут как есть. */
+function Photos({ api }: { api: Api }) {
+  const [data, setData] = useState<PhotosData | null>(null);
+  const picker = useRef<HTMLInputElement>(null);
+  const [consent, setConsent] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(async () => setData(await api.photos()), [api]);
+  useEffect(() => { load().catch((e: unknown) => setError(message(e))); }, [load]);
+  const act = async (work: () => Promise<string>) => {
+    setBusy(true);
+    setError(null);
+    setStatus(null);
+    try {
+      setStatus(await work());
+      await load();
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const upload = (files: FileList | null) => {
+    const file = files?.[0];
+    if (!file) return;
+    void act(async () => {
+      await api.uploadPhoto(file, consent);
+      return "Фото добавил. Поставлю его в новые объявления: Яндекс проверит его вместе с текстом.";
+    });
+  };
+  if (!data) return <p className="ah-muted">{error ?? "Загружаю…"}</p>;
+  const full = data.photos.length >= data.max;
+  return (
+    <div className="set-rows">
+      <p className="set-hint">Фото салона, работ или мастеров делают объявление заметнее. До {data.max} фото, квадрат или кадр 4:3, от 450 точек по короткой стороне.</p>
+      {data.photos.length > 0 && (
+        <ul className="set-photos" aria-label="Ваши фото">
+          {data.photos.map((p, i) => (
+            <li key={p.id} className="set-photo">
+              <img src={p.url} alt={`Фото ${i + 1}`} width={p.width} height={p.height} loading="lazy" />
+              <button type="button" className="ah-btn" disabled={busy} onClick={() => act(async () => { await api.archivePhoto(p.id); return "Фото убрал из подбора. Объявления, где оно уже стоит, работают дальше."; })}>Убрать фото {i + 1}</button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {full ? (
+        <p className="set-hint">Уже {data.max} фото. Уберите одно, чтобы добавить новое.</p>
+      ) : (
+        <>
+          <label className="set-check">
+            <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+            <span>Люди на фото согласны на рекламу, или людей на фото нет</span>
+          </label>
+          <div className="set-actions">
+            <button type="button" className="ah-btn" disabled={!consent || busy} onClick={() => picker.current?.click()}>{busy ? "Загружаю…" : "Добавить фото"}</button>
+            <input ref={picker} type="file" aria-label="Файл фото" accept="image/jpeg,image/png,image/gif,image/webp" className="set-file" tabIndex={-1} onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
+          </div>
+        </>
+      )}
+      {status && <p className="set-hint" role="status">{status}</p>}
+      {error && <p className="ah-error" role="alert">{error}</p>}
+    </div>
+  );
+}
+
 export function LiveSettings({ store }: { store: Store }) {
   const api = liveApi(store)!;
   const [leaving, setLeaving] = useState<string | null>(null);
@@ -493,6 +559,10 @@ export function LiveSettings({ store }: { store: Store }) {
           <h2 id="set-profile-title" className="ah-panel-title">Профиль бизнеса</h2>
           <p className="set-hint">В рекламу попадают только эти факты. Чего здесь нет, того в объявлениях не будет.</p>
           <ProfileForm api={api} store={store as LiveStore} />
+        </section>
+        <section className="ah-panel set-section" aria-labelledby="set-photos-title">
+          <h2 id="set-photos-title" className="ah-panel-title">Фото для объявлений</h2>
+          <Photos api={api} />
         </section>
       </div>
       <div className="set-main">

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from adhelper.creatives.adapters.sql import (
     CAMPAIGNS,
+    CreativeImageRow,
     CreativeRow,
     CreativeSetRow,
     _event,
@@ -99,6 +100,16 @@ class SqlModeration:
         )
         async with self._sessions() as session:
             rows = list(await session.scalars(statement))
+            image_ids = [row.image_id for row in rows if row.image_id is not None]
+            images = {
+                int(i): str(sha)
+                for i, sha in await session.execute(
+                    select(CreativeImageRow.id, CreativeImageRow.sha256).where(
+                        CreativeImageRow.business_id == self._business_id,
+                        CreativeImageRow.id.in_(image_ids),
+                    )
+                )
+            }
             hrefs = {
                 (str(a), str(c)): str(h)
                 for a, c, h in await session.execute(
@@ -114,6 +125,7 @@ class SqlModeration:
                 row.campaign_id,
                 AdDraft(row.headline, row.text),
                 hrefs.get((row.account, row.campaign_id), ""),
+                images.get(row.image_id) if row.image_id is not None else None,
             )
             for row in rows
         ]

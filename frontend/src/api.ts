@@ -73,6 +73,8 @@ export type AdLine = {
   state: string;
   totals: Totals;
   ratios: Ratios;
+  /** Картинка, с которой объявление ушло в Яндекс; null — без картинки. */
+  image_id?: number | null;
 };
 
 export type CampaignDetail = {
@@ -201,7 +203,7 @@ export class ApiError extends Error {
 
 async function request<T>(path: string, init: RequestInit = {}, csrf?: string): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json", ...(init.headers as Record<string, string> | undefined) };
-  if (init.body) headers["Content-Type"] = "application/json";
+  if (init.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
   if (csrf) headers["X-CSRF-Token"] = csrf;
   const response = await fetch(path, { credentials: "same-origin", ...init, headers });
   if (!response.ok) {
@@ -216,6 +218,10 @@ async function request<T>(path: string, init: RequestInit = {}, csrf?: string): 
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
+
+/** Своё фото владельца: уже приведено к требованиям Яндекса, без метаданных. */
+export type Photo = { id: number; width: number; height: number; url: string };
+export type Photos = { photos: Photo[]; max: number };
 
 /** Где и когда показывать и желаемая цена обращения; null — значение неизвестно или разное. */
 export type Display = {
@@ -307,6 +313,16 @@ export function createApi(businessId: string, csrf: string) {
       request<ReworkView>(`${base}/reworks/${id}/choose`, { method: "POST", body: JSON.stringify({ creative_id: creativeId }) }, csrf),
     withdraw: (id: number) => request<CreativeReport>(`${base}/creatives/${id}/withdraw`, { method: "POST" }, csrf),
     accounts: () => request<AdAccount[]>(`${base}/accounts`),
+    photos: () => request<Photos>(`${base}/photos`),
+    photoUrl: (id: number) => `${base}/photos/${id}`,
+    // Файл уходит телом запроса как есть: сервер сам проверит и обработает его.
+    uploadPhoto: (file: Blob, consent: boolean) =>
+      request<{ id: number; url: string }>(
+        `${base}/photos?consent=${consent}`,
+        { method: "POST", body: file, headers: { "Content-Type": file.type || "application/octet-stream" } },
+        csrf,
+      ),
+    archivePhoto: (id: number) => request<{ archived: boolean }>(`${base}/photos/${id}/archive`, { method: "POST" }, csrf),
     connect: (then?: "start") =>
       request<{ authorize_url: string }>(`${base}/accounts/connect${then ? `?then=${then}` : ""}`, { method: "POST" }, csrf),
     marking: () => request<{ saved: MarkingView | null }>(`${base}/marking`),

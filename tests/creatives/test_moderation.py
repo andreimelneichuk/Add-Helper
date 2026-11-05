@@ -12,8 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from adhelper.budget.adapters.ledgered import PlatformChangeGateway
 from adhelper.budget.domain.limits import CampaignBudget
+from adhelper.creatives.adapters.images_sql import SqlImages
 from adhelper.creatives.adapters.moderation_sql import SqlModeration
+from adhelper.creatives.adapters.photos import prepare_image
 from adhelper.creatives.adapters.rules_file import (
+    load_image_rules,
     load_moderation_rules,
     load_rework_rules,
     load_rules,
@@ -36,6 +39,7 @@ from adhelper.creatives.application.service import (
     CURRENT_RULES,
     run_queued,
 )
+from adhelper.creatives.domain.images import ImageSource, NewImage
 from adhelper.creatives.domain.model import BusinessProfile, ModelUnavailable, Service
 from adhelper.ledger.adapters.sql import PostgresAccountLock, SqlChangeRepository
 from adhelper.ledger.application.owner import set_ad_active
@@ -73,10 +77,13 @@ class Stand:
                 self.platform,
                 launcher=self.platform,
                 publisher=self.platform,
+                images=SqlImages(sessions, business),
+                uploader=self.platform,
             ),
             lock=PostgresAccountLock(engine),
             max_attempts=3,
         )
+        self.images = SqlImages(sessions, business)
         self.store = SqlModeration(sessions, business)
         self.attention = FakeAttention()
         self.details: dict[str, Any] = {}
@@ -492,3 +499,44 @@ def test_summary_covers_yesterday_by_moscow_clock() -> None:
     # 23:30 UTC 4 ноября — уже 5 ноября в Москве: сводка за 4 ноября целиком.
     assert summary_day(datetime(2026, 11, 4, 23, 30, tzinfo=UTC)) == date(2026, 11, 4)
     assert summary_day(datetime(2026, 11, 5, 7, 0, tzinfo=UTC)) == date(2026, 11, 4)
+
+
+def owner_photo() -> bytes:
+    import io
+
+    from PIL import Image
+
+    output = io.BytesIO()
+    Image.new("RGB", (900, 900), (200, 120, 140)).save(output, format="JPEG")
+    return output.getvalue()
+
+
+async def test_ad_with_owner_photo_goes_out_with_one_upload_even_after_a_fault(
+    stand: Stand,
+) -> None:
+    rules = load_image_rules("images-1")
+    prepared = prepare_image(owner_photo(), rules)
+    image_id = await stand.images.add(
+        NewImage(prepared, ImageSource.OWNER, rules.version, consent=True), NOW
+    )
+    first = await stand.place("Маникюр у дома")
+    assert await stand.images.attach(first, image_id)
+    # Яндекс создал объявление, но ответ потерялся: повтор начинается с чтения.
+    stand.platform.faults.append(Fault("create_ad", after_apply=True))
+    await stand.send()
+    await stand.send()
+    assert stand.platform.create_ad_calls == 1
+    assert stand.platform.upload_calls == 1
+    (published,) = stand.platform.published.values()
+    assert published.image_hash is not None
+    assert stand.platform.images[published.image_hash].sha256 == prepared.sha256
+    changes = await stand.ledger.changes_on_target("lak", f"newad:ahc-{first}")
+    assert changes[-1].status is ChangeStatus.APPLIED
+    assert changes[-1].planned["image"] == prepared.sha256
+
+    # Та же картинка второму объявлению: номер площадки из памяти, без новой загрузки.
+    second = await stand.place("Маникюр рядом")
+    assert await stand.images.attach(second, image_id)
+    await stand.send()
+    assert stand.platform.upload_calls == 1
+    assert {ad.image_hash for ad in stand.platform.published.values()} == {published.image_hash}

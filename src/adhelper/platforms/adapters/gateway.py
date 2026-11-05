@@ -17,6 +17,8 @@ from adhelper.platforms.domain.ports import (
     AdPublisher,
     Advertiser,
     AdvertiserRegistry,
+    ImageUploader,
+    ImageVault,
 )
 
 AD_PREFIX = "ad:"
@@ -38,6 +40,8 @@ class RoutingGateway:
         publisher: AdPublisher | None = None,
         registry: AdvertiserRegistry | None = None,
         advertiser: AdvertiserSource | None = None,
+        images: ImageVault | None = None,
+        uploader: ImageUploader | None = None,
     ) -> None:
         self._campaigns = campaigns
         self._ads = ads
@@ -46,6 +50,8 @@ class RoutingGateway:
         self._publisher = publisher
         self._registry = registry
         self._advertiser = advertiser
+        self._images = images
+        self._uploader = uploader
 
     def _registry_control(self) -> AdvertiserRegistry:
         if self._registry is None:
@@ -87,7 +93,7 @@ class RoutingGateway:
         if found is None:
             return {}
         # Сверх плана номер объявления: по нему читаем проверку и ставим в витрину.
-        return {
+        actual: dict[str, Any] = {
             "campaign_id": found.campaign_id,
             "headline": found.headline,
             "text": found.text,
@@ -95,6 +101,24 @@ class RoutingGateway:
             "ad_id": found.ad_id,
             "group_id": found.group_id,
         }
+        if found.image_hash and self._images is not None:
+            # В плане наш sha256, на площадке её номер: сверяем по запомненной паре.
+            actual["image"] = await self._images.sha_of(account, found.image_hash)
+        return actual
+
+    async def _image_hash(self, account: str, sha256: str) -> str:
+        """Номер картинки на площадке: из памяти или загрузкой. Повтор загрузки безопасен."""
+        if self._images is None or self._uploader is None:
+            raise GatewayUnavailable("images are not connected")
+        known = await self._images.platform_hash(account, sha256)
+        if known is not None:
+            return known
+        image = await self._images.image_by_sha(sha256)
+        if image is None:
+            raise GatewayUnavailable("image is missing")
+        uploaded = await self._uploader.upload_image(account, image)
+        await self._images.remember_hash(account, sha256, uploaded)
+        return uploaded
 
     def _launcher_control(self) -> CampaignLauncher:
         if self._launcher is None:
@@ -156,7 +180,10 @@ class RoutingGateway:
             if target_ref.startswith(NEW_AD_PREFIX):
                 if kind is not ChangeKind.CREATE_AD:
                     raise ValueError(f"{kind} не создаёт объявление")
-                await self._publisher_control().create_ad(
+                publisher = self._publisher_control()
+                image = planned.get("image")
+                image_hash = await self._image_hash(account, str(image)) if image else None
+                await publisher.create_ad(
                     account,
                     str(planned["campaign_id"]),
                     target_ref.removeprefix(NEW_AD_PREFIX),
@@ -164,6 +191,7 @@ class RoutingGateway:
                     str(planned["text"]),
                     str(planned["href"]),
                     group_id=str(planned["group_id"]) if planned.get("group_id") else None,
+                    image_hash=image_hash,
                 )
                 return
             if target_ref.startswith(CLIENT_PREFIX):

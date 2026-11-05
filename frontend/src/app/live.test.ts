@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api";
 import type { Api, Profile } from "../api";
-import { fakeApi, open, overview, said, settled } from "./testLive";
+import { fakeApi, line, open, overview, said, settled } from "./testLive";
 import { rub } from "./data";
 import { statusText, week } from "./store";
 
@@ -25,6 +25,13 @@ describe("живые данные", () => {
     expect(store.state.ads.map((a) => a.name)).toEqual(["Маникюр"]);
     expect(store.state.hist.map((h) => h.id)).toEqual(["change-5"]);
     expect(store.state.hist[0]).toMatchObject({ kind: "yours", canUndo: true, about: "anna/11" });
+  });
+
+  it("объявление с картинкой показывает её, без картинки — только текст", async () => {
+    const api = fakeApi({ ads: vi.fn(async () => [line({ image_id: 7 }), line({ ad_id: "12", image_id: null })]) } as Partial<Api>);
+    const store = await open(api);
+    expect(store.state.ads.find((a) => a.id === "anna/11")?.photo).toBe("/api/businesses/b1/photos/7");
+    expect(store.state.ads.find((a) => a.id === "anna/12")?.photo).toBeUndefined();
   });
 
   it("тревогу показывает в состоянии", async () => {

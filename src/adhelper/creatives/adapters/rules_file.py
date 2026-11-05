@@ -39,7 +39,10 @@ def load_rework_rules(version: str) -> ReworkRules:
     return ReworkRules(**tomllib.loads(resource.read_text(encoding="utf-8")))
 
 
-def load_image_rules(version: str) -> ImageRules:
+CURRENT_IMAGE_RULES = "images-1"
+
+
+def load_image_rules(version: str = CURRENT_IMAGE_RULES) -> ImageRules:
     resource = files("adhelper.creatives.adapters") / "rules" / f"{version}.toml"
     data = tomllib.loads(resource.read_text(encoding="utf-8"))
     for key in ("banned_prompt_words", "no_people_niches", "people_words"):

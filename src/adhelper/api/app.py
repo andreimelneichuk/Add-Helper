@@ -24,6 +24,7 @@ from adhelper.api.display import display_router
 from adhelper.api.experiments import experiments_router
 from adhelper.api.launch import launch_router
 from adhelper.api.notifications import notifications_router
+from adhelper.api.images import images_router
 from adhelper.api.plan import plan_router
 from adhelper.api.rework import rework_router
 from adhelper.api.site import guest_site_router, site_router
@@ -132,6 +133,7 @@ def create_app(
     app.include_router(chat_router())
     # Разборщик команд: без ключа модели чат понимает только правила.
     app.state.command_model = build_text_model(
+    app.include_router(images_router())
         settings.text_model_base_url,
         settings.text_model_api_key,
         settings.text_model_name,

@@ -10,6 +10,7 @@ from adhelper.campaigns.domain.ports import CreatedCampaign, Targeting
 from adhelper.campaigns.domain.targeting import Schedule
 from adhelper.platforms.domain.ports import (
     AdDay,
+    AdImage,
     Advertiser,
     ModerationState,
     ModerationVerdict,
@@ -64,6 +65,9 @@ class FakePlatform:
         # Объявления, созданные по нашей метке, и итоги проверки; без итога — «на проверке».
         self.published: dict[str, PublishedAd] = {}
         self.create_ad_calls = 0
+        # Библиотека картинок: одинаковая картинка хранится один раз, как в Директе.
+        self.images: dict[str, AdImage] = {}
+        self.upload_calls = 0
         self.verdicts: dict[str, ModerationVerdict] = {}
         self.advertisers: dict[str, Advertiser] = {}
         self.set_advertiser_calls = 0
@@ -159,20 +163,31 @@ class FakePlatform:
         text: str,
         href: str,
         group_id: str | None = None,
+        image_hash: str | None = None,
     ) -> None:
         self._check_fault("create_ad", after_apply=False)
+        if image_hash is not None and image_hash not in self.images:
+            raise ValueError(f"нет картинки {image_hash}")
         if campaign_id not in self.campaigns:
             raise ValueError(f"нет кампании {campaign_id}")
         self.create_ad_calls += 1
         ad_id = str(7000 + len(self.published) + 1)
         group = group_id or f"g-{campaign_id}"
         self.published[marker] = PublishedAd(
-            ad_id, campaign_id, headline, text, href, group_id=group
+            ad_id, campaign_id, headline, text, href, image_hash=image_hash, group_id=group
         )
         self.groups[ad_id] = group
         # Новое объявление включено, но показывается только после одобрения.
         self.ads[f"ad:{ad_id}"] = True
         self._check_fault("create_ad", after_apply=True)
+
+    async def upload_image(self, account: str, image: AdImage) -> str:
+        self._check_fault("upload_image", after_apply=False)
+        self.upload_calls += 1
+        image_hash = f"h{image.sha256[:19]}"
+        self.images[image_hash] = image
+        self._check_fault("upload_image", after_apply=True)
+        return image_hash
 
     async def ad_group(self, account: str, ad_id: str) -> str | None:
         self._check_fault("ad_group", after_apply=False)

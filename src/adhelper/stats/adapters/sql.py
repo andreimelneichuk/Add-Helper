@@ -70,6 +70,13 @@ ALERTS = table(
     column("created_at", DateTime(timezone=True)),
     column("resolved_at", DateTime(timezone=True)),
 )
+CREATIVES = table(
+    "creatives",
+    column("business_id", Uuid),
+    column("account", Text),
+    column("ad_id", Text),
+    column("image_id", BigInteger),
+)
 CLIENTS = table(
     "client_answers",
     column("business_id", Uuid),
@@ -414,6 +421,15 @@ class SqlDashboard:
             .group_by(AD_STATS.c.account, AD_STATS.c.ad_id)
             .subquery()
         )
+        image = (
+            select(func.max(CREATIVES.c.image_id))
+            .where(
+                CREATIVES.c.business_id == self._business_id,
+                CREATIVES.c.account == ADS.c.account,
+                CREATIVES.c.ad_id == ADS.c.ad_id,
+            )
+            .scalar_subquery()
+        )
         statement = (
             select(
                 ADS.c.account,
@@ -424,6 +440,7 @@ class SqlDashboard:
                 ADS.c.href,
                 ADS.c.state,
                 *[func.coalesce(c, 0) for c in list(sums.c)[2:]],
+                image,
             )
             .outerjoin(sums, (sums.c.account == ADS.c.account) & (sums.c.ad_id == ADS.c.ad_id))
             .where(ADS.c.business_id == self._business_id)
@@ -447,6 +464,7 @@ class SqlDashboard:
                 href=row[5],
                 state=row[6],
                 totals=_totals(row[7], row[8], row[9], row[10]),
+                image_id=row[11],
             )
             for row in rows
         ]

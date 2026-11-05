@@ -56,6 +56,8 @@ class AdLine:
     href: str
     state: str
     totals: Totals
+    # Своё фото или сцена, с которыми объявление ушло на площадку; None — без картинки.
+    image_id: int | None = None
 
 
 @dataclass(frozen=True)
