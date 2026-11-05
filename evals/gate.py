@@ -32,7 +32,7 @@ from pydantic import SecretStr
 from adhelper.creatives.adapters.openai_compatible import OpenAiCompatibleModel
 from adhelper.creatives.adapters.rules_file import load_rules
 from adhelper.creatives.application.generate import ADS_SCHEMA, SYSTEM_PROMPT, _parse, build_prompt
-from adhelper.creatives.domain.facts import check_claims, keyed_facts
+from adhelper.creatives.domain.facts import Claim, check_claims, keyed_facts
 from adhelper.creatives.domain.model import (
     AdDraft,
     BusinessProfile,
@@ -245,23 +245,18 @@ async def _write(
         candidates = _parse(text) if text is not None else None
         if candidates is None:
             return
-        facts = keyed_facts(profile)
         ads = []
         for candidate in candidates:
             found = code_violations(candidate.draft, profile, rules)
             # Негодное по форме (длина, пустота) сервис переписывает, в счёт выдумок не идёт.
             if not usable(found):
                 continue
-            unbound = check_claims(candidate.draft, candidate.claims, facts, rules)
-            ads.append(
-                {
-                    "headline": candidate.draft.headline,
-                    "text": candidate.draft.text,
-                    "code": sorted({*found, *(v.kind.value for v in unbound)}),
-                    "details": [v.detail for v in unbound],
-                    "claims": [[c.fragment, c.fact_key] for c in candidate.claims],
-                }
-            )
+            ad: dict[str, Any] = {
+                "headline": candidate.draft.headline,
+                "text": candidate.draft.text,
+                "claims": [[c.fragment, c.fact_key] for c in candidate.claims],
+            }
+            ads.append(ad | _code(ad, profile, rules))
         cache[pid] = ads
 
     todo = [pid for pid in sorted(profiles) if pid not in cache]
@@ -270,18 +265,62 @@ async def _write(
     await asyncio.gather(*(one(pid) for pid in todo))
 
 
+def _code(ad: dict[str, Any], profile: BusinessProfile, rules: CreativeRules) -> dict[str, Any]:
+    """Решение кода. Пересчитывается при каждом запуске: правка правил кода не требует
+    нового писателя, ответы которого уже сохранены."""
+    draft = AdDraft(str(ad["headline"]), str(ad["text"]))
+    found = code_violations(draft, profile, rules)
+    claims = [Claim(str(fragment), str(key)) for fragment, key in ad["claims"]]
+    unbound = check_claims(draft, claims, keyed_facts(profile), rules)
+    return {
+        "code": sorted({*found, *(v.kind.value for v in unbound)}),
+        "details": [v.detail for v in unbound],
+    }
+
+
+def _key(ad: dict[str, Any]) -> str:
+    return f"{ad['headline']}\n{ad['text']}"
+
+
+Verdicts = dict[str, dict[str, dict[str, Any]]]
+
+
+def _by_text(cache: dict[str, Any], sets: dict[str, list[dict[str, Any]]]) -> Verdicts:
+    """Прежний кеш хранил решения списком по порядку проверенных объявлений; новый — по тексту
+    объявления, чтобы правка кода не сдвигала решения."""
+    keyed: Verdicts = {}
+    for pid, rows in cache.items():
+        if isinstance(rows, list):
+            keyed[pid] = {_key(ad): v for ad, v in zip(sets.get(pid, []), rows, strict=False)}
+        else:
+            keyed[pid] = rows
+    return keyed
+
+
+def _passed(sets: dict[str, list[dict[str, Any]]], verdicts: Verdicts) -> dict[str, Any]:
+    """Не снятые проверяющим; набор без ответа хотя бы на одно объявление пропускаем."""
+    return {
+        pid: [ad for ad in ads if not verdicts[pid][_key(ad)]["blocked"]]
+        for pid, ads in sets.items()
+        if all(_key(ad) in verdicts.get(pid, {}) for ad in ads)
+    }
+
+
 async def _check(
     endpoint: _Endpoint,
     prompt: str,
     profiles: dict[str, BusinessProfile],
-    sets: dict[str, list[dict[str, object]]],
-    cache: dict[str, Any],
+    sets: dict[str, list[dict[str, Any]]],
+    cache: Verdicts,
 ) -> None:
-    """Судья или аудитор набора: одно решение на объявление, сбой — снятие всех."""
+    """Судья или аудитор набора: одно решение на объявление, спрашиваем только новые."""
     variant = PROMPTS[prompt]
+    pending = {
+        pid: [ad for ad in ads if _key(ad) not in cache.get(pid, {})] for pid, ads in sets.items()
+    }
 
     async def one(pid: str) -> None:
-        drafts = _drafts(sets[pid])
+        drafts = _drafts(pending[pid])
         text = await _call(
             endpoint,
             variant.system,
@@ -291,16 +330,20 @@ async def _check(
         )
         if text is None:
             return
-        cache[pid] = [
-            {"blocked": v.blocked, "reason": v.reason} for v in variant.read(text, drafts)
-        ]
+        verdicts = variant.read(text, drafts)
+        cache.setdefault(pid, {}).update(
+            {
+                _key(ad): {"blocked": v.blocked, "reason": v.reason}
+                for ad, v in zip(pending[pid], verdicts, strict=True)
+            }
+        )
 
-    todo = [pid for pid in sorted(sets) if sets[pid] and pid not in cache]
+    todo = [pid for pid in sorted(pending) if pending[pid]]
     if todo:
         prompts = [
-            variant.system + variant.build(_drafts(sets[pid]), profiles[pid]) for pid in todo
+            variant.system + variant.build(_drafts(pending[pid]), profiles[pid]) for pid in todo
         ]
-        longest = max(len(sets[pid]) for pid in todo)
+        longest = max(len(pending[pid]) for pid in todo)
         _estimate(prompt, endpoint, prompts, JUDGE_MAX_TOKENS * longest)
     await asyncio.gather(*(one(pid) for pid in todo))
 
@@ -359,21 +402,23 @@ async def run(args: argparse.Namespace) -> None:
             " за 1M входных и выходных\n"
         )
     await _write(_endpoint(args.writer, meter, prices), profiles, written, rules)
+
+    judge_name = f"{writer_name}--judge--{_slug(args.judge)}"
+    audit_name = f"{writer_name}--audit--{_slug(args.auditor)}"
+    # Прежние кеши выровнены по решению кода на момент записи: переводим до пересчёта.
+    stored = {pid: [ad for ad in ads if not ad["code"]] for pid, ads in written.items()}
+    judged = _by_text(_cache(judge_name), stored)
+    audited = _by_text(_cache(audit_name), _passed(stored, judged))
+    for pid, ads in written.items():
+        for ad in ads:
+            ad.update(_code(ad, profiles[pid], rules))
     _store(writer_name, written)
 
     to_judge = {pid: [ad for ad in ads if not ad["code"]] for pid, ads in written.items()}
-    judge_name = f"{writer_name}--judge--{_slug(args.judge)}"
-    judged = _cache(judge_name)
     await _check(_endpoint(args.judge, meter, prices), "v4", profiles, to_judge, judged)
     _store(judge_name, judged)
 
-    launched = {
-        pid: [ad for ad, v in zip(ads, judged.get(pid, []), strict=True) if not v["blocked"]]
-        for pid, ads in to_judge.items()
-        if pid in judged or not ads
-    }
-    audit_name = f"{writer_name}--audit--{_slug(args.auditor)}"
-    audited = _cache(audit_name)
+    launched = _passed(to_judge, judged)
     await _check(_endpoint(args.auditor, meter, prices), "a1", profiles, launched, audited)
     _store(audit_name, audited)
 
@@ -386,9 +431,9 @@ def report(
     profiles: dict[str, BusinessProfile],
     written: dict[str, list[dict[str, Any]]],
     to_judge: dict[str, list[dict[str, Any]]],
-    judged: dict[str, list[dict[str, Any]]],
+    judged: Verdicts,
     launched: dict[str, list[dict[str, Any]]],
-    audited: dict[str, list[dict[str, Any]]],
+    audited: Verdicts,
     reference: GateInput | None,
 ) -> None:
     missing = sorted(set(profiles) - set(launched))
@@ -438,23 +483,28 @@ def _codes(written: dict[str, list[dict[str, Any]]], launched: dict[str, Any]) -
     sys.stdout.write(f"подробности кода: {dict(details.most_common(8))}\n")
 
 
-def _judged(to_judge: dict[str, list[dict[str, Any]]], judged: dict[str, Any]) -> None:
+def _judged(to_judge: dict[str, list[dict[str, Any]]], judged: Verdicts) -> None:
     sys.stdout.write("снял судья:\n")
     for pid, ads in sorted(to_judge.items()):
-        for ad, v in zip(ads, judged.get(pid, []), strict=False):
-            if v["blocked"]:
+        for ad in ads:
+            v = judged.get(pid, {}).get(_key(ad))
+            if v and v["blocked"]:
                 sys.stdout.write(f"  {pid}: {ad['headline']} | {ad['text']}\n    → {v['reason']}\n")
 
 
-def _disagreements(launched: dict[str, list[dict[str, Any]]], audited: dict[str, Any]) -> None:
+def _disagreements(launched: dict[str, list[dict[str, Any]]], audited: Verdicts) -> None:
     out = sys.stdout.write
     flagged = [
-        (pid, ad, v["reason"])
+        (pid, ad, audited[pid][_key(ad)]["reason"])
         for pid, ads in launched.items()
-        for ad, v in zip(ads, audited.get(pid, []), strict=True)
-        if v["blocked"]
+        for ad in ads
+        if _key(ad) in audited.get(pid, {}) and audited[pid][_key(ad)]["blocked"]
     ]
-    unaudited = sum(1 for pid, ads in launched.items() if ads and pid not in audited)
+    unaudited = sum(
+        1
+        for pid, ads in launched.items()
+        if any(_key(ad) not in audited.get(pid, {}) for ad in ads)
+    )
     out(f"аудитор не согласен с судьёй: {len(flagged)} из {sum(map(len, launched.values()))}")
     out(f", без ответа аудитора наборов {unaudited}\n" if unaudited else "\n")
     for pid, ad, reason in flagged:
