@@ -122,6 +122,25 @@ async def test_unfinished_set_is_not_adopted(sessions: Sessions) -> None:
     assert not await SqlWizardSets(sessions).adopt(set_id, "t1", business, (0,))
 
 
+async def test_repeated_request_with_same_profile_returns_cached_ready_set(
+    sessions: Sessions,
+) -> None:
+    set_id = await _request(sessions, token="orig-token")
+    await _run(sessions, FakeModel(ads(GOOD)))
+    sets = SqlWizardSets(sessions)
+    ready = await sets.get(set_id, "orig-token")
+    assert ready is not None and ready.status == SetStatus.READY
+
+    # Повторный запрос с тем же профилем возвращает готовый кэшированный id
+    cached_id = await SqlWizardSets(sessions).request(
+        DRAFT, "net-a", "new-token", WIZARD, CURRENT_RULES, NOW
+    )
+    assert cached_id == set_id
+    cached = await sets.get(cached_id, "new-token")
+    assert cached is not None and cached.status == SetStatus.READY
+
+
+
 async def _creatives_count(sessions: Sessions) -> int:
     from sqlalchemy import text
 

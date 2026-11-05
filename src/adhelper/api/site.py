@@ -133,7 +133,7 @@ def guest_site_router() -> APIRouter:
     # Тело только JSON: чужая страница не отправит его без предварительного запроса.
     @router.post("", status_code=status.HTTP_202_ACCEPTED)
     async def post_guest_read(request: Request, body: SiteBody) -> dict[str, Any]:
-        rules = load_site_rules()
+        rules = getattr(request.app.state, "site_rules", None) or load_site_rules()
         url = _checked_url(body.url, rules)
         token = secrets.token_urlsafe(32)
         try:

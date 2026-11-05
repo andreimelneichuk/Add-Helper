@@ -51,6 +51,30 @@ LAUNCH_ARGS = [
     "--no-pings",
 ]
 METHODS = frozenset({"GET", "HEAD", "POST"})
+_SHADOW_DOM_SCRIPT = """() => {
+    const shadowHtmls = [];
+    const MAX_SHADOWS = 50;
+    function findShadowRoots(root) {
+        if (!root || shadowHtmls.length >= MAX_SHADOWS) return;
+        try {
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+            let node = walker.currentNode;
+            while (node && shadowHtmls.length < MAX_SHADOWS) {
+                if (node.shadowRoot) {
+                    try {
+                        shadowHtmls.push(node.shadowRoot.innerHTML);
+                        findShadowRoots(node.shadowRoot);
+                    } catch {}
+                }
+                node = walker.nextNode();
+            }
+        } catch {}
+    }
+    if (document.body) {
+        findShadowRoots(document.body);
+    }
+    return shadowHtmls;
+}"""
 
 
 async def browser_starts() -> bool:
@@ -207,6 +231,17 @@ class ChromiumRenderer:
         html = await _content(page)
         found = page_from_html(page.url, html[: self._rules.max_page_bytes], self._render.markers)
         texts = [found.text]
+        # Сайты и виджеты в Shadow DOM (Salebot, Web Components): page.content() их не видит.
+        try:
+            shadows: list[str] = await page.evaluate(_SHADOW_DOM_SCRIPT)
+        except PlaywrightError:
+            shadows = []
+        for shadow_html in shadows:
+            inner = page_from_html(
+                page.url, shadow_html[: self._rules.max_page_bytes], self._render.markers
+            )
+            if inner.text:
+                texts.append(inner.text)
         for frame in page.frames[1 : self._render.max_frames + 1]:
             if frame.is_detached() or urlsplit(frame.url).scheme not in ("http", "https"):
                 continue

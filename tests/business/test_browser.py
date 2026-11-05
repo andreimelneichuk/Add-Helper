@@ -46,6 +46,11 @@ COUNTER = """<html><body><p>Ноготок</p>
 GO_INSIDE = """<html><body><p>Ноготок</p><script>
 location.href = 'http://localhost:PORT/';
 </script></body></html>"""
+SHADOW = """<html><body><div id="host"></div><script>
+const host = document.getElementById('host');
+const shadow = host.attachShadow({mode: 'open'});
+shadow.innerHTML = '<h2>Веганские красители</h2><p>Маникюр 1 700 ₽</p>';
+</script></body></html>"""
 
 
 def serve(
@@ -109,6 +114,7 @@ def site(inside: tuple[str, list[str]]) -> Iterator[tuple[str, list[str]]]:
     port = server.server_port
     pages["/counter"] = ("text/html", COUNTER.replace("PORT", str(port)))
     pages["/go-inside"] = ("text/html", GO_INSIDE.replace("PORT", str(port)))
+    pages["/shadow"] = ("text/html", SHADOW)
     yield f"http://127.0.0.1:{port}", hits
     server.shutdown()
 
@@ -205,3 +211,11 @@ def test_site_builders_are_found_in_markup() -> None:
         markers=("tilda", "taplink"),
     )
     assert page.builders == ("tilda",)
+
+
+async def test_shadow_dom_content_is_extracted(site: tuple[str, list[str]]) -> None:
+    base, _ = site
+    async with renderer() as browser:
+        page = await browser.render(f"{base}/shadow")
+    assert "Веганские красители" in page.text
+    assert "Маникюр 1 700 ₽" in page.text

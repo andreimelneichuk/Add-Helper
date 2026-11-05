@@ -12,8 +12,8 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   use: {
     baseURL: `http://localhost:${FRONT}`,
-    // Локально берём установленный Chrome; в CI браузер ставит playwright install.
-    channel: process.env.CI ? undefined : "chrome",
+    // Локально берём Chromium; системный Chrome подключается через PLAYWRIGHT_CHROME=1.
+    channel: process.env.PLAYWRIGHT_CHROME ? "chrome" : undefined,
     trace: "retain-on-failure",
   },
   webServer: [

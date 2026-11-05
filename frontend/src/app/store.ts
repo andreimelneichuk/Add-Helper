@@ -68,7 +68,7 @@ export type State = {
   budgetDraft: string | null;
   facts: Fact[];
   /** Открытая правка факта; id null у нового факта. */
-  factEdit: { id: string | null; value: string } | null;
+  factEdit: { id: string | null; value: string; field?: Fact["field"] } | null;
   /** Разбор сайта до входа идёт: ключ доступа знает только этот браузер. */
   reading: { id: number; token: string } | "asking" | null;
   /** Пределы и варианты бюджета из правил сервиса; null — прототип на подставных. */
@@ -126,7 +126,7 @@ export const writtenAds = (ads: WizardAd[]): Ad[] => ads.map((a, i) => ({
   facts: a.facts.length ? `Опирается на: ${a.facts.join(", ")}` : "Не опирается на факты профиля: общие слова об услуге",
 }));
 
-const FACT_LABELS: Record<SiteFact["field"], string> = { niche: "Чем занимаетесь", address: "Где", service: "Услуга", feature: "Особенность" };
+export const FACT_LABELS: Record<NonNullable<Fact["field"]>, string> = { niche: "Чем занимаетесь", address: "Где", service: "Услуга", feature: "Особенность" };
 /** Факты разбора в карточки шага «Профиль»: цитата остаётся рядом, чтобы владелец видел, откуда это. */
 export const siteFacts = (facts: SiteFact[]): Fact[] => facts.map((f, i) => ({
   id: `site${i}`,
@@ -139,7 +139,13 @@ export const siteFacts = (facts: SiteFact[]): Fact[] => facts.map((f, i) => ({
 }));
 
 let nextId = 1;
-const newFact = (value: string): Fact => ({ id: "n" + nextId++, label: "Вы добавили", value, source: "от вас" });
+export const newFact = (value: string, field: Fact["field"] = "service"): Fact => ({
+  id: "n" + nextId++,
+  field,
+  label: field ? FACT_LABELS[field] : "Вы добавили",
+  value,
+  source: "от вас",
+});
 export const msg = (who: Who, text: string, link?: Message["link"]): Message => ({ id: nextId++, who, text, link });
 
 const GREETING = "Здравствуйте! Я веду рекламу малого бизнеса сам: создаю, слежу за деньгами, улучшаю. Начнём с вашего сайта. Напишите ссылку здесь или откройте «Настройку» и заполните всё там.";
@@ -436,7 +442,12 @@ export class Store {
     const { factEdit: edit, facts } = this.state;
     const value = edit?.value.trim();
     if (!edit || !value) return;
-    const next = edit.id === null ? [...facts, newFact(value)] : facts.map((f) => (f.id === edit.id ? { ...f, value, source: "от вас", quote: undefined } : f));
+    const existing = edit.id !== null ? facts.find((f) => f.id === edit.id) : null;
+    const field: Fact["field"] = edit.field ?? existing?.field ?? "service";
+    const label = edit.field ? FACT_LABELS[edit.field] : existing?.label ?? FACT_LABELS[field];
+    const next = edit.id === null
+      ? [...facts, newFact(value, field)]
+      : facts.map((f) => (f.id === edit.id ? { ...f, field, label, value, source: "от вас", quote: undefined } : f));
     this.set({ facts: next, factEdit: null, block: "" });
   };
   removeFact = (id: string) => this.set({ facts: this.state.facts.filter((f) => f.id !== id), factEdit: null, block: "" });
@@ -456,6 +467,8 @@ export class Store {
   private async awaitRead(reader: GuestReader, id: number, token: string) {
     for (;;) {
       const read = await reader.siteRead(id, token);
+      const cur = this.state.reading;
+      if (!cur || cur === "asking" || cur.id !== id) return;
       if (read.status === "failed") return this.set({ reading: null, block: read.problem_text ?? "Сайт не прочитался. Заполните профиль вручную." });
       if (read.status === "ready") {
         const facts = siteFacts(read.facts);
@@ -463,6 +476,8 @@ export class Store {
         return this.set({ reading: null, facts, step: 1, block: "", msgs: [...this.state.msgs, msg("ai", ai)] });
       }
       await new Promise((resolve) => setTimeout(resolve, this.waitMs));
+      const afterWait = this.state.reading;
+      if (!afterWait || afterWait === "asking" || afterWait.id !== id) return;
     }
   }
   /** Сайта нет или он не читается: профиль с чистого листа. */
@@ -554,7 +569,7 @@ export class Store {
     const { kind, name, phone, okved } = s.advertiser;
     try {
       await this.wizard.saveMarking({ kind, inn: s.inn.trim(), name, ...(kind === "person" ? { phone } : { okved }) });
-      // Полный ИНН в браузере больше не нужен: сервис хранит его зашифрованным.
+      // ИНН и реквизиты сохранены зашифрованными в сервисе; полный ИНН в браузере не остаётся
       this.set({ marked: true, inn: "" });
       this.advance();
     } catch (e) {
@@ -578,9 +593,15 @@ export class Store {
     const limits = s.budgetOptions ?? { min: MIN_BUDGET, max: Infinity };
     if (s.step === 2 && s.budgetDraft !== null && Number(s.budgetDraft) < limits.min) return this.set({ block: `Укажите сумму от ${rub(limits.min)} в месяц.` });
     if (s.step === 2 && s.budgetDraft !== null && Number(s.budgetDraft) > limits.max) return this.set({ block: `Больше ${rub(limits.max)} в месяц здесь не ставлю: проверьте, нет ли лишнего нуля.` });
+    if (s.step === 2 && s.budgetDraft === null && (Number(s.f.budget) < limits.min || Number(s.f.budget) > limits.max)) {
+      return this.set({ block: `Укажите сумму от ${rub(limits.min)} в месяц.` });
+    }
     if (s.step === 0 && !s.site.trim()) return this.set({ block: this.reader ? "Вставьте ссылку или заполните профиль вручную." : "Вставьте ссылку или расскажите о бизнесе в чате." });
     if (s.step === 0 && this.reader) { void this.study(); return; }
     if (s.step === 1 && s.facts.length === 0) return this.set({ block: "Добавьте хотя бы один факт: рекламу пишу только по ним." });
+    if (s.step === 1 && !s.facts.some((f) => f.field === "service" || f.id === "prices")) {
+      return this.set({ block: "Добавьте хотя бы одну услугу: объявления пишу по услугам." });
+    }
     if (s.step === 2 && this.writer) { this.advance("Пишу объявления по вашим фактам. Посмотрите их на вкладке «Настройка» и уберите лишние."); void this.writeAds(); return; }
     if (s.step === 3 && this.writer && s.writing) return this.set({ block: "Объявления ещё пишутся: это обычно меньше минуты." });
     if (s.step === 3 && this.writer && !s.ads.length) return this.set({ block: "Объявлений пока нет: нажмите «Написать ещё раз»." });

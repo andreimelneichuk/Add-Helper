@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api";
 import type { Fact } from "./data";
-import { businessName, clearDraft, draftProfile, loadDraft, loadWizard, saveDraft, transferDraft } from "./draft";
+import { businessName, clearDraft, clearWizard, draftProfile, loadDraft, loadWizard, saveDraft, saveWizard, transferDraft } from "./draft";
 import type { StartDraft, TransferDeps } from "./draft";
 import { siteFacts } from "./store";
 
@@ -115,5 +115,44 @@ describe("черновик запуска", () => {
   it("без входа ничего не переносит", async () => {
     const { full } = deps({ session: vi.fn(async () => null) });
     expect(await transferDraft(full, draft)).toEqual({ status: "signed_out" });
+  });
+
+  it("при повреждённом JSON в хранилище loadDraft возвращает null", () => {
+    window.localStorage.setItem("adhelper.startDraft", "invalid-json{{{");
+    expect(loadDraft()).toBeNull();
+    clearDraft();
+  });
+
+  it("профиль без услуг продвигает первый свободный факт в услугу", () => {
+    const freeOnly: Fact[] = [
+      { id: "f1", label: "Свободный факт", value: "Маникюр классический, 1 000 ₽", source: "от вас" },
+      { id: "f2", label: "Ещё факт", value: "Уютная атмосфера", source: "от вас" },
+    ];
+    const profile = draftProfile({ site: "https://test.ru", facts: freeOnly, budget: 10000 });
+    expect(profile.services).toEqual([{ name: "Маникюр классический", price: 1000 }]);
+    expect(profile.features).toContain("Уютная атмосфера");
+  });
+
+  it("имя бизнеса при некорректном URL использует нишу", () => {
+    const badUrlDraft: StartDraft = {
+      site: "http://[invalid-url",
+      facts: [{ id: "n", field: "niche", label: "Ниша", value: "косметология", source: "от вас" }],
+      budget: 15000,
+    };
+    expect(businessName(badUrlDraft)).toBe("Косметология");
+  });
+
+  it("ошибка сервера 500 при переносе объявлений пробрасывается дальше", async () => {
+    const ads = { id: 8, token: "tok", kept: [0] };
+    const failingAdopt = vi.fn(async () => { throw new ApiError(500, "Внутренняя ошибка сервиса"); });
+    const { full } = deps({ business: vi.fn(() => ({ saveProfile: vi.fn(async () => ({})), saveBudgetPlan: vi.fn(async () => ({})), adoptAds: failingAdopt })) });
+    await expect(transferDraft(full, { ...draft, ads })).rejects.toThrow("Внутренняя ошибка сервиса");
+  });
+
+  it("saveWizard, loadWizard и clearWizard сохраняют и удаляют ID бизнеса мастера", () => {
+    saveWizard("biz-123");
+    expect(loadWizard()).toBe("biz-123");
+    clearWizard();
+    expect(loadWizard()).toBeNull();
   });
 });

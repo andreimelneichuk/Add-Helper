@@ -5,10 +5,12 @@ import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import UUID
 
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Request, Response, status
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
@@ -22,9 +24,9 @@ from adhelper.api.chat import chat_router
 from adhelper.api.control import control_router
 from adhelper.api.display import display_router
 from adhelper.api.experiments import experiments_router
+from adhelper.api.images import images_router
 from adhelper.api.launch import launch_router
 from adhelper.api.notifications import notifications_router
-from adhelper.api.images import images_router
 from adhelper.api.plan import plan_router
 from adhelper.api.rework import rework_router
 from adhelper.api.site import guest_site_router, site_router
@@ -131,9 +133,9 @@ def create_app(
     app.state.platform_for = platforms or _no_platform
     app.include_router(notifications_router())
     app.include_router(chat_router())
+    app.include_router(images_router())
     # Разборщик команд: без ключа модели чат понимает только правила.
     app.state.command_model = build_text_model(
-    app.include_router(images_router())
         settings.text_model_base_url,
         settings.text_model_api_key,
         settings.text_model_name,
@@ -154,5 +156,20 @@ def create_app(
             logger.error("Проверка базы не прошла: %s", type(error).__name__)
             return JSONResponse({"status": "unavailable"}, status_code=503)
         return JSONResponse({"status": "ok"})
+
+    frontend_dist = Path(__file__).resolve().parents[3] / "frontend" / "dist"
+    if frontend_dist.is_dir():
+        assets_dir = frontend_dist / "assets"
+        if assets_dir.is_dir():
+            app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+        @app.get("/{full_path:path}")
+        async def serve_spa(full_path: str) -> Response:
+            if full_path.startswith(("api/", "stand-yandex/")):
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Not Found")
+            file_path = frontend_dist / full_path
+            if full_path and file_path.is_file():
+                return FileResponse(file_path)
+            return FileResponse(frontend_dist / "index.html")
 
     return app

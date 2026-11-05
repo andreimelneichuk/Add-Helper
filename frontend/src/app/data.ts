@@ -80,11 +80,11 @@ export const MIN_BUDGET = 1000;
 export const MIN_GOAL = 100;
 
 export const FACTS: Fact[] = [
-  { id: "what", label: "Чем занимаетесь", value: "Маникюр и педикюр", source: "с сайта" },
-  { id: "prices", label: "Цены", value: "Маникюр от 1 200 ₽, педикюр от 1 800 ₽", source: "с сайта" },
-  { id: "where", label: "Где", value: "Москва, у метро Сокольники", source: "с сайта" },
-  { id: "hours", label: "Когда работаете", value: "Каждый день, 10:00–21:00", source: "с сайта" },
-  { id: "promo", label: "Акция", value: "Скидка 20% на первый визит", source: "с сайта" },
+  { id: "what", field: "niche", label: "Чем занимаетесь", value: "Маникюр и педикюр", source: "с сайта" },
+  { id: "prices", field: "service", label: "Цены", value: "Маникюр от 1 200 ₽, педикюр от 1 800 ₽", source: "с сайта" },
+  { id: "where", field: "address", label: "Где", value: "Москва, у метро Сокольники", source: "с сайта" },
+  { id: "hours", field: "feature", label: "Когда работаете", value: "Каждый день, 10:00–21:00", source: "с сайта" },
+  { id: "promo", field: "feature", label: "Акция", value: "Скидка 20% на первый визит", source: "с сайта" },
 ];
 
 export function leadsWord(n: number) {

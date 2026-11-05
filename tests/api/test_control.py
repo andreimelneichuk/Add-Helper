@@ -87,6 +87,7 @@ async def test_without_platform_nothing_is_recorded_and_says_so(
     anna: Anna, sessions: Sessions
 ) -> None:
     client, csrf, business = anna
+    _app(client).state.platform_for = lambda _b, _a: None
     for url, body in (
         (f"ads/{LOGIN}/11/state", {"active": False, "request_id": "r1"}),
         ("pause", {"request_id": "r2"}),

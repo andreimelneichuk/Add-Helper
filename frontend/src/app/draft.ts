@@ -73,11 +73,17 @@ export function draftProfile(draft: StartDraft): Profile {
   const of = (field: Fact["field"]) => draft.facts.filter((f) => f.field === field).map((f) => f.value.trim()).filter(Boolean);
   // Факт, добавленный словами, без поля: в рекламе он пойдёт как особенность, которую подтвердил владелец.
   const free = draft.facts.filter((f) => !f.field).map((f) => f.value.trim()).filter(Boolean);
+  let services = of("service").slice(0, MAX_SERVICES).map(service);
+  let features = [...of("feature"), ...free].slice(0, MAX_FEATURES);
+  if (services.length === 0 && free.length > 0) {
+    services = [service(free[0]!)];
+    features = [...of("feature"), ...free.slice(1)].slice(0, MAX_FEATURES);
+  }
   return {
     niche: of("niche")[0] ?? "",
     address: of("address")[0] ?? "",
-    services: of("service").slice(0, MAX_SERVICES).map(service),
-    features: [...of("feature"), ...free].slice(0, MAX_FEATURES),
+    services,
+    features,
     website: draft.site.trim(),
   };
 }

@@ -33,11 +33,10 @@ export function RealYandex({ store, s }: Props) {
       <div className="st-link-text">
         <div className="st-link-title">{connected ? `Кабинет подключён: ${connected.login}` : "Кабинет Директа"}</div>
         <div className="ah-muted">
-          {s.account?.email ? `Вы вошли: ${s.account.email}. ` : ""}
-          Профиль и бюджет сохранены в сервисе.{" "}
+          {s.account?.email ? `Вы вошли как ${s.account.email}. ` : ""}
           {connected
             ? "Кампании запуск создаст в этом кабинете."
-            : "Подключите кабинет, где будет реклама. Можно и позже, в настройках: без кабинета запуск не начнётся."}
+            : "Чтобы сервис мог управлять рекламой в вашем Директе, предоставьте доступ к кабинету: нажмите кнопку «Подключить кабинет»."}
         </div>
         {status && <p className="st-letter" role="status">{status}</p>}
       </div>
@@ -65,7 +64,25 @@ export function RealMarking({ store, s }: Props) {
           <div className="st-link-title">Сохранено: {KIND_LABEL[saved.kind].toLowerCase()}, ИНН {saved.inn}</div>
           <div className="ah-muted">{saved.name}. Передам в Яндекс при запуске, храню зашифрованным.</div>
         </div>
-        <button type="button" className="ah-btn" onClick={() => store.set({ marked: false, advertiser: { ...a, kind: saved.kind, name: saved.name, okved: saved.okved ?? "" } })}>Изменить</button>
+        <button
+          type="button"
+          className="ah-btn"
+          onClick={() =>
+            store.set({
+              marked: false,
+              inn: saved.inn || s.inn,
+              advertiser: {
+                ...a,
+                kind: saved.kind,
+                name: saved.name,
+                okved: saved.okved ?? "",
+                phone: saved.phone ?? a.phone ?? "",
+              },
+            })
+          }
+        >
+          Изменить
+        </button>
       </div>
     );
   }
@@ -218,13 +235,36 @@ export function RealLaunch({ store }: Props) {
 export function RealAds({ store, s }: Props) {
   const chosenSaved = !!s.account;
   if (s.writing) {
-    return <p className="ah-muted" role="status">Пишу объявления по вашим фактам и проверяю каждое: цены и обещания только из профиля. Обычно это меньше минуты.</p>;
+    return (
+      <div className="st-writing-wrap">
+        <p className="ah-muted st-reading" role="status">
+          Пишу объявления по вашим фактам и проверяю каждое: цены и обещания только из профиля. Обычно это меньше минуты.
+        </p>
+        <div className="st-ads">
+          <div className="st-skeleton" />
+          <div className="st-skeleton" />
+        </div>
+      </div>
+    );
   }
   return (
     <>
       {s.adSet?.template && <p className="ah-muted">Писатель сейчас не ответил, поэтому объявления собраны по шаблону из ваших фактов. После запуска я буду писать новые и ставить лучшие.</p>}
       {s.adSet?.needsReview && <p className="ah-muted">У вашей сферы строгие правила рекламы: перед запуском каждое объявление покажу вам на подтверждение.</p>}
       {chosenSaved && s.ads.length > 0 && <p className="ah-muted">Выбор сохранён в сервисе: запуск начнётся с этих объявлений.</p>}
+      {s.ads.length === 0 && (
+        <div className="st-link" style={{ marginBottom: 16 }}>
+          <div className="st-link-text">
+            <div className="st-link-title">Нет готовых объявлений</div>
+            <div className="ah-muted">
+              Объявления составляются по услугам из вашего профиля. Вернитесь на шаг «Профиль» и добавьте хотя бы одну услугу.
+            </div>
+          </div>
+          <button type="button" className="ah-btn ah-btn-primary" onClick={() => store.set({ step: 1, block: "" })}>
+            Вернуться в профиль
+          </button>
+        </div>
+      )}
       <div className="st-ads">
         {s.ads.map((a) => {
           const off = !!s.draftOff[a.id];

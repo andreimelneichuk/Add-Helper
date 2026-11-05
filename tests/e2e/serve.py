@@ -7,6 +7,7 @@
 
 import asyncio
 import base64
+import dataclasses
 import hashlib
 import json
 import os
@@ -103,7 +104,7 @@ class StandSite:
 STAND_ADS = [
     {
         "headline": "Маникюр с покрытием гель-лаком",
-        "text": "Маникюр с покрытием гель-лаком за 1700 ₽ на Тверской, 7.",
+        "text": "Маникюр с покрытием гель-лаком за 1700 ₽. Москва, ул. Тверская, 7.",
     },
     {"headline": "Маникюр на Тверской", "text": "Запишитесь на маникюр: Москва, ул. Тверская, 7."},
 ]
@@ -357,6 +358,14 @@ def _stand_router(app: Any) -> APIRouter:
         await runtime.ads_moderate(only=business_id)
         return {"status": "done"}
 
+    @router.post("/reset-limits")
+    async def reset_limits() -> dict[str, str]:
+        """Сброс счётчиков разбора сайтов между тестами."""
+        async with app.state.sessions() as session:
+            await session.execute(text("DELETE FROM guest_site_reads"))
+            await session.commit()
+        return {"status": "ok"}
+
     return router
 
 
@@ -379,6 +388,11 @@ def main() -> None:
     from adhelper.api.app import create_app
 
     app = create_app()
+    app.state.site_rules = dataclasses.replace(
+        load_site_rules(),
+        max_guest_reads_per_address=1000,
+        max_guest_reads_per_day=1000,
+    )
     demo = _platform()
     # У каждого кабинета своя площадка: кампании демо-кабинета не считаются в бюджет нового.
     platforms: dict[str, FakePlatform] = {}
@@ -391,6 +405,11 @@ def main() -> None:
     app.state.platform_for = platform_for
     app.include_router(_stand_router(app))
     app.include_router(_yandex_router())
+    # SPA catch-all маршрут должен проверяться последним, иначе он перехватывает /stand-yandex/...
+    spa_route = next((r for r in app.routes if getattr(r, "name", "") == "serve_spa"), None)
+    if spa_route:
+        app.routes.remove(spa_route)
+        app.routes.append(spa_route)
     asyncio.run(_serve(app))
 
 
