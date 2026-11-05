@@ -2,7 +2,7 @@ import { useLayoutEffect, useMemo, useRef } from "react";
 import "@fontsource-variable/onest";
 import "./tokens.css";
 import type { Situation, View } from "./data";
-import { Icon } from "./icons";
+import { BrandLogo, Icon } from "./icons";
 import { Ads } from "./screens/Ads";
 import { Chat } from "./screens/Chat";
 import { History } from "./screens/History";
@@ -39,7 +39,16 @@ export function AppShell({ store: given }: { store?: Store }) {
   return (
     <div className="ah">
       <header className="ah-bar">
-        <strong className="ah-brand">{starting ? "Ad Helper" : s.live?.name ?? "Салон «Пример»"}</strong>
+        <strong className="ah-brand">
+          {starting ? (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <BrandLogo size={22} />
+              <span>Ad Helper</span>
+            </span>
+          ) : (
+            s.live?.name ?? "Салон «Пример»"
+          )}
+        </strong>
         {!starting && <span className="ah-status" style={tone}><i aria-hidden="true" />{statusText(s)}</span>}
         {!starting && <button type="button" className="ah-btn ah-bar-pause" onClick={() => store.run({ action: "pause" })}>{s.paused ? "Включить" : "Пауза"}</button>}
         {!starting && <button type="button" className="ah-btn ah-btn-icon" aria-label="Настройки" aria-current={!chat && s.view === "settings" ? "page" : undefined} onClick={() => store.goView("settings")}><Icon name="settings" /></button>}

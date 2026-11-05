@@ -14,3 +14,30 @@ export function Icon({ name }: { name: IconName }) {
     <svg className="ah-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={PATHS[name]} /></svg>
   );
 }
+
+export function BrandLogo({ size = 24, className }: { size?: number; className?: string }) {
+  return (
+    <svg
+      className={className}
+      width={size}
+      height={size}
+      viewBox="0 0 512 512"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      style={{ verticalAlign: "middle", borderRadius: Math.round(size * 0.25) }}
+    >
+      <rect width="512" height="512" rx="130" fill="var(--accent, #2340d9)" />
+      <g transform="translate(-14, -10)">
+        <g fill="var(--on-accent, #ffffff)">
+          <path d="M 164 196 C 146 196, 132 210, 132 228 L 132 284 C 132 302, 146 316, 164 316 L 182 316 L 282 374 C 292 380, 306 372, 306 360 L 306 152 C 306 140, 292 132, 282 138 L 182 196 Z" />
+          <rect x="188" y="312" width="30" height="72" rx="15" />
+        </g>
+        <g fill="none" stroke="var(--on-accent, #ffffff)" strokeLinecap="round">
+          <path d="M 346 202 A 76 76 0 0 1 346 310" strokeWidth="26" />
+          <path d="M 392 164 A 136 136 0 0 1 392 348" strokeWidth="26" />
+        </g>
+      </g>
+    </svg>
+  );
+}
