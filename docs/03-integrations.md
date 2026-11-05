@@ -79,7 +79,7 @@
 | `Campaigns` | Создание, запуск, пауза, стратегия, лимиты |
 | `AdGroups`, `Keywords`, `AudienceTargets` | Аудитории и фразы |
 | `Ads` | Объявления, `moderate`, `suspend`, `resume` |
-| `AdImages`, `AdVideos`, `Creatives` | Медиа (`S6`) |
+| `AdImages`, `AdVideos`, `Creatives` | Медиа: `AdImages.add` для картинок объявлений (`v5`, запись `write_ad_image.json`); видео — `S6` |
 | `Sitelinks`, `AdExtensions` | Быстрые ссылки и уточнения |
 | `Bids`, `BidModifiers` | Корректировки, например время и устройства |
 | `Reports` | Статистика |

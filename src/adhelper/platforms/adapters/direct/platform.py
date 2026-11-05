@@ -5,6 +5,7 @@
 и доделывает недостающее. Где поле Директа не проверено вызовом, это сказано рядом.
 """
 
+import base64
 import hashlib
 import json
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -27,6 +28,7 @@ from adhelper.platforms.adapters.direct.transport import (
 )
 from adhelper.platforms.domain.ports import (
     AdDay,
+    AdImage,
     ModerationState,
     ModerationVerdict,
     PublishedAd,
@@ -448,7 +450,7 @@ class DirectPlatform:
                     "Status",
                     "StatusClarification",
                 ],
-                "TextAdFieldNames": ["Title", "Text", "Href"],
+                "TextAdFieldNames": ["Title", "Text", "Href", "AdImageHash"],
             },
         )
         return list(result.get("Ads") or [])
@@ -484,10 +486,16 @@ class DirectPlatform:
         check_results(result.get("ModerateResults") or [])
 
     async def _add_text_ads(
-        self, account: str, group_id: int, ads: Sequence[tuple[str, str, str]]
+        self,
+        account: str,
+        group_id: int,
+        ads: Sequence[tuple[str, str, str]],
+        image_hash: str | None = None,
     ) -> list[int]:
         if not ads:
             return []
+        # Mobile обязателен и устарел: Директ всегда берёт NO.
+        image = {"AdImageHash": image_hash} if image_hash else {}
         result = await self._call(
             account,
             "ads",
@@ -496,8 +504,13 @@ class DirectPlatform:
                 "Ads": [
                     {
                         "AdGroupId": group_id,
-                        # Mobile обязателен и устарел: Директ всегда берёт NO.
-                        "TextAd": {"Title": title, "Text": text, "Href": href, "Mobile": "NO"},
+                        "TextAd": {
+                            "Title": title,
+                            "Text": text,
+                            "Href": href,
+                            "Mobile": "NO",
+                            **image,
+                        },
                     }
                     for title, text, href in ads
                 ]
@@ -518,6 +531,7 @@ class DirectPlatform:
                     text=str(text_ad.get("Text") or ""),
                     href=href,
                     group_id=str(ad.get("AdGroupId") or ""),
+                    image_hash=str(text_ad["AdImageHash"]) if text_ad.get("AdImageHash") else None,
                 )
         return None
 
@@ -534,6 +548,7 @@ class DirectPlatform:
         text: str,
         href: str,
         group_id: str | None = None,
+        image_hash: str | None = None,
     ) -> None:
         groups = await self._groups(account, int(campaign_id))
         ids = [int(group["Id"]) for group in groups]
@@ -544,10 +559,31 @@ class DirectPlatform:
             raise DirectRejected(None, f"group {group_id} is not in campaign {campaign_id}")
         target = int(group_id) if group_id is not None else ids[0]
         added = await self._add_text_ads(
-            account, target, [(headline, text, mark_href(href, marker))]
+            account, target, [(headline, text, mark_href(href, marker))], image_hash
         )
         # Новое объявление — черновик; показы начнутся после проверки Директа.
         await self._moderate(account, await self._ads(account, {"Ids": added}))
+
+    async def upload_image(self, account: str, image: AdImage) -> str:
+        """AdImages.add: одинаковые картинки Директ хранит один раз, повтор вернёт тот же номер."""
+        result = await self._call(
+            account,
+            "adimages",
+            "add",
+            {
+                "AdImages": [
+                    {
+                        "ImageData": base64.b64encode(image.data).decode("ascii"),
+                        "Name": image.name[:255],
+                    }
+                ]
+            },
+        )
+        found = list(result.get("AddResults") or [])
+        check_results(found)
+        if not found or not found[0].get("AdImageHash"):
+            raise DirectError(None, "no AdImageHash in adimages.add")
+        return str(found[0]["AdImageHash"])
 
     async def moderation(self, account: str, ad_ids: Sequence[str]) -> list[ModerationVerdict]:
         if not ad_ids:

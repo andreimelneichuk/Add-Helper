@@ -18,6 +18,7 @@ x-app: &app
     TEXT_MODEL_PROJECT: ${TEXT_MODEL_PROJECT:-}
     TEXT_MODEL_NAME: ${TEXT_MODEL_NAME:-google/gemma-4-31b-it}
     JUDGE_MODEL_NAME: ${JUDGE_MODEL_NAME:-deepseek/deepseek-v4.1-flash}
+    IMAGE_GENERATION: ${IMAGE_GENERATION:-false}
     SMTP_HOST: ${SMTP_HOST:-}
     SMTP_PORT: ${SMTP_PORT:-465}
     SMTP_STARTTLS: ${SMTP_STARTTLS:-false}

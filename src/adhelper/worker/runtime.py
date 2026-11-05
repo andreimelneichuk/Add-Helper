@@ -34,8 +34,12 @@ from adhelper.business.application.site import run_site_reads
 from adhelper.business.application.tag import run_tag_checks
 from adhelper.config import Settings
 from adhelper.creatives.adapters.factory import build_text_model
+from adhelper.creatives.adapters.images_sql import SqlImages
 from adhelper.creatives.adapters.moderation_sql import SqlModeration
+from adhelper.creatives.adapters.openrouter_images import build_image_model
+from adhelper.creatives.adapters.photos import prepare_image
 from adhelper.creatives.adapters.rules_file import (
+    load_image_rules,
     load_moderation_rules,
     load_rework_rules,
     load_slot_rules,
@@ -45,8 +49,10 @@ from adhelper.creatives.adapters.sql import (
     SqlAdSlots,
     SqlCreativeQueue,
     SqlKeeperBusinesses,
+    SqlProfiles,
     SqlProfileSource,
 )
+from adhelper.creatives.application.images import attach_images
 from adhelper.creatives.application.moderation import (
     CURRENT_MODERATION_RULES,
     check_moderation,
@@ -116,6 +122,8 @@ class Runtime:
     # Без ключа или модели генерация отдаёт шаблоны из профиля, без судьи — только проверку кодом.
     text_model: Any = None
     judge_model: Any = None
+    # Генераторы картинок: основной и запасной из images-1; пусто — только свои фото.
+    image_models: tuple[Any, ...] = ()
     # Имя модели пишется в каждый разбор сайта: по нему сравниваем извлекатели.
     text_model_name: str = ""
     # Каналы тревог; без настроек канала отправки ждут в очереди.
@@ -139,6 +147,8 @@ class Runtime:
                 platform,
                 launcher=platform,
                 publisher=platform,
+                images=SqlImages(self.sessions, business_id),
+                uploader=platform,
             ),
             lock=PostgresAccountLock(self.engine),
             max_attempts=MAX_CHANGE_ATTEMPTS,
@@ -242,6 +252,7 @@ class Runtime:
                 return self.platform_for(business_id, account)
 
             store = SqlModeration(self.sessions, business_id)
+            await self._attach_images(business_id, store)
             await send_ready(store, ledger_for, self.clock())
             await check_moderation(
                 store,
@@ -253,6 +264,29 @@ class Runtime:
                 CURRENT_REWORK_RULES,
                 self.clock(),
             )
+
+    async def _attach_images(self, business_id: UUID, store: SqlModeration) -> None:
+        """Картинки ждущим отправки объявлениям: свои фото, затем сцена направления."""
+        waiting = [
+            item
+            for item in await store.outgoing()
+            if item.image is None and self.platform_for(business_id, item.account) is not None
+        ]
+        if not waiting:
+            return
+        rules = load_image_rules()
+        found = await SqlProfiles(self.sessions, business_id).get()
+        niche = found[0].niche if found else ""
+        await attach_images(
+            SqlImages(self.sessions, business_id),
+            waiting,
+            niche,
+            self.text_model,
+            self.image_models,
+            lambda raw: prepare_image(raw, rules),
+            rules,
+            self.clock(),
+        )
 
     async def ads_summary(self, only: UUID | None = None) -> int:
         """Сводка «что запущено» за вчерашние московские сутки. Возвращает число писем."""
@@ -377,6 +411,17 @@ def _model(settings: Settings, name: str) -> Any:
     )
 
 
+def _image_models(settings: Settings) -> tuple[Any, ...]:
+    if not settings.image_generation:
+        return ()
+    rules = load_image_rules()
+    found = (
+        build_image_model(settings.text_model_base_url, settings.text_model_api_key, name)
+        for name in (rules.model, rules.fallback_model)
+    )
+    return tuple(model for model in found if model is not None)
+
+
 def _email(settings: Settings) -> SmtpSender | None:
     if not settings.smtp_host or not settings.smtp_from:
         return None
@@ -420,6 +465,7 @@ async def open_runtime(settings: Settings) -> AsyncIterator[Runtime]:
             text_model=_model(settings, settings.text_model_name),
             text_model_name=settings.text_model_name,
             judge_model=_model(settings, settings.judge_model_name),
+            image_models=_image_models(settings),
             email=_email(settings),
             telegram=_telegram(settings),
             cabinet_url=settings.public_base_url,

@@ -1,0 +1,335 @@
+[
+ {
+  "step": "upload",
+  "url": "https://api.direct.yandex.com/json/v5/adimages",
+  "request": {
+   "method": "add",
+   "params": {
+    "AdImages": [
+     {
+      "ImageData": "sha256:992bc5ae6662d69c734721d49691a479c959ee1678469f783c75d317beadd6c3",
+      "Name": "ahc-image-probe"
+     }
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "40/159184/160000"
+  },
+  "body": "{\"result\":{\"AddResults\":[{\"AdImageHash\":\"LQXku-UheMCVqo5QilyIOg\",\"Errors\":[]}]}}"
+ },
+ {
+  "step": "upload_again",
+  "url": "https://api.direct.yandex.com/json/v5/adimages",
+  "request": {
+   "method": "add",
+   "params": {
+    "AdImages": [
+     {
+      "ImageData": "sha256:992bc5ae6662d69c734721d49691a479c959ee1678469f783c75d317beadd6c3",
+      "Name": "ahc-image-probe"
+     }
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "40/159144/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"AddResults\":[{\"AdImageHash\":\"LQXku-UheMCVqo5QilyIOg\",\"Errors\":[]}]}}"
+ },
+ {
+  "step": "find_before",
+  "url": "https://api.direct.yandex.com/json/v501/campaigns",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {},
+    "FieldNames": [
+     "Id",
+     "Name",
+     "Type",
+     "State",
+     "Status"
+    ],
+    "UnifiedCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ],
+    "TextCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "11/159133/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"Campaigns\":[{\"Id\":715840559,\"Name\":\"Ad Helper проверка API (ah-probe-1)\",\"Type\":\"UNIFIED_CAMPAIGN\",\"Status\":\"ACCEPTED\",\"State\":\"SUSPENDED\",\"UnifiedCampaign\":{\"BiddingStrategy\":{\"Search\":{\"BiddingStrategyType\":\"WB_MAXIMUM_CLICKS\",\"WbMaximumClicks\":{\"CustomPeriodBudget\":{\"SpendLimit\":300000000,\"StartDate\":\"2026-11-05\",\"EndDate\":\"2026-11-10\",\"AutoContinue\":\"NO\"},\"BudgetType\":\"CUSTOM_PERIOD_BUDGET\",\"BidCeiling\":null}},\"Network\":{\"BiddingStrategyType\":\"NETWORK_DEFAULT\"}},\"CounterIds\":null}}]}}"
+ },
+ {
+  "step": "find_before",
+  "url": "https://api.direct.yandex.com/json/v501/ads",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "CampaignIds": [
+      715840559
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "CampaignId",
+     "AdGroupId",
+     "State",
+     "Status",
+     "StatusClarification"
+    ],
+    "TextAdFieldNames": [
+     "Title",
+     "Text",
+     "Href",
+     "AdImageHash"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "17/159116/160000"
+  },
+  "body": "{\"result\":{\"Ads\":[{\"Id\":1926157812444935901,\"CampaignId\":715840559,\"AdGroupId\":5820622013,\"Status\":\"ACCEPTED\",\"State\":\"SUSPENDED\",\"StatusClarification\":\"Остановлено.\",\"TextAd\":{\"Text\":\"Служебное объявление сервиса\",\"Title\":\"Проверка подключения\",\"Href\":\"https://example.com/\",\"AdImageHash\":null}},{\"Id\":1926157827475857071,\"CampaignId\":715840559,\"AdGroupId\":5820622013,\"Status\":\"ACCEPTED\",\"State\":\"OFF\",\"StatusClarification\":\"Кампания остановлена.\",\"TextAd\":{\"Text\":\"Служебный текст сервиса\",\"Title\":\"Проверка объявления\",\"Href\":\"https://example.com/?utm_source=yandex&ah_ad=ahc-probe-1\",\"AdImageHash\":null}}]}}"
+ },
+ {
+  "step": "create_ad",
+  "url": "https://api.direct.yandex.com/json/v501/adgroups",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "CampaignIds": [
+      715840559
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "CampaignId",
+     "Name",
+     "RegionIds"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "16/159100/160000"
+  },
+  "body": "{\"result\":{\"AdGroups\":[{\"Id\":5820622013,\"Name\":\"Ad Helper проверка API (ah-probe-1)\",\"CampaignId\":715840559,\"RegionIds\":[213]}]}}"
+ },
+ {
+  "step": "create_ad",
+  "url": "https://api.direct.yandex.com/json/v501/ads",
+  "request": {
+   "method": "add",
+   "params": {
+    "Ads": [
+     {
+      "AdGroupId": 5820622013,
+      "TextAd": {
+       "Title": "Проверка картинки",
+       "Text": "Служебный текст сервиса",
+       "Href": "https://example.com/?ah_ad=ahc-probe-img-1",
+       "Mobile": "NO",
+       "AdImageHash": "LQXku-UheMCVqo5QilyIOg"
+      }
+     }
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "40/159060/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"AddResults\":[{\"Id\":1926179381770725854,\"Warnings\":[{\"Code\":10251,\"Message\":\"Создание текстовых баннеров закрыто. Баннер был добавлен как комбинаторный\"}],\"Errors\":[]}]}}"
+ },
+ {
+  "step": "create_ad",
+  "url": "https://api.direct.yandex.com/json/v501/ads",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "Ids": [
+      1926179381770725854
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "CampaignId",
+     "AdGroupId",
+     "State",
+     "Status",
+     "StatusClarification"
+    ],
+    "TextAdFieldNames": [
+     "Title",
+     "Text",
+     "Href",
+     "AdImageHash"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "16/159044/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"Ads\":[{\"Id\":1926179381770725854,\"CampaignId\":715840559,\"AdGroupId\":5820622013,\"Status\":\"DRAFT\",\"State\":\"OFF\",\"StatusClarification\":\"Черновик.\",\"TextAd\":{\"Text\":\"Служебный текст сервиса\",\"Title\":\"Проверка картинки\",\"Href\":\"https://example.com/?ah_ad=ahc-probe-img-1\",\"AdImageHash\":\"LQXku-UheMCVqo5QilyIOg\"}}]}}"
+ },
+ {
+  "step": "create_ad",
+  "url": "https://api.direct.yandex.com/json/v501/ads",
+  "request": {
+   "method": "moderate",
+   "params": {
+    "SelectionCriteria": {
+     "Ids": [
+      1926179381770725854
+     ]
+    }
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "15/159029/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"ModerateResults\":[{\"Id\":1926179381770725854,\"Errors\":[]}]}}"
+ },
+ {
+  "step": "find_after",
+  "url": "https://api.direct.yandex.com/json/v501/campaigns",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {},
+    "FieldNames": [
+     "Id",
+     "Name",
+     "Type",
+     "State",
+     "Status"
+    ],
+    "UnifiedCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ],
+    "TextCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "11/159018/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"Campaigns\":[{\"Id\":715840559,\"Name\":\"Ad Helper проверка API (ah-probe-1)\",\"Type\":\"UNIFIED_CAMPAIGN\",\"Status\":\"ACCEPTED\",\"State\":\"SUSPENDED\",\"UnifiedCampaign\":{\"BiddingStrategy\":{\"Search\":{\"BiddingStrategyType\":\"WB_MAXIMUM_CLICKS\",\"WbMaximumClicks\":{\"CustomPeriodBudget\":{\"SpendLimit\":300000000,\"StartDate\":\"2026-11-05\",\"EndDate\":\"2026-11-10\",\"AutoContinue\":\"NO\"},\"BudgetType\":\"CUSTOM_PERIOD_BUDGET\",\"BidCeiling\":null}},\"Network\":{\"BiddingStrategyType\":\"NETWORK_DEFAULT\"}},\"CounterIds\":null}}]}}"
+ },
+ {
+  "step": "find_after",
+  "url": "https://api.direct.yandex.com/json/v501/ads",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "CampaignIds": [
+      715840559
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "CampaignId",
+     "AdGroupId",
+     "State",
+     "Status",
+     "StatusClarification"
+    ],
+    "TextAdFieldNames": [
+     "Title",
+     "Text",
+     "Href",
+     "AdImageHash"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "18/159000/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"Ads\":[{\"Id\":1926157812444935901,\"CampaignId\":715840559,\"AdGroupId\":5820622013,\"Status\":\"ACCEPTED\",\"State\":\"SUSPENDED\",\"StatusClarification\":\"Остановлено.\",\"TextAd\":{\"Text\":\"Служебное объявление сервиса\",\"Title\":\"Проверка подключения\",\"Href\":\"https://example.com/\",\"AdImageHash\":null}},{\"Id\":1926157827475857071,\"CampaignId\":715840559,\"AdGroupId\":5820622013,\"Status\":\"ACCEPTED\",\"State\":\"OFF\",\"StatusClarification\":\"Кампания остановлена.\",\"TextAd\":{\"Text\":\"Служебный текст сервиса\",\"Title\":\"Проверка объявления\",\"Href\":\"https://example.com/?utm_source=yandex&ah_ad=ahc-probe-1\",\"AdImageHash\":null}},{\"Id\":1926179381770725854,\"CampaignId\":715840559,\"AdGroupId\":5820622013,\"Status\":\"MODERATION\",\"State\":\"OFF\",\"StatusClarification\":\"Кампания остановлена.\",\"TextAd\":{\"Text\":\"Служебный текст сервиса\",\"Title\":\"Проверка картинки\",\"Href\":\"https://example.com/?ah_ad=ahc-probe-img-1\",\"AdImageHash\":\"LQXku-UheMCVqo5QilyIOg\"}}]}}"
+ },
+ {
+  "step": "suspend",
+  "url": "https://api.direct.yandex.com/json/v501/ads",
+  "request": {
+   "method": "suspend",
+   "params": {
+    "SelectionCriteria": {
+     "Ids": [
+      1926179381770725854
+     ]
+    }
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "15/158985/160000"
+  },
+  "body": "{\"result\":{\"SuspendResults\":[{\"Id\":1926179381770725854,\"Errors\":[]}]}}"
+ },
+ {
+  "step": "read",
+  "url": "https://api.direct.yandex.com/json/v501/ads",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "Ids": [
+      1926179381770725854
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "CampaignId",
+     "AdGroupId",
+     "State",
+     "Status",
+     "StatusClarification"
+    ],
+    "TextAdFieldNames": [
+     "Title",
+     "Text",
+     "Href",
+     "AdImageHash"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "16/158969/160000"
+  },
+  "body": "{\"result\":{\"Ads\":[{\"Id\":1926179381770725854,\"CampaignId\":715840559,\"AdGroupId\":5820622013,\"Status\":\"UNKNOWN\",\"State\":\"SUSPENDED\",\"StatusClarification\":\"Остановлено.\",\"TextAd\":{\"Text\":\"Служебный текст сервиса\",\"Title\":\"Проверка картинки\",\"Href\":\"https://example.com/?ah_ad=ahc-probe-img-1\",\"AdImageHash\":\"LQXku-UheMCVqo5QilyIOg\"}}]}}"
+ }
+]

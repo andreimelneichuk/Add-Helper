@@ -309,4 +309,41 @@ describe("план бюджета до запуска", () => {
     await userEvent.click(screen.getByRole("button", { name: "Сохранить план" }));
     expect(await screen.findByText(/не примет бюджет меньше/)).toBeInTheDocument();
   });
+  it("фото добавляется только с согласием, ошибку сервера показывает его словами", async () => {
+    const photo = { id: 7, width: 600, height: 600, url: "/api/businesses/b1/photos/7" };
+    const photos = vi.fn().mockResolvedValueOnce({ photos: [], max: 5 }).mockResolvedValue({ photos: [photo], max: 5 });
+    const uploadPhoto = vi.fn()
+      .mockRejectedValueOnce(new ApiError(422, "Фото маленькое: нужно не меньше 450 точек по короткой стороне."))
+      .mockResolvedValue({ id: 7, url: photo.url });
+    const api = fakeApi({ photos, uploadPhoto } as Partial<Api>);
+    render(<Settings store={await open(api)} />);
+    const add = await screen.findByRole("button", { name: "Добавить фото" });
+    expect(add).toBeDisabled();
+    await userEvent.click(screen.getByLabelText(/согласны на рекламу/));
+    expect(add).toBeEnabled();
+    const file = new File(["x"], "salon.jpg", { type: "image/jpeg" });
+
+    await userEvent.upload(screen.getByLabelText("Файл фото"), file);
+    expect(await screen.findByRole("alert")).toHaveTextContent("450 точек");
+    await userEvent.upload(screen.getByLabelText("Файл фото"), file);
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Фото добавил");
+    expect(uploadPhoto).toHaveBeenLastCalledWith(file, true);
+    expect(within(screen.getByRole("list", { name: "Ваши фото" })).getByAltText("Фото 1")).toHaveAttribute("src", photo.url);
+  });
+
+  it("убранное фото пропадает из подбора, а полный набор просит убрать одно", async () => {
+    const all = [1, 2, 3, 4, 5].map((id) => ({ id, width: 600, height: 600, url: `/p/${id}` }));
+    const photos = vi.fn().mockResolvedValueOnce({ photos: all, max: 5 }).mockResolvedValue({ photos: all.slice(1), max: 5 });
+    const api = fakeApi({ photos } as Partial<Api>);
+    render(<Settings store={await open(api)} />);
+    expect(await screen.findByText(/Уберите одно, чтобы добавить новое/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Добавить фото" })).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "Убрать фото 1" }));
+
+    expect(api.archivePhoto).toHaveBeenCalledWith(1);
+    expect(await screen.findByRole("status")).toHaveTextContent("работают дальше");
+    expect(screen.getByRole("button", { name: "Добавить фото" })).toBeDisabled();
+  });
 });

@@ -66,6 +66,8 @@ def _create(item: Outgoing) -> ProposedChange:
             "headline": item.draft.headline,
             "text": item.draft.text,
             "href": item.href,
+            # Картинка по нашему SHA-256: исполнитель загрузит её и сверит по номеру площадки.
+            **({"image": item.image} if item.image else {}),
         },
         explanation=(
             f"Отправил на проверку Яндексу объявление «{item.draft.headline}»."

@@ -23,6 +23,7 @@ from adhelper.creatives.domain.images import (
     NewImage,
     PreparedImage,
     ScenePrompt,
+    StoredImage,
     choose_scene,
     pick_owner_photo,
     prompt_request,
@@ -61,6 +62,11 @@ async def add_owner_photo(
         return Added(None, rejected.problems)
     image = NewImage(prepared, ImageSource.OWNER, rules.version, consent=True)
     return Added(await store.add(image, now))
+
+
+async def owner_photos(store: ImageStore) -> Sequence[StoredImage]:
+    """Свои фото владельца в подборе, по порядку добавления."""
+    return await store.active(ImageSource.OWNER)
 
 
 async def write_scene(

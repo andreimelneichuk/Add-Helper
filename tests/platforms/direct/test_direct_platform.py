@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -34,7 +36,7 @@ from adhelper.platforms.adapters.direct.transport import (
     rubles_to_micros,
 )
 from adhelper.platforms.adapters.gateway import RoutingGateway
-from adhelper.platforms.domain.ports import ModerationState
+from adhelper.platforms.domain.ports import AdImage, ModerationState
 from tests.platforms.direct.fake_direct import FakeDirect
 
 ACCOUNT = "andreimelneichuk"
@@ -99,6 +101,15 @@ class Replay(httpx.AsyncBaseTransport):
         assert str(request.url) == entry["url"]
         body = json.loads(request.content)
         body.pop("token", None)
+        # Байты картинки в записи заменены их SHA-256: запись не тащит файл дважды.
+        for image in body.get("params", {}).get("AdImages", []):
+            data = base64.b64decode(image["ImageData"])
+            image["ImageData"] = "sha256:" + hashlib.sha256(data).hexdigest()
+        # Записи до 2026-11-05 вечера не просили AdImageHash: поле добавлено позже.
+        names = body.get("params", {}).get("TextAdFieldNames")
+        recorded = entry["request"].get("params", {}).get("TextAdFieldNames")
+        if names and recorded is not None and "AdImageHash" not in recorded:
+            names.remove("AdImageHash")
         if "ReportName" in body.get("params", {}):
             body["params"].pop("ReportName")
             entry["request"]["params"].pop("ReportName")
@@ -508,3 +519,33 @@ def test_schedule_we_cannot_express_never_matches_a_plan() -> None:
     hours[9] = "150"
     odd = parse_schedule({"Schedule": {"Items": ["1," + ",".join(hours)]}})
     assert odd.days == ()
+
+
+async def test_recorded_ad_with_image_on_real_cabinet() -> None:
+    """Боевой прогон 2026-11-05: AdImages.add дважды и объявление с картинкой в кампании
+    715840559 на паузе; объявление сразу приостановлено, денег не тратили."""
+    replay = Replay(RECORDED / "write_ad_image.json")
+    platform, client = _platform(replay)
+    data = (RECORDED / "probe_image.jpg").read_bytes()
+    image = AdImage(hashlib.sha256(data).hexdigest(), data, "ahc-image-probe")
+    first = await platform.upload_image(ACCOUNT, image)
+    # Одинаковую картинку Директ хранит один раз: повтор загрузки безопасен.
+    assert await platform.upload_image(ACCOUNT, image) == first == "LQXku-UheMCVqo5QilyIOg"
+    marker = "ahc-probe-img-1"
+    assert await platform.find_ad(ACCOUNT, marker) is None
+    # Ответ с предупреждением 10251: текстовое объявление стало комбинаторным, картинка осталась.
+    await platform.create_ad(
+        ACCOUNT,
+        "715840559",
+        marker,
+        "Проверка картинки",
+        "Служебный текст сервиса",
+        "https://example.com/",
+        image_hash=first,
+    )
+    ad = await platform.find_ad(ACCOUNT, marker)
+    assert ad is not None and ad.image_hash == first and ad.group_id == "5820622013"
+    await platform.set_ad_active(ACCOUNT, f"ad:{ad.ad_id}", False)
+    assert await platform.read_ad(ACCOUNT, f"ad:{ad.ad_id}") == {"active": False}
+    assert replay.entries == []
+    await client.aclose()

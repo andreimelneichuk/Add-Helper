@@ -43,6 +43,32 @@ class PublishedAd:
     group_id: str = ""
 
 
+@dataclass(frozen=True)
+class AdImage:
+    """Картинка объявления, готовая к загрузке: уже JPEG по требованиям площадки."""
+
+    sha256: str
+    data: bytes
+    # Имя в библиотеке картинок площадки: только наш номер, без данных бизнеса.
+    name: str
+
+
+class ImageUploader(Protocol):
+    """Загрузка картинки в библиотеку площадки. Одинаковая картинка хранится там один раз,
+    поэтому повтор загрузки безопасен и возвращает тот же номер."""
+
+    async def upload_image(self, account: str, image: AdImage) -> str: ...
+
+
+class ImageVault(Protocol):
+    """Картинки бизнеса для исполнителя журнала: в журнале только sha256, байты здесь."""
+
+    async def image_by_sha(self, sha256: str) -> AdImage | None: ...
+    async def platform_hash(self, account: str, sha256: str) -> str | None: ...
+    async def remember_hash(self, account: str, sha256: str, image_hash: str) -> None: ...
+    async def sha_of(self, account: str, image_hash: str) -> str | None: ...
+
+
 class AdPublisher(Protocol):
     """Новые объявления в существующей кампании и чтение их проверки.
 
@@ -61,8 +87,12 @@ class AdPublisher(Protocol):
         text: str,
         href: str,
         group_id: str | None = None,
+        image_hash: str | None = None,
     ) -> None:
-        """Без `group_id` объявление встаёт в первую группу кампании."""
+        """Без `group_id` объявление встаёт в первую группу кампании.
+
+        `image_hash` — номер картинки, уже загруженной на площадку (`ImageUploader`).
+        """
         ...
 
     async def ad_group(self, account: str, ad_id: str) -> str | None:

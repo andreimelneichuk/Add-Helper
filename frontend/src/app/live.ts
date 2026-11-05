@@ -77,9 +77,10 @@ const AD_TAG: Record<string, [string, Ad["tagTone"]]> = {
   archived: ["заменено", "neutral"],
 };
 
-function toAd(line: AdLine): Ad {
+function toAd(line: AdLine, photoUrl: (id: number) => string): Ad {
   const [tag, tagTone] = AD_TAG[line.state] ?? ["работает", "neutral"];
-  return { id: `${line.account}/${line.ad_id}`, name: line.title, tag, tagTone, leads: line.totals.conversions, cost: rubles(line.totals.cost), hook: line.title, title: line.title, text: line.text, facts: "" };
+  const ad: Ad = { id: `${line.account}/${line.ad_id}`, name: line.title, tag, tagTone, leads: line.totals.conversions, cost: rubles(line.totals.cost), hook: line.title, title: line.title, text: line.text, facts: "" };
+  return line.image_id ? { ...ad, photo: photoUrl(line.image_id) } : ad;
 }
 
 function kindOf(line: HistoryLine): HistoryKind {
@@ -158,7 +159,7 @@ export async function loadLive(api: Api, name: string): Promise<Partial<State>> 
   const money = overview.money[0];
   const seen = new Set(adsWeek.map((a) => a.ad_id));
   const lines = [...adsWeek, ...adsMonth.filter((a) => !seen.has(a.ad_id)).map((a) => ({ ...a, totals: { impressions: 0, clicks: 0, cost: 0, conversions: 0 } }))];
-  const ads = lines.map(toAd);
+  const ads = lines.map((line) => toAd(line, api.photoUrl));
   const running = overview.campaigns.filter((c) => c.state !== "archived");
   const alerts = overview.alerts.map((a) => alertOf(a, money));
   const stats: Record<Period, PeriodStats> = {
