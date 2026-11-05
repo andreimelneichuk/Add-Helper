@@ -119,9 +119,9 @@ def test_call_to_come_is_not_a_visit_promise() -> None:
 
 def test_numbers_at_headline_and_text_border_stay_apart() -> None:
     # «…, 5» в конце заголовка и «3 …» в начале текста — два числа, а не «53».
-    profile = BusinessProfile("Лак", (), "ул. Ленина, 5, 3 этаж")
-    draft = AdDraft("Мы на ул. Ленина, 5", "3 этаж.")
-    claims = [Claim("ул. Ленина, 5", "address"), Claim("3 этаж", "address")]
+    profile = BusinessProfile("Лак", (), "ул. Ленина, 5", ("3 этаж с лифтом",))
+    draft = AdDraft("Мы на ул. Ленина, 5", "3 этаж с лифтом.")
+    claims = [Claim("ул. Ленина, 5", "address"), Claim("3 этаж с лифтом", "f1")]
     assert check_claims(draft, claims, keyed_facts(profile), RULES) == ()
 
 
@@ -132,3 +132,43 @@ def test_result_promise_outside_facts_is_violation() -> None:
 
 def test_checkable_property_outside_facts_is_violation() -> None:
     assert found("Маникюр", "Свежий взгляд на ногти.", ("Маникюр", "s1")) == ["«свежий» без факта"]
+
+
+def test_numbers_of_fact_stay_in_the_same_part() -> None:
+    # Найдено на val (sushi-04): заголовок «Доставка бесплатно от 3000 ₽» без «ниже — 250 ₽»,
+    # условие только в тексте. Заголовок иногда показывается без текста.
+    profile = BusinessProfile("Ролл", (), "", ("Доставка бесплатно от 3000 ₽, ниже — 250 ₽",))
+    facts = keyed_facts(profile)
+    draft = AdDraft("Доставка бесплатно от 3000 ₽", "Доставка бесплатно от 3000 ₽, ниже — 250 ₽.")
+    claims = [
+        Claim("Доставка бесплатно от 3000 ₽", "f1"),
+        Claim("Доставка бесплатно от 3000 ₽, ниже — 250 ₽", "f1"),
+    ]
+    assert [v.detail for v in check_claims(draft, claims, facts, RULES)] == [
+        "в факте f1 число 250 в другой части объявления"
+    ]
+
+
+def test_number_outside_fact_fragments_is_violation() -> None:
+    # Тот же заголовок без ссылки на факт: число вне фрагмента не проверено рамкой.
+    assert found(
+        "Скидка 10% по будням", "Скидка 10% по будням до 12.", ("Скидка 10% по будням до 12", "f2")
+    ) == ["число 10 вне фрагмента-факта"]
+
+
+def test_availability_outside_facts_is_violation() -> None:
+    # Найдено на val (tires-06): «Мест много» при факте «120 комплектов».
+    assert found("Маникюр", "Мест много.", ("Маникюр", "s1")) == ["«мест много» без факта"]
+
+
+def test_service_name_with_number_may_stand_in_headline() -> None:
+    # Найдено на val (massage-06): число из названия услуги в заголовке со своей ссылкой.
+    profile = BusinessProfile("Руки", (Service("Массаж спины, 30 минут", 1100),))
+    facts = keyed_facts(profile)
+    draft = AdDraft("Массаж спины, 30 минут", "Цена 1100 ₽.")
+    claims = [Claim("Массаж спины, 30 минут", "s1"), Claim("Цена 1100 ₽", "s1_price")]
+    assert check_claims(draft, claims, facts, RULES) == ()
+
+
+def test_booking_a_place_is_not_availability() -> None:
+    assert found("Маникюр", "Забронируйте место.", ("Маникюр", "s1")) == []
