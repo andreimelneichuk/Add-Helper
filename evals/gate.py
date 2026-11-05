@@ -57,7 +57,8 @@ from evals.meter import (
 from evals.prompts import PROMPTS
 from evals.run import RESULTS
 
-LIMIT = 0.01
+# Решение владельца: порог доли нарушений в запущенных объявлениях 3%.
+LIMIT = 0.03
 CONFIDENCE = 0.95
 
 
