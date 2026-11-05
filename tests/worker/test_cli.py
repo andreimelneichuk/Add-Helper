@@ -3,6 +3,7 @@
 import base64
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from pydantic import SecretStr
@@ -10,9 +11,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from adhelper.budget.domain.limits import CampaignBudget
+from adhelper.business.adapters.browser import browser_starts
 from adhelper.config import Settings
 from adhelper.ledger.adapters.sql import SqlChangeRepository
 from adhelper.ledger.domain.model import ChangeKind, ChangeSource, ChangeStatus
+from adhelper.worker import cli
 from adhelper.worker.cli import CheckStatus, main, run_checks, run_emergency_stop
 from adhelper.worker.runtime import Runtime
 from tests.budget.fake_platform import FakePlatform, Fault
@@ -31,6 +34,16 @@ def _secret(settings: Settings, value: str) -> Settings:
 
 def statuses(results: list) -> dict[str, CheckStatus]:  # type: ignore[type-arg]
     return {result.name: result.status for result in results}
+
+
+@pytest.fixture(autouse=True)
+def browser_present(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Запуск настоящего браузера проверяют test_browser.py и тест ниже, здесь он лишний."""
+
+    async def starts() -> bool:
+        return True
+
+    monkeypatch.setattr(cli, "browser_starts", starts)
 
 
 async def test_configured_service_passes(migrated: Settings, engine: AsyncEngine) -> None:
@@ -273,3 +286,12 @@ def test_stop_with_unreachable_database_tells_to_stop_by_hand(
     assert code == 1
     assert "вручную" in out
     assert settings.postgres_password.get_secret_value() not in out
+
+
+async def test_missing_browser_is_a_warning(
+    migrated: Settings, engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Без браузера сервис работает, но сайты на скриптах читает хуже — оператор это видит.
+    monkeypatch.setattr(cli, "browser_starts", browser_starts)
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path))
+    assert statuses(await run_checks(migrated))["browser"] is CheckStatus.WARN

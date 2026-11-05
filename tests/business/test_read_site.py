@@ -1,6 +1,8 @@
 """Сценарий разбора сайта на поддельных сайте и модели."""
 
+import asyncio
 import json
+from dataclasses import replace
 
 from adhelper.business.adapters.rules_file import load_site_rules
 from adhelper.business.application.site import ReadProblem, ReadStatus, read_site
@@ -127,3 +129,90 @@ async def test_text_sent_to_model_is_limited_and_quotes_checked_against_it() -> 
 def test_every_fetch_problem_has_a_read_problem() -> None:
     # Ошибка скачивания переходит в ответ разбора без потерь: у экрана один словарь.
     assert {p.value for p in FetchProblem} <= {p.value for p in ReadProblem}
+
+
+# Браузер (site-2): статический текст первым, браузер — когда его мало.
+SPA = FetchedPage("https://nails.taplink.ru/", "Nails at Taplink", builders=("taplink",))
+SPA_RENDERED = FetchedPage(
+    "https://nails.taplink.ru/",
+    "Nails at Taplink\nСтудия маникюра «Ноготок»\nМаникюр с покрытием — 1 500 ₽",
+)
+
+
+class Browser:
+    def __init__(
+        self, *pages: FetchedPage, fail: bool = False, delay: dict[str, float] | None = None
+    ) -> None:
+        self.pages = {page.url: page for page in pages}
+        self.fail = fail
+        self.delay = delay or {}
+        self.calls: list[str] = []
+
+    async def render(self, url: str) -> FetchedPage:
+        self.calls.append(url)
+        await asyncio.sleep(self.delay.get(url, 0))
+        if self.fail or url not in self.pages:
+            raise SiteUnavailable(FetchProblem.UNREACHABLE)
+        return self.pages[url]
+
+
+async def test_page_drawn_by_script_is_read_by_browser() -> None:
+    browser = Browser(SPA_RENDERED)
+    model = Model(GOOD)
+    result = await read_site(SPA.url, Site(SPA), model, RULES, browser)
+    assert browser.calls == [SPA.url]
+    assert result.status is ReadStatus.READY
+    # Цитаты сверяются с текстом из браузера: его видела модель.
+    assert [(f.field.value, f.price) for f in result.facts] == [("niche", None), ("service", 1500)]
+    assert "1 500 ₽" in model.prompts[0][1]
+
+
+async def test_rich_static_page_with_prices_skips_browser() -> None:
+    rich = FetchedPage("https://nogti.ru/", "Маникюр с покрытием — 1 500 ₽. " + "Студия. " * 300)
+    browser = Browser(rich)
+    await read_site(rich.url, Site(rich), Model(GOOD), RULES, browser)
+    assert browser.calls == []
+
+
+async def test_browser_failure_or_poorer_text_keeps_static_page() -> None:
+    failed = await read_site(SPA.url, Site(SPA), Model(GOOD), RULES, Browser(fail=True))
+    # Браузер не помог — честно говорим, что текста почти нет.
+    assert failed.problem is ReadProblem.EMPTY_PAGE
+    static = replace(SPA, text="Ноготок: маникюр и педикюр у метро, запись по телефону")
+    model = Model({"facts": []})
+    await read_site(SPA.url, Site(static), model, RULES, Browser(FetchedPage(SPA.url, "Загрузка")))
+    assert static.text in model.prompts[0][1]
+
+
+async def test_site_1_reads_never_open_browser() -> None:
+    browser = Browser(SPA_RENDERED)
+    await read_site(SPA.url, Site(SPA), Model(GOOD), load_site_rules("site-1"), browser)
+    assert browser.calls == []
+
+
+async def test_browser_gets_only_what_is_left_of_the_site_budget() -> None:
+    assert RULES.render is not None
+    rules = replace(RULES, render=replace(RULES.render, site_budget_seconds=0.3))
+    price = FetchedPage("https://nogti.ru/price", "Цены: маникюр 1 500 ₽", builders=("tilda",))
+    contacts = FetchedPage("https://nogti.ru/kontakty", "Казань, ул. Баумана, 12 — 1 500 ₽")
+    home = replace(HOME, links=(Link(price.url, "Цены"), Link(contacts.url, "Контакты")))
+    home = replace(home, text=home.text + " Маникюр 1 500 ₽ " + "Студия. " * 300)
+    browser = Browser(replace(price, text=price.text + " и педикюр"), delay={price.url: 5})
+    started = asyncio.get_running_loop().time()
+    result = await read_site(home.url, Site(home, price, contacts), Model(GOOD), rules, browser)
+    assert asyncio.get_running_loop().time() - started < 1
+    # Браузер на странице цен не успел: она идёт в разбор со скачанным текстом.
+    assert browser.calls == [price.url, contacts.url]
+    assert result.pages == (home.url, price.url, contacts.url)
+
+
+async def test_slow_browser_on_home_page_keeps_static_text() -> None:
+    assert RULES.render is not None
+    rules = replace(RULES, render=replace(RULES.render, site_budget_seconds=0.3))
+    static = replace(SPA, text="Ноготок: маникюр и педикюр у метро, запись по телефону")
+    model = Model({"facts": []})
+    browser = Browser(SPA_RENDERED, delay={SPA.url: 5})
+    result = await read_site(SPA.url, Site(static), model, rules, browser)
+    # Браузер не успел к сроку — разбор идёт по скачанному тексту, а не падает.
+    assert result.status is ReadStatus.READY
+    assert static.text in model.prompts[0][1]

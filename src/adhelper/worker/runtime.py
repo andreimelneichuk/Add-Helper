@@ -25,6 +25,7 @@ from adhelper.budget.adapters.rules_file import load_rules
 from adhelper.budget.adapters.sql import SqlPeriodStore
 from adhelper.budget.application.preflight import StoredPeriodPreflight
 from adhelper.budget.application.watch_cycle import run_watch_cycle
+from adhelper.business.adapters.browser import ChromiumRenderer
 from adhelper.business.adapters.fetcher import SafeFetcher
 from adhelper.business.adapters.rules_file import load_site_rules, load_tag_rules
 from adhelper.business.adapters.site_reads import SqlSiteReadQueue
@@ -188,15 +189,18 @@ class Runtime:
 
     async def site_read(self) -> None:
         rules = load_site_rules()
-        await run_site_reads(
-            SqlSiteReadQueue(self.sessions),
-            SafeFetcher(rules),
-            self.text_model,
-            self.text_model_name,
-            rules,
-            load_site_rules,
-            self.clock,
-        )
+        # Браузер поднимается при первой странице, которой не хватило скачивания.
+        async with ChromiumRenderer(rules) as renderer:
+            await run_site_reads(
+                SqlSiteReadQueue(self.sessions),
+                SafeFetcher(rules),
+                self.text_model,
+                self.text_model_name,
+                rules,
+                load_site_rules,
+                self.clock,
+                renderer=renderer,
+            )
 
     async def site_tag_check(self) -> None:
         await run_tag_checks(
