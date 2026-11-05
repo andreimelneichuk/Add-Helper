@@ -476,7 +476,7 @@ async def test_login_from_launch_returns_to_launch(
     done = await client.get(
         "/api/auth/yandex/callback", params={"state": query["state"], "code": code}
     )
-    assert done.headers["location"] == "/?new&start"
+    assert done.headers["location"] == "/?start"
 
 
 async def test_login_ignores_unknown_return_target(
@@ -502,7 +502,7 @@ async def test_denied_login_from_launch_returns_to_launch(
     done = await client.get(
         "/api/auth/yandex/callback", params={"state": query["state"], "error": "access_denied"}
     )
-    assert done.headers["location"] == "/?new&start&login=denied"
+    assert done.headers["location"] == "/?start&login=denied"
 
 
 async def test_connect_from_launch_returns_to_launch(
@@ -521,7 +521,7 @@ async def test_connect_from_launch_returns_to_launch(
     done = await client.get(
         "/api/accounts/yandex/callback", params={"state": query["state"], "code": code}
     )
-    assert done.headers["location"] == "/?new&start&connect=ok"
+    assert done.headers["location"] == "/?start&connect=ok"
     # Цель одноразовая: следующее подключение из настроек вернётся на главную.
     again = await _connect(client, provider, csrf, business_id, ANNA)
     assert again.headers["location"] == "/?connect=ok"

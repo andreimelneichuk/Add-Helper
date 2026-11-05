@@ -10,7 +10,7 @@ let launched = "";
 test.describe.configure({ mode: "serial" });
 
 test("обзор показывает настоящие данные, а не прототип", async ({ page }) => {
-  await page.goto("/?new");
+  await page.goto("/");
   await expect(page.locator(".ah-brand")).toHaveText("Студия маникюра «Лак»");
   await expect(page.locator(".ah-proto")).toHaveCount(0);
   await expect(page.getByText("Салон «Пример»")).toHaveCount(0);
@@ -18,7 +18,7 @@ test("обзор показывает настоящие данные, а не �
 
 // Первым после обзора: другие сценарии меняют направления, а после изменения тест не предлагается.
 test("тест по итогам анализа: автопилот предлагает, владелец соглашается и отменяет, площадка не тронута", async ({ page }) => {
-  await page.goto("/?new");
+  await page.goto("/");
   const business = (await (await page.request.get("/api/businesses")).json())[0];
   const { csrf_token: csrf } = await (await page.request.get("/api/me")).json();
   const base = `/api/businesses/${business.id}`;
@@ -56,7 +56,7 @@ test("тест по итогам анализа: автопилот предла
 });
 
 test("отключение объявления доходит до журнала и видно в истории", async ({ page }) => {
-  await page.goto("/?new");
+  await page.goto("/");
   await nav(page, "Реклама").click();
   // Карточки решений по новым объявлениям стоят выше и кнопки «Отключить» не имеют.
   const card = page.locator(".ads-card").filter({ has: page.getByRole("button", { name: /^Отключить/ }) }).first();
@@ -75,7 +75,7 @@ test("отключение объявления доходит до журнал
 });
 
 test("отмена возвращает объявление новой записью, исходная остаётся", async ({ page }) => {
-  await page.goto("/?new");
+  await page.goto("/");
   await nav(page, "История").click();
   const row = page.locator(".ah-hist-row", { hasText: "Отключил объявление" }).first();
   await row.getByRole("button", { name: "Отменить" }).click();
@@ -86,7 +86,7 @@ test("отмена возвращает объявление новой запи
 });
 
 test("пауза из шапки останавливает показы и переживает перезагрузку", async ({ page }) => {
-  await page.goto("/?new");
+  await page.goto("/");
   await page.locator(".ah-bar").getByRole("button", { name: "Пауза" }).click();
   await expect(notice(page)).toContainText("Поставил на паузу");
   await page.reload();
@@ -94,7 +94,7 @@ test("пауза из шапки останавливает показы и пе
 });
 
 test("«Сегодня»: карточки в порядке правил сервиса, пауза первой, финал ленты", async ({ page }) => {
-  await page.goto("/?new");
+  await page.goto("/");
   const business = (await (await page.request.get("/api/businesses")).json())[0];
   const { rules, cards } = await (await page.request.get(`/api/businesses/${business.id}/today`)).json();
   expect(rules).toBe("today-2");
@@ -111,7 +111,7 @@ test("«Сегодня»: карточки в порядке правил сер
 });
 
 test("пауза владельца снимается кнопкой, остановленное не владельцем остаётся", async ({ page }) => {
-  await page.goto("/?new");
+  await page.goto("/");
   await expect(page.locator(".ah-status")).toHaveText("На паузе");
   await page.locator(".ah-bar").getByRole("button", { name: "Включить" }).click();
   await expect(notice(page)).toContainText("Снял паузу");
@@ -124,7 +124,7 @@ test("пауза владельца снимается кнопкой, оста�
 });
 
 test("бюджет ниже потраченного не принимается, снижение доходит до сервиса", async ({ page }) => {
-  await page.goto("/?new");
+  await page.goto("/");
   await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
   const form = page.getByRole("form", { name: "Бюджет месяца" });
   const input = form.getByLabel("Бюджет в месяц, ₽");
@@ -146,7 +146,7 @@ test("бюджет ниже потраченного не принимается
 });
 
 test("регион показа меняется через журнал, видно в истории, отмена возвращает прежний", async ({ page }) => {
-  await page.goto("/?new");
+  await page.goto("/");
   await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
   const block = page.getByRole("region", { name: "Где и когда показывать" });
   await expect(block).toContainText("Сейчас: у направлений разный регион");
@@ -173,7 +173,7 @@ test("регион показа меняется через журнал, вид
 });
 
 test("расписание короче порога Яндекса не отправляется", async ({ page }) => {
-  await page.goto("/?new");
+  await page.goto("/");
   await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
   const block = page.getByRole("region", { name: "Где и когда показывать" });
   for (const day of ["пн", "вт", "ср", "чт", "пт", "сб"]) await block.getByRole("button", { name: day, exact: true }).click();
@@ -184,7 +184,7 @@ test("расписание короче порога Яндекса не отп�
 });
 
 test("сайт разбирается в черновик, в профиль попадает только подтверждённое", async ({ page }) => {
-  await page.goto("/?new");
+  await page.goto("/");
   await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
   const site = page.getByLabel("Сайт");
   await site.fill("nogti.ru");
@@ -207,7 +207,7 @@ test("сайт разбирается в черновик, в профиль п�
 });
 
 test("до входа сайт разбирается в шаги запуска, выдуманного там нет", async ({ page }) => {
-  await page.goto("/?new&start");
+  await page.goto("/?start");
   await page.getByLabel("Ссылка на сайт или страницу").fill("nogti.ru");
   await page.getByRole("button", { name: "Изучить" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Вот что я понял о вас" })).toBeVisible({ timeout: 15_000 });
@@ -224,7 +224,7 @@ test("до входа сайт разбирается в шаги запуска
 });
 
 test("до входа объявления пишет писатель сервиса по фактам сайта, выбор переходит в бизнес", async ({ page }) => {
-  await page.goto("/?new&start");
+  await page.goto("/?start");
   await page.evaluate(() => window.localStorage.removeItem("adhelper.startDraft"));
   await page.getByLabel("Ссылка на сайт или страницу").fill("nogti.ru");
   await page.getByRole("button", { name: "Изучить" }).click();
@@ -261,7 +261,7 @@ test("до входа объявления пишет писатель серв�
 });
 
 test("бюджет запуска проверяется по правилам сервиса", async ({ page }) => {
-  await page.goto("/?new&start");
+  await page.goto("/?start");
   await page.evaluate(() => window.localStorage.removeItem("adhelper.startDraft"));
   await page.getByRole("button", { name: "Заполнить вручную" }).click();
   await page.getByRole("button", { name: "Добавить факт" }).click();
@@ -276,19 +276,19 @@ test("бюджет запуска проверяется по правилам �
 
 test("черновик после входа не затирает бизнес, который уже есть", async ({ page }) => {
   // Стенд входит под демо-владельцем, у него есть бизнес: черновик переносить нельзя.
-  await page.goto("/?new&start");
+  await page.goto("/?start");
   await page.evaluate(() => window.localStorage.setItem("adhelper.startDraft", JSON.stringify({ site: "https://nogti.ru/", facts: [], budget: 20000 })));
   await page.reload();
   await expect(page.getByRole("alert")).toContainText("У вас уже есть бизнес");
   await page.getByRole("button", { name: "Продолжить" }).click();
-  await expect(page).toHaveURL(/\/\?new$/);
-  await page.goto("/?new");
+  await expect(page).toHaveURL(/:\d+\/$/);
+  await page.goto("/");
   await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
   await expect(page.getByLabel("Сайт")).not.toHaveValue("https://nogti.ru/");
 });
 
 test("после подключения кабинета мастер ведёт маркировку, код статистики и сводку через сервис", async ({ page }) => {
-  await page.goto("/?new");
+  await page.goto("/");
   // Сайт в профиле нужен шагу «Статистика»; бизнес мастера запоминает браузер после переноса черновика.
   const id = await page.evaluate(async () => {
     const me = await (await fetch("/api/me")).json();
@@ -303,10 +303,10 @@ test("после подключения кабинета мастер ведёт
     return business.id as string;
   });
   await page.evaluate((b) => window.localStorage.setItem("adhelper.startBusiness", b), id);
-  await page.goto("/?new&start&connect=denied");
+  await page.goto("/?start&connect=denied");
   await expect(page.getByRole("heading", { level: 1, name: "Подключите кабинет Яндекса" })).toBeVisible();
   await expect(page.getByRole("alert")).toBeVisible();
-  await expect(page).toHaveURL(/\/\?new&start$/);
+  await expect(page).toHaveURL(/\/\?start$/);
   await page.getByRole("button", { name: "Продолжить" }).click();
 
   await page.getByLabel("ИНН для маркировки").fill("7707083894");
@@ -329,7 +329,7 @@ test("после подключения кабинета мастер ведёт
   await expect(page.getByText(/здесь появится кнопка запуска/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Запустить рекламу" })).toHaveCount(0);
   await page.getByRole("button", { name: "Открыть кабинет" }).click();
-  await expect(page).toHaveURL(/\/\?new$/);
+  await expect(page).toHaveURL(/:\d+\/$/);
 });
 
 
@@ -338,7 +338,7 @@ test("новый владелец проходит мастер и запуск�
   // Гость без демо-входа: входит и подключает кабинет через подставной Яндекс ID стенда,
   // тем же кодом обмена, PKCE и cookie, что в работе.
   await context.addCookies([{ name: "ah_guest", value: "1", url: "http://localhost:5175" }]);
-  await page.goto("/?new&start");
+  await page.goto("/?start");
   await page.evaluate(() => {
     window.localStorage.removeItem("adhelper.startDraft");
     window.localStorage.removeItem("adhelper.startBusiness");
@@ -361,7 +361,7 @@ test("новый владелец проходит мастер и запуск�
   await page.getByRole("button", { name: "Подключить кабинет" }).click();
   await expect(page.getByText(/отменили подключение/)).toBeVisible();
   await page.getByRole("button", { name: "Подключить кабинет" }).click();
-  await expect(page).toHaveURL(/\/\?new&start$/);
+  await expect(page).toHaveURL(/\/\?start$/);
   await expect(page.getByText(/stand-direct-\d+/)).toBeVisible();
   await page.getByRole("button", { name: "Продолжить" }).click();
 
@@ -389,7 +389,7 @@ test("новый владелец проходит мастер и запуск�
   });
   expect([again.launched, again.launch_available]).toEqual(["done", false]);
 
-  await page.goto("/?new");
+  await page.goto("/");
   await nav(page, "История").click();
   await expect(page.getByRole("heading", { name: /^Создал кампанию/ })).toBeVisible();
   // Маркировка ушла в Яндекс до кампании, в истории без реквизитов: только конец ИНН.
@@ -412,7 +412,7 @@ test("проверка Яндекса: отклонённое переписан
   type Row = { id: number; headline: string; text: string; state: string; reason: string };
   const creatives = async (): Promise<Row[]> => (await (await page.request.get(`/api/businesses/${business.id}/creatives`)).json()).creatives;
 
-  await page.goto("/?new");
+  await page.goto("/");
   await nav(page, "Реклама").click();
   await expect(page.getByText("на проверке Яндекса").first()).toBeVisible();
 
@@ -452,7 +452,7 @@ test("проверка Яндекса: отклонённое переписан
 });
 
 test("переделка объявления: выдумка отклонена до писателя, выбранный вариант встаёт в очередь", async ({ page, request }) => {
-  await page.goto("/?new");
+  await page.goto("/");
   await nav(page, "Реклама").click();
   await page.getByRole("button", { name: "Открыть «Педикюр у метро Профсоюзная»" }).first().click();
   await page.getByRole("button", { name: "Переделать" }).click();
@@ -481,7 +481,7 @@ test("правка цены: объявления со старой ценой �
   // Две правки профиля, каждая с циклом хранителя, и писатель стенда между ними.
   test.setTimeout(150_000);
   const settings = page.locator(".ah-bar").getByRole("button", { name: "Настройки" });
-  await page.goto("/?new");
+  await page.goto("/");
   await settings.click();
   const price = page.getByLabel("Цена услуги 1, ₽");
   await expect(price).toHaveValue("1500");
@@ -518,7 +518,7 @@ test("правка цены: объявления со старой ценой �
 });
 
 test("чат: просьба становится командой из набора и меняет только после «Применить», вне набора честный отказ", async ({ page }) => {
-  await page.goto("/?new");
+  await page.goto("/");
   await nav(page, "Чат с ИИ").click();
   const input = page.getByLabel("Сообщение для ИИ");
   const last = page.getByRole("log", { name: "Сообщения" }).locator(".ah-chat-msg-ai").last();
