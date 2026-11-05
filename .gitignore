@@ -17,3 +17,5 @@ evals/results/
 tests/e2e/.state/
 frontend/test-results/
 frontend/playwright-report/
+node_modules/
+.claude/
