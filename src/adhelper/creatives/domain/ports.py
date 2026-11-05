@@ -114,6 +114,8 @@ class Outgoing:
     campaign_id: str
     draft: AdDraft
     href: str
+    # SHA-256 картинки объявления; None — без картинки (docs/05-creatives.md §3).
+    image: str | None = None
 
 
 class ModerationStore(Protocol):

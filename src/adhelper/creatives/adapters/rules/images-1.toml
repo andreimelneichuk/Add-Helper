@@ -1,0 +1,69 @@
+# images-1: картинки объявлений, docs/05-creatives.md §3.
+# Требования Директа к изображению текстово-графического объявления (справка Директа,
+# docs/00-research.md §2): JPG/PNG/GIF до 10 МБ; 1:1…4:3 и 3:4 — от 450 до 5000 px по стороне;
+# 16:9 — от 1080×607 до 5000×2812.
+version = "images-1"
+min_side = 450
+max_side = 5000
+wide_min_width = 1080
+wide_min_height = 607
+max_bytes = 10_000_000
+# Своё фото приводим к ближайшей допустимой пропорции и уменьшаем до этой стороны:
+# Директу больше не нужно, а база не растёт.
+store_max_side = 2000
+jpeg_quality = 88
+# Фото владельца на бизнес. Больше не нужно: картинки чередуются между объявлениями.
+max_owner_photos = 5
+# Загружаемый файл до обработки. Больше — отказ до чтения картинки.
+max_upload_bytes = 15_000_000
+# Защита от «бомбы распаковки»: больше пикселей не декодируем.
+max_decode_pixels = 50_000_000
+
+# Генерация сцен. Модели и цены сверены 2026-11-05 по /api/v1/images/models OpenRouter.
+# Основной и запасной генератор выбраны шутаутом задачи 12 (docs/05-creatives.md §3).
+model = "black-forest-labs/flux.2-pro"
+fallback_model = "recraft/recraft-v4.1"
+aspect_ratio = "1:1"
+# Сгенерированных картинок на бизнес за скользящие сутки: около $0,03 за штуку.
+generated_per_day = 3
+# Фото-запрос пишет текстовая модель; ответ — данные, код проверяет и дополняет его.
+prompt_max_tokens = 400
+prompt_max_chars = 700
+# Слова, которых в фото-запросе быть не должно: модель не рисует надписи, а людей крупным
+# планом в чувствительных сценах не генерируем (руки и лица — главный источник артефактов).
+banned_prompt_words = [
+  "text", "letters", "lettering", "caption", "logo", "sign", "signage", "words",
+  "typography", "watermark", "price", "discount", "sale", "brand", "label",
+]
+# Ниши, где не генерируем руки и лица крупным планом: сцена — интерьер, инструменты, свет.
+no_people_niches = ["маникюр", "ногт", "педикюр", "космет", "брови", "ресниц", "тату", "медиц", "стомат"]
+people_words = [
+  "hand", "hands", "finger", "fingers", "fingertips", "face", "faces", "woman", "man",
+  "person", "people", "girl", "boy", "client", "model", "portrait", "skin",
+]
+# Дописывается к каждому запросу кодом, модель его не меняет.
+suffix = "Commercial photography, natural colors, sharp focus, no text, no letters, no logos, no watermarks."
+
+# Запасные сцены, когда писатель запросов не ответил или его запрос не прошёл проверку.
+# Первая сцена, у которой основа встретилась в нише или теме, побеждает; иначе default_scene.
+default_scene = "Bright clean modern small business interior, tidy workspace, soft daylight from a large window, calm inviting atmosphere, 35mm lens, shallow depth of field"
+
+[[scenes]]
+stems = ["маникюр", "ногт", "педикюр"]
+scene = "Minimalist nail studio workstation with neatly arranged nude and pastel polish bottles, sterile tools in a craft pouch, soft diffused daylight, clean white surfaces, 50mm lens, shallow depth of field"
+
+[[scenes]]
+stems = ["йог", "растяж", "пилатес", "фитнес"]
+scene = "Spacious yoga studio with aerial yoga hammocks hanging from the ceiling, panoramic windows, warm morning sunlight, wooden floor, calm minimalist interior, wide angle 24mm lens"
+
+[[scenes]]
+stems = ["авто", "шиномонт", "машин", "сто "]
+scene = "Clean modern car service bay with a car on a lift, diagnostic equipment, bright even LED lighting, polished concrete floor, orderly tools on the wall, 35mm lens"
+
+[[scenes]]
+stems = ["парикмах", "стрижк", "барбер", "салон красот"]
+scene = "Stylish hair salon interior with an empty styling chair, large mirror, warm ambient lighting, plants, clean modern design, 35mm lens"
+
+[[scenes]]
+stems = ["кофе", "кафе", "пекар", "ресторан"]
+scene = "Cozy cafe counter with freshly baked pastries and a cup of coffee, warm morning light, wooden textures, shallow depth of field, 50mm lens"
