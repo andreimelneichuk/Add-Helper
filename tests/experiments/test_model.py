@@ -12,43 +12,29 @@ from adhelper.experiments.domain.model import (
     Outcome,
     Status,
     VariantStats,
-    active_variant,
-    balanced_schedule,
     evaluate,
     probability_b_better,
     transition,
 )
 
-RULES = load_rules("experiments-1")
+RULES = load_rules("experiments-2")
+SWITCHBACK = load_rules("experiments-1")
 
 
 def stats(clicks: int, successes: int, spend: int = 1_000_000_000) -> VariantStats:
     return VariantStats(clicks, successes, spend)
 
 
-@given(st.integers(1, 200))
-def test_schedule_is_balanced(days: int) -> None:
-    schedule = balanced_schedule(days)
-    assert len(schedule) == days
-    assert abs(schedule.count("A") - schedule.count("B")) <= 2
+def test_native_split_decides_at_80_percent_from_50_clicks_per_variant() -> None:
+    """experiments-2: варианты идут одновременно, поэтому порог ниже, чем у чередования."""
+    a, b = stats(60, 3), stats(60, 6)  # P(B лучше A) = 83,9%: округляем вниз.
 
-
-def test_schedule_never_runs_one_variant_long() -> None:
-    assert balanced_schedule(8) == "ABBABAAB"
-    assert "AAA" not in balanced_schedule(64)
-    assert "BBB" not in balanced_schedule(64)
-
-
-def test_schedule_gives_each_weekday_to_both_variants() -> None:
-    schedule = balanced_schedule(56)
-    for weekday in range(7):
-        days = schedule[weekday::7]
-        assert "A" in days
-        assert "B" in days
-
-
-def test_active_variant_stays_within_schedule() -> None:
-    assert [active_variant(day) for day in range(4)] == ["A", "B", "B", "A"]
+    native = evaluate(a, b, 7, 0, RULES)
+    assert native.outcome is Outcome.WINNER
+    assert native.winner == "B"
+    assert "83%" in native.explanation
+    assert evaluate(a, b, 7, 0, SWITCHBACK).outcome is Outcome.CONTINUE
+    assert evaluate(stats(49, 0), stats(49, 9), 7, 0, RULES).outcome is Outcome.CONTINUE
 
 
 @given(st.integers(0, 60), st.integers(0, 60), st.integers(0, 60), st.integers(0, 60))
@@ -73,7 +59,7 @@ def test_clear_winner_after_minimum_time() -> None:
     result = evaluate(stats(400, 20), stats(400, 50), 8, 0, RULES)
     assert result.outcome is Outcome.WINNER
     assert result.winner == "B"
-    assert result.probability_b_bp >= 9000
+    assert result.probability_b_bp >= RULES.win_probability_bp
     assert "вероятностью" in result.explanation
 
 

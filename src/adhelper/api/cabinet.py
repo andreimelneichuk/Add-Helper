@@ -88,7 +88,7 @@ class ConfirmBody(BaseModel):
     account: str = Field(min_length=1, max_length=200)
 
 
-CURRENT_TODAY_RULES = "today-2"
+CURRENT_TODAY_RULES = "today-3"
 
 
 def _sessions(request: Request) -> async_sessionmaker[AsyncSession]:

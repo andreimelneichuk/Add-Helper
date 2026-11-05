@@ -64,13 +64,14 @@ from adhelper.creatives.application.service import (
 from adhelper.db import create_engine
 from adhelper.experiments.adapters.ledgered import LedgeredSwitch
 from adhelper.experiments.adapters.pipeline_sql import (
+    SqlAdStats,
     SqlObservations,
     SqlVariantContext,
     experiment_accounts,
 )
 from adhelper.experiments.adapters.rules_file import load_rules as load_experiment_rules
 from adhelper.experiments.adapters.sql import SqlExperimentStore
-from adhelper.experiments.application.pipeline import run_experiments
+from adhelper.experiments.application.pipeline import run_experiments, sync_test_stats
 from adhelper.experiments.application.service import ExperimentService
 from adhelper.ledger.adapters.sql import (
     PostgresAccountLock,
@@ -91,7 +92,7 @@ from adhelper.platforms.adapters.gateway import RoutingGateway
 
 MAX_CHANGE_ATTEMPTS = 3
 CURRENT_AUTOPILOT_RULES = "autopilot-2"
-CURRENT_EXPERIMENT_RULES = "experiments-1"
+CURRENT_EXPERIMENT_RULES = "experiments-2"
 
 
 async def _increase_needs_owner(account: str, campaign_id: str, new_limit: int) -> str:
@@ -283,7 +284,7 @@ class Runtime:
         )
 
     async def experiments_run(self, only: UUID | None = None) -> int:
-        """Открытые тесты: вариант, итог проверки, чередование. Возвращает число кабинетов."""
+        """Открытые тесты: вариант, итог проверки, итог теста. Возвращает число кабинетов."""
         creative_rules = load_creative_rules(CURRENT_RULES)
         rules = load_experiment_rules(CURRENT_EXPERIMENT_RULES)
         done = 0
@@ -308,6 +309,27 @@ class Runtime:
             )
             done += 1
         return done
+
+    async def experiments_stats(self, only: UUID | None = None) -> int:
+        """Раз в сутки: отчёт площадки по объявлениям идущих тестов в `ad_stats`.
+
+        Возвращает число сохранённых строк.
+        """
+        saved = 0
+        for business_id, account in await experiment_accounts(self.sessions):
+            if only is not None and business_id != only:
+                continue
+            platform = self.platform_for(business_id, account)
+            if platform is None:
+                continue
+            saved += await sync_test_stats(
+                account,
+                SqlExperimentStore(self.sessions, business_id),
+                platform,
+                SqlAdStats(self.sessions, business_id),
+                self.clock(),
+            )
+        return saved
 
     async def autopilot_run(self, only: UUID | None = None) -> int:
         """Раз в сутки: анализ по отчётам и предложения владельцу. Возвращает число кабинетов."""

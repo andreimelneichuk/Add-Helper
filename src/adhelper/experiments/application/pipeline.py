@@ -1,16 +1,19 @@
 """Тест по итогам анализа доходит до показов: docs/04-autopilot.md §5 «Ход теста».
 
-Готовящийся тест получает вариант через журнал (`create_ad`, источник `experiment`), и вариант
-сразу выключается: до старта показывается только контроль, как ждёт расписание. Итог
-проверки Яндекса запускает или отменяет тест, дальше чередование и анализ ведёт
-`ExperimentService.tick`. Повтор безопасен: созданное находится по метке, переключения
-сравнивают состояние с расписанием.
+Готовящийся тест получает вариант через журнал (`create_ad`, источник `experiment`) в группе
+контроля, и вариант сразу выключается: до старта показывается только контроль. Одобрение
+Яндекса ставит оба варианта рядом, дальше Яндекс сам делит показы, а итог по отчёту
+ведёт `ExperimentService.tick`. Отчёт по объявлениям раз в сутки кладёт в `ad_stats`
+`sync_test_stats`. Повтор безопасен: созданное находится по метке, переключение
+начинается с чтения, строки отчёта заменяются.
 """
 
 import logging
 from collections.abc import Sequence
+from datetime import datetime, timedelta
 from typing import Protocol
 
+from adhelper.budget.domain.calendar import platform_date
 from adhelper.budget.domain.ports import PlatformUnavailable
 from adhelper.creatives.domain.model import AdDraft, BusinessProfile, CreativeRules
 from adhelper.experiments.application.service import ExperimentService, Observation
@@ -30,7 +33,7 @@ from adhelper.ledger.domain.model import (
     ProposedChange,
 )
 from adhelper.ledger.domain.ports import GatewayUnavailable
-from adhelper.platforms.domain.ports import AdPublisher
+from adhelper.platforms.domain.ports import AdDay, AdPublisher, AdReports
 from adhelper.platforms.domain.ports import ModerationState as Verdict
 
 logger = logging.getLogger(__name__)
@@ -38,6 +41,7 @@ logger = logging.getLogger(__name__)
 NEW_AD_PREFIX = "newad:"
 AD_PREFIX = "ad:"
 NO_VARIANT = "no_variant"
+NO_CONTROL = "no_control"
 
 
 class VariantContext(Protocol):
@@ -47,6 +51,10 @@ class VariantContext(Protocol):
 
 class Observations(Protocol):
     async def observe(self, record: ExperimentRecord) -> Observation: ...
+
+
+class AdStatsSink(Protocol):
+    async def save(self, account: str, rows: Sequence[AdDay]) -> int: ...
 
 
 class VariantStore(Protocol):
@@ -86,6 +94,7 @@ async def _create_variant(
     ledger: Ledger,
     context: VariantContext,
     rules: CreativeRules,
+    publisher: AdPublisher,
 ) -> None:
     control = await context.control(record.account, record.control_ref.removeprefix(AD_PREFIX))
     profile = await context.profile()
@@ -95,6 +104,14 @@ async def _create_variant(
     if control is None or draft is None:
         # Честно: вариант по гипотезе из профиля не собрать, тест не начинается.
         await store.set_status(record.id, Status.CANCELLED, reason=NO_VARIANT)
+        return
+    try:
+        group = await publisher.ad_group(record.account, record.control_ref.removeprefix(AD_PREFIX))
+    except PlatformUnavailable:
+        return
+    if group is None:
+        # Контроля на площадке нет: сравнивать не с чем, тест честно не начинается.
+        await store.set_status(record.id, Status.CANCELLED, reason=NO_CONTROL)
         return
     created = await _apply(
         ledger,
@@ -108,11 +125,13 @@ async def _create_variant(
                 "headline": draft.headline,
                 "text": draft.text,
                 "href": control[1],
+                # В группу контроля: Яндекс делит показы между объявлениями одной группы.
+                "group_id": group,
             },
             explanation=(
                 f"Отправил на проверку Яндексу вариант «{draft.headline}» для A/B-теста."
                 " Почему: прежнее объявление на границе цели, проверяем одну перемену."
-                " Дальше: после одобрения варианты чередуются по дням."
+                " Дальше: после одобрения оба варианта показываются одновременно."
                 " Отменить: тест можно остановить в «Сегодня»."
             ),
             idempotency_key=f"experiment-variant:{record.id}",
@@ -171,7 +190,7 @@ async def run_experiments(
     for record in await store.open_for(account):
         try:
             if record.status is Status.REVIEW and record.variant_ref is None:
-                await _create_variant(record, store, ledger, context, rules)
+                await _create_variant(record, store, ledger, context, rules, publisher)
             elif record.status is Status.REVIEW:
                 await _check_variant(record, service, publisher)
             else:
@@ -180,3 +199,40 @@ async def run_experiments(
             # Запись осталась в журнале: следующий проход доведёт её чтением.
             logger.warning("Тест %s: площадка не ответила, продолжим позже", record.id)
             return
+
+
+async def sync_test_stats(
+    account: str,
+    store: VariantStore,
+    reports: AdReports,
+    sink: AdStatsSink,
+    now: datetime,
+) -> int:
+    """Раз в сутки: отчёт площадки по объявлениям идущих тестов с дня старта по вчера.
+
+    Берём только объявления тестов: остальные строки отчёта не наши заботы здесь.
+    Возвращает число сохранённых строк.
+    """
+    running = [
+        record
+        for record in await store.open_for(account)
+        if record.started_at is not None and record.variant_ref is not None
+    ]
+    if not running:
+        return 0
+    yesterday = platform_date(now) - timedelta(days=1)
+    since = min(platform_date(record.started_at) for record in running if record.started_at)
+    if since > yesterday:
+        return 0
+    ours = {
+        ref.removeprefix(AD_PREFIX)
+        for record in running
+        for ref in (record.control_ref, record.variant_ref or "")
+    }
+    campaigns = sorted({record.campaign_id for record in running})
+    try:
+        rows = await reports.ad_days(account, campaigns, since, yesterday)
+    except PlatformUnavailable:
+        logger.warning("Отчёт по объявлениям %s не получен, повторим завтра", account)
+        return 0
+    return await sink.save(account, [row for row in rows if row.ad_id in ours])

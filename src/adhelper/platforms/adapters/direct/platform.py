@@ -25,7 +25,12 @@ from adhelper.platforms.adapters.direct.transport import (
     check_results,
     rubles_to_micros,
 )
-from adhelper.platforms.domain.ports import ModerationState, ModerationVerdict, PublishedAd
+from adhelper.platforms.domain.ports import (
+    AdDay,
+    ModerationState,
+    ModerationVerdict,
+    PublishedAd,
+)
 
 MOSCOW = ZoneInfo("Europe/Moscow")
 # Кампания без лимита на период (создана не нами или с недельным бюджетом) для стража
@@ -187,6 +192,11 @@ def _cost(raw: str) -> int:
     return int(raw) if raw.strip().isdigit() else 0
 
 
+def _count(raw: str) -> int:
+    # «--» — значения нет: конверсий не было или Метрика не связана.
+    return int(raw) if raw.strip().isdigit() else 0
+
+
 class DirectPlatform:
     """Площадка Директа для одного бизнеса: токены кабинетов берутся из его хранилища."""
 
@@ -313,6 +323,48 @@ class DirectPlatform:
         )
         reported = sum(_cost(row["Cost"]) for row in rows)
         return SpendSnapshot(reported=reported, data_as_of=now - REPORT_LAG)
+
+    async def ad_days(
+        self, account: str, campaign_ids: Sequence[str], since: date, until: date
+    ) -> list[AdDay]:
+        """Сутки по объявлениям из `Reports`. `Conversions` без `Goals` — все цели счётчика:
+        для сравнения вариантов одной группы набор целей у обоих один и тот же."""
+        if not campaign_ids:
+            return []
+        rows = await self._report(
+            account,
+            {
+                "SelectionCriteria": {
+                    "DateFrom": since.isoformat(),
+                    "DateTo": until.isoformat(),
+                    "Filter": [
+                        {
+                            "Field": "CampaignId",
+                            "Operator": "IN",
+                            "Values": [str(c) for c in campaign_ids],
+                        }
+                    ],
+                },
+                "FieldNames": ["Date", "AdId", "Impressions", "Clicks", "Cost", "Conversions"],
+                "ReportType": "AD_PERFORMANCE_REPORT",
+                "DateRangeType": "CUSTOM_DATE",
+                "Format": "TSV",
+                # Как у расхода кампаний: сверка с кабинетом в S3.
+                "IncludeVAT": "YES",
+                "IncludeDiscount": "NO",
+            },
+        )
+        return [
+            AdDay(
+                ad_id=row["AdId"],
+                day=date.fromisoformat(row["Date"]),
+                impressions=_count(row["Impressions"]),
+                clicks=_count(row["Clicks"]),
+                cost=_cost(row["Cost"]),
+                conversions=_count(row["Conversions"]),
+            )
+            for row in rows
+        ]
 
     async def fetch_balance(self, account: str) -> int:
         token = await self._token_for(account)
@@ -465,17 +517,34 @@ class DirectPlatform:
                     headline=str(text_ad.get("Title") or ""),
                     text=str(text_ad.get("Text") or ""),
                     href=href,
+                    group_id=str(ad.get("AdGroupId") or ""),
                 )
         return None
 
+    async def ad_group(self, account: str, ad_id: str) -> str | None:
+        found = await self._ads(account, {"Ids": [int(ad_id)]})
+        return str(found[0]["AdGroupId"]) if found and found[0].get("AdGroupId") else None
+
     async def create_ad(
-        self, account: str, campaign_id: str, marker: str, headline: str, text: str, href: str
+        self,
+        account: str,
+        campaign_id: str,
+        marker: str,
+        headline: str,
+        text: str,
+        href: str,
+        group_id: str | None = None,
     ) -> None:
         groups = await self._groups(account, int(campaign_id))
-        if not groups:
+        ids = [int(group["Id"]) for group in groups]
+        if not ids:
             raise DirectRejected(None, f"campaign {campaign_id} has no ad groups")
+        # Вариант A/B-теста встаёт в группу контроля: Директ делит показы внутри группы.
+        if group_id is not None and int(group_id) not in ids:
+            raise DirectRejected(None, f"group {group_id} is not in campaign {campaign_id}")
+        target = int(group_id) if group_id is not None else ids[0]
         added = await self._add_text_ads(
-            account, int(groups[0]["Id"]), [(headline, text, mark_href(href, marker))]
+            account, target, [(headline, text, mark_href(href, marker))]
         )
         # Новое объявление — черновик; показы начнутся после проверки Директа.
         await self._moderate(account, await self._ads(account, {"Ids": added}))

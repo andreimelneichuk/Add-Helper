@@ -3,12 +3,13 @@
 from datetime import UTC, datetime, timedelta
 
 from adhelper.stats.adapters.rules_file import load_today_rules
-from adhelper.stats.domain.model import AlertLine, HistoryLine, TestLine, TestOffer
+from adhelper.stats.domain.model import AlertLine, HistoryLine, TestLine, TestOffer, TestResult
 from adhelper.stats.domain.today import TodayFacts, cards
 
 NOW = datetime(2026, 11, 10, 9, 0, tzinfo=UTC)
 RULES = load_today_rules("today-1")
 RULES_2 = load_today_rules("today-2")
+RULES_3 = load_today_rules("today-3")
 RUB = 1_000_000
 
 
@@ -175,3 +176,46 @@ def test_running_test_shows_no_early_verdict() -> None:
 def test_offer_does_not_hide_a_problem() -> None:
     shown = cards(facts(alerts=(alert("zero_balance"),), offers=(OFFER,)), RULES_2)
     assert [c.kind for c in shown][:1] == ["alert:zero_balance"]
+
+
+def result(winner: str = "B", days_ago: int = 1) -> TestResult:
+    return TestResult(
+        id=9,
+        control_title="Маникюр в «Лак»",
+        variant_title="Маникюр за 1500 ₽",
+        hypothesis="price",
+        winner=winner,
+        explanation="С вероятностью 83% новый вариант лучше, его и оставили.",
+        finished_at=NOW - timedelta(days=days_ago),
+    )
+
+
+def test_finished_test_shows_winner_and_paused_loser_with_way_back() -> None:
+    card = next(c for c in cards(facts(results=(result(),)), RULES_3) if c.kind == "test_result")
+    text = plain(card.text)
+    assert card.title == "A/B-тест закончен: новый вариант лучше"
+    assert card.tone == "good"
+    assert "С вероятностью 83%" in text
+    assert "«Маникюр за 1500 ₽» остаётся" in text
+    assert "«Маникюр в «Лак»» приостановлено" in text
+    assert "в истории" in text
+    assert (card.action, card.ref, card.rules) == ("history", "experiment-9", "today-3")
+
+
+def test_control_kept_is_said_plainly() -> None:
+    kept = result(winner="A")
+    card = next(c for c in cards(facts(results=(kept,)), RULES_3) if c.kind == "test_result")
+    assert card.title == "A/B-тест закончен: прежнее объявление остаётся"
+    assert card.tone == "info"
+    assert "«Маникюр за 1500 ₽» приостановлено" in plain(card.text)
+
+
+def test_old_result_leaves_today() -> None:
+    old = result(days_ago=RULES_3.last_action_days + 1)
+    assert "test_result" not in [c.kind for c in cards(facts(results=(old,)), RULES_3)]
+
+
+def test_offer_says_variants_run_together() -> None:
+    offer = next(c for c in cards(facts(offers=(OFFER,)), RULES_3) if c.kind == "test_offer")
+    assert "одновременно" in plain(offer.text)
+    assert "чередоваться" not in plain(offer.text)

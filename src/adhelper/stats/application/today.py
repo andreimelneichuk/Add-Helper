@@ -1,7 +1,7 @@
 """Сбор фактов для ленты «Сегодня»: окно 7 дней по московскому времени и журнал."""
 
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from adhelper.stats.application.overview import overview
 from adhelper.stats.domain.model import Dashboard
@@ -37,5 +37,6 @@ async def today(
         history=await dashboard.history(HISTORY),
         offers=await dashboard.test_offers(),
         tests=await dashboard.open_tests(),
+        results=await dashboard.test_results(now - timedelta(days=rules.last_action_days)),
     )
     return cards(facts, rules)

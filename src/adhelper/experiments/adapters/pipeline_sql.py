@@ -1,18 +1,22 @@
 """Данные для хода теста одного бизнеса: контроль из витрины, профиль, итоги вариантов.
 
-Только SELECT, каждый запрос ограничен business_id. Итоги вариантов берём из `ad_stats`
-(отчёты площадки) с московского дня старта теста.
+Каждый запрос ограничен business_id. Итоги вариантов берём из `ad_stats` (отчёт площадки
+по объявлениям) с первых полных московских суток после старта: в день старта вариант
+показывался не весь день, и контроль получил бы фору. `SqlAdStats` пишет строки отчёта.
 """
 
+from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy import BigInteger, Date, DateTime, Text, Uuid, column, func, select, table
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from adhelper.budget.domain.calendar import platform_date
 from adhelper.creatives.adapters.sql import SqlProfiles
 from adhelper.creatives.domain.model import AdDraft, BusinessProfile
 from adhelper.experiments.domain.model import ExperimentRecord, Observation, VariantStats
+from adhelper.platforms.domain.ports import AdDay
 
 ADS = table(
     "ads",
@@ -29,9 +33,11 @@ AD_STATS = table(
     column("account", Text),
     column("ad_id", Text),
     column("day", Date),
+    column("impressions", BigInteger),
     column("clicks", BigInteger),
     column("cost_micros", BigInteger),
     column("conversions", BigInteger),
+    column("loaded_at", DateTime(timezone=True)),
 )
 ALERTS = table(
     "alerts",
@@ -88,7 +94,7 @@ class SqlObservations:
             AD_STATS.c.ad_id.in_(ids),
         ]
         if since is not None:
-            conditions.append(AD_STATS.c.day >= since)
+            conditions.append(AD_STATS.c.day > since)
         statement = (
             select(
                 AD_STATS.c.ad_id,
@@ -113,6 +119,46 @@ class SqlObservations:
         quiet = VariantStats(0, 0, 0)
         control, variant = (rows.get(ad_id, quiet) for ad_id in ids)
         return Observation(control, variant, control.spend + variant.spend, not open_alerts)
+
+
+class SqlAdStats:
+    """Строки отчёта площадки по объявлениям: повтор за те же сутки заменяет, а не складывает."""
+
+    def __init__(self, sessions: async_sessionmaker[AsyncSession], business_id: UUID) -> None:
+        self._sessions = sessions
+        self._business_id = business_id
+
+    async def save(self, account: str, rows: Sequence[AdDay]) -> int:
+        if not rows:
+            return 0
+        statement = insert(AD_STATS).values(
+            [
+                {
+                    "business_id": self._business_id,
+                    "account": account,
+                    "ad_id": row.ad_id,
+                    "day": row.day,
+                    "impressions": row.impressions,
+                    "clicks": row.clicks,
+                    "cost_micros": row.cost,
+                    "conversions": row.conversions,
+                }
+                for row in rows
+            ]
+        )
+        statement = statement.on_conflict_do_update(
+            index_elements=["business_id", "account", "ad_id", "day"],
+            set_={
+                "impressions": statement.excluded.impressions,
+                "clicks": statement.excluded.clicks,
+                "cost_micros": statement.excluded.cost_micros,
+                "conversions": statement.excluded.conversions,
+                "loaded_at": func.now(),
+            },
+        )
+        async with self._sessions.begin() as session:
+            await session.execute(statement)
+        return len(rows)
 
 
 async def experiment_accounts(

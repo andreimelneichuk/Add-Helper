@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from adhelper.stats.domain.model import AlertLine, HistoryLine, TestLine, TestOffer
+from adhelper.stats.domain.model import AlertLine, HistoryLine, TestLine, TestOffer, TestResult
 
 MICROS_PER_RUB = 1_000_000
 # Что владелец может отменить из истории: совпадает с откатом журнала.
@@ -53,6 +53,7 @@ class TodayFacts:
     history: Sequence[HistoryLine]
     offers: Sequence[TestOffer] = ()
     tests: Sequence[TestLine] = ()
+    results: Sequence[TestResult] = ()
 
 
 @dataclass(frozen=True)
@@ -267,7 +268,8 @@ def _offer(offer: TestOffer, rules: TodayRules) -> Card:
         "Предлагаю проверить новый вариант объявления",
         f"{result} Плохим его назвать нельзя, хорошим тоже, а данных для вывода мало."
         f" Предлагаю A/B-тест: рядом встанет вариант {HYPOTHESIS.get(offer.hypothesis, '')},"
-        " показы будут чередоваться по дням от 7 до 21 дня. Бюджет не меняется."
+        " оба будут показываться одновременно от 7 до 21 дня, Яндекс сам поделит показы."
+        " Бюджет не меняется."
         " Отказаться можно сейчас, отменить — пока тест готовится.",
         "test_offer",
         str(offer.decision_id),
@@ -301,6 +303,27 @@ def _test(line: TestLine, rules: TodayRules) -> Card | None:
     return None
 
 
+def _result(line: TestResult, rules: TodayRules) -> Card:
+    """Итог теста: что решено и почему, с цифрой из анализа, и как вернуть проигравшего."""
+    new_won = line.winner == "B"
+    kept, paused = (
+        (line.variant_title, line.control_title)
+        if new_won
+        else (line.control_title, line.variant_title)
+    )
+    title = "новый вариант лучше" if new_won else "прежнее объявление остаётся"
+    return Card(
+        "test_result",
+        "good" if new_won else "info",
+        f"A/B-тест закончен: {title}",
+        f"{line.explanation} «{kept}» остаётся, «{paused}» приостановлено, а не удалено."
+        " Включить его снова можно в истории.",
+        "history",
+        f"experiment-{line.id}",
+        rules.version,
+    )
+
+
 def cards(facts: TodayFacts, rules: TodayRules) -> list[Card]:
     """Лента «Сегодня»: сначала то, что требует внимания; если всё хорошо — одна строка."""
     placed: list[tuple[int, Card]] = [_alert(a, facts.balance_gap, rules) for a in facts.alerts]
@@ -328,6 +351,10 @@ def cards(facts: TodayFacts, rules: TodayRules) -> list[Card]:
         card = _test(line, rules)
         if card is not None:
             placed.append((rules.priority[card.kind], card))
+    since = facts.now - timedelta(days=rules.last_action_days)
+    for result in facts.results:
+        if "test_result" in rules.priority and result.finished_at >= since:
+            placed.append((rules.priority["test_result"], _result(result, rules)))
     last = _last_action(facts, rules)
     if last is not None:
         placed.append((rules.priority["last_action"], last))

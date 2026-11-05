@@ -13,7 +13,7 @@ from adhelper.autopilot.application.proposals import Answer, answer_test, owner_
 from adhelper.experiments.adapters.sql import SqlExperimentStore
 from adhelper.experiments.application.service import IllegalTransition, cancel_preparing
 
-CURRENT_EXPERIMENT_RULES = "experiments-1"
+CURRENT_EXPERIMENT_RULES = "experiments-2"
 ANSWERS = {
     Answer.PREPARED: "Готовлю тест. Пока вариант не отправлен, объявление работает как раньше",
     Answer.DECLINED: "Хорошо, теста не будет. Это объявление не предложу две недели",

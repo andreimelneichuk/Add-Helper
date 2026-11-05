@@ -20,6 +20,7 @@ PERIODIC_TASKS = (
     "site.tag_check",
     "autopilot.run",
     "experiments.run",
+    "experiments.stats",
     "ads.summary",
 )
 
@@ -110,13 +111,22 @@ async def autopilot_run(timestamp: int) -> None:
         await runtime.autopilot_run()
 
 
-# Ход A/B-тестов: вариант через журнал, проверка Яндекса, чередование по дням и итог.
-# Раз в час: переключение идёт по московским суткам, повтор внутри суток ничего не меняет.
+# Ход A/B-тестов: вариант через журнал, проверка Яндекса, одновременный показ и итог.
+# Раз в час: повтор ничего не меняет, переключение начинается с чтения.
 @app.periodic(cron="7 * * * *")
 @app.task(name="experiments.run", queue=BUDGET_QUEUE, queueing_lock="experiments.run")
 async def experiments_run(timestamp: int) -> None:
     async with open_runtime(Settings()) as runtime:
         await runtime.experiments_run()
+
+
+# Отчёт по объявлениям идущих тестов за вчера: 06:05 по Москве (03:05 UTC), до суточного
+# цикла автопилота. Повтор заменяет строки за те же сутки.
+@app.periodic(cron="5 3 * * *")
+@app.task(name="experiments.stats", queue=BUDGET_QUEUE, queueing_lock="experiments.stats")
+async def experiments_stats(timestamp: int) -> None:
+    async with open_runtime(Settings()) as runtime:
+        await runtime.experiments_stats()
 
 
 # Сводка «что запущено» за вчерашние московские сутки, в 10:00 по Москве (07:00 UTC).

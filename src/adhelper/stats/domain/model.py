@@ -121,6 +121,20 @@ class TestLine:
 
 
 @dataclass(frozen=True)
+class TestResult:
+    """Тест с итогом: победитель остаётся, проигравший приостановлен через журнал."""
+
+    __test__ = False
+    id: int
+    control_title: str
+    variant_title: str
+    hypothesis: str
+    winner: str
+    explanation: str
+    finished_at: datetime
+
+
+@dataclass(frozen=True)
 class HistoryLine:
     """Изменение площадки из журнала или решение автопилота."""
 
@@ -149,3 +163,4 @@ class Dashboard(Protocol):
     async def history(self, limit: int) -> list[HistoryLine]: ...
     async def test_offers(self) -> list[TestOffer]: ...
     async def open_tests(self) -> list[TestLine]: ...
+    async def test_results(self, since: datetime) -> list[TestResult]: ...

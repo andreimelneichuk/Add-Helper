@@ -1,5 +1,6 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date
 from enum import StrEnum
 from typing import Any, Protocol
 
@@ -36,6 +37,10 @@ class PublishedAd:
     headline: str
     text: str
     href: str
+    # Номер картинки на площадке (в Директе AdImageHash); None — объявление без картинки.
+    image_hash: str | None = None
+    # Группа объявлений на площадке: вариант A/B-теста должен встать в группу контроля.
+    group_id: str = ""
 
 
 class AdPublisher(Protocol):
@@ -48,11 +53,48 @@ class AdPublisher(Protocol):
 
     async def find_ad(self, account: str, marker: str) -> PublishedAd | None: ...
     async def create_ad(
-        self, account: str, campaign_id: str, marker: str, headline: str, text: str, href: str
-    ) -> None: ...
+        self,
+        account: str,
+        campaign_id: str,
+        marker: str,
+        headline: str,
+        text: str,
+        href: str,
+        group_id: str | None = None,
+    ) -> None:
+        """Без `group_id` объявление встаёт в первую группу кампании."""
+        ...
+
+    async def ad_group(self, account: str, ad_id: str) -> str | None:
+        """Группа объявления на площадке; нет такого объявления — None."""
+        ...
+
     async def moderation(
         self, account: str, ad_ids: Sequence[str]
     ) -> Sequence[ModerationVerdict]: ...
+
+
+@dataclass(frozen=True)
+class AdDay:
+    """Строка отчёта площадки по объявлению за сутки площадки. Деньги в микроединицах."""
+
+    ad_id: str
+    day: date
+    impressions: int
+    clicks: int
+    cost: int
+    conversions: int
+
+
+class AdReports(Protocol):
+    """Отчёт площадки по объявлениям кампаний за сутки (в Директе `Reports` по `AdId`).
+
+    Только чтение. Числа — данные площадки, их не пересчитываем.
+    """
+
+    async def ad_days(
+        self, account: str, campaign_ids: Sequence[str], since: date, until: date
+    ) -> Sequence[AdDay]: ...
 
 
 # Цель записи журнала о данных рекламодателя для маркировки: одна на кабинет.

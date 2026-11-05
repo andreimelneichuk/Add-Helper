@@ -44,6 +44,7 @@ RULE_LOADERS = (
     (load_autopilot_rules, "autopilot-1"),
     (load_autopilot_rules, "autopilot-2"),
     (load_experiment_rules, "experiments-1"),
+    (load_experiment_rules, "experiments-2"),
     (load_creative_rules, "creatives-1"),
     (load_creative_rules, "creatives-2"),
     (load_creative_rules, "creatives-3"),

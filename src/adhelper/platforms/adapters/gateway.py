@@ -93,6 +93,7 @@ class RoutingGateway:
             "text": found.text,
             "href": found.href,
             "ad_id": found.ad_id,
+            "group_id": found.group_id,
         }
 
     def _launcher_control(self) -> CampaignLauncher:
@@ -162,6 +163,7 @@ class RoutingGateway:
                     str(planned["headline"]),
                     str(planned["text"]),
                     str(planned["href"]),
+                    group_id=str(planned["group_id"]) if planned.get("group_id") else None,
                 )
                 return
             if target_ref.startswith(CLIENT_PREFIX):
