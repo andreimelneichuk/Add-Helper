@@ -29,6 +29,7 @@ from typing import Any
 
 from pydantic import SecretStr
 
+from adhelper.config import Settings
 from adhelper.creatives.adapters.openai_compatible import OpenAiCompatibleModel
 from adhelper.creatives.adapters.rules_file import load_rules
 from adhelper.creatives.application.generate import ADS_SCHEMA, SYSTEM_PROMPT, _parse, build_prompt
@@ -114,9 +115,12 @@ def verdict(data: GateInput, limit: float = LIMIT, confidence: float = CONFIDENC
 
 # --- прогон на реальных моделях: тратит деньги, запускается вручную ---
 #
-#   OPENROUTER_API_KEY=… uv run python -m evals.gate \
-#       --writer groq:qwen/qwen3.8-27b --judge or:deepseek/deepseek-v4-flash \
-#       --auditor or:z-ai/glm-5.3-flash --budget 0.05
+#   uv run python -m evals.gate \
+#       --writer or:qwen/qwen-2.5-72b-instruct --judge or:deepseek/deepseek-chat \
+#       --auditor or:mistralai/mistral-small-24b-instruct-2501 --budget 0.05
+#
+# Ключ OpenRouter — OPENROUTER_API_KEY или ключ сервиса из .env, если TEXT_MODEL_BASE_URL
+# указывает на OpenRouter. `--sample N` берёт первые N профилей выборки для отсева.
 #
 # Перед каждым этапом печатается худший случай, в конце — расход; на пределе прогон
 # останавливается (docs/13-model-spend.md).
@@ -144,12 +148,29 @@ class _Endpoint:
     price: Price = FREE
 
 
+def openrouter_key() -> str:
+    """Ключ сервиса берём, только если он и выдан OpenRouter: чужой ключ туда не уходит."""
+    key = os.environ.get("OPENROUTER_API_KEY", "")
+    if key:
+        return key
+    settings = Settings()
+    if "openrouter.ai" not in settings.text_model_base_url or settings.text_model_api_key is None:
+        return ""
+    return settings.text_model_api_key.get_secret_value()
+
+
+def sample_profiles(profiles: dict[str, Any], size: int) -> dict[str, Any]:
+    """Первые size профилей по порядку ключей; 0 — все. Кеш общий с полным прогоном."""
+    ordered = sorted(profiles)
+    return {pid: profiles[pid] for pid in (ordered[:size] if size else ordered)}
+
+
 def _endpoint(spec: str, meter: Meter, prices: dict[str, Price]) -> _Endpoint:
     provider, _, name = spec.partition(":")
     if provider == "groq":
         base, key = os.environ.get("OPENAI_BASE_URL", ""), os.environ.get("OPENAI_API_KEY", "")
     elif provider == "or":
-        base, key = OPENROUTER, os.environ.get("OPENROUTER_API_KEY", "")
+        base, key = OPENROUTER, openrouter_key()
     else:
         raise SystemExit(f"Модель задаётся как groq:<имя> или or:<имя>, а не {spec}")
     if not base or not key or not name:
@@ -335,14 +356,19 @@ async def run(args: argparse.Namespace) -> None:
     if len(vendors) < 3:
         raise SystemExit("Писатель, судья и аудитор должны быть от разных разработчиков")
     # На val и train ворот нет: там подгоняем, и печатаются только счётчики снятого.
+    if args.split == "test" and args.sample:
+        raise SystemExit("Ворота считаются на всём test: --sample только для отсева")
     reference = _reference(args.judge) if args.split == "test" else None
     rules = load_rules(args.rules)
     data = load_dataset()
-    profiles = {
-        pid: row.business()
-        for pid, row in data.profiles.items()
-        if split_of(SPLIT_SEED, pid) == args.split
-    }
+    profiles = sample_profiles(
+        {
+            pid: row.business()
+            for pid, row in data.profiles.items()
+            if split_of(SPLIT_SEED, pid) == args.split
+        },
+        args.sample,
+    )
     # Кеш привязан к промпту и правилам: правка инструкции писателя даёт новый прогон.
     version = prompt_version(SYSTEM_PROMPT, build_prompt(BusinessProfile("", ()), rules))
     writer_name = f"gate--{_slug(args.writer)}--{rules.version}-{version[:8]}--{args.split}"
@@ -469,6 +495,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--auditor", required=True)
     parser.add_argument("--rules", default="creatives-3")
     parser.add_argument("--split", default="test", choices=["train", "val", "test"])
+    parser.add_argument("--sample", type=int, default=0, help="первые N профилей, для отсева")
     parser.add_argument(
         "--budget",
         type=float,

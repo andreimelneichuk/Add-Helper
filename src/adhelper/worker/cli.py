@@ -45,6 +45,7 @@ RULE_LOADERS = (
     (load_experiment_rules, "experiments-1"),
     (load_creative_rules, "creatives-1"),
     (load_creative_rules, "creatives-2"),
+    (load_creative_rules, "creatives-3"),
     (load_slot_rules, "ads-1"),
     (load_site_rules, "site-1"),
 )

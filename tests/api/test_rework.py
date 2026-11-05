@@ -22,7 +22,7 @@ PROFILE = {
     "website": "",
 }
 SHORT = {"headline": "Маникюр за 1500 ₽", "text": "Ждём вас: ул. Ленина, 5."}
-PLACE = {"headline": "Маникюр на Ленина, 5", "text": "Стерильные инструменты, рядом с вами."}
+PLACE = {"headline": "Маникюр: ул. Ленина, 5", "text": "Стерильные инструменты, рядом с вами."}
 
 
 async def _write(sessions: Sessions, model: FakeModel | None) -> None:

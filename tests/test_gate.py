@@ -1,6 +1,7 @@
 """Расчёт ворот выпуска без новой разметки (docs/12-agents.md §2). Сеть не нужна."""
 
 import pytest
+from evals import gate
 from evals.gate import GateInput, launched_error, prevalence, verdict
 from hypothesis import given
 from hypothesis import strategies as st
@@ -54,3 +55,27 @@ def test_many_false_blocks_do_not_hide_violations() -> None:
     # Если на эталоне судья часто снимает зря, точная поправка дала бы v = 0 и открыла ворота
     # при любом пропуске. Граница v ≤ b / (1 − m) от f не зависит.
     assert not verdict(GateInput(30, 329, 14, 114, 58, 346)).passed
+
+
+def test_openrouter_key_comes_from_settings_when_env_has_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Ключ OpenRouter сервиса лежит в TEXT_MODEL_API_KEY: второй ключ для ворот не нужен.
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setenv("TEXT_MODEL_BASE_URL", "https://openrouter.ai/api/v1")
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "sk-or-test")
+    assert gate.openrouter_key() == "sk-or-test"
+
+
+def test_service_key_of_another_provider_is_not_sent_to_openrouter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setenv("TEXT_MODEL_BASE_URL", "https://ai.api.cloud.yandex.net/v1")
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "yandex-key")
+    assert gate.openrouter_key() == ""
+
+
+def test_sample_takes_first_profiles_in_order() -> None:
+    assert gate.sample_profiles({"c": 3, "a": 1, "b": 2}, 2) == {"a": 1, "b": 2}
+    assert gate.sample_profiles({"c": 3, "a": 1}, 0) == {"a": 1, "c": 3}

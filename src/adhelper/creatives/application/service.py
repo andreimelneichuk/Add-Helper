@@ -43,9 +43,9 @@ from adhelper.creatives.domain.rework import ReworkRules
 
 logger = logging.getLogger(__name__)
 
-# Правила для новых наборов. creatives-2 на наборе оценки реже снимает чистые объявления,
-# чем creatives-1, при той же доле пойманного: docs/05-creatives.md §7.
-CURRENT_RULES = "creatives-2"
+# Правила для новых наборов. creatives-3 (рамка писателя) прошла ворота выпуска 2026-11-05:
+# верхняя граница ошибки 0,87% при пороге 3%, docs/12-agents.md §4.
+CURRENT_RULES = "creatives-3"
 CURRENT_SLOT_RULES = "ads-1"
 CURRENT_REWORK_RULES = "rework-1"
 # Генерация с судьёй укладывается в минуты; дольше — воркер упал посреди набора.
