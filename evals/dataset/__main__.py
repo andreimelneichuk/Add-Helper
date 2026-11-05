@@ -60,10 +60,21 @@ from evals.dataset.build import (
     usable,
 )
 from evals.dataset.spec import AUTHOR, PANEL, SERVICE_MODELS, SPLIT_SEED, Label
+from evals.meter import (
+    DEFAULT_BUDGET_USD,
+    FREE,
+    MICRO,
+    BudgetSpent,
+    Meter,
+    fetch_prices,
+    usd,
+)
 
 # Бесплатный уровень Groq даёт 8000 токенов в минуту на модель: ждём долго, а не падаем.
 PARALLEL = 2
 ATTEMPTS = 6
+# Оплаченный негодный ответ повторяем не больше двух раз: docs/13-model-spend.md.
+PAID_RETRIES = 2
 MAX_TOKENS = 3000
 
 LABEL_SYSTEM = (
@@ -117,25 +128,40 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
-def _model(name: str) -> TextModel:
+def _model(name: str, meter: Meter) -> TextModel:
     base = os.environ.get("TEXT_MODEL_BASE_URL") or os.environ.get("OPENAI_BASE_URL", "")
     key = os.environ.get("TEXT_MODEL_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
     if not base or not key or not name:
         raise SystemExit("Нужны адрес, ключ и модель: TEXT_MODEL_* или OPENAI_* в окружении")
-    return OpenAiCompatibleModel(base, SecretStr(key), name)
+    price = fetch_prices([name])[name] if "openrouter.ai" in base else FREE
+    out(f"цена {name}: {usd(price.input_micro_per_m)} и {usd(price.output_micro_per_m)} за 1M")
+    return OpenAiCompatibleModel(
+        base, SecretStr(key), name, on_usage=lambda usage: meter.record(price, usage)
+    )
 
 
-async def _ask(model: TextModel, system: str, user: str, schema: dict[str, object]) -> str:
-    """Повтор при сбое или ответе не-JSON; последняя ошибка уходит наверх."""
+async def _ask(
+    model: TextModel, meter: Meter, system: str, user: str, schema: dict[str, object]
+) -> str:
+    """Повтор при сбое; оплаченный негодный ответ — до PAID_RETRIES раз. Ошибка уходит наверх."""
     last: Exception = ModelUnavailable("no_attempts")
+    paid = 0
     for attempt in range(ATTEMPTS):
+        meter.check()
         try:
             reply = await model.complete_json(system, user, schema, MAX_TOKENS)
             json.loads(reply.text)
             return reply.text
-        except (ModelUnavailable, ValueError) as error:
-            last = error
-            await asyncio.sleep(min(60, 5 * 2**attempt))
+        except ModelUnavailable as error:
+            last, wasted = error, error.tokens > 0
+        except ValueError as error:
+            last, wasted = error, True
+        if wasted:
+            meter.paid_failures += 1
+            paid += 1
+            if paid > PAID_RETRIES:
+                break
+        await asyncio.sleep(min(60, 5 * 2**attempt))
     raise last
 
 
@@ -144,7 +170,8 @@ async def _ask(model: TextModel, system: str, user: str, schema: dict[str, objec
 
 async def write(args: argparse.Namespace) -> None:
     data = load()
-    model = _model(args.model)
+    meter = Meter(round(args.budget * MICRO))
+    model = _model(args.model, meter)
     gate = asyncio.Semaphore(PARALLEL)
     seen = {normalized(i.headline, i.text) for i in data.items.values()}
     done = {
@@ -159,12 +186,12 @@ async def write(args: argparse.Namespace) -> None:
         async with gate:
             try:
                 text = await _ask(
-                    model, SYSTEM_PROMPT, build_prompt(profile.business(), RULES), ADS_SCHEMA
+                    model, meter, SYSTEM_PROMPT, build_prompt(profile.business(), RULES), ADS_SCHEMA
                 )
                 candidates = _parse(text)
                 if candidates is None:
                     raise BadReply("no_ads")
-            except (ModelUnavailable, BadReply, ValueError) as error:
+            except (ModelUnavailable, BadReply, ValueError, BudgetSpent) as error:
                 counts[f"failed:{type(error).__name__}"] += 1
                 return
         rows = []
@@ -202,10 +229,14 @@ async def write(args: argparse.Namespace) -> None:
     todo = [
         pid
         for pid in sorted(data.profiles)
-        if pid not in done and args.split in ("all", split_of(SPLIT_SEED, pid))
+        # Эталон заморожен (решение владельца 2026-11-04): новых записей в test не добавляем.
+        if pid not in done
+        and split_of(SPLIT_SEED, pid) != "test"
+        and args.split in ("all", split_of(SPLIT_SEED, pid))
     ]
     await asyncio.gather(*(one(pid) for pid in todo))
     out(f"писатель {args.model}: {dict(counts)}")
+    out(meter.summary())
 
 
 # --- голоса моделей ---
@@ -222,7 +253,8 @@ def _vote_user(data: Dataset, profile_id: str, items: Sequence[ItemRow]) -> str:
 async def vote(args: argparse.Namespace) -> None:
     """Объявления одного профиля идут одним вызовом в перемешанном порядке, без вида и метки."""
     data = load()
-    model = _model(args.model)
+    meter = Meter(round(args.budget * MICRO))
+    model = _model(args.model, meter)
     gate = asyncio.Semaphore(PARALLEL)
     counts: Counter[str] = Counter()
 
@@ -231,10 +263,10 @@ async def vote(args: argparse.Namespace) -> None:
         async with gate:
             try:
                 text = await _ask(
-                    model, LABEL_SYSTEM, _vote_user(data, profile_id, items), LABEL_SCHEMA
+                    model, meter, LABEL_SYSTEM, _vote_user(data, profile_id, items), LABEL_SCHEMA
                 )
                 votes = parse_votes(text, len(items))
-            except (ModelUnavailable, BadReply, ValueError) as error:
+            except (ModelUnavailable, BadReply, ValueError, BudgetSpent) as error:
                 counts[f"failed:{type(error).__name__}"] += 1
                 return
         rows = [
@@ -255,6 +287,7 @@ async def vote(args: argparse.Namespace) -> None:
     }
     await asyncio.gather(*(one(pid, items) for pid, items in pending.items() if items))
     out(f"разметчик {args.model}: {dict(counts)}")
+    out(meter.summary())
 
 
 # --- слепая разметка субагентами ---
@@ -439,9 +472,16 @@ def main(argv: Sequence[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     writer = sub.add_parser("write")
     writer.add_argument("--model", default=os.environ.get("OPENAI_MODEL", ""))
-    writer.add_argument("--split", default="all", choices=["train", "val", "test", "all"])
+    writer.add_argument("--split", default="all", choices=["train", "val", "all"])
     voter = sub.add_parser("vote")
     voter.add_argument("--model", required=True, choices=SERVICE_MODELS)
+    for command in (writer, voter):
+        command.add_argument(
+            "--budget",
+            type=float,
+            default=DEFAULT_BUDGET_USD,
+            help="предел прогона в долларах; выше $0.05 — только с согласия владельца",
+        )
     blinder = sub.add_parser("blind")
     blinder.add_argument("--labeler", required=True, choices=PANEL)
     blinder.add_argument("--out", type=Path, required=True)

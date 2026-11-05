@@ -23,7 +23,14 @@ class CreativeSource(StrEnum):
 
 
 class ModelUnavailable(Exception):
-    """Модель не ответила, ответ обрезан или отклонён фильтром."""
+    """Модель не ответила, ответ обрезан или отклонён фильтром.
+
+    `tokens` — сколько токенов ответ всё же потратил: обрезанный ответ оплачен.
+    """
+
+    def __init__(self, reason: str = "", tokens: int = 0) -> None:
+        super().__init__(reason)
+        self.tokens = tokens
 
 
 @dataclass(frozen=True)
@@ -80,6 +87,9 @@ class CreativeRules:
     sensitive_niches: tuple[str, ...]
     # Сколько наборов бизнес может запросить за сутки: каждый стоит вызовов модели.
     max_sets_per_day: int
+    # Рамка писателя (creatives-3): пусто — проверяются только ключи, фрагменты и числа.
+    fact_glue: tuple[str, ...] = ()
+    claim_stems: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

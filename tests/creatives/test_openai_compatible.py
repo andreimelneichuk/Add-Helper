@@ -10,7 +10,7 @@ import pytest
 from pydantic import SecretStr
 
 from adhelper.creatives.adapters.factory import build_text_model
-from adhelper.creatives.adapters.openai_compatible import OpenAiCompatibleModel
+from adhelper.creatives.adapters.openai_compatible import OpenAiCompatibleModel, Usage
 from adhelper.creatives.domain.model import ModelUnavailable
 
 KEY = SecretStr("secret-key")
@@ -123,3 +123,36 @@ def test_provider_is_chosen_by_address() -> None:
     assert build_text_model(YANDEX, KEY, "") is None
     with pytest.raises(ValueError, match="https"):
         build_text_model("openrouter", KEY, "m")
+
+
+async def test_usage_is_reported_even_when_reply_is_cut() -> None:
+    """Обрезанный ответ тоже оплачен: учёт расхода видит его, а ошибка несёт токены."""
+    seen: list[Usage] = []
+    cut = reply(reason="length")
+    cut["usage"] = {"prompt_tokens": 10, "completion_tokens": 90, "cost": 0.0004}
+    subject = OpenAiCompatibleModel(
+        OPENROUTER,
+        KEY,
+        "some/model",
+        "",
+        httpx.MockTransport(lambda _: httpx.Response(200, json=cut)),
+        on_usage=seen.append,
+    )
+    with pytest.raises(ModelUnavailable) as error:
+        await call(subject)
+    assert error.value.tokens == 100
+    assert [(u.prompt_tokens, u.completion_tokens, u.cost_usd) for u in seen] == [(10, 90, 0.0004)]
+
+
+async def test_usage_without_cost_field() -> None:
+    seen: list[Usage] = []
+    subject = OpenAiCompatibleModel(
+        OPENROUTER,
+        KEY,
+        "some/model",
+        "",
+        httpx.MockTransport(lambda _: httpx.Response(200, json=reply())),
+        on_usage=seen.append,
+    )
+    await call(subject)
+    assert [(u.prompt_tokens, u.completion_tokens, u.cost_usd) for u in seen] == [(10, 5, None)]

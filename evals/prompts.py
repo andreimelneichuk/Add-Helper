@@ -8,6 +8,7 @@ import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
+from adhelper.creatives.domain.audit import AUDIT_SCHEMA, AUDIT_SYSTEM, build_audit_user, read_audit
 from adhelper.creatives.domain.checks import profile_facts
 from adhelper.creatives.domain.judge import (
     JUDGE_SCHEMA,
@@ -127,4 +128,7 @@ V3 = JudgeVariant(V3_SYSTEM, JUDGE_SCHEMA, build_judge_user, _single(read_verdic
 # v4: правило §1 от 2026-11-03, весь набор профиля за вызов. Сейчас в сервисе.
 V4 = JudgeVariant(JUDGE_SYSTEM, JUDGE_SCHEMA, build_judge_user, read_verdicts, per_set=True)
 
-PROMPTS: dict[str, JudgeVariant] = {"v1": V1, "v2": V2, "v3": V3, "v4": V4}
+# a1: аудитор, объявления целиком, без фрагментов судьи. Замеряется тем же способом.
+A1 = JudgeVariant(AUDIT_SYSTEM, AUDIT_SCHEMA, build_audit_user, read_audit, per_set=True)
+
+PROMPTS: dict[str, JudgeVariant] = {"v1": V1, "v2": V2, "v3": V3, "v4": V4, "a1": A1}
