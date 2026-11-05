@@ -4,10 +4,10 @@
 Чего нет в данных, того нет и в тексте: без цифр сообщение говорит об этом прямо.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from adhelper.notifications.domain.model import Message, MoneyFacts
+from adhelper.notifications.domain.model import NOTICES, Message, MoneyFacts
 
 PLATFORM_ZONE = ZoneInfo("Europe/Moscow")
 NO_NUMBERS = "Свежих цифр по деньгам у нас нет: подробности в кабинете."
@@ -22,7 +22,10 @@ TITLES = {
     "platform_not_connected": "Кабинет Директа не подключён",
     "ads_no_profile": "Не о чем писать объявления",
     "ads_need_confirmation": "Новые объявления ждут вашего решения",
+    "ads_rejected": "Яндекс отклонил объявление",
+    "ads_launched": "Запущены новые объявления",
 }
+SUMMARY_SHOWN = 5
 
 
 def rubles(micros: int) -> str:
@@ -34,6 +37,38 @@ def rubles(micros: int) -> str:
 def _moment(at: datetime) -> str:
     local = at.astimezone(PLATFORM_ZONE)
     return f"{local:%d.%m.%Y %H:%M} по Москве"
+
+
+def _ads(count: int) -> str:
+    if count % 10 == 1 and count % 100 != 11:
+        return f"{count} объявление"
+    if count % 10 in (2, 3, 4) and count % 100 not in (12, 13, 14):
+        return f"{count} объявления"
+    return f"{count} объявлений"
+
+
+def _launched(details: dict[str, object]) -> list[str]:
+    raw = details.get("headlines")
+    headlines = [h for h in raw if isinstance(h, str)] if isinstance(raw, list) else []
+    count = details.get("count")
+    total = count if isinstance(count, int) and count >= len(headlines) else len(headlines)
+    day = details.get("day")
+    when = ""
+    if isinstance(day, str):
+        try:
+            when = f" {date.fromisoformat(day):%d.%m.%Y}"
+        except ValueError:
+            when = ""
+    lines = [f"Яндекс одобрил{when}, и мы запустили {_ads(total)}:"]
+    lines += [f"— «{headline}»" for headline in headlines[:SUMMARY_SHOWN]]
+    if total > SUMMARY_SHOWN:
+        lines.append(f"И ещё {_ads(total - SUMMARY_SHOWN)}.")
+    lines += [
+        "Все факты в них — из вашего профиля. Мы сравним их с прежними и оставим лучшие.",
+        "Если что-то не так, снимите объявление одним нажатием в разделе «Реклама»:"
+        " отменить снятие можно в истории.",
+    ]
+    return lines
 
 
 def _body(kind: str, money: MoneyFacts | None, details: dict[str, object]) -> list[str]:
@@ -125,6 +160,26 @@ def _body(kind: str, money: MoneyFacts | None, details: dict[str, object]) -> li
             "объявления мы не запускаем без вас.",
             "Откройте «Объявления» и для каждого нажмите «Запустить» или «Не запускать».",
         ]
+    if kind == "ads_launched":
+        return _launched(details)
+    if kind == "ads_rejected":
+        headline = details.get("headline")
+        reason = details.get("reason")
+        count = details.get("count")
+        about = f"«{headline}»" if isinstance(headline, str) and headline else "объявление"
+        lines = [
+            f"Яндекс отклонил {about}. Мы переписывали его сами, но проверка снова не прошла"
+            " или текстом это не исправить.",
+        ]
+        if isinstance(reason, str) and reason:
+            lines.append(f"Причина: {reason}.")
+        if isinstance(count, int) and count > 1:
+            lines.append(f"Таких объявлений {count}.")
+        lines.append(
+            "Остальные объявления работают. Откройте отклонённое в разделе «Реклама»:"
+            " попросите переделать своими словами или отключите его."
+        )
+        return lines
     return ["Нужна ваша проверка: подробности в кабинете."]
 
 
@@ -139,7 +194,9 @@ def compose(
     title = TITLES.get(kind, "Нужна ваша проверка")
     lines = [
         f"{title}.",
-        f"Бизнес: {business_name}. С {_moment(raised_at)}.",
+        f"Бизнес: {business_name}."
+        if kind in NOTICES
+        else f"Бизнес: {business_name}. С {_moment(raised_at)}.",
         "",
         *_body(kind, money, details),
         "",

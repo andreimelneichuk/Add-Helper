@@ -1,0 +1,88 @@
+import { useLayoutEffect, useMemo, useRef } from "react";
+import "@fontsource-variable/onest";
+import "./tokens.css";
+import type { Situation, View } from "./data";
+import { Icon } from "./icons";
+import { Ads } from "./screens/Ads";
+import { Chat } from "./screens/Chat";
+import { History } from "./screens/History";
+import { Overview } from "./screens/Overview";
+import { Settings } from "./screens/Settings";
+import { Start } from "./screens/Start";
+import { Stats } from "./screens/Stats";
+import { confirmText, initialState, statusText, stopped, Store, useStoreState, warned } from "./store";
+
+const VIEWS: [View, string][] = [["overview", "Обзор"], ["stats", "Статистика"], ["ads", "Реклама"], ["history", "История"]];
+const SITUATIONS: [Situation, string][] = [["running", "всё хорошо"], ["first", "первые дни"], ["problem", "нет денег"], ["verdict", "вывод проверки"], ["budget", "бюджет на исходе"], ["rejected", "отказ Яндекса"], ["access", "нет доступа"]];
+const SCREENS = { overview: Overview, stats: Stats, ads: Ads, history: History, settings: Settings };
+
+export function AppShell({ store: given }: { store?: Store }) {
+  const store = useMemo(() => {
+    if (given) return given;
+    const start = new URLSearchParams(window.location.search).has("start");
+    return new Store(initialState(start ? "start" : "work"));
+  }, [given]);
+  const s = useStoreState(store);
+  const starting = s.stage === "start";
+  const chat = s.mode === "chat";
+  const bad = (stopped(s) || (s.situation === "access" && !s.topped)) || s.paused;
+  const tone = bad ? { background: "var(--bad-soft)", color: "var(--bad)" } : warned(s) ? { background: "var(--warn-soft)", color: "var(--warn)" } : { background: "var(--good-soft)", color: "var(--good)" };
+  const tabs: [View, string][] = starting ? [["overview", "Настройка"]] : VIEWS;
+  const Screen = SCREENS[s.view];
+  const main = useRef<HTMLElement>(null);
+
+  // Экран всегда открывается с начала: иначе тревога остаётся выше видимой части.
+  useLayoutEffect(() => {
+    if (main.current) main.current.scrollTop = 0;
+  }, [s.view, s.mode, s.situation, s.step, s.stage, s.openAd]);
+
+  return (
+    <div className="ah">
+      <header className="ah-bar">
+        <strong className="ah-brand">{starting ? "Ad Helper" : s.live?.name ?? "Салон «Пример»"}</strong>
+        {!starting && <span className="ah-status" style={tone}><i aria-hidden="true" />{statusText(s)}</span>}
+        {!starting && <button type="button" className="ah-btn ah-bar-pause" onClick={() => store.run({ action: "pause" })}>{s.paused ? "Включить" : "Пауза"}</button>}
+        {!starting && <button type="button" className="ah-btn ah-btn-icon" aria-label="Настройки" aria-current={!chat && s.view === "settings" ? "page" : undefined} onClick={() => store.goView("settings")}><Icon name="settings" /></button>}
+      </header>
+      {!starting && !s.live && (
+        <div className="ah-proto">
+          <span>ситуация:</span>
+          {SITUATIONS.map(([id, label]) => (
+            <button key={id} type="button" className="ah-chip" aria-pressed={s.situation === id} onClick={() => store.pickSituation(id)}>{label}</button>
+          ))}
+        </div>
+      )}
+      <div className="ah-body">
+        <nav className="ah-rail" aria-label="Разделы">
+          {tabs.map(([id, label]) => (
+            <button key={id} type="button" aria-current={!chat && (starting || s.view === id) ? "page" : undefined} onClick={() => store.goView(id)}><Icon name={starting ? "settings" : id} />{label}</button>
+          ))}
+          <button type="button" aria-current={chat ? "page" : undefined} onClick={() => store.openChat()}><Icon name="chat" />Чат с ИИ</button>
+        </nav>
+        {chat ? <Chat store={store} /> : (
+            <main ref={main} className="ah-main">
+              {s.notice && !starting && (
+                <div role="status" className="ah-notice"><span>{s.notice}</span><button type="button" className="ah-btn" onClick={() => store.set({ notice: "" })}>Понятно</button></div>
+              )}
+              {starting ? <Start store={store} /> : <Screen store={store} />}
+              {s.pending && !starting && (
+                <div role="group" aria-label="Подтверждение" className="ah-confirm">
+                  <p>{confirmText(s, s.pending)}</p>
+                  <div className="ah-confirm-actions">
+                    <button type="button" className="ah-btn ah-btn-primary" onClick={store.confirm}>Применить</button>
+                    <button type="button" className="ah-btn" autoFocus onClick={store.decline}>Не надо</button>
+                  </div>
+                </div>
+              )}
+            </main>
+          )}
+      </div>
+      <nav className="ah-nav" aria-label="Разделы на телефоне">
+        {tabs.map(([id, label]) => (
+          <button key={id} type="button" aria-current={!chat && (starting || s.view === id) ? "page" : undefined} onClick={() => store.goView(id)}><Icon name={starting ? "settings" : id} />{label}</button>
+        ))}
+        <button type="button" aria-current={chat ? "page" : undefined} onClick={() => store.openChat()}><Icon name="chat" />Чат</button>
+      </nav>
+    </div>
+  );
+}

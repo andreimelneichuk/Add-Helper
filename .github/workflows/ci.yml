@@ -28,3 +28,9 @@ jobs:
         run: make check
       - name: Копия базы восстанавливается
         run: make backup restore-check
+      - name: Веб-сервер отдаёт интерфейс и закрывает служебное
+        run: |
+          export TOKEN_ENCRYPTION_KEYS="ci:$(openssl rand -base64 32)" DOMAIN=localhost
+          docker compose --profile production up -d --build --wait caddy
+          for i in $(seq 30); do curl -sfk https://localhost/healthz >/dev/null && break; sleep 1; done
+          deploy/smoke.sh https://localhost --insecure

@@ -1,11 +1,31 @@
 # Сертификат выпускается автоматически; нужна A-запись домена и открытые порты 80 и 443.
 {$DOMAIN} {
 	encode gzip
-	reverse_proxy app:8000
+	# Запросы сервиса — короткий JSON; большое тело отбрасывается до приложения.
+	request_body {
+		max_size 1MB
+	}
+
+	# Наружу открыты только API и проверка живости; /docs и /openapi.json приложения недоступны.
+	handle /api/* {
+		reverse_proxy app:8000
+	}
+	handle /healthz {
+		reverse_proxy app:8000
+	}
+	# Остальное — собранный интерфейс; неизвестный путь отдаёт index.html.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
 	header {
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "same-origin"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
 		-Server
 	}
 }

@@ -1,5 +1,4 @@
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -8,34 +7,48 @@ from adhelper.experiments.domain.model import (
     ExperimentRules,
     ExperimentStore,
     Hypothesis,
+    IllegalTransition,
     ModerationState,
+    Observation,
     Outcome,
     Status,
     TestAlreadyRunning,
-    VariantStats,
     active_variant,
     evaluate,
+    pick_hypothesis,
+    supported_hypotheses,
     transition,
 )
 
 __all__ = [
     "ExperimentService",
     "Hypothesis",
+    "IllegalTransition",
     "ModerationState",
     "Observation",
     "TestAlreadyRunning",
+    "cancel_preparing",
+    "pick_hypothesis",
+    "supported_hypotheses",
 ]
 
 DATA_REASON = "data_untrusted"
 OUTSIDE_REASON = "changed_outside_service"
+OWNER_REASON = "owner_cancelled"
 
 
-@dataclass(frozen=True)
-class Observation:
-    control: VariantStats
-    variant: VariantStats
-    spent: int
-    data_trusted: bool = True
+async def cancel_preparing(store: ExperimentStore, experiment_id: int) -> ExperimentRecord:
+    """Отмена владельцем до начала: объявления ещё не переключались, журнал не нужен.
+
+    Идущий тест уже переключал показы, его отмена — через журнал, и она пока не сделана.
+    """
+    record = await store.get(experiment_id)
+    if record is None:
+        raise LookupError("Тест не найден")
+    if record.status is not Status.REVIEW:
+        raise IllegalTransition(f"{record.status.value} -> cancelled by owner")
+    await store.set_status(experiment_id, Status.CANCELLED, reason=OWNER_REASON)
+    return record
 
 
 class AdSwitch(Protocol):
@@ -86,8 +99,24 @@ class ExperimentService:
             account, campaign_id, control_ref, variant_ref, hypothesis.value, self._rules.version
         )
 
+    async def prepare(
+        self, account: str, campaign_id: str, control_ref: str, hypothesis: Hypothesis
+    ) -> int:
+        """Тест по итогам анализа: направление занято, вариант напишут и создадут позже.
+
+        Показы не меняются, пока вариант не одобрен модерацией.
+        """
+        return await self._store.add(
+            account, campaign_id, control_ref, None, hypothesis.value, self._rules.version
+        )
+
+    async def cancel(self, experiment_id: int) -> None:
+        await cancel_preparing(self._store, experiment_id)
+
     async def moderation(self, experiment_id: int, state: ModerationState) -> None:
         record = await self.get(experiment_id)
+        if record.variant_ref is None and state is ModerationState.APPROVED:
+            raise ValueError("У теста ещё нет варианта: запускать нечего")
         if state is ModerationState.REJECTED:
             transition(record.status, Status.CANCELLED)
             await self._store.set_status(
@@ -112,6 +141,8 @@ class ExperimentService:
     @staticmethod
     def _refs(record: ExperimentRecord, target: str) -> tuple[str, str]:
         """Включаемое и выключаемое объявление."""
+        if record.variant_ref is None:
+            raise ValueError("У теста ещё нет варианта")
         if target == "B":
             return record.variant_ref, record.control_ref
         return record.control_ref, record.variant_ref

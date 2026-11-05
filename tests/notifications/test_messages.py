@@ -57,3 +57,19 @@ def test_retries_grow_then_stop() -> None:
     assert all(d is not None for d in delays[:5])
     assert [d - AT for d in delays[:5] if d] == sorted(d - AT for d in delays[:5] if d)
     assert delays[5] is None
+
+
+def test_rejected_ad_names_ad_reason_and_what_to_do() -> None:
+    details = {
+        "headline": "Маникюр за 1500 ₽",
+        "reason": "Яндекс не принимает слова вроде «лучший» и «самый»",
+        "count": 2,
+    }
+    message = compose("ads_rejected", "Лак", AT, None, details, URL)
+    assert message.subject == "Яндекс отклонил объявление — Лак"
+    assert "«Маникюр за 1500 ₽»" in message.text
+    assert "«лучший»" in message.text and "Таких объявлений 2" in message.text
+    assert "отключите" in message.text
+    # Без подробностей текст не выдумывает причину.
+    bare = compose("ads_rejected", "Лак", AT, None, {}, URL)
+    assert "Причина" not in bare.text

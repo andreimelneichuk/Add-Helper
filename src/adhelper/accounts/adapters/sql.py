@@ -21,6 +21,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Mapped, mapped_column
 
+from adhelper.accounts.adapters.crypto import DecryptionFailed
+from adhelper.accounts.domain.marking import AdvertiserKind, Marking
 from adhelper.accounts.domain.model import (
     AccountState,
     AdAccount,
@@ -33,7 +35,7 @@ from adhelper.accounts.domain.model import (
     StoredTokens,
     User,
 )
-from adhelper.accounts.domain.ports import AccountTaken
+from adhelper.accounts.domain.ports import AccountTaken, TokenCipher
 from adhelper.db import Base
 
 ACTIVE_ACCOUNT_INDEX = "uq_ad_accounts_active_platform_login"
@@ -360,3 +362,85 @@ async def logins_of_business(
     )
     async with sessions() as session:
         return list(await session.scalars(statement))
+
+
+class MarkingRow(Base):
+    __tablename__ = "advertiser_marking"
+
+    business_id: Mapped[UUID] = mapped_column(ForeignKey("businesses.id"), primary_key=True)
+    kind: Mapped[str] = mapped_column(Text)
+    encrypted_inn: Mapped[str] = mapped_column(Text)
+    encrypted_name: Mapped[str] = mapped_column(Text)
+    encrypted_phone: Mapped[str | None] = mapped_column(Text)
+    okved: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+def marking_context(business_id: UUID, field: str) -> str:
+    return f"marking:{business_id}:{field}"
+
+
+class SqlMarking:
+    """Маркировка одного бизнеса. Единственное место, где ИНН расшифровывается."""
+
+    def __init__(
+        self, sessions: async_sessionmaker[AsyncSession], business_id: UUID, cipher: TokenCipher
+    ) -> None:
+        self._sessions = sessions
+        self._business_id = business_id
+        self._cipher = cipher
+
+    def _seal(self, value: str, field: str) -> str:
+        return self._cipher.encrypt(value, marking_context(self._business_id, field))
+
+    def _open(self, value: str, field: str) -> str:
+        return self._cipher.decrypt(value, marking_context(self._business_id, field))
+
+    async def get(self) -> Marking | None:
+        async with self._sessions() as session:
+            row = await session.get(MarkingRow, self._business_id)
+        if row is None:
+            return None
+        try:
+            return Marking(
+                AdvertiserKind(row.kind),
+                self._open(row.encrypted_inn, "inn"),
+                self._open(row.encrypted_name, "name"),
+                None if row.encrypted_phone is None else self._open(row.encrypted_phone, "phone"),
+                row.okved,
+            )
+        except DecryptionFailed:
+            # Чужой шифртекст или потерянный ключ: данных нет, владелец введёт их заново.
+            return None
+
+    async def save(self, marking: Marking) -> None:
+        fields = {
+            "kind": marking.kind.value,
+            "encrypted_inn": self._seal(marking.inn, "inn"),
+            "encrypted_name": self._seal(marking.name, "name"),
+            "encrypted_phone": None
+            if marking.phone is None
+            else self._seal(marking.phone, "phone"),
+            "okved": marking.okved,
+            "updated_at": func.now(),
+        }
+        statement = (
+            insert(MarkingRow)
+            .values(business_id=self._business_id, **fields)
+            .on_conflict_do_update(index_elements=[MarkingRow.business_id], set_=fields)
+        )
+        async with self._sessions.begin() as session:
+            await session.execute(statement)
+
+
+async def account_states(
+    sessions: async_sessionmaker[AsyncSession], business_id: UUID
+) -> list[tuple[str, AccountState]]:
+    """Кабинеты бизнеса и их состояние: для проверки готовности к запуску."""
+    statement = (
+        select(AdAccountRow.external_login, AdAccountRow.state)
+        .where(AdAccountRow.business_id == business_id)
+        .order_by(AdAccountRow.external_login)
+    )
+    async with sessions() as session:
+        return [(login, AccountState(state)) for login, state in await session.execute(statement)]

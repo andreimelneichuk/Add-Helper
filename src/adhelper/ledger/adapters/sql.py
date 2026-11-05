@@ -70,6 +70,7 @@ def _to_change(row: ChangeRow) -> Change:
         failure_reason=row.failure_reason,
         decision_id=row.decision_id,
         reverts_change_id=row.reverts_change_id,
+        idempotency_key=row.idempotency_key,
     )
 
 
@@ -162,6 +163,19 @@ class SqlChangeRepository:
                 ChangeRow.business_id == self._business_id,
                 ChangeRow.account == account,
                 ChangeRow.target_ref == target_ref,
+            )
+            .order_by(ChangeRow.id)
+        )
+        async with self._sessions() as session:
+            return [_to_change(row) for row in await session.scalars(statement)]
+
+    async def with_key_prefix(self, account: str, prefix: str) -> Sequence[Change]:
+        statement = (
+            select(ChangeRow)
+            .where(
+                ChangeRow.business_id == self._business_id,
+                ChangeRow.account == account,
+                ChangeRow.idempotency_key.startswith(prefix, autoescape=True),
             )
             .order_by(ChangeRow.id)
         )

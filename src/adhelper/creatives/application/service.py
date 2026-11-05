@@ -5,19 +5,24 @@ from datetime import datetime, timedelta
 from uuid import UUID
 
 from adhelper.creatives.application.generate import generate_ads
+from adhelper.creatives.application.rework import rework_ad
 from adhelper.creatives.domain.lifecycle import (
     WAITING,
     AdBasis,
     Audience,
     CreativeState,
+    FactPlan,
     FactSource,
+    LiveAd,
     SlotRules,
     StoredCreative,
     WritingSet,
     ad_basis,
     fact_sources,
     new_creatives,
+    plan_fact_updates,
     plan_slots,
+    unconfirmed_numbers,
 )
 from adhelper.creatives.domain.model import (
     AdDraft,
@@ -34,6 +39,7 @@ from adhelper.creatives.domain.ports import (
     Creatives,
     ProfileSource,
 )
+from adhelper.creatives.domain.rework import ReworkRules
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +47,7 @@ logger = logging.getLogger(__name__)
 # чем creatives-1, при той же доле пойманного: docs/05-creatives.md §7.
 CURRENT_RULES = "creatives-2"
 CURRENT_SLOT_RULES = "ads-1"
+CURRENT_REWORK_RULES = "rework-1"
 # Генерация с судьёй укладывается в минуты; дольше — воркер упал посреди набора.
 STALE_AFTER = timedelta(minutes=15)
 # Каждая попытка тратит вызовы модели, поэтому повторов немного.
@@ -78,6 +85,7 @@ async def run_queued(
     load_rules: Callable[[str], CreativeRules],
     clock: Callable[[], datetime],
     limit: int = 5,
+    load_rework: Callable[[str], ReworkRules] | None = None,
 ) -> int:
     """Разбирает очередь. Повтор безопасен: набор, зависший в работе, берётся заново,
     пока не исчерпаны попытки, а готовый набор второй раз не генерируется.
@@ -88,14 +96,20 @@ async def run_queued(
         claimed = await queue.claim(now, now - STALE_AFTER, MAX_ATTEMPTS)
         if claimed is None:
             break
-        profile = await profiles.profile(claimed.business_id)
+        profile = claimed.profile
+        if profile is None and claimed.business_id is not None:
+            profile = await profiles.profile(claimed.business_id)
         if profile is None or not profile.services:
             await queue.fail(claimed.id, "no_profile", clock())
             continue
         try:
-            result = await generate_ads(
-                profile, model, load_rules(claimed.rules_version), judge, claimed.campaign_name
-            )
+            rules = load_rules(claimed.rules_version)
+            if claimed.rework is not None and claimed.rework_rules and load_rework is not None:
+                result = await rework_ad(
+                    profile, claimed.rework, model, rules, load_rework(claimed.rework_rules), judge
+                )
+            else:
+                result = await generate_ads(profile, model, rules, judge, claimed.campaign_name)
         except Exception as error:
             # В логе только тип: текст ошибки может содержать ответ модели или ключ.
             logger.error("Генерация набора %s: %s", claimed.id, type(error).__name__)
@@ -118,8 +132,10 @@ async def keep_ads(
     slot_rules: SlotRules,
     creative_rules: CreativeRules,
     now: datetime,
-) -> None:
-    """Один цикл хранителя: снять устаревшее, занять места, заказать тексты.
+    rework_rules: str = CURRENT_REWORK_RULES,
+) -> FactPlan:
+    """Один цикл хранителя: снять устаревшее, занять места, заказать тексты, заменить
+    работающие объявления, где факт в профиле изменился.
 
     Повтор безопасен: план строится из текущих строк, переходы проверяют исходное состояние.
     """
@@ -135,11 +151,59 @@ async def keep_ads(
         profile.niche.strip().lower() in creative_rules.sensitive_niches,
     )
     await slots.apply(plan, creative_rules.version, now)
+    facts = FactPlan((), (), ())
+    if profile.services:
+        facts = plan_fact_updates(
+            profile,
+            await slots.live_ads(),
+            await slots.replacements(),
+            await slots.rewriting(),
+            sets_left - len(plan.requests),
+        )
+        await slots.apply_facts(facts, creative_rules.version, rework_rules, now)
     for kind in ATTENTION_KINDS:
         if kind in plan.attention:
             await attention.raise_alert(kind, {})
         else:
             await attention.resolve(kind)
+    return facts
+
+
+@dataclass(frozen=True)
+class OutdatedAd:
+    """Работающее объявление с числом, которого в профиле больше нет."""
+
+    ad: LiveAd
+    numbers: tuple[str, ...]
+    # Замена пишется или уже ждёт отправки; иначе лимит наборов на сутки исчерпан.
+    replacing: bool
+
+
+async def refresh_after_profile(
+    business_id: UUID,
+    slots: AdSlots,
+    profiles: ProfileSource,
+    attention: Attention,
+    slot_rules: SlotRules,
+    creative_rules: CreativeRules,
+    now: datetime,
+) -> list[OutdatedAd]:
+    """Владелец сохранил профиль: цикл хранителя сразу, а не через 5 минут.
+
+    Возвращает объявления, которые показывают старый факт, чтобы владелец знал о них.
+    """
+    facts = await keep_ads(business_id, slots, profiles, attention, slot_rules, creative_rules, now)
+    profile = await profiles.profile(business_id)
+    if profile is None:
+        return []
+    later = {ad.ad_id for ad in facts.later}
+    outdated = []
+    for ad in await slots.live_ads():
+        numbers = unconfirmed_numbers(ad.draft, profile)
+        if numbers:
+            replacing = bool(profile.services) and ad.ad_id not in later
+            outdated.append(OutdatedAd(ad, numbers, replacing))
+    return outdated
 
 
 class WrongState(Exception):

@@ -1,0 +1,26 @@
+.ah-chat {
+  --chat-x: 24px;
+  display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; margin: var(--pad) var(--gutter) var(--gap); overflow: hidden; border-radius: var(--r-surface); background: var(--panel);
+}
+
+.ah-chat-log { display: flex; flex: 1; flex-direction: column; min-height: 0; padding: 20px var(--chat-x); overflow-y: auto; }
+/* margin-top: auto прижимает короткую переписку к полю ввода. */
+.ah-chat-msgs { display: flex; flex: none; flex-direction: column; gap: var(--gap); width: 100%; max-width: 800px; margin: auto auto 0; }
+.ah-chat-msg { max-width: 88%; padding: 10px 16px; border-radius: 20px; white-space: pre-line; overflow-wrap: anywhere; }
+.ah-chat-msg-ai { align-self: flex-start; border-bottom-left-radius: 6px; background: var(--canvas); }
+.ah-chat-msg-me { align-self: flex-end; border-bottom-right-radius: 6px; background: var(--accent); color: var(--on-accent); }
+.ah-chat-msg-note { align-self: center; max-width: 100%; padding: 0; color: var(--muted); font-size: var(--t-caption); }
+.ah-chat-link { display: flex; margin-top: 8px; }
+
+.ah-chat-bottom { flex: none; padding: var(--gap) var(--chat-x) var(--pad); border-top: 1px solid var(--line); }
+.ah-chat-col { display: flex; flex-direction: column; gap: 8px; max-width: 800px; margin: 0 auto; }
+.ah-chat-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+
+.ah-chat-form { display: flex; gap: 8px; }
+.ah-chat-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.ah-chat .ah-chat-input { flex: 1; width: auto; }
+.ah-chat-send { width: var(--control); padding: 0; }
+
+@media (max-width: 767px) {
+  .ah-chat { --chat-x: 16px; }
+}

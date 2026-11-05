@@ -1,0 +1,134 @@
+"""Шаг «Объявления» мастера: писатель до входа, выбор переносится в бизнес после входа."""
+
+import httpx
+
+from adhelper.creatives.adapters.rules_file import load_rules, load_wizard_rules
+from adhelper.creatives.adapters.sql import SqlCreativeQueue, SqlProfileSource
+from adhelper.creatives.application.service import run_queued
+from adhelper.creatives.application.wizard import CURRENT_WIZARD_RULES
+from tests.accounts.fake_provider import FakeProvider
+from tests.accounts.test_flow import BORIS, Browser, _login
+from tests.api.test_cabinet import NOW, Sessions
+from tests.api.test_guest_site import Guest, guest  # noqa: F401
+from tests.api.test_site import Anna, anna  # noqa: F401
+from tests.creatives.test_service import GOOD, SECOND, FakeModel, ads
+
+WIZARD = load_wizard_rules(CURRENT_WIZARD_RULES)
+DRAFT = {
+    "niche": "маникюр",
+    "address": "ул. Ленина, 5",
+    "services": [{"name": "Маникюр", "price": 1500}],
+    "features": ["Стерильные инструменты"],
+}
+
+
+async def write(sessions: Sessions, model: FakeModel | None = None) -> None:
+    await run_queued(
+        SqlCreativeQueue(sessions),
+        SqlProfileSource(sessions),
+        model or FakeModel(ads(GOOD, SECOND)),
+        None,
+        load_rules,
+        lambda: NOW,
+    )
+
+
+async def written(client: httpx.AsyncClient, sessions: Sessions) -> tuple[int, str]:
+    queued = await client.post("/api/creative-sets", json=DRAFT)
+    assert queued.status_code == 202, queued.text
+    body = queued.json()
+    await write(sessions)
+    return body["id"], body["token"]
+
+
+async def test_guest_gets_ads_written_from_draft(guest: Guest, sessions: Sessions) -> None:  # noqa: F811
+    client = guest("203.0.113.5")
+    queued = await client.post("/api/creative-sets", json=DRAFT)
+    assert queued.status_code == 202
+    body = queued.json()
+    assert body["status"] == "queued" and len(body["token"]) >= 32
+    path = f"/api/creative-sets/{body['id']}"
+    headers = {"X-Set-Token": body["token"]}
+    assert (await client.get(path, headers=headers)).json()["status"] == "queued"
+
+    await write(sessions)
+    view = (await client.get(path, headers=headers)).json()
+    assert view["status"] == "ready"
+    assert view["source"] == "model"
+    assert [a["headline"] for a in view["ads"]] == [GOOD["headline"], SECOND["headline"]]
+    # Владелец видит, на какие свои факты опирается объявление.
+    assert "цена услуги «Маникюр»" in view["ads"][0]["facts"]
+    assert view["needs_review"] is False
+
+    assert (await client.get(path)).status_code == 404
+    assert (await client.get(path, headers={"X-Set-Token": "x" * 40})).status_code == 404
+
+
+async def test_draft_without_services_is_refused(guest: Guest) -> None:  # noqa: F811
+    client = guest("203.0.113.5")
+    refused = await client.post("/api/creative-sets", json={**DRAFT, "services": []})
+    assert refused.status_code == 422
+    assert "услуг" in refused.json()["detail"]
+
+
+async def test_guest_limit_per_network(guest: Guest, sessions: Sessions) -> None:  # noqa: F811
+    client = guest("203.0.113.5")
+    for _ in range(WIZARD.max_guest_sets_per_address):
+        assert (await client.post("/api/creative-sets", json=DRAFT)).status_code == 202
+    refused = await client.post("/api/creative-sets", json=DRAFT)
+    assert refused.status_code == 429
+    assert "завтра" in refused.json()["detail"]
+    assert (await guest("198.51.100.7").post("/api/creative-sets", json=DRAFT)).status_code == 202
+
+
+async def test_sensitive_niche_is_marked(guest: Guest, sessions: Sessions) -> None:  # noqa: F811
+    client = guest("203.0.113.5")
+    body = (await client.post("/api/creative-sets", json={**DRAFT, "niche": "косметология"})).json()
+    await write(sessions)
+    view = (
+        await client.get(f"/api/creative-sets/{body['id']}", headers={"X-Set-Token": body["token"]})
+    ).json()
+    assert view["needs_review"] is True
+
+
+async def test_owner_keeps_chosen_ads_after_login(
+    anna: Anna,  # noqa: F811
+    sessions: Sessions,
+    browser: Browser,
+    provider: FakeProvider,
+) -> None:
+    client, csrf, business_id = anna
+    headers = {"X-CSRF-Token": csrf}
+    base = f"/api/businesses/{business_id}"
+    assert (await client.get(f"{base}/wizard-ads")).json() == {"ads": []}
+
+    set_id, token = await written(client, sessions)
+    adopt = f"{base}/creative-sets/adopt"
+    for kept, words in (([], "хотя бы одно"), ([5], "хотя бы одно")):
+        refused = await client.post(
+            adopt, json={"id": set_id, "token": token, "kept": kept}, headers=headers
+        )
+        assert refused.status_code == 422, kept
+        assert words in refused.json()["detail"]
+    wrong = await client.post(
+        adopt, json={"id": set_id, "token": "x" * 40, "kept": [0]}, headers=headers
+    )
+    assert wrong.status_code == 404
+    no_csrf = await client.post(adopt, json={"id": set_id, "token": token, "kept": [1]})
+    assert no_csrf.status_code == 403
+
+    done = await client.post(
+        adopt, json={"id": set_id, "token": token, "kept": [1]}, headers=headers
+    )
+    assert done.status_code == 200, done.text
+    chosen = (await client.get(f"{base}/wizard-ads")).json()["ads"]
+    assert [a["headline"] for a in chosen] == [SECOND["headline"]]
+    # Повтор переноса после сбоя проходит.
+    again = await client.post(
+        adopt, json={"id": set_id, "token": token, "kept": [1]}, headers=headers
+    )
+    assert again.status_code == 200
+
+    other = browser()
+    await _login(other, provider, BORIS)
+    assert (await other.get(f"{base}/wizard-ads")).status_code == 404

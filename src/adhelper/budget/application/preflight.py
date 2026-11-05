@@ -5,9 +5,10 @@ from uuid import UUID
 
 from adhelper.budget.application.guard import check_change
 from adhelper.budget.domain.limits import BudgetPeriod, LimitChange
+from adhelper.budget.domain.owner import check_resume
 from adhelper.budget.domain.ports import BudgetPlatform, PeriodStore, PlatformUnavailable
 from adhelper.budget.domain.rules import BudgetRules
-from adhelper.budget.domain.watch import BurnRate, burn_from_history
+from adhelper.budget.domain.watch import BurnRate, burn_from_history, corrected_spend, freshest
 from adhelper.ledger.domain.model import Change, ChangeKind
 from adhelper.ledger.domain.ports import GatewayUnavailable
 
@@ -54,6 +55,10 @@ class StoredPeriodPreflight:
     rules_for: Callable[[str], BudgetRules]
 
     async def __call__(self, change: Change) -> str | None:
+        if change.kind is ChangeKind.RESUME:
+            return await self._resume(change)
+        if change.kind is ChangeKind.CREATE_CAMPAIGN:
+            return await self._create(change)
         if change.kind is not ChangeKind.SET_LIMIT:
             return None
         now = self.clock()
@@ -64,3 +69,44 @@ class StoredPeriodPreflight:
         burn = burn_from_history(await self.store.recent_snapshots(record.id))
         rules = self.rules_for(record.rules_version)
         return await BudgetPreflight(self.platform, record.period, burn, self.clock, rules)(change)
+
+    async def _create(self, change: Change) -> str | None:
+        """Новая кампания: её лимит вместе со всеми лимитами кабинета в рамках рабочего бюджета.
+
+        Считаем и приостановленные кампании, и созданные вне сервиса: их могут включить.
+        """
+        record = await self.store.active_for(self.business_id, change.account, self.clock())
+        if record is None:
+            return "no_active_period"
+        if record.stop_pending:
+            return "budget_stop_pending"
+        ends_at = datetime.fromisoformat(change.planned["ends_at"])
+        if record.period.ends_at is not None and ends_at > record.period.ends_at:
+            return "ends_after_period"
+        try:
+            campaigns = await self.platform.read_campaigns(change.account)
+        except PlatformUnavailable as error:
+            raise GatewayUnavailable(str(error)) from error
+        total = sum(c.limit for c in campaigns) + int(change.planned["limit"])
+        if total > record.period.operating_budget:
+            return "exceeds_operating_budget"
+        return None
+
+    async def _resume(self, change: Change) -> str | None:
+        """Включение кампании проверяем по свежему факту: пока она стояла, деньги могли уйти."""
+        now = self.clock()
+        record = await self.store.active_for(self.business_id, change.account, now)
+        if record is None:
+            return "no_active_period"
+        if record.stop_pending:
+            return "budget_stop_pending"
+        history = await self.store.recent_snapshots(record.id)
+        burn = burn_from_history(history)
+        try:
+            campaigns = await self.platform.read_campaigns(change.account)
+            snapshot = await self.platform.fetch_spend(change.account)
+        except PlatformUnavailable as error:
+            raise GatewayUnavailable(str(error)) from error
+        spent = corrected_spend(freshest(snapshot, history), burn, now)
+        reason = check_resume(record.period, campaigns, change.target_ref, spent, now)
+        return reason.value if reason else None

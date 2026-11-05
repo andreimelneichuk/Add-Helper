@@ -7,8 +7,18 @@ from typing import Any
 class ChangeKind(StrEnum):
     SET_LIMIT = "set_limit"
     PAUSE = "pause"
+    RESUME = "resume"
     PAUSE_AD = "pause_ad"
     RESUME_AD = "resume_ad"
+    SET_SCHEDULE = "set_schedule"
+    SET_REGIONS = "set_regions"
+    # Новая кампания запуска. Отмены нет: созданное останавливают паузой, а не удалением.
+    CREATE_CAMPAIGN = "create_campaign"
+    # Новое объявление в работающей кампании: замена, ремонт после отказа или место в направлении.
+    # Отмены нет: объявление останавливают приостановкой, а не удалением.
+    CREATE_AD = "create_ad"
+    # Данные рекламодателя для маркировки. Отмены нет: без них показ без маркировки незаконен.
+    SET_ADVERTISER = "set_advertiser"
 
 
 class ChangeSource(StrEnum):
@@ -58,6 +68,7 @@ class Change:
     failure_reason: str | None
     decision_id: str | None = None
     reverts_change_id: int | None = None
+    idempotency_key: str | None = None
 
 
 class ExecutionStep(StrEnum):

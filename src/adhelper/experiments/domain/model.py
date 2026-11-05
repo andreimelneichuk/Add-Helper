@@ -26,6 +26,30 @@ class Hypothesis(StrEnum):
     CALL_TO_ACTION = "call_to_action"
 
 
+# Какие факты профиля нужны гипотезе. Скидок, отзывов и изображений профиль не хранит,
+# поэтому такие гипотезы не предлагаются: факты в рекламе только из профиля.
+NEEDS_PRICES = frozenset({Hypothesis.PRICE})
+NEEDS_FEATURES = frozenset({Hypothesis.BENEFIT})
+NEEDS_NOTHING = frozenset({Hypothesis.CALL_TO_ACTION})
+
+
+def supported_hypotheses(has_prices: bool, has_features: bool) -> set[Hypothesis]:
+    supported = set(NEEDS_NOTHING)
+    if has_prices:
+        supported |= NEEDS_PRICES
+    if has_features:
+        supported |= NEEDS_FEATURES
+    return supported
+
+
+def pick_hypothesis(supported: set[Hypothesis], tried: set[str]) -> Hypothesis | None:
+    """Первая по закрытому списку, которую ещё не проверяли на этом объявлении."""
+    for hypothesis in Hypothesis:
+        if hypothesis in supported and hypothesis.value not in tried:
+            return hypothesis
+    return None
+
+
 class ModerationState(StrEnum):
     APPROVED = "approved"
     REJECTED = "rejected"
@@ -81,6 +105,16 @@ class VariantStats:
 
 
 @dataclass(frozen=True)
+class Observation:
+    """Наблюдение за тестом на момент шага: статистика групп, траты, доверие к данным."""
+
+    control: VariantStats
+    variant: VariantStats
+    spent: int
+    data_trusted: bool = True
+
+
+@dataclass(frozen=True)
 class Evaluation:
     outcome: Outcome
     winner: str | None
@@ -94,7 +128,7 @@ class ExperimentRecord:
     account: str
     campaign_id: str
     control_ref: str
-    variant_ref: str
+    variant_ref: str | None
     hypothesis: str
     status: Status
     reason: str | None
@@ -113,7 +147,7 @@ class ExperimentStore(Protocol):
         account: str,
         campaign_id: str,
         control_ref: str,
-        variant_ref: str,
+        variant_ref: str | None,
         hypothesis: str,
         rules_version: str,
     ) -> int: ...

@@ -38,6 +38,7 @@ from adhelper.creatives.domain.model import (
     Service,
     SetStatus,
 )
+from tests.claims import with_claims
 from tests.seed import seed_account
 
 NOW = datetime(2026, 11, 1, 9, 0, tzinfo=UTC)
@@ -65,7 +66,7 @@ class FakeModel:
         self.prompts.append(user)
         if isinstance(self.reply, Exception):
             raise self.reply
-        return ModelReply(self.reply, 100)
+        return ModelReply(with_claims(self.reply, user), 100)
 
 
 class FakeAttention:

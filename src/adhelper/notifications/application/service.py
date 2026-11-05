@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from uuid import UUID
 
 from adhelper.notifications.domain.messages import compose
-from adhelper.notifications.domain.model import Channel, Message, next_attempt
+from adhelper.notifications.domain.model import NOTICES, Channel, Message, next_attempt
 from adhelper.notifications.domain.ports import (
     MoneySource,
     Outbox,
@@ -43,7 +43,7 @@ async def deliver_pending(
     sent = 0
     channels = [Channel(name) for name in senders]
     for delivery in await outbox.claim(channels, now, BATCH):
-        if delivery.resolved:
+        if delivery.resolved and delivery.kind not in NOTICES:
             await outbox.skipped(delivery.id, "resolved")
             continue
         if delivery.address is None:

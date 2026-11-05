@@ -4,6 +4,9 @@ from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
+# Сводки, а не проблемы: пишутся сразу закрытыми, в «Сегодня» не висят, но доставляются.
+NOTICES = frozenset({"ads_launched"})
+
 
 class Channel(StrEnum):
     EMAIL = "email"

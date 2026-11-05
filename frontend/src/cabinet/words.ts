@@ -21,6 +21,9 @@ export const CHANGE_KIND: Record<string, string> = {
   pause: "Остановка показов",
   pause_ad: "Отключено объявление",
   resume_ad: "Включено объявление",
+  create_campaign: "Создана кампания",
+  create_ad: "Объявление отправлено на проверку",
+  set_advertiser: "Данные для маркировки переданы в Яндекс",
 };
 
 export const VERDICT: Record<string, string> = {
@@ -47,6 +50,9 @@ export const CREATIVE_STATE: Record<string, { label: string; tone: "ok" | "off" 
   needs_owner: { label: "Ждёт вашего решения", tone: "warn" },
   stopped: { label: "Снято системой", tone: "off" },
   withdrawn: { label: "Снято вами", tone: "off" },
+  moderation: { label: "Проверка Яндексом", tone: "warn" },
+  running: { label: "Работает", tone: "ok" },
+  rejected: { label: "Отклонено Яндексом", tone: "warn" },
 };
 
 export const STATE_REASON: Record<string, string> = {
@@ -58,6 +64,16 @@ export const STATE_REASON: Record<string, string> = {
   fact_changed: "В профиле изменилась цена или другой факт, на который оно опиралось.",
   owner: "Вы решили его не запускать.",
   owner_confirmed: "Вы разрешили запуск.",
+  sent: "Отправлено на проверку Яндексу.",
+  accepted: "Яндекс одобрил, идут показы.",
+  repairing: "Яндекс отклонил. Переписываем с учётом причины.",
+  needs_owner: "Яндекс отклонил, а переписать само не получилось.",
+  superseded: "Его заменило одобренное объявление.",
+  replaced: "Его заменило новое объявление.",
+  moderation_rejected: "Переписано после отказа Яндекса.",
+  owner_stopped: "Вы отключили его.",
+  owner_resumed: "Вы вернули его, Яндекс проверяет снова.",
+  lost_test: "Проиграло проверку: другой вариант за тот же срок приводил заметно больше обращений.",
 };
 
 // Что будет дальше: часть объяснения, которую владелец ищет в первую очередь.
@@ -69,12 +85,16 @@ export const CREATIVE_NEXT: Record<string, string> = {
     "Без вас не запускаем: ниша требует осторожности или смысл текста не удалось проверить автоматически. Запустите его или откажитесь — тогда напишем другое.",
   stopped: "Показов не будет. Если на его месте нужна замена, она уже пишется.",
   withdrawn: "Показов не будет. На его место напишем другое.",
+  moderation: "Яндекс проверяет, обычно несколько часов. Прежнее объявление работает до одобрения.",
+  running: "Идут показы. Отключить можно на экране объявления.",
+  rejected: "Если переписать не получится, мы попросим вас решить.",
 };
 
 export const WRITE_REASON: Record<string, string> = {
   new_campaign: "для нового направления",
   fact_changed: "взамен устаревшего",
   refill: "на освободившееся место",
+  moderation_rejected: "после отказа Яндекса",
 };
 
 export const PLACEMENT: Record<string, string> = {
@@ -94,4 +114,5 @@ export const ALERT: Record<string, AlertText> = {
   platform_not_connected: { title: "Кабинет Яндекс Директа не подключён", tone: "warn" },
   ads_no_profile: { title: "Не о чем писать объявления: добавьте услуги в профиль", tone: "warn" },
   ads_need_confirmation: { title: "Новые объявления ждут вашего решения", tone: "warn" },
+  ads_rejected: { title: "Яндекс отклонил объявление, переписать не вышло", tone: "warn" },
 };

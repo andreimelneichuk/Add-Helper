@@ -1,0 +1,19 @@
+.ah-hist { padding-block: 8px; }
+.ah-hist-filters { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 0 var(--gap); }
+
+.ah-hist-row { display: grid; grid-template-columns: 70px minmax(0, 1fr) 210px; gap: 4px var(--pad); padding: var(--gap) 0; border-top: 1px solid var(--line); }
+.ah-hist-when { color: var(--muted); font-size: var(--t-caption); }
+.ah-hist-body { min-width: 0; overflow-wrap: anywhere; }
+.ah .ah-hist-title { font-size: var(--t-body); font-weight: 600; }
+.ah-hist-text { color: var(--muted); }
+.ah .ah-hist-note { margin-top: 8px; }
+.ah-hist-empty { padding: var(--gap) 0; border-top: 1px solid var(--line); color: var(--muted); }
+
+.ah-hist-actions { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 8px; }
+.ah-hist-state { color: var(--muted); font-size: var(--t-caption); text-align: right; }
+
+@media (max-width: 767px) {
+  .ah-hist-row { grid-template-columns: minmax(0, 1fr); }
+  .ah-hist-actions { justify-content: flex-start; }
+  .ah-hist-state { text-align: left; }
+}

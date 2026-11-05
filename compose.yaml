@@ -8,6 +8,8 @@ x-app: &app
     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Задайте POSTGRES_PASSWORD в .env}
     TOKEN_ENCRYPTION_KEYS: ${TOKEN_ENCRYPTION_KEYS:-}
     PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
+    YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID:-}
+    YANDEX_CLIENT_SECRET: ${YANDEX_CLIENT_SECRET:-}
     TEXT_MODEL_BASE_URL: ${TEXT_MODEL_BASE_URL:-https://ai.api.cloud.yandex.net/v1}
     TEXT_MODEL_API_KEY: ${TEXT_MODEL_API_KEY:-}
     TEXT_MODEL_PROJECT: ${TEXT_MODEL_PROJECT:-}
@@ -56,6 +58,9 @@ services:
       - 0.0.0.0
       - --port
       - "8000"
+      # Адрес человека берём из X-Forwarded-For: порт приложения открыт только Caddy.
+      - --proxy-headers
+      - --forwarded-allow-ips=*
     ports:
       - "127.0.0.1:${APP_PORT:-8000}:8000"
     depends_on:
@@ -86,7 +91,9 @@ services:
 
   # Только для сервера: docker compose --profile production up -d
   caddy:
-    image: caddy:2.8-alpine
+    build:
+      context: .
+      dockerfile: deploy/web.Dockerfile
     profiles: [production]
     environment:
       DOMAIN: ${DOMAIN:-}
@@ -94,7 +101,6 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:

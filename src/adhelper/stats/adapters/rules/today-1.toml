@@ -1,0 +1,22 @@
+# Карточки «Сегодня»: docs/10-redesign.md §4. Меньше число — выше карточка.
+version = "today-1"
+# Лента конечна: до 5 карточек, дальше «На сегодня всё».
+max_cards = 5
+# Своё последнее действие напоминаем неделю: позже отмена в истории.
+last_action_days = 7
+# Новый вид тревоги без своего места встаёт сюда, а не теряется.
+unknown_alert = 55
+
+[priority]
+"alert:balance_mismatch" = 10
+"alert:budget_stop_pending" = 10
+"alert:zero_balance" = 20
+"alert:platform_not_connected" = 30
+"alert:budget_stopped" = 40
+"alert:platform_unavailable" = 50
+"alert:ads_need_confirmation" = 60
+"alert:ads_no_profile" = 60
+paused = 65
+"alert:budget_near_limit" = 70
+summary = 80
+last_action = 90

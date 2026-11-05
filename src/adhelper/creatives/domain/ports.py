@@ -1,4 +1,5 @@
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID
@@ -8,12 +9,22 @@ from adhelper.creatives.domain.lifecycle import (
     CampaignSlots,
     Candidate,
     CreativeState,
+    FactPlan,
+    LiveAd,
     NewCreative,
+    Replacement,
     SlotPlan,
     StoredCreative,
     WritingSet,
 )
-from adhelper.creatives.domain.model import BusinessProfile, ClaimedSet, CreativeSet
+from adhelper.creatives.domain.model import (
+    AdDraft,
+    BusinessProfile,
+    ClaimedSet,
+    CreativeSet,
+    Rework,
+)
+from adhelper.creatives.domain.moderation import Checking, ModerationPlan, ModerationRules
 
 
 class ProfileSource(Protocol):
@@ -40,6 +51,18 @@ class AdSlots(Protocol):
     async def open_sets(self) -> frozenset[tuple[str, str]]: ...
     async def sets_since(self, since: datetime) -> int: ...
     async def apply(self, plan: SlotPlan, creative_rules: str, now: datetime) -> None: ...
+    async def live_ads(self) -> Sequence[LiveAd]: ...
+    async def replacements(self) -> Sequence[Replacement]: ...
+    async def rewriting(self) -> frozenset[str]: ...
+    async def apply_facts(
+        self, plan: FactPlan, creative_rules: str, rework_rules: str, now: datetime
+    ) -> None: ...
+
+
+class Notices(Protocol):
+    """Сводка владельцу один раз на ключ. False — уже отправляли."""
+
+    async def notice(self, kind: str, key: str, details: Mapping[str, Any]) -> bool: ...
 
 
 class Attention(Protocol):
@@ -64,3 +87,56 @@ class Creatives(Protocol):
         reason: str,
         now: datetime,
     ) -> bool: ...
+
+
+class ReworkStore(Protocol):
+    """Переделки одного бизнеса: объявление площадки и заказ вариантов."""
+
+    async def live_ad(self, account: str, ad_id: str) -> tuple[str, AdDraft] | None: ...
+    async def request(
+        self,
+        account: str,
+        campaign_id: str,
+        rework: Rework,
+        rules_version: str,
+        rework_version: str,
+        variants: int,
+        now: datetime,
+    ) -> int: ...
+
+
+@dataclass(frozen=True)
+class Outgoing:
+    """Объявление, занявшее место и ждущее отправки на площадку."""
+
+    creative_id: int
+    account: str
+    campaign_id: str
+    draft: AdDraft
+    href: str
+
+
+class ModerationStore(Protocol):
+    """Отправка и проверка объявлений одного бизнеса. Каждый запрос ограничен business_id."""
+
+    async def accounts(self) -> Sequence[str]: ...
+    async def outgoing(self) -> Sequence[Outgoing]: ...
+    async def sent(self, creative_id: int, ad_id: str, href: str, now: datetime) -> bool: ...
+    async def checking(self) -> Sequence[Checking]: ...
+    async def last_rejections(self) -> Mapping[tuple[str, str], str]: ...
+    async def apply(
+        self,
+        plan: ModerationPlan,
+        rules: ModerationRules,
+        creative_rules: str,
+        rework_rules: str,
+        now: datetime,
+    ) -> Sequence[LiveAd]: ...
+    async def replaced(self, account: str, ad_id: str, now: datetime) -> None: ...
+    async def waiting_owner(self) -> Sequence[Mapping[str, str]]: ...
+    async def on_platform(self, account: str) -> Sequence[tuple[str, str, str]]: ...
+    async def owner_stopped(self, account: str, ad_id: str, now: datetime) -> None: ...
+    async def owner_resumed(self, account: str, ad_id: str, now: datetime) -> None: ...
+    async def lost_tests(self, account: str) -> Sequence[str]: ...
+    async def lost_test(self, account: str, ad_id: str, now: datetime) -> None: ...
+    async def launched(self, since: datetime, until: datetime) -> Sequence[str]: ...

@@ -1,6 +1,7 @@
 """Сценарий генерации: модель предлагает, код проверяет. Модель поддельная."""
 
 import json
+from collections.abc import Mapping
 
 from adhelper.creatives.adapters.rules_file import load_rules
 from adhelper.creatives.application.generate import SYSTEM_PROMPT, build_prompt, generate_ads
@@ -13,6 +14,7 @@ from adhelper.creatives.domain.model import (
     Service,
     ViolationKind,
 )
+from tests.claims import with_claims
 
 RULES = load_rules("creatives-1")
 PROFILE = BusinessProfile(
@@ -22,7 +24,7 @@ GOOD = {"headline": "Маникюр за 1500 ₽", "text": "Стерильны�
 INVENTED = {"headline": "Маникюр за 500 ₽", "text": "Только сегодня скидка!"}
 
 
-def ads(*items: dict[str, str]) -> str:
+def ads(*items: Mapping[str, object]) -> str:
     return json.dumps({"ads": list(items)}, ensure_ascii=False)
 
 
@@ -39,7 +41,7 @@ class FakeModel:
         reply = self.replies.pop(0)
         if isinstance(reply, Exception):
             raise reply
-        return ModelReply(reply, self.tokens)
+        return ModelReply(with_claims(reply, user), self.tokens)
 
 
 async def test_invented_facts_are_dropped_and_recorded() -> None:
@@ -106,10 +108,23 @@ async def test_site_text_is_data_and_injection_does_not_pass_checks() -> None:
     )
     prompt = build_prompt(hostile, RULES)
     assert "данные" in SYSTEM_PROMPT
-    assert "ПРОФИЛЬ" in prompt
+    assert "ФАКТЫ" in prompt
     bad = {"headline": "Маникюр", "text": "Лучший салон, бесплатно!"}
     result = await generate_ads(hostile, FakeModel(ads(bad), ads(bad)), RULES)
     assert result.source is CreativeSource.TEMPLATE
+
+
+async def test_price_bound_to_wrong_service_is_dropped() -> None:
+    # Число есть в профиле, но писатель сослался не на тот факт: код снимает без судьи.
+    wrong = {
+        "headline": "Маникюр за 1500 ₽",
+        "text": "Стерильные инструменты.",
+        "claims": [{"fragment": "1500", "fact_key": "f1"}],
+    }
+    result = await generate_ads(PROFILE, FakeModel(ads(wrong), ads(wrong)), RULES)
+    assert result.source is CreativeSource.TEMPLATE
+    kinds = {v.kind for r in result.rejected for v in r.violations}
+    assert kinds == {ViolationKind.UNBOUND_CLAIM}
 
 
 def test_prompt_contains_only_whitelisted_profile_fields() -> None:
