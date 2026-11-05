@@ -105,7 +105,7 @@ async def test_spent_budget_stops_without_calling() -> None:
 
 def test_model_above_price_limit_is_refused() -> None:
     payload = {
-        "data": [{"id": "a/x", "pricing": {"prompt": "0.00000015", "completion": "0.0000005"}}]
+        "data": [{"id": "a/x", "pricing": {"prompt": "0.00000015", "completion": "0.000002"}}]
     }
     with pytest.raises(SystemExit, match="дороже"):
         parse_prices(payload, ["a/x"])
