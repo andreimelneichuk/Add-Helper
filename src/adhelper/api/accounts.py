@@ -24,7 +24,7 @@ FLOW_COOKIE = "ah_oauth_state"
 FLOW_COOKIE_SECONDS = 600
 # Куда вернуть после входа. Только из этого списка: чужой адрес из запроса не принимаем.
 AFTER_LOGIN_COOKIE = "ah_after_login"
-AFTER_LOGIN = {"start": "/?new&start"}
+AFTER_LOGIN = {"start": "/?start"}
 SESSION_COOKIE_SECONDS = 30 * 24 * 3600
 
 

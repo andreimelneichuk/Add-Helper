@@ -347,7 +347,7 @@ describe("бюджет и вход в настоящем запуске", () => 
     expect(screen.getByText(/Вы вошли: anna@example.ru/)).toBeInTheDocument();
     expect(screen.getByText(/профиль и бюджет сохранены/i)).toBeInTheDocument();
     await user.click(button("Продолжить"));
-    expect(store.navigate).toHaveBeenCalledWith("/?new");
+    expect(store.navigate).toHaveBeenCalledWith("/");
   });
 
   it("у владельца уже есть бизнес: черновик его не затирает, это сказано", async () => {
@@ -541,7 +541,7 @@ describe("шаги после входа на сервисе", () => {
     expect(screen.getByText(/когда Яндекс откроет доступ к API/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Запустить рекламу" })).not.toBeInTheDocument();
     await user.click(button("Открыть кабинет"));
-    expect(store.navigate).toHaveBeenCalledWith("/?new");
+    expect(store.navigate).toHaveBeenCalledWith("/");
     expect(loadDraft()).toBeNull();
   });
 
@@ -593,7 +593,7 @@ describe("шаги после входа на сервисе", () => {
     store.navigate = vi.fn();
     const session = vi.fn(async () => ({ me: { email: null, csrf_token: "c" }, businesses: [{ id: "b1", name: "x" }] }));
     await store.resumeConnect({ session, open: vi.fn() }, null);
-    expect(store.navigate).toHaveBeenCalledWith("/?new");
+    expect(store.navigate).toHaveBeenCalledWith("/");
   });
 });
 

@@ -2,8 +2,8 @@
 // Деньги приходят целыми микроединицами; в рубли переводим только здесь и только для показа.
 import { ApiError } from "../api";
 import type { AdLine, Alert, Api, ChatCommand, HistoryLine, Money, OutdatedAd, Overview, Profile, UndoPreview } from "../api";
-import { ALERT } from "../cabinet/words";
-import { MICROS_PER_RUBLE } from "../money";
+import { ALERT } from "./words";
+import { MICROS_PER_RUBLE } from "./money";
 import { leadsWord, rub } from "./data";
 import type { Ad, Day, HistoryEntry, HistoryKind, Live, LiveAlert, Period, PeriodStats } from "./data";
 import { budgetOf, initialState, msg, Store, week } from "./store";

@@ -11,5 +11,10 @@ COPY migrations ./migrations
 COPY alembic.ini ./
 RUN uv sync --locked --no-dev
 
+# Браузер для сайтов, которые рисует скрипт (правила site-2). Только headless-оболочка
+# с системными библиотеками; путь общий, чтобы её видел непривилегированный пользователь.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN playwright install --with-deps --only-shell chromium && rm -rf /var/lib/apt/lists/*
+
 RUN useradd --create-home adhelper
 USER adhelper

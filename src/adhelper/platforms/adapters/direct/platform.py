@@ -1,0 +1,669 @@
+"""Директ как площадка: реализует порты нашими понятиями поверх `DirectHttpClient`.
+
+Чтение возвращает ровно те поля, что журнал записал в план, иначе он увидит конфликт.
+Создание не идемпотентно, поэтому каждое создание сначала ищет уже созданное по нашей метке
+и доделывает недостающее. Где поле Директа не проверено вызовом, это сказано рядом.
+"""
+
+import hashlib
+import json
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from datetime import UTC, date, datetime, time, timedelta
+from typing import Any
+from zoneinfo import ZoneInfo
+
+from adhelper.budget.domain.limits import CampaignBudget, LimitChange, LimitDecision
+from adhelper.budget.domain.watch import SpendSnapshot
+from adhelper.campaigns.domain.launch import NewAd, NewCampaign, Placement
+from adhelper.campaigns.domain.ports import CreatedCampaign, Targeting
+from adhelper.campaigns.domain.targeting import Schedule
+from adhelper.platforms.adapters.direct.transport import (
+    DirectError,
+    DirectHttpClient,
+    DirectRejected,
+    TokenSource,
+    check_results,
+    rubles_to_micros,
+)
+from adhelper.platforms.domain.ports import ModerationState, ModerationVerdict, PublishedAd
+
+MOSCOW = ZoneInfo("Europe/Moscow")
+# Кампания без лимита на период (создана не нами или с недельным бюджетом) для стража
+# безлимитна: тогда худший случай заведомо больше бюджета и увеличения он не пропустит.
+NO_LIMIT = 10**15
+# Отчёты Директа отстают от расхода; насколько, не измерено (S3). Берём с запасом: чем старше
+# момент данных, тем больше страж добавляет расхода по скорости, это осторожнее.
+REPORT_LAG = timedelta(hours=3)
+# Где на площадке живёт метка нового объявления: параметр ссылки, при чтении снимаем.
+MARKER_PARAM = "ah_ad"
+# Включённые кампании: OFF — например, ждёт денег или модерации и может начать тратить.
+ACTIVE_CAMPAIGN_STATES = frozenset({"ON", "OFF"})
+STOPPED_AD_STATES = frozenset({"SUSPENDED", "ARCHIVED"})
+SIDES = ("Search", "Network")
+SERVING_OFF = "SERVING_OFF"
+# Сети по стратегии поиска: бюджет один, он у поиска.
+NETWORK_DEFAULT = "NETWORK_DEFAULT"
+# Директ берёт до 10 кампаний в отборе объявлений и групп.
+CAMPAIGN_CHUNK = 10
+CAMPAIGN_TYPE_KEYS = {"UNIFIED_CAMPAIGN": "UnifiedCampaign", "TEXT_CAMPAIGN": "TextCampaign"}
+MODERATION_STATES = {
+    "ACCEPTED": ModerationState.ACCEPTED,
+    "REJECTED": ModerationState.REJECTED,
+}
+
+
+def _today(now: datetime) -> date:
+    return now.astimezone(MOSCOW).date()
+
+
+def _chunks(items: Sequence[int], size: int) -> Iterable[list[int]]:
+    for start in range(0, len(items), size):
+        yield list(items[start : start + size])
+
+
+def split_limit(total: int, parts: int) -> list[int]:
+    """Лимит на несколько стратегий кампании. Сумма частей ровно равна лимиту.
+
+    Общий ли бюджет у поиска и сетей ЕПК или у каждого свой, не проверено вызовом (S2):
+    при общем кампания недотратит, при раздельном не превысит. Чтение складывает части.
+    """
+    if parts <= 0:
+        raise ValueError("Нет стратегий с бюджетом")
+    share = total // parts
+    return [total - share * (parts - 1)] + [share] * (parts - 1)
+
+
+def budgets(strategy: Mapping[str, Any]) -> list[tuple[str, str, Mapping[str, Any]]]:
+    """Где в стратегии лежат лимиты на период: (сторона, объект стратегии, CustomPeriodBudget)."""
+    found: list[tuple[str, str, Mapping[str, Any]]] = []
+    for side in SIDES:
+        params = strategy.get(side) or {}
+        for key, value in params.items():
+            if isinstance(value, Mapping) and isinstance(value.get("CustomPeriodBudget"), Mapping):
+                found.append((side, key, value["CustomPeriodBudget"]))
+    return found
+
+
+def period_limit(strategy: Mapping[str, Any]) -> int:
+    found = budgets(strategy)
+    if not found:
+        return NO_LIMIT
+    return sum(int(budget["SpendLimit"]) for _, _, budget in found)
+
+
+def placement_of(strategy: Mapping[str, Any]) -> Placement:
+    on = [
+        side
+        for side in SIDES
+        if (strategy.get(side) or {}).get("BiddingStrategyType") not in (None, SERVING_OFF)
+    ]
+    if on == ["Search"]:
+        return Placement.SEARCH
+    if on == ["Network"]:
+        return Placement.NETWORKS
+    return Placement.ALL
+
+
+def schedule_items(schedule: Schedule) -> list[str]:
+    """`TimeTargeting.Schedule.Items`: день 1–7, затем 24 коэффициента, 0 выключает час."""
+    items = []
+    for day in range(7):
+        hours = [
+            100 if day in schedule.days and schedule.start <= hour < schedule.end else 0
+            for hour in range(24)
+        ]
+        items.append(",".join(str(value) for value in [day + 1, *hours]))
+    return items
+
+
+# Расписание, которое нельзя выразить нашими понятиями: с ним никакой план не совпадёт,
+# и журнал увидит конфликт, а не ложное «уже сделано».
+UNREPRESENTABLE = Schedule((), 0, 0)
+ALWAYS = Schedule((0, 1, 2, 3, 4, 5, 6), 0, 24)
+
+
+def parse_schedule(targeting: Mapping[str, Any] | None) -> Schedule:
+    items = ((targeting or {}).get("Schedule") or {}).get("Items") or []
+    if not items:
+        return ALWAYS
+    windows: dict[int, tuple[int, int]] = {}
+    for item in items:
+        values = [int(part) for part in str(item).split(",")]
+        if len(values) != 25:
+            return UNREPRESENTABLE
+        day, hours = values[0] - 1, values[1:]
+        if any(value not in (0, 100) for value in hours):
+            return UNREPRESENTABLE
+        on = [hour for hour, value in enumerate(hours) if value]
+        if not on:
+            continue
+        if on != list(range(on[0], on[-1] + 1)):
+            return UNREPRESENTABLE
+        windows[day] = (on[0], on[-1] + 1)
+    if not windows or len(set(windows.values())) != 1:
+        return UNREPRESENTABLE
+    start, end = next(iter(windows.values()))
+    return Schedule.of(windows, start, end)
+
+
+def mark_href(href: str, marker: str) -> str:
+    base, hash_, fragment = href.partition("#")
+    separator = "&" if "?" in base else "?"
+    return f"{base}{separator}{MARKER_PARAM}={marker}{hash_}{fragment}"
+
+
+def unmark_href(href: str) -> tuple[str, str | None]:
+    """Ссылка без нашей метки и сама метка. Обратно к `mark_href`."""
+    base, hash_, fragment = href.partition("#")
+    for separator in ("&", "?"):
+        suffix = f"{separator}{MARKER_PARAM}="
+        index = base.rfind(suffix)
+        if index >= 0 and "&" not in base[index + len(suffix) :]:
+            return base[:index] + hash_ + fragment, base[index + len(suffix) :]
+    return href, None
+
+
+def ends_at_of(end_date: str) -> datetime:
+    """Последний день бюджета в Директе → конец периода: следующая московская полночь в UTC."""
+    last = date.fromisoformat(end_date)
+    return datetime.combine(last + timedelta(days=1), time.min, tzinfo=MOSCOW).astimezone(UTC)
+
+
+def last_day_of(ends_at: datetime) -> date:
+    return ends_at.astimezone(MOSCOW).date() - timedelta(days=1)
+
+
+def parse_report(tsv: str) -> list[dict[str, str]]:
+    """TSV без строки названия и итога: первая строка — названия столбцов."""
+    lines = [line for line in tsv.splitlines() if line.strip()]
+    if not lines:
+        return []
+    header = lines[0].split("\t")
+    return [dict(zip(header, line.split("\t"), strict=True)) for line in lines[1:]]
+
+
+def _cost(raw: str) -> int:
+    # Пусто или «--» — расхода нет. Деньги в микроединицах: returnMoneyInMicros.
+    return int(raw) if raw.strip().isdigit() else 0
+
+
+class DirectPlatform:
+    """Площадка Директа для одного бизнеса: токены кабинетов берутся из его хранилища."""
+
+    def __init__(
+        self,
+        client: DirectHttpClient,
+        token_for: TokenSource,
+        clock: Callable[[], datetime],
+    ) -> None:
+        self._client = client
+        self._token_for = token_for
+        self._clock = clock
+
+    async def _call(
+        self, account: str, service: str, method: str, params: Mapping[str, Any]
+    ) -> Mapping[str, Any]:
+        token = await self._token_for(account)
+        return await self._client.call(account, token, service, method, params)
+
+    async def _report(self, account: str, definition: dict[str, Any]) -> list[dict[str, str]]:
+        # Директ кэширует отчёт по имени: одно имя — одно определение.
+        digest = hashlib.sha256(json.dumps(definition, sort_keys=True).encode()).hexdigest()
+        definition = {**definition, "ReportName": f"ah-{digest[:24]}"}
+        token = await self._token_for(account)
+        return parse_report(await self._client.report(account, token, definition))
+
+    # --- Кампании ---
+
+    async def _campaigns(
+        self, account: str, ids: Sequence[int] | None = None, extra: Sequence[str] = ()
+    ) -> list[Mapping[str, Any]]:
+        criteria: dict[str, Any] = {"Ids": list(ids)} if ids else {}
+        result = await self._call(
+            account,
+            "campaigns",
+            "get",
+            {
+                "SelectionCriteria": criteria,
+                "FieldNames": ["Id", "Name", "Type", "State", "Status", *extra],
+                "UnifiedCampaignFieldNames": ["BiddingStrategy", "CounterIds"],
+                "TextCampaignFieldNames": ["BiddingStrategy", "CounterIds"],
+            },
+        )
+        if "LimitedBy" in result:
+            # Не все кампании видны: сумма лимитов неизвестна, решать по части нельзя.
+            raise DirectError(None, "campaigns list is truncated")
+        return list(result.get("Campaigns") or [])
+
+    @staticmethod
+    def _strategy(campaign: Mapping[str, Any]) -> Mapping[str, Any]:
+        key = CAMPAIGN_TYPE_KEYS.get(str(campaign.get("Type")))
+        if key is None:
+            return {}
+        return (campaign.get(key) or {}).get("BiddingStrategy") or {}
+
+    async def _spent(self, account: str, campaigns: Sequence[Mapping[str, Any]]) -> dict[str, int]:
+        """Расход каждой кампании за её бюджетный период, по отчёту, а не по расчёту."""
+        starts: dict[str, date] = {}
+        today = _today(self._clock())
+        for campaign in campaigns:
+            found = budgets(self._strategy(campaign))
+            start = min(
+                (
+                    date.fromisoformat(str(b["StartDate"]))
+                    for _, _, b in found
+                    if b.get("StartDate")
+                ),
+                default=today,
+            )
+            starts[str(campaign["Id"])] = min(start, today)
+        if not starts:
+            return {}
+        rows = await self._report(
+            account,
+            {
+                "SelectionCriteria": {
+                    "DateFrom": min(starts.values()).isoformat(),
+                    "DateTo": today.isoformat(),
+                },
+                "FieldNames": ["Date", "CampaignId", "Cost"],
+                "ReportType": "CAMPAIGN_PERFORMANCE_REPORT",
+                "DateRangeType": "CUSTOM_DATE",
+                "Format": "TSV",
+                # Параметры как в кабинете — сверка в S3.
+                "IncludeVAT": "YES",
+                "IncludeDiscount": "NO",
+            },
+        )
+        spent = dict.fromkeys(starts, 0)
+        for row in rows:
+            campaign_id = row["CampaignId"]
+            if campaign_id in starts and date.fromisoformat(row["Date"]) >= starts[campaign_id]:
+                spent[campaign_id] += _cost(row["Cost"])
+        return spent
+
+    async def read_campaigns(self, account: str) -> list[CampaignBudget]:
+        campaigns = await self._campaigns(account)
+        spent = await self._spent(account, campaigns)
+        return [
+            CampaignBudget(
+                campaign_id=str(campaign["Id"]),
+                limit=period_limit(self._strategy(campaign)),
+                spent=spent.get(str(campaign["Id"]), 0),
+                active=campaign.get("State") in ACTIVE_CAMPAIGN_STATES,
+                # Когда лимит последний раз повышали, Директ не хранит; ведёт журнал.
+                last_increase_at=None,
+            )
+            for campaign in campaigns
+        ]
+
+    async def fetch_spend(self, account: str) -> SpendSnapshot:
+        now = self._clock()
+        rows = await self._report(
+            account,
+            {
+                "SelectionCriteria": {},
+                "FieldNames": ["Cost"],
+                "ReportType": "ACCOUNT_PERFORMANCE_REPORT",
+                "DateRangeType": "ALL_TIME",
+                "Format": "TSV",
+                "IncludeVAT": "YES",
+                "IncludeDiscount": "NO",
+            },
+        )
+        reported = sum(_cost(row["Cost"]) for row in rows)
+        return SpendSnapshot(reported=reported, data_as_of=now - REPORT_LAG)
+
+    async def fetch_balance(self, account: str) -> int:
+        token = await self._token_for(account)
+        data = await self._client.live(
+            account,
+            token,
+            "AccountManagement",
+            {"Action": "Get", "SelectionCriteria": {"Logins": [account]}},
+        )
+        accounts = (data or {}).get("Accounts") or []
+        mine = [item for item in accounts if item.get("Login") == account]
+        if not mine:
+            raise DirectError(None, "shared account is not enabled")
+        return rubles_to_micros(str(mine[0]["Amount"]))
+
+    async def set_limit(self, account: str, change: LimitChange) -> None:
+        found = await self._campaigns(account, [int(change.campaign_id)])
+        if not found:
+            raise DirectRejected(None, f"no campaign {change.campaign_id}")
+        campaign = found[0]
+        strategy = self._strategy(campaign)
+        places = budgets(strategy)
+        if not places:
+            # Кампанию без лимита на период не переводим молча: это меняет её стратегию.
+            raise DirectRejected(None, f"campaign {change.campaign_id} has no period budget")
+        sides: dict[str, dict[str, Any]] = {}
+        for (side, key, budget), part in zip(
+            places, split_limit(change.new_limit, len(places)), strict=True
+        ):
+            entry = sides.setdefault(
+                side, {"BiddingStrategyType": strategy[side]["BiddingStrategyType"]}
+            )
+            entry[key] = {"CustomPeriodBudget": {**budget, "SpendLimit": part}}
+        type_key = CAMPAIGN_TYPE_KEYS[str(campaign["Type"])]
+        result = await self._call(
+            account,
+            "campaigns",
+            "update",
+            {"Campaigns": [{"Id": int(change.campaign_id), type_key: {"BiddingStrategy": sides}}]},
+        )
+        check_results(result.get("UpdateResults") or [])
+
+    async def _campaign_action(self, account: str, method: str, campaign_ids: list[str]) -> None:
+        if not campaign_ids:
+            return
+        result = await self._call(
+            account,
+            "campaigns",
+            method,
+            {"SelectionCriteria": {"Ids": [int(c) for c in campaign_ids]}},
+        )
+        key = "SuspendResults" if method == "suspend" else "ResumeResults"
+        check_results(result.get(key) or [])
+
+    async def pause_campaigns(self, account: str, campaign_ids: list[str]) -> None:
+        await self._campaign_action(account, "suspend", campaign_ids)
+
+    async def resume_campaigns(self, account: str, campaign_ids: list[str]) -> None:
+        await self._campaign_action(account, "resume", campaign_ids)
+
+    async def record_rejection(
+        self, account: str, change: LimitChange, decision: LimitDecision
+    ) -> None:
+        # Отказ стража остаётся у нас в журнале; на площадку ничего не уходит.
+        return None
+
+    # --- Объявления ---
+
+    async def _ads(self, account: str, criteria: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+        result = await self._call(
+            account,
+            "ads",
+            "get",
+            {
+                "SelectionCriteria": criteria,
+                "FieldNames": [
+                    "Id",
+                    "CampaignId",
+                    "AdGroupId",
+                    "State",
+                    "Status",
+                    "StatusClarification",
+                ],
+                "TextAdFieldNames": ["Title", "Text", "Href"],
+            },
+        )
+        return list(result.get("Ads") or [])
+
+    async def _ads_of_campaigns(
+        self, account: str, campaign_ids: Sequence[int]
+    ) -> list[Mapping[str, Any]]:
+        ads: list[Mapping[str, Any]] = []
+        for chunk in _chunks(campaign_ids, CAMPAIGN_CHUNK):
+            ads.extend(await self._ads(account, {"CampaignIds": chunk}))
+        return sorted(ads, key=lambda ad: int(ad["Id"]))
+
+    async def read_ad(self, account: str, ad_ref: str) -> Mapping[str, Any]:
+        ad_id = int(ad_ref.removeprefix("ad:"))
+        found = await self._ads(account, {"Ids": [ad_id]})
+        if not found:
+            return {}
+        return {"active": found[0].get("State") not in STOPPED_AD_STATES}
+
+    async def set_ad_active(self, account: str, ad_ref: str, active: bool) -> None:
+        ad_id = int(ad_ref.removeprefix("ad:"))
+        method = "resume" if active else "suspend"
+        result = await self._call(account, "ads", method, {"SelectionCriteria": {"Ids": [ad_id]}})
+        check_results(result.get("ResumeResults" if active else "SuspendResults") or [])
+
+    async def _moderate(self, account: str, ads: Sequence[Mapping[str, Any]]) -> None:
+        drafts = [int(ad["Id"]) for ad in ads if ad.get("Status") == "DRAFT"]
+        if not drafts:
+            return
+        result = await self._call(
+            account, "ads", "moderate", {"SelectionCriteria": {"Ids": drafts}}
+        )
+        check_results(result.get("ModerateResults") or [])
+
+    async def _add_text_ads(
+        self, account: str, group_id: int, ads: Sequence[tuple[str, str, str]]
+    ) -> list[int]:
+        if not ads:
+            return []
+        result = await self._call(
+            account,
+            "ads",
+            "add",
+            {
+                "Ads": [
+                    {
+                        "AdGroupId": group_id,
+                        # Mobile обязателен и устарел: Директ всегда берёт NO.
+                        "TextAd": {"Title": title, "Text": text, "Href": href, "Mobile": "NO"},
+                    }
+                    for title, text, href in ads
+                ]
+            },
+        )
+        return check_results(result.get("AddResults") or [])
+
+    async def find_ad(self, account: str, marker: str) -> PublishedAd | None:
+        campaign_ids = [int(c["Id"]) for c in await self._campaigns(account)]
+        for ad in await self._ads_of_campaigns(account, campaign_ids):
+            text_ad = ad.get("TextAd") or {}
+            href, found = unmark_href(str(text_ad.get("Href") or ""))
+            if found == marker:
+                return PublishedAd(
+                    ad_id=str(ad["Id"]),
+                    campaign_id=str(ad["CampaignId"]),
+                    headline=str(text_ad.get("Title") or ""),
+                    text=str(text_ad.get("Text") or ""),
+                    href=href,
+                )
+        return None
+
+    async def create_ad(
+        self, account: str, campaign_id: str, marker: str, headline: str, text: str, href: str
+    ) -> None:
+        groups = await self._groups(account, int(campaign_id))
+        if not groups:
+            raise DirectRejected(None, f"campaign {campaign_id} has no ad groups")
+        added = await self._add_text_ads(
+            account, int(groups[0]["Id"]), [(headline, text, mark_href(href, marker))]
+        )
+        # Новое объявление — черновик; показы начнутся после проверки Директа.
+        await self._moderate(account, await self._ads(account, {"Ids": added}))
+
+    async def moderation(self, account: str, ad_ids: Sequence[str]) -> list[ModerationVerdict]:
+        if not ad_ids:
+            return []
+        found = {
+            str(ad["Id"]): ad for ad in await self._ads(account, {"Ids": [int(a) for a in ad_ids]})
+        }
+        verdicts = []
+        for ad_id in ad_ids:
+            ad = found.get(ad_id, {})
+            state = MODERATION_STATES.get(str(ad.get("Status")), ModerationState.MODERATION)
+            clarification = str(ad.get("StatusClarification") or "")
+            reasons = (
+                (clarification,) if state is ModerationState.REJECTED and clarification else ()
+            )
+            verdicts.append(ModerationVerdict(ad_id, state, reasons))
+        return verdicts
+
+    # --- Где и когда показывать ---
+
+    async def _groups(self, account: str, campaign_id: int) -> list[Mapping[str, Any]]:
+        result = await self._call(
+            account,
+            "adgroups",
+            "get",
+            {
+                "SelectionCriteria": {"CampaignIds": [campaign_id]},
+                "FieldNames": ["Id", "CampaignId", "Name", "RegionIds"],
+            },
+        )
+        return sorted(result.get("AdGroups") or [], key=lambda group: int(group["Id"]))
+
+    async def read_targeting(self, account: str, campaign_id: str) -> Targeting | None:
+        found = await self._campaigns(account, [int(campaign_id)], extra=["TimeTargeting"])
+        if not found:
+            return None
+        groups = await self._groups(account, int(campaign_id))
+        regions = sorted({int(r) for group in groups for r in group.get("RegionIds") or []})
+        return Targeting(parse_schedule(found[0].get("TimeTargeting")), tuple(regions))
+
+    async def set_schedule(self, account: str, campaign_id: str, schedule: Schedule) -> None:
+        result = await self._call(
+            account,
+            "campaigns",
+            "update",
+            {
+                "Campaigns": [
+                    {
+                        "Id": int(campaign_id),
+                        "TimeTargeting": {
+                            "Schedule": {"Items": schedule_items(schedule)},
+                            "ConsiderWorkingWeekends": "YES",
+                        },
+                    }
+                ]
+            },
+        )
+        check_results(result.get("UpdateResults") or [])
+
+    async def set_regions(self, account: str, campaign_id: str, regions: tuple[int, ...]) -> None:
+        groups = await self._groups(account, int(campaign_id))
+        if not groups:
+            raise DirectRejected(None, f"campaign {campaign_id} has no ad groups")
+        result = await self._call(
+            account,
+            "adgroups",
+            "update",
+            {"AdGroups": [{"Id": int(g["Id"]), "RegionIds": list(regions)} for g in groups]},
+        )
+        check_results(result.get("UpdateResults") or [])
+
+    # --- Запуск ---
+
+    async def _launch_campaign(self, account: str, marker: str) -> Mapping[str, Any] | None:
+        tag = f"({marker})"
+        for campaign in await self._campaigns(account):
+            if tag in str(campaign.get("Name", "")):
+                return campaign
+        return None
+
+    async def find_campaign(self, account: str, marker: str) -> CreatedCampaign | None:
+        campaign = await self._launch_campaign(account, marker)
+        if campaign is None:
+            return None
+        campaign_id = int(campaign["Id"])
+        strategy = self._strategy(campaign)
+        groups = await self._groups(account, campaign_id)
+        ads = [
+            ad
+            for ad in await self._ads_of_campaigns(account, [campaign_id])
+            if ad.get("State") != "ARCHIVED"
+        ]
+        found_budgets = budgets(strategy)
+        end_date = next((str(b["EndDate"]) for _, _, b in found_budgets if b.get("EndDate")), None)
+        counters = ((campaign.get("UnifiedCampaign") or {}).get("CounterIds") or {}).get(
+            "Items"
+        ) or []
+        text_ads = [ad.get("TextAd") or {} for ad in ads]
+        restored = NewCampaign(
+            marker=marker,
+            name=str(campaign["Name"]),
+            placement=placement_of(strategy),
+            limit=period_limit(strategy),
+            ends_at=ends_at_of(end_date) if end_date else datetime.min.replace(tzinfo=UTC),
+            regions=tuple(sorted({int(r) for g in groups for r in g.get("RegionIds") or []})),
+            href=str(text_ads[0].get("Href") or "") if text_ads else "",
+            counters=tuple(int(c) for c in counters),
+            ads=tuple(NewAd(str(t.get("Title") or ""), str(t.get("Text") or "")) for t in text_ads),
+        )
+        return CreatedCampaign(str(campaign_id), restored, tuple(str(ad["Id"]) for ad in ads))
+
+    def _strategy_for(self, campaign: NewCampaign, start: date) -> dict[str, Any]:
+        # Своя автостратегия у поиска и у сетей сразу Директ отвергает («Стратегии не
+        # совместимы», 2026-11-05): при «поиск и сайты» сети идут по стратегии поиска.
+        side = "Network" if campaign.placement is Placement.NETWORKS else "Search"
+        other = "Search" if side == "Network" else "Network"
+        follows = NETWORK_DEFAULT if campaign.placement is Placement.ALL else SERVING_OFF
+        strategy: dict[str, Any] = {other: {"BiddingStrategyType": follows}}
+        part = campaign.limit
+        strategy[side] = {
+            "BiddingStrategyType": "WB_MAXIMUM_CLICKS",
+            "WbMaximumClicks": {
+                "CustomPeriodBudget": {
+                    "SpendLimit": part,
+                    "StartDate": start.isoformat(),
+                    "EndDate": last_day_of(campaign.ends_at).isoformat(),
+                    # Период не продлевается сам: без сервиса показы остановятся.
+                    "AutoContinue": "NO",
+                }
+            },
+        }
+        return strategy
+
+    async def create_campaign(self, account: str, campaign: NewCampaign) -> None:
+        """Доделывает недостающее: кампанию, группу, объявления, отправку на проверку."""
+        existing = await self._launch_campaign(account, campaign.marker)
+        if existing is None:
+            start = _today(self._clock())
+            unified: dict[str, Any] = {"BiddingStrategy": self._strategy_for(campaign, start)}
+            if campaign.counters:
+                unified["CounterIds"] = {"Items": list(campaign.counters)}
+            result = await self._call(
+                account,
+                "campaigns",
+                "add",
+                {
+                    "Campaigns": [
+                        {
+                            "Name": campaign.name,
+                            "StartDate": start.isoformat(),
+                            "EndDate": last_day_of(campaign.ends_at).isoformat(),
+                            "UnifiedCampaign": unified,
+                        }
+                    ]
+                },
+            )
+            campaign_id = check_results(result.get("AddResults") or [])[0]
+        else:
+            campaign_id = int(existing["Id"])
+        groups = await self._groups(account, campaign_id)
+        if not groups:
+            result = await self._call(
+                account,
+                "adgroups",
+                "add",
+                {
+                    "AdGroups": [
+                        {
+                            "Name": campaign.name[:255],
+                            "CampaignId": campaign_id,
+                            "RegionIds": list(campaign.regions),
+                            "UnifiedAdGroup": {"OfferRetargeting": "NO"},
+                        }
+                    ]
+                },
+            )
+            group_id = check_results(result.get("AddResults") or [])[0]
+        else:
+            group_id = int(groups[0]["Id"])
+        present = [
+            (str((ad.get("TextAd") or {}).get("Title")), str((ad.get("TextAd") or {}).get("Text")))
+            for ad in await self._ads_of_campaigns(account, [campaign_id])
+        ]
+        missing = [ad for ad in campaign.ads if (ad.headline, ad.text) not in present]
+        await self._add_text_ads(
+            account, group_id, [(ad.headline, ad.text, campaign.href) for ad in missing]
+        )
+        await self._moderate(account, await self._ads_of_campaigns(account, [campaign_id]))

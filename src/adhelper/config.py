@@ -23,15 +23,22 @@ class Settings(BaseSettings):
     # Адреса Яндекс ID меняются только для стенда сквозных тестов.
     yandex_oauth_url: str = "https://oauth.yandex.ru"
     yandex_login_url: str = "https://login.yandex.ru"
+    # Боевой адаптер Директа. Выключен: действия с площадкой отвечают 503, страж шлёт тревогу.
+    # Включать после согласования боевого запуска с владельцем; для проверки — адрес песочницы.
+    direct_enabled: bool = False
+    direct_api_url: str = "https://api.direct.yandex.com"
+    direct_live_url: str = "https://api.direct.yandex.ru/live/v4/json/"
 
     # Любой OpenAI-совместимый API. Без ключа или модели объявления собираются из шаблонов.
-    text_model_base_url: str = "https://ai.api.cloud.yandex.net/v1"
+    # По умолчанию пара, прошедшая ворота выпуска на OpenRouter 2026-11-05 (docs/12-agents.md §4).
+    # Другую пару ставь только после своих ворот: evals.gate.
+    text_model_base_url: str = "https://openrouter.ai/api/v1"
     text_model_api_key: SecretStr | None = None
     # Заголовок OpenAI-Project; для Yandex AI Studio это каталог.
     text_model_project: str = ""
-    text_model_name: str = ""
+    text_model_name: str = "google/gemma-4-31b-it"
     # Семантическая проверка объявлений тем же API. Пусто — судья выключен, остаётся код.
-    judge_model_name: str = ""
+    judge_model_name: str = "deepseek/deepseek-v4.1-flash"
 
     # Письма о тревогах через любой SMTP. Пустой адрес сервера: письма ждут настройки.
     smtp_host: str = ""

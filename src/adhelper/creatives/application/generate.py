@@ -167,7 +167,8 @@ async def _judge_kept(
             JUDGE_SYSTEM,
             build_judge_user(kept, profile),
             JUDGE_SCHEMA,
-            min(left, rules.judge_max_tokens),
+            # judge_max_tokens — на объявление, как в воротах выпуска (evals.gate).
+            min(left, rules.judge_max_tokens * len(kept)),
         )
     except ModelUnavailable:
         return [], 0, [_judge_rejection(draft, "judge_unavailable") for draft in kept]

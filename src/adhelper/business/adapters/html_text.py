@@ -1,6 +1,7 @@
 """Видимый текст страницы и её ссылки. Скрипты, стили и разметка до модели не доходят."""
 
 import re
+from collections.abc import Sequence
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
@@ -111,7 +112,13 @@ def _link(base: str, href: str) -> str | None:
     return urlunsplit((parts.scheme, parts.netloc.lower(), parts.path or "/", parts.query, ""))
 
 
-def page_from_html(url: str, html: str) -> FetchedPage:
+def find_builders(html: str, markers: Sequence[str]) -> tuple[str, ...]:
+    """Следы конструкторов в разметке: адреса скриптов, классы, комментарии."""
+    lowered = html.lower()
+    return tuple(marker for marker in markers if marker in lowered)
+
+
+def page_from_html(url: str, html: str, markers: Sequence[str] = ()) -> FetchedPage:
     reader = _Reader()
     reader.feed(html)
     reader.close()
@@ -130,7 +137,9 @@ def page_from_html(url: str, html: str) -> FetchedPage:
         if target is not None and target not in seen:
             seen.add(target)
             links.append(Link(target, _clean("".join(text))))
-    return FetchedPage(url, "\n".join(lines), tuple(links), find_counters(html))
+    return FetchedPage(
+        url, "\n".join(lines), tuple(links), find_counters(html), find_builders(html, markers)
+    )
 
 
 def page_from_text(url: str, text: str) -> FetchedPage:

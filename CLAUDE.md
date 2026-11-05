@@ -27,6 +27,7 @@
 - Развёртывание и настройка: [docs/08-deployment.md](docs/08-deployment.md)
 - Факты о площадках и проверки `S1`–`S11`: [docs/00-research.md](docs/00-research.md)
 - Расход на платные модели в прогонах `evals`: [docs/13-model-spend.md](docs/13-model-spend.md)
+- Анализ проекта, точки роста и финансово-вероятностная модель: [docs/14-project-analysis.md](docs/14-project-analysis.md)
 
 Меняется решение — правь документ в том же коммите, что и код.
 
@@ -36,7 +37,7 @@
 
 - Поднять окружение на чистом клоне: `make setup` (нужны `uv` и Docker).
 - Все проверки, как в CI: `make check` (`ruff`, `mypy`, `lint-imports`, `pytest`; нужна запущенная база).
-- Прототип интерфейса на тестовых данных: `make prototype` (нужен Node 22.12 или новее). Новый интерфейс открывается по адресу `/?new`, запуск по `/?new&start` (шаги мастера идут через сервис), подставные данные по `/?new&mock`, подставной запуск по `/?new&start&mock`. Только интерфейс: `make check-web`.
+- Прототип интерфейса на тестовых данных: `make prototype` (нужен Node 22.12 или новее). Интерфейс открывается по `/`, запуск по `/?start` (шаги мастера идут через сервис), подставные данные по `/?mock`, подставной запуск по `/?start&mock` (подставное только в сборке для разработки). Только интерфейс: `make check-web`.
 - Кабинет на демо-данных: `uv run adhelper demo-seed` (с `--mismatch` — расхождение со счётом), затем `uv run --env-file .demo-env uvicorn adhelper.api.app:create_app --factory --port 8010` и `npm --prefix frontend run dev`.
 - Настройки и база на сервере: `docker compose exec app adhelper check`.
 - Сравнить две версии правил автопилота на истории кабинета: `uv run adhelper simulate --business <id> --rules autopilot-1 --against autopilot-2`.
