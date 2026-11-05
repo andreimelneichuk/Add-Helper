@@ -55,6 +55,8 @@ cp .env.example .env
 | `TOKEN_ENCRYPTION_KEYS` | Ключи шифрования токенов и реквизитов, формат `имя:base64` из 32 байт, через запятую, новый первым. Создать: `echo "k1:$(openssl rand -base64 32)"`. Пусто — вход отключён. **Потеря ключа делает токены нечитаемыми**, храните его отдельно от копий базы |
 | `DOMAIN` | Домен для сертификата Caddy |
 | `PUBLIC_BASE_URL` | `https://` и тот же домен |
+| `DIRECT_ENABLED` | `true` подключает боевой адаптер Директа. По умолчанию `false`: действия с площадкой отвечают 503, страж шлёт тревогу. Включать после согласования запуска с владельцем. Нужны ключи шифрования и приложение Яндекс ID |
+| `DIRECT_API_URL`, `DIRECT_LIVE_URL` | Адреса Директ API v5/v501 и Live v4. Для песочницы `https://api-sandbox.direct.yandex.com` и `https://api-sandbox.direct.yandex.ru/live/v4/json/` |
 | `YANDEX_CLIENT_ID`, `YANDEX_CLIENT_SECRET` | Приложение в Яндекс ID с адресами возврата `PUBLIC_BASE_URL/api/auth/yandex/callback` и `PUBLIC_BASE_URL/api/accounts/yandex/callback`. Пусто — вход и подключение кабинета отвечают «пока не настроено» |
 | `YANDEX_OAUTH_URL`, `YANDEX_LOGIN_URL` | Адреса Яндекс ID, по умолчанию `https://oauth.yandex.ru` и `https://login.yandex.ru`. Менять только для стенда |
 | `TEXT_MODEL_BASE_URL`, `TEXT_MODEL_API_KEY`, `TEXT_MODEL_PROJECT`, `TEXT_MODEL_NAME` | Текстовая модель через любой OpenAI-совместимый API. По умолчанию адрес Yandex AI Studio; для него `TEXT_MODEL_PROJECT` — каталог, модель `gpt://<каталог>/yandexgpt/latest`. Без ключа или модели объявления собираются из шаблонов |

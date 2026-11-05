@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     # Адреса Яндекс ID меняются только для стенда сквозных тестов.
     yandex_oauth_url: str = "https://oauth.yandex.ru"
     yandex_login_url: str = "https://login.yandex.ru"
+    # Боевой адаптер Директа. Выключен: действия с площадкой отвечают 503, страж шлёт тревогу.
+    # Включать после согласования боевого запуска с владельцем; для проверки — адрес песочницы.
+    direct_enabled: bool = False
+    direct_api_url: str = "https://api.direct.yandex.com"
+    direct_live_url: str = "https://api.direct.yandex.ru/live/v4/json/"
 
     # Любой OpenAI-совместимый API. Без ключа или модели объявления собираются из шаблонов.
     text_model_base_url: str = "https://ai.api.cloud.yandex.net/v1"

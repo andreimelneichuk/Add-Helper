@@ -7,6 +7,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from adhelper.accounts.adapters.crypto import AesGcmCipher
 from adhelper.autopilot.adapters.data import SqlAutopilotData, autopilot_accounts
 from adhelper.autopilot.adapters.ledgered import LedgeredActions
 from adhelper.autopilot.adapters.rules_file import load_rules as load_autopilot_rules
@@ -84,6 +85,7 @@ from adhelper.notifications.application.service import (
     deliver_pending,
     handle_telegram_updates,
 )
+from adhelper.platforms.adapters.direct.factory import build_direct_platforms, yandex_provider
 from adhelper.platforms.adapters.gateway import RoutingGateway
 
 MAX_CHANGE_ATTEMPTS = 3
@@ -106,7 +108,7 @@ class Runtime:
 
     sessions: async_sessionmaker[AsyncSession]
     engine: AsyncEngine
-    # Адаптер настоящей площадки появится в T5; пока площадки нет, бизнес получает тревогу.
+    # Директ при DIRECT_ENABLED; без него площадки нет, и бизнес получает тревогу.
     platform_for: Callable[[UUID, str], Any]
     clock: Callable[[], datetime] = _utc_now
     # Без ключа или модели генерация отдаёт шаблоны из профиля, без судьи — только проверку кодом.
@@ -370,14 +372,25 @@ def _telegram(settings: Settings) -> TelegramApi | None:
     return TelegramApi(token.get_secret_value())
 
 
+def _cipher(settings: Settings) -> AesGcmCipher | None:
+    keys = settings.token_encryption_keys
+    if keys is None or not keys.get_secret_value():
+        return None
+    return AesGcmCipher.from_config(keys.get_secret_value())
+
+
 @asynccontextmanager
 async def open_runtime(settings: Settings) -> AsyncIterator[Runtime]:
     engine = create_engine(settings)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    platforms = build_direct_platforms(
+        settings, sessions, yandex_provider(settings, _utc_now), _cipher(settings), _utc_now
+    )
     try:
         yield Runtime(
-            sessions=async_sessionmaker(engine, expire_on_commit=False),
+            sessions=sessions,
             engine=engine,
-            platform_for=_no_platform,
+            platform_for=platforms or _no_platform,
             text_model=_model(settings, settings.text_model_name),
             text_model_name=settings.text_model_name,
             judge_model=_model(settings, settings.judge_model_name),
@@ -386,4 +399,6 @@ async def open_runtime(settings: Settings) -> AsyncIterator[Runtime]:
             cabinet_url=settings.public_base_url,
         )
     finally:
+        if platforms is not None:
+            await platforms.aclose()
         await engine.dispose()

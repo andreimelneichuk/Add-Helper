@@ -1,0 +1,203 @@
+[
+ {
+  "url": "https://api.direct.yandex.com/json/v501/campaigns",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {},
+    "FieldNames": [
+     "Id",
+     "Name",
+     "Type",
+     "State",
+     "Status"
+    ],
+    "UnifiedCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ],
+    "TextCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "10/159939/160000"
+  },
+  "body": "{\"result\":{\"Campaigns\":[]}}"
+ },
+ {
+  "url": "https://api.direct.yandex.com/json/v5/reports",
+  "request": {
+   "params": {
+    "SelectionCriteria": {},
+    "FieldNames": [
+     "Cost"
+    ],
+    "ReportType": "ACCOUNT_PERFORMANCE_REPORT",
+    "DateRangeType": "ALL_TIME",
+    "Format": "TSV",
+    "IncludeVAT": "YES",
+    "IncludeDiscount": "NO",
+    "ReportName": "ah-f72008b6382809ebb78c463a"
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "text/tab-separated-values; charset=utf-8"
+  },
+  "body": "Cost\n"
+ },
+ {
+  "url": "https://api.direct.yandex.ru/live/v4/json/",
+  "request": {
+   "method": "AccountManagement",
+   "locale": "ru",
+   "param": {
+    "Action": "Get",
+    "SelectionCriteria": {
+     "Logins": [
+      "andreimelneichuk"
+     ]
+    }
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json; charset=utf-8"
+  },
+  "body": "{\"data\": {\"Accounts\": [{\"AmountAvailableForTransfer\": \"0\", \"AgencyName\": null, \"Currency\": \"RUB\", \"Amount\": \"0\", \"SmsNotification\": {\"MoneyInSms\": \"No\", \"SmsTimeFrom\": \"09:00\", \"MoneyOutSms\": \"No\", \"SmsTimeTo\": \"21:00\", \"PausedByDayBudgetSms\": \"Yes\"}, \"Login\": \"andreimelneichuk\", \"AccountID\": 715667972, \"AccountDayBudget\": null, \"EmailNotification\": {\"Email\": \"owner@example.ru\", \"MoneyWarningValue\": 20, \"PausedByDayBudget\": \"Yes\"}}], \"ActionsResult\": []}}"
+ },
+ {
+  "url": "https://api.direct.yandex.com/json/v501/campaigns",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {},
+    "FieldNames": [
+     "Id",
+     "Name",
+     "Type",
+     "State",
+     "Status"
+    ],
+    "UnifiedCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ],
+    "TextCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "10/159929/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"Campaigns\":[]}}"
+ },
+ {
+  "url": "https://api.direct.yandex.com/json/v501/ads",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "Ids": [
+      1
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "CampaignId",
+     "AdGroupId",
+     "State",
+     "Status",
+     "StatusClarification"
+    ],
+    "TextAdFieldNames": [
+     "Title",
+     "Text",
+     "Href"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "15/159914/160000"
+  },
+  "body": "{\"result\":{}}"
+ },
+ {
+  "url": "https://api.direct.yandex.com/json/v501/campaigns",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "Ids": [
+      1
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "Name",
+     "Type",
+     "State",
+     "Status",
+     "TimeTargeting"
+    ],
+    "UnifiedCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ],
+    "TextCampaignFieldNames": [
+     "BiddingStrategy",
+     "CounterIds"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "units": "10/159904/160000",
+   "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"result\":{\"Campaigns\":[]}}"
+ },
+ {
+  "url": "https://api.direct.yandex.com/json/v501/ads",
+  "request": {
+   "method": "get",
+   "params": {
+    "SelectionCriteria": {
+     "Ids": [
+      1
+     ]
+    },
+    "FieldNames": [
+     "Id",
+     "CampaignId",
+     "AdGroupId",
+     "State",
+     "Status",
+     "StatusClarification"
+    ],
+    "TextAdFieldNames": [
+     "Title",
+     "Text",
+     "Href"
+    ]
+   }
+  },
+  "status": 200,
+  "headers": {
+   "content-type": "application/json;charset=utf-8",
+   "units": "15/159889/160000"
+  },
+  "body": "{\"result\":{}}"
+ }
+]

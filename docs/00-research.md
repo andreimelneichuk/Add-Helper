@@ -6,6 +6,7 @@
 - **[Док]** — официальная документация или новости Яндекса/VK.
 - **[Втор]** — вторичный источник, перед использованием нужна проверка.
 - **[Гипотеза]** — наше предположение.
+- **[API]** — реальный вызов API, дата и метод указаны рядом.
 
 ## 1. Что больше всего влияет на проект
 
@@ -32,6 +33,19 @@
 - Изменить `redirect_uri` у приложения «Для доступа к API» нельзя, токены выдаются только через `verification_code` ([Яндекс ID](https://yandex.ru/dev/id/doc/ru/register-api)). Свои Redirect URI на платформе «Веб-сервисы» и права `login:info`, `login:email` есть только у типа «Для авторизации пользователей» ([Яндекс ID](https://yandex.ru/dev/id/doc/ru/register-auth)). **[Док]** Сервис запрашивает `login:info` и `login:email` и возвращает пользователя на свои адреса, поэтому ему нужен второй тип. В списке «Дополнительные» у этого типа есть `direct:api` (2026-11-05). **[Кабинет]**
 - Аккаунт без верификации через Госуслуги не создаёт второе приложение: на последнем шаге создания открывается окно верификации со строкой «Можно будет создать больше приложений», приложение не появляется (2026-11-05). После верификации окно пропало, но создание с названиями «Ad Helper» и «Ad Helper Web» падает: проверка `ValidateOAuthClient` проходит без ошибок, а `CreateOAuthClient` отвечает `INTERNAL`, на экране «Что-то пошло не так, попробуйте ещё раз позже». Иконка прикреплялась программно, ручную загрузку не проверяли. **[Кабинет]**
 - Заявка на доступ к API привязана к ClientID. Новое приложение требует новой заявки, а правка заявки отправляет её на повторное рассмотрение, при этом до одобрения действуют прежние параметры. Срок рассмотрения до 7 дней ([Директ](https://yandex.ru/dev/direct/doc/ru/concepts/register)). **[Док]**
+- 2026-11-05 токен логина `andreimelneichuk` работает в боевом API: `Clients.get`, `Campaigns.get` в `v5` и `v501`, `Dictionaries.get` отвечают 200. Клиент `CLIENT`, валюта RUB, права `EDIT_CAMPAIGNS`, `TRANSFER_MONEY`, `IMPORT_XLS`, кампаний нет. **[API]**
+- Баллы нового кабинета без кампаний: 160 000 в сутки (`API_POINTS` в `Restrictions`, заголовок `Units: 10/159990/160000`). `get` у `Clients` и `Campaigns` стоит 10 баллов, `Dictionaries.get` — 1. Это часть `S5`, цена `Reports` не проверена. **[API]**
+- Песочница `api-sandbox.direct.yandex.com` 2026-11-05 на `v5` и `v501` отвечала 504 без тела и без `Units`, повтор с ожиданием 90 с дал то же. Не включена ли песочница для логина или она недоступна, не установлено. **[API]**
+- Ошибки уровня запроса Директ возвращает с HTTP 200 и телом `{"error": {"error_code", "error_string", "error_detail", "request_id"}}`; недействительный токен — код 53 (2026-11-05). **[API]**
+- `v501` `Campaigns.get` принимает одновременно `UnifiedCampaignFieldNames` и `TextCampaignFieldNames` и поле `Type`; `Ads.get` в `v501` с пустым отбором отвечает `{"result": {}}` без ключа `Ads` и стоит 15 баллов (2026-11-05). **[API]**
+- `Reports` с `skipReportHeader` и `skipReportSummary` отдаёт TSV с одной строкой названий столбцов; заголовка `Units` у отчёта нет, есть `reportsInQueue`. `ACCOUNT_PERFORMANCE_REPORT` с `ALL_TIME` и полем `Cost` принят (2026-11-05). **[API]**
+- Баланс общего счёта: Live v4 `AccountManagement` (`Action: Get`, `Logins`) отвечает `Accounts[].Amount` строкой в рублях, токен в теле запроса (2026-11-05). С НДС ли сумма, не проверено. **[API]**
+- `v501` `Campaigns.add` для `UNIFIED_CAMPAIGN` с `WB_MAXIMUM_CLICKS` на `Search` и на `Network` одновременно отвечает в `AddResults` ошибкой 4000, `Details`: «Стратегии не совместимы». Принимается `Search: WB_MAXIMUM_CLICKS` с `CustomPeriodBudget` и `Network: NETWORK_DEFAULT` (2026-11-05, логин `andreimelneichuk`). **[API]**
+- `Campaigns.update` с частичной стратегией (`BiddingStrategy.Search.WbMaximumClicks.CustomPeriodBudget.SpendLimit`) принимается, даты периода сохраняются; `EndDate` периода — последний день включительно (2026-11-05). **[API]**
+- `TimeTargeting` после `Campaigns.update` читается прежним сразу и новым примерно через минуту (2026-11-05). **[API]**
+- `Ads.add` сохраняет `Href` с параметрами запроса как отправлен; приостановленный черновик объявления имеет `Status: UNKNOWN`, `StatusClarification` «Ожидает модерации. Дата окончания кампании …» (2026-11-05). **[API]**
+- В `UnifiedCampaign` `CustomPeriodBudget` (`SpendLimit`, `StartDate`, `EndDate`, `AutoContinue`) лежит внутри объекта стратегии каждой стороны (`Search`, `Network`), одновременно с `WeeklySpendLimit` его не задать ([Campaigns.add, ЕПК](https://yandex.ru/dev/direct/doc/ru/campaigns/add-unified-campaign)). Общий ли бюджет у двух сторон, не указано. **[Док]**
+- Группа ЕПК — `AdGroups.add` с `UnifiedAdGroup.OfferRetargeting` (обязателен) через `v501`; `TextAd.Mobile` обязателен, но устарел и всегда `NO` ([AdGroups.add](https://yandex.ru/dev/direct/doc/ru/adgroups/add), [Ads.add](https://yandex.ru/dev/direct/doc/ru/ads/add)). Какие типы объявлений допустимы в группе ЕПК, на странице не сказано. **[Док]**
 
 ### Кампании
 - Управление через v5: `TEXT_CAMPAIGN`, `SMART_CAMPAIGN`, `DYNAMIC_TEXT_CAMPAIGN`, `MOBILE_APP_CAMPAIGN`, `CPM_BANNER_CAMPAIGN`. Единая перфоманс-кампания `UNIFIED_CAMPAIGN` — через `https://api.direct.yandex.com/v501/`. **[Док]**
