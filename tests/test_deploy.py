@@ -35,9 +35,9 @@ def test_every_setting_reaches_app_from_env_file() -> None:
 
     compose = (ROOT / "compose.yaml").read_text()
     example = (ROOT / ".env.example").read_text()
-    for field in Settings.model_fields:
+    for field, info in Settings.model_fields.items():
         if field in NOT_FROM_ENV_FILE:
             continue
-        name = field.upper()
+        name = (info.alias or field).upper()
         assert f"{name}: ${{{name}" in compose, name
         assert f"\n{name}=" in example, name

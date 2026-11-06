@@ -23,11 +23,13 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
   const api = liveApi(store);
 
   // Извлекаем список услуг из профиля
-  const profileServices: string[] = s.live?.profile
-    ?.find(([key]: [string, string]) => key === "Услуги и цены")?.[1]
-    ?.split(";")
-    ?.map((item: string) => item.trim().replace(/,\s*\d.*$/u, ""))
-    ?.filter(Boolean) ?? [];
+  const profileServices: string[] = s.live?.rawProfile?.services
+    ? s.live.rawProfile.services.map((x) => x.name.trim()).filter(Boolean)
+    : s.live?.profile
+        ?.find(([key]: [string, string]) => key === "Услуги и цены")?.[1]
+        ?.split(";")
+        ?.map((item: string) => item.trim().replace(/,\s*\d.*$/u, ""))
+        ?.filter(Boolean) ?? [];
 
   // В кабинете услуги только из профиля: выдуманная услуга стала бы фактом, которого нет у бизнеса.
   const live = api !== null;

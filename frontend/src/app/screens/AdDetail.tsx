@@ -39,6 +39,24 @@ export function Compose({ s, base, current, useLabel, onUse, onCancel }: Compose
   const [photoName, setPhotoName] = useState("");
   const [consent, setConsent] = useState(false);
 
+  useEffect(() => {
+    return () => {
+      if (photo && photo.startsWith("blob:")) {
+        URL.revokeObjectURL(photo);
+      }
+    };
+  }, [photo]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (photo && photo.startsWith("blob:")) {
+      URL.revokeObjectURL(photo);
+    }
+    setPhoto(file ? URL.createObjectURL(file) : null);
+    setPhotoName(file?.name ?? "");
+    setConsent(false);
+  };
+
   const make = (request: string, tryNo = 0) => { setAsk(request); setAttempt(tryNo); setMade(draftAd(s, base, request, tryNo)); };
   const draft = made && "ad" in made ? made.ad : null;
   // Фото подходит и к прежнему тексту, поэтому своё фото само по себе уже вариант.
@@ -64,7 +82,7 @@ export function Compose({ s, base, current, useLabel, onUse, onCancel }: Compose
         <button type="submit" className="ah-btn" disabled={!typed.trim()}>Сделать</button>
       </form>
       <div>
-        <input id="ad-photo" type="file" accept="image/*" className="ad-compose-file" onChange={(e) => { const file = e.target.files?.[0]; setPhoto(file ? URL.createObjectURL(file) : null); setPhotoName(file?.name ?? ""); setConsent(false); }} />
+        <input id="ad-photo" type="file" accept="image/*" className="ad-compose-file" onChange={handleFileChange} />
         <label className="ah-btn" htmlFor="ad-photo">Своё фото</label>
         {photoName && <span className="ah-muted ad-compose-name">{photoName}</span>}
         {photo && (

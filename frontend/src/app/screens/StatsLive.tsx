@@ -1,6 +1,6 @@
 // Статистика на настоящих данных: свой период и отчёт по направлению.
 // Цифры берём из ответа сервиса как есть; считаем только цену обращения для показа.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Api, CampaignDetail, Range } from "../../api";
 import { CAMPAIGN_STATE } from "../words";
 import { leadsWord, rub } from "../data";
@@ -32,18 +32,23 @@ export function OwnPeriod({ api, today, picked }: { api: Api; today: string; pic
   const [range, setRange] = useState<Range>({ since: dayAt(dayNumber(today) - 29), until: today });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const reqIdRef = useRef(0);
+
   const problem = rangeProblem(range, today);
   const show = async () => {
     if (problem) return;
+    const reqId = ++reqIdRef.current;
     setBusy(true);
     setError(null);
     try {
       const [overview, ads] = await Promise.all([api.overview(range), api.ads(range)]);
+      if (reqId !== reqIdRef.current) return;
       picked(range, periodStats(rangeLabel(range), overview, range.since, range.until, ads));
     } catch (e) {
+      if (reqId !== reqIdRef.current) return;
       setError(message(e));
     } finally {
-      setBusy(false);
+      if (reqId === reqIdRef.current) setBusy(false);
     }
   };
   return (
@@ -68,8 +73,20 @@ export function DirectionReport({ api, id, range, label, back, openAd }: { api: 
   const [error, setError] = useState<string | null>(null);
   const [account, campaign] = id.split("/") as [string, string];
   useEffect(() => {
+    let active = true;
     setReport(null);
-    api.campaign(account, campaign, range).then(setReport, (e: unknown) => setError(message(e)));
+    setError(null);
+    api.campaign(account, campaign, range).then(
+      (data) => {
+        if (active) setReport(data);
+      },
+      (e: unknown) => {
+        if (active) setError(message(e));
+      },
+    );
+    return () => {
+      active = false;
+    };
   }, [api, account, campaign, range.since, range.until]);
 
   const head = (

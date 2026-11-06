@@ -1,4 +1,5 @@
 import asyncio
+import os
 import sys
 from dataclasses import replace
 
@@ -25,7 +26,7 @@ async def verify_all() -> None:
     _say("==================================================")
 
     settings = Settings()
-    _say(f"Branch: {settings.neon_branch}")
+    _say(f"Branch: {os.environ.get('NEON_BRANCH', 'default')}")
     _say(f"Pooled Host: {settings.database_url.host}")
     _say(f"Unpooled Host: {settings.migration_database_url.host}")
 

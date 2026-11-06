@@ -205,6 +205,7 @@ export async function loadLive(api: Api, name: string): Promise<Partial<State>> 
     alerts,
     stats,
     profile: profileLines(profile),
+    rawProfile: profile ?? null,
   };
   return {
     live,

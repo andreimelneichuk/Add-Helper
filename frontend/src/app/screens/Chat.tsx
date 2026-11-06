@@ -32,6 +32,12 @@ export function Chat({ store }: { store: Store }) {
   const lastId = s.msgs[s.msgs.length - 1]?.id;
   const chips = chipsFor(s);
   const [empty, setEmpty] = useState(false);
+  const [localInput, setLocalInput] = useState(s.input);
+
+  // Синхронизируем локальный ввод, если он изменился снаружи (например, из кнопки на экране)
+  useLayoutEffect(() => {
+    setLocalInput(s.input);
+  }, [s.input]);
 
   useLayoutEffect(() => {
     const log = logRef.current;
@@ -40,8 +46,11 @@ export function Chat({ store }: { store: Store }) {
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    setEmpty(!s.input.trim());
-    store.send(s.input);
+    const val = localInput.trim();
+    setEmpty(!val);
+    if (!val) return;
+    setLocalInput("");
+    store.send(localInput);
     inputRef.current?.focus();
   };
 
@@ -73,8 +82,11 @@ export function Chat({ store }: { store: Store }) {
               id="ah-chat-input"
               className="ah-input ah-chat-input"
               autoComplete="off"
-              value={s.input}
-              onChange={(e) => { setEmpty(false); store.set({ input: e.target.value }); }}
+              value={localInput}
+              onChange={(e) => {
+                setEmpty(false);
+                setLocalInput(e.target.value);
+              }}
               aria-describedby={empty ? "ah-chat-empty" : undefined}
               placeholder={s.stage === "start" ? "Ссылка или пара слов о бизнесе" : "Что поменять?"}
             />

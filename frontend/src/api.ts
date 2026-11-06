@@ -310,30 +310,30 @@ export function createApi(businessId: string, csrf: string) {
   const base = `/api/businesses/${businessId}`;
   const part = encodeURIComponent;
   return {
-    overview: (range?: Range | null) => request<Overview>(`${base}/overview${period(range)}`),
-    today: () => request<{ rules: string; cards: TodayCard[] }>(`${base}/today`),
+    overview: (range?: Range | null, init?: RequestInit) => request<Overview>(`${base}/overview${period(range)}`, init),
+    today: (init?: RequestInit) => request<{ rules: string; cards: TodayCard[] }>(`${base}/today`, init),
     answerTest: (decisionId: number, agree: boolean) =>
       request<{ status: string; text: string }>(`${base}/tests/offers/${decisionId}`, { method: "POST", body: JSON.stringify({ agree }) }, csrf),
     cancelTest: (id: number) => request<{ status: string; text: string }>(`${base}/tests/${id}/cancel`, { method: "POST" }, csrf),
-    ads: (range?: Range | null) => request<AdLine[]>(`${base}/ads${period(range)}`),
-    campaign: (account: string, id: string, range?: Range | null) =>
-      request<CampaignDetail>(`${base}/campaigns/${part(account)}/${part(id)}${period(range)}`),
-    ad: (account: string, id: string, range?: Range | null) =>
-      request<AdDetail>(`${base}/ads/${part(account)}/${part(id)}${period(range)}`),
-    history: () => request<HistoryLine[]>(`${base}/history`),
-    profile: () => request<Profile>(`${base}/profile`),
+    ads: (range?: Range | null, init?: RequestInit) => request<AdLine[]>(`${base}/ads${period(range)}`, init),
+    campaign: (account: string, id: string, range?: Range | null, init?: RequestInit) =>
+      request<CampaignDetail>(`${base}/campaigns/${part(account)}/${part(id)}${period(range)}`, init),
+    ad: (account: string, id: string, range?: Range | null, init?: RequestInit) =>
+      request<AdDetail>(`${base}/ads/${part(account)}/${part(id)}${period(range)}`, init),
+    history: (init?: RequestInit) => request<HistoryLine[]>(`${base}/history`, init),
+    profile: (init?: RequestInit) => request<Profile>(`${base}/profile`, init),
     saveProfile: (profile: Profile) =>
       request<SavedProfile>(`${base}/profile`, { method: "PUT", body: JSON.stringify(profile) }, csrf),
-    creatives: () => request<Board>(`${base}/creatives`),
+    creatives: (init?: RequestInit) => request<Board>(`${base}/creatives`, init),
     launch: (id: number) => request<CreativeReport>(`${base}/creatives/${id}/launch`, { method: "POST" }, csrf),
     rework: (account: string, adId: string, wish: string) =>
       request<{ id: number; status: "queued" }>(`${base}/ads/${part(account)}/${part(adId)}/rework`, { method: "POST", body: JSON.stringify({ wish }) }, csrf),
-    reworkSet: (id: number) => request<ReworkView>(`${base}/reworks/${id}`),
+    reworkSet: (id: number, init?: RequestInit) => request<ReworkView>(`${base}/reworks/${id}`, init),
     chooseRework: (id: number, creativeId: number) =>
       request<ReworkView>(`${base}/reworks/${id}/choose`, { method: "POST", body: JSON.stringify({ creative_id: creativeId }) }, csrf),
     withdraw: (id: number) => request<CreativeReport>(`${base}/creatives/${id}/withdraw`, { method: "POST" }, csrf),
-    accounts: () => request<AdAccount[]>(`${base}/accounts`),
-    photos: () => request<Photos>(`${base}/photos`),
+    accounts: (init?: RequestInit) => request<AdAccount[]>(`${base}/accounts`, init),
+    photos: (init?: RequestInit) => request<Photos>(`${base}/photos`, init),
     photoUrl: (id: number) => `${base}/photos/${id}`,
     // Файл уходит телом запроса как есть: сервер сам проверит и обработает его.
     uploadPhoto: (file: Blob, consent: boolean) =>
@@ -345,18 +345,18 @@ export function createApi(businessId: string, csrf: string) {
     archivePhoto: (id: number) => request<{ archived: boolean }>(`${base}/photos/${id}/archive`, { method: "POST" }, csrf),
     connect: (then?: "start") =>
       request<{ authorize_url: string }>(`${base}/accounts/connect${then ? `?then=${then}` : ""}`, { method: "POST" }, csrf),
-    marking: () => request<{ saved: MarkingView | null }>(`${base}/marking`),
+    marking: (init?: RequestInit) => request<{ saved: MarkingView | null }>(`${base}/marking`, init),
     saveMarking: (body: MarkingInput) =>
       request<{ saved: MarkingView | null }>(`${base}/marking`, { method: "PUT", body: JSON.stringify(body) }, csrf),
-    tagCheck: () => request<TagCheckView>(`${base}/tag-check`),
+    tagCheck: (init?: RequestInit) => request<TagCheckView>(`${base}/tag-check`, init),
     requestTagCheck: () => request<TagCheckView>(`${base}/tag-check`, { method: "POST" }, csrf),
-    launchCheck: () => request<LaunchCheck>(`${base}/launch-check`),
+    launchCheck: (init?: RequestInit) => request<LaunchCheck>(`${base}/launch-check`, init),
     startLaunch: () => request<LaunchAnswer>(`${base}/launch`, { method: "POST" }, csrf),
     adoptAds: (choice: AdsChoice) =>
       request<{ kept: number }>(`${base}/creative-sets/adopt`, { method: "POST", body: JSON.stringify(choice) }, csrf),
-    wizardAds: () => request<{ ads: WizardAd[] }>(`${base}/wizard-ads`),
+    wizardAds: (init?: RequestInit) => request<{ ads: WizardAd[] }>(`${base}/wizard-ads`, init),
     logout: () => request<void>("/api/auth/logout", { method: "POST" }, csrf),
-    channels: () => request<Channels>("/api/me/notifications"),
+    channels: (init?: RequestInit) => request<Channels>("/api/me/notifications", init),
     linkTelegram: () => request<{ url: string }>("/api/me/telegram", { method: "POST" }, csrf),
     unlinkTelegram: () => request<void>("/api/me/telegram", { method: "DELETE" }, csrf),
     setAdState: (account: string, adId: string, active: boolean, requestId: string) =>
@@ -373,7 +373,7 @@ export function createApi(businessId: string, csrf: string) {
     /** Бюджет месяца в рублях; при снижении сервис сначала снижает лимиты в Яндексе. */
     setBudget: (rubles: number, requestId: string) =>
       request<{ status: string; cuts: number }>(`${base}/budget`, { method: "POST", body: JSON.stringify({ rubles, request_id: requestId }) }, csrf),
-    display: () => request<Display>(`${base}/display`),
+    display: (init?: RequestInit) => request<Display>(`${base}/display`, init),
     command: (text: string) =>
       request<ChatCommand>(`${base}/chat/command`, { method: "POST", body: JSON.stringify({ text }) }, csrf),
     /** Дни (0 — понедельник) и часы [start, end) показа; меняется через журнал. */
@@ -386,15 +386,15 @@ export function createApi(businessId: string, csrf: string) {
       request<{ applied: string[] }>(`${base}/display/regions`, { method: "POST", body: JSON.stringify({ regions, request_id: requestId }) }, csrf),
     readSite: (url: string) =>
       request<{ id: number; status: string; url: string }>(`${base}/site-reads`, { method: "POST", body: JSON.stringify({ url }) }, csrf),
-    siteRead: () => request<SiteRead | null>(`${base}/site-reads/latest`),
-    budgetPlan: () => request<{ rubles: number | null }>(`${base}/budget-plan`),
+    siteRead: (init?: RequestInit) => request<SiteRead | null>(`${base}/site-reads/latest`, init),
+    budgetPlan: (init?: RequestInit) => request<{ rubles: number | null }>(`${base}/budget-plan`, init),
     saveBudgetPlan: (rubles: number) =>
       request<{ rubles: number }>(`${base}/budget-plan`, { method: "PUT", body: JSON.stringify({ rubles }) }, csrf),
     setGoal: (rubles: number) =>
       request<{ goal: number }>(`${base}/goal`, { method: "POST", body: JSON.stringify({ rubles }) }, csrf),
     answerClients: (range: Range, clients: number) =>
       request<ClientAnswer>(`${base}/clients`, { method: "POST", body: JSON.stringify({ ...range, clients }) }, csrf),
-    rollbackPreview: (changeId: number) => request<UndoPreview>(`${base}/changes/${changeId}/rollback`),
+    rollbackPreview: (changeId: number, init?: RequestInit) => request<UndoPreview>(`${base}/changes/${changeId}/rollback`, init),
     rollback: (changeId: number, whole = false) =>
       request<{ status: string }>(`${base}/changes/${changeId}/rollback${whole ? "?whole=true" : ""}`, { method: "POST" }, csrf),
     confirmBalance: (account: string) =>

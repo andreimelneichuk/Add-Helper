@@ -119,5 +119,3 @@ async def test_chat_langchain_agent_handles_conversational_greeting(anna: Anna) 
     assert answer["kind"] == "unknown"
     assert answer["reply"] == expected_reply
     assert answer["confirm"] == ""
-
-

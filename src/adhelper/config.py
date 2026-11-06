@@ -12,7 +12,6 @@ class Settings(BaseSettings):
     # Neon / Lakebase Postgres
     database_url_env: SecretStr | None = Field(default=None, alias="database_url")
     database_url_unpooled_env: SecretStr | None = Field(default=None, alias="database_url_unpooled")
-    neon_branch: str | None = None
 
     postgres_host: str = "localhost"
     postgres_port: int = 5433

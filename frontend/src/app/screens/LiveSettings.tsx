@@ -415,6 +415,7 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [featuresText, setFeaturesText] = useState<string | null>(null);
   // Цена как её набрал владелец: «-5» показываем и не сохраняем, а не превращаем в 5.
   const [priceText, setPriceText] = useState<Record<number, string>>({});
   // Первый пришедший профиль и есть форма: поздний ответ не затирает то, что владелец уже ввёл.
@@ -460,6 +461,7 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
       const services = profile.services.filter((x) => x.name.trim());
       const { outdated = [], ...saved } = await api.saveProfile({ ...profile, services, features: profile.features.map((f) => f.trim()).filter(Boolean) });
       setProfile(saved);
+      setFeaturesText(null);
       await store.refresh();
       setStatus(savedText(outdated));
     } catch (e) {
@@ -482,7 +484,10 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
     }
   };
   const apply = (facts: SiteFact[]) => {
-    if (read) setProfile(mergeFacts(profile, facts, read.url));
+    if (read) {
+      setProfile(mergeFacts(profile, facts, read.url));
+      setFeaturesText(null);
+    }
     setRead(null);
     setStatus("Перенёс в форму. Проверьте и нажмите «Сохранить»: в рекламу идут только сохранённые факты.");
   };
@@ -519,7 +524,16 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
       </fieldset>
       <label>
         <span className="ah-label">Чем вы отличаетесь, по одному факту в строке</span>
-        <textarea className="ah-input set-textarea" rows={4} value={profile.features.join("\n")} onChange={(e) => set({ features: e.target.value.split("\n") })} />
+        <textarea
+          className="ah-input set-textarea"
+          rows={4}
+          value={featuresText ?? profile.features.join("\n")}
+          onChange={(e) => {
+            const val = e.target.value;
+            setFeaturesText(val);
+            set({ features: val.split("\n") });
+          }}
+        />
       </label>
       <div className="set-actions">
         <button type="button" className="ah-btn ah-btn-primary" disabled={busy} onClick={save}>Сохранить</button>
@@ -729,9 +743,9 @@ function keyOf(api: Api): number {
 
 export function LiveSettings({ store }: { store: Store }) {
   // Подписка на магазин: смена сайта меняет API, и экран должен это увидеть.
-  useStoreState(store);
+  const s = useStoreState(store);
   const api = liveApi(store)!;
-  return <SiteSettings key={keyOf(api)} store={store} api={api} />;
+  return <SiteSettings key={s.activeBusinessId ?? keyOf(api)} store={store} api={api} />;
 }
 
 function SiteSettings({ store, api }: { store: Store; api: Api }) {

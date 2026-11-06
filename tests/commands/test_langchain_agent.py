@@ -16,10 +16,7 @@ from adhelper.commands.domain.model import Kind, Known, KnownAd
 
 def test_build_langchain_agent_without_key() -> None:
     assert build_langchain_agent("https://api.openai.com/v1", None, "gpt-4o") is None
-    assert (
-        build_langchain_agent("https://api.openai.com/v1", SecretStr(""), "gpt-4o")
-        is None
-    )
+    assert build_langchain_agent("https://api.openai.com/v1", SecretStr(""), "gpt-4o") is None
 
 
 def test_build_langchain_agent_with_key() -> None:
@@ -40,10 +37,14 @@ def _msg(data: dict) -> MagicMock:  # type: ignore[type-arg]
 async def test_agent_human_greeting_returns_unknown_with_human_reply() -> None:
     mock_llm = MagicMock()
     mock_llm.ainvoke = AsyncMock(
-        return_value=_msg({
-            "reply": "Здравствуйте! Я ваш рекламный ассистент по Яндекс Директу. Чем могу помочь?",
-            "action": None,
-        })
+        return_value=_msg(
+            {
+                "reply": (
+                    "Здравствуйте! Я ваш рекламный ассистент по Яндекс Директу. Чем могу помочь?"
+                ),
+                "action": None,
+            }
+        )
     )
 
     agent = LangChainChatAgent(mock_llm)
@@ -59,10 +60,12 @@ async def test_agent_human_greeting_returns_unknown_with_human_reply() -> None:
 async def test_agent_action_pause() -> None:
     mock_llm = MagicMock()
     mock_llm.ainvoke = AsyncMock(
-        return_value=_msg({
-            "reply": "Приостанавливаю показы всех объявлений.",
-            "action": "pause",
-        })
+        return_value=_msg(
+            {
+                "reply": "Приостанавливаю показы всех объявлений.",
+                "action": "pause",
+            }
+        )
     )
 
     agent = LangChainChatAgent(mock_llm)
@@ -77,11 +80,13 @@ async def test_agent_action_pause() -> None:
 async def test_agent_action_set_budget() -> None:
     mock_llm = MagicMock()
     mock_llm.ainvoke = AsyncMock(
-        return_value=_msg({
-            "reply": "Меняю месячный бюджет на 40 000 рублей.",
-            "action": "set_budget",
-            "rubles": 40000,
-        })
+        return_value=_msg(
+            {
+                "reply": "Меняю месячный бюджет на 40 000 рублей.",
+                "action": "set_budget",
+                "rubles": 40000,
+            }
+        )
     )
 
     agent = LangChainChatAgent(mock_llm)
@@ -96,12 +101,14 @@ async def test_agent_action_set_budget() -> None:
 async def test_agent_action_set_price() -> None:
     mock_llm = MagicMock()
     mock_llm.ainvoke = AsyncMock(
-        return_value=_msg({
-            "reply": "Обновляю цену на стрижку.",
-            "action": "set_price",
-            "service": "стрижка",
-            "rubles": 2500,
-        })
+        return_value=_msg(
+            {
+                "reply": "Обновляю цену на стрижку.",
+                "action": "set_price",
+                "service": "стрижка",
+                "rubles": 2500,
+            }
+        )
     )
 
     agent = LangChainChatAgent(mock_llm)
