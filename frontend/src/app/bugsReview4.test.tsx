@@ -7,6 +7,7 @@ import type { WizardApi } from "./store";
 import { display, fakeApi, open, overview, said, settled } from "./testLive";
 import { LiveStore, loadLive } from "./live";
 import { Chat } from "./screens/Chat";
+import { AppShell } from "./AppShell";
 
 const guest = vi.hoisted(() => ({
   writeAds: vi.fn(),
@@ -296,6 +297,21 @@ describe("Review 4 Reproduction & Fix Verification Tests (BUG-041 – BUG-051)",
       expect(screen.getByText(/Напишите, что поменять/)).toBeInTheDocument();
       await userEvent.type(screen.getByLabelText("Сообщение для ИИ"), "к");
       expect(screen.queryByText(/Напишите, что поменять/)).toBeNull();
+    });
+  });
+
+  describe("BUG-048: строка сайта переключает с первого клика", () => {
+    it("48.2: строки меню названы по сайту и переключают одним нажатием", async () => {
+      const store = await open(fakeApi());
+      store.set({ businesses: [{ id: "b1", name: "Салон Ромашка" }, { id: "b2", name: "Бигуди Пермь" }], activeBusinessId: "b1" });
+      const switchBusiness = vi.spyOn(store, "switchBusiness").mockResolvedValue();
+      render(<AppShell store={store} />);
+      await userEvent.click(screen.getByRole("button", { name: /Выбрать сайт/ }));
+      expect(screen.getByRole("menuitemradio", { name: "Салон Ромашка" })).toHaveAttribute("aria-checked", "true");
+      await userEvent.click(screen.getByRole("menuitemradio", { name: "Бигуди Пермь" }));
+      expect(switchBusiness).toHaveBeenCalledOnce();
+      expect(switchBusiness).toHaveBeenCalledWith("b2");
+      expect(screen.queryByRole("menu")).toBeNull();
     });
   });
 
