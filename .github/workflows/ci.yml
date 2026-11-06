@@ -6,29 +6,88 @@ on:
   pull_request:
 
 jobs:
-  check:
+  lint-python:
+    name: Линтинг и типы (Python)
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
           version: "0.12.6"
+          enable-cache: true
+      - name: Установить зависимости
+        run: uv sync --locked
+      - name: Форматирование кода (ruff format)
+        run: uv run ruff format --check .
+      - name: Линтер (ruff check)
+        run: uv run ruff check .
+      - name: Проверка типов (mypy)
+        run: uv run mypy
+      - name: Архитектурные границы импортов (lint-imports)
+        run: uv run lint-imports
+
+  check-frontend:
+    name: Фронтенд (типы и тесты)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Поднять окружение с нуля
-        run: make setup
+          cache: "npm"
+          cache-dependency-path: "frontend/package-lock.json"
+      - name: Установить зависимости
+        run: npm --prefix frontend ci --no-audit --no-fund
+      - name: Проверка типов и тесты
+        run: npm --prefix frontend run check
+
+  test-backend:
+    name: Тесты бэкенда (pytest)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.6"
+          enable-cache: true
+      - name: Подготовить .env
+        run: |
+          sed "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 24)/" .env.example > .env
+          chmod 600 .env
+      - name: Запустить базу данных
+        run: docker compose up -d --wait db
+      - name: Установить зависимости
+        run: uv sync --locked
+      - name: Установить браузер для тестов
+        run: uv run playwright install --with-deps --only-shell chromium
+      - name: Запуск тестов
+        run: uv run pytest
+
+  integration-and-smoke:
+    name: Интеграция, бэкапы и smoke-тест
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Подготовить .env
+        run: |
+          sed "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 24)/" .env.example > .env
+          chmod 600 .env
+      - name: Поднять окружение в Docker
+        run: docker compose up --detach --wait --build
       - name: Сервис отвечает
         run: curl --fail --silent --show-error http://127.0.0.1:8000/healthz
       - name: Команды оператора работают в образе
         run: |
           docker compose exec -T app adhelper check | grep 'database: База отвечает'
-      - name: Проверки
-        run: make check
-      - name: Копия базы восстанавливается
-        run: make backup restore-check
-      - name: Веб-сервер отдаёт интерфейс и закрывает служебное
+      - name: Резервное копирование и восстановление
+        run: |
+          scripts/backup.sh
+          scripts/restore-check.sh
+      - name: Веб-сервер отдаёт интерфейс и закрывает служебное (Caddy)
         run: |
           export TOKEN_ENCRYPTION_KEYS="ci:$(openssl rand -base64 32)" DOMAIN=localhost
           docker compose --profile production up -d --build --wait caddy

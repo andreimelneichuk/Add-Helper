@@ -15,7 +15,7 @@ from typing import Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, field_validator
 
 from adhelper.commands.application.analytics import AnalyticsContext
 from adhelper.commands.domain.model import Command, Kind, Known, KnownAd, Source
@@ -50,8 +50,8 @@ class AgentOutput(BaseModel):
     action: ActionName | None = Field(
         default=None,
         description=(
-            "Строго null для приветствий ('Привет', 'Здравствуйте'), благодарностей, советов и обычных бесед. "
-            "Заполняй ТОЛЬКО если пользователь прямо просит выполнить действие или запросил отчет."
+            "Строго null для приветствий, благодарностей, советов и обычных бесед. "
+            "Заполняй ТОЛЬКО если пользователь прямо просит выполнить действие или отчет."
         ),
     )
     rubles: int | None = Field(
@@ -74,6 +74,29 @@ class AgentOutput(BaseModel):
         default=None,
         description="Пожелание к изменению текста объявления при переделке.",
     )
+
+    @field_validator("action", mode="before")
+    @classmethod
+    def normalize_action(cls, v: object) -> object:
+        if isinstance(v, str) and v.lower() in ("null", "none", "", "no"):
+            return None
+        return v
+
+    @field_validator("rubles", mode="before")
+    @classmethod
+    def normalize_rubles(cls, v: object) -> object:
+        if isinstance(v, str) and v.isdigit():
+            return int(v)
+        if isinstance(v, str) and v.lower() in ("null", "none", ""):
+            return None
+        return v
+
+    @field_validator("service", "ad_id", "wish", mode="before")
+    @classmethod
+    def normalize_str(cls, v: object) -> object:
+        if isinstance(v, str) and v.lower() in ("null", "none", ""):
+            return None
+        return v
 
 
 @dataclass(frozen=True)

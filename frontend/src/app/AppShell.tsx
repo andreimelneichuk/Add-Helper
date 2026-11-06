@@ -117,7 +117,7 @@ export function AppShell({ store: given }: { store?: Store }) {
   const chat = s.mode === "chat";
   const bad = (stopped(s) || (s.situation === "access" && !s.topped)) || s.paused;
   const tone = bad ? { background: "var(--bad-soft)", color: "var(--bad)" } : warned(s) ? { background: "var(--warn-soft)", color: "var(--warn)" } : { background: "var(--good-soft)", color: "var(--good)" };
-  const tabs: [View, string][] = starting ? [["overview", "Настройка"]] : VIEWS;
+  const tabs: [View, string][] = VIEWS;
   const Screen = SCREENS[s.view];
   const main = useRef<HTMLElement>(null);
   const [showNewSite, setShowNewSite] = useState(false);
@@ -172,12 +172,14 @@ export function AppShell({ store: given }: { store?: Store }) {
         </div>
       )}
       <div className="ah-body">
-        <nav className="ah-rail" aria-label="Разделы">
-          {tabs.map(([id, label]) => (
-            <button key={id} type="button" aria-current={!chat && (starting || s.view === id) ? "page" : undefined} onClick={() => store.goView(id)}><Icon name={starting ? "settings" : id} />{label}</button>
-          ))}
-          <button type="button" aria-current={chat ? "page" : undefined} onClick={() => store.openChat()}><Icon name="chat" />Чат с ИИ</button>
-        </nav>
+        {!starting && (
+          <nav className="ah-rail" aria-label="Разделы">
+            {tabs.map(([id, label]) => (
+              <button key={id} type="button" aria-current={!chat && s.view === id ? "page" : undefined} onClick={() => store.goView(id)}><Icon name={id} />{label}</button>
+            ))}
+            <button type="button" aria-current={chat ? "page" : undefined} onClick={() => store.openChat()}><Icon name="chat" />Чат с ИИ</button>
+          </nav>
+        )}
         {chat ? <Chat store={store} /> : (
             <main ref={main} className="ah-main">
               {s.notice && !starting && (
@@ -196,12 +198,14 @@ export function AppShell({ store: given }: { store?: Store }) {
             </main>
           )}
       </div>
-      <nav className="ah-nav" aria-label="Разделы на телефоне">
-        {(starting ? tabs : MOBILE_VIEWS).map(([id, label]) => (
-          <button key={id} type="button" aria-current={!chat && (starting || s.view === id) ? "page" : undefined} onClick={() => store.goView(id)}><Icon name={starting ? "settings" : id} />{label}</button>
-        ))}
-        <button type="button" aria-current={chat ? "page" : undefined} onClick={() => store.openChat()}><Icon name="chat" />Чат</button>
-      </nav>
+      {!starting && (
+        <nav className="ah-nav" aria-label="Разделы на телефоне">
+          {MOBILE_VIEWS.map(([id, label]) => (
+            <button key={id} type="button" aria-current={!chat && s.view === id ? "page" : undefined} onClick={() => store.goView(id)}><Icon name={id} />{label}</button>
+          ))}
+          <button type="button" aria-current={chat ? "page" : undefined} onClick={() => store.openChat()}><Icon name="chat" />Чат</button>
+        </nav>
+      )}
       <CreateSiteModal isOpen={showNewSite} onClose={() => setShowNewSite(false)} store={store} />
     </div>
   );

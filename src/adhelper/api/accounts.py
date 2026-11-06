@@ -147,7 +147,9 @@ def accounts_router(settings: Settings) -> APIRouter:
         try:
             if error is not None or code is None:
                 await service.cancel_login(state)
-                logger.warning("OAuth login denied or error: error=%r, code_is_none=%s", error, code is None)
+                logger.warning(
+                    "OAuth login denied or error: error=%r, code_is_none=%s", error, code is None
+                )
                 return _home("login=denied", back)
             session = await service.complete_login(state, code)
         except (FlowInvalid, GrantRejected) as exc:
@@ -256,13 +258,17 @@ def accounts_router(settings: Settings) -> APIRouter:
         try:
             if error is not None or code is None:
                 await service.cancel_connect(state)
-                logger.warning("OAuth connect denied or error: error=%r, code_is_none=%s", error, code is None)
+                logger.warning(
+                    "OAuth connect denied or error: error=%r, code_is_none=%s", error, code is None
+                )
                 return _home("connect=denied", back)
             await service.complete_connect(info.user.id, state, code)
         except AccountTaken:
             return _home("connect=taken", back)
         except (FlowInvalid, GrantRejected, BusinessNotFound) as exc:
-            logger.warning("OAuth connect failed on complete_connect: %s (%s)", type(exc).__name__, exc)
+            logger.warning(
+                "OAuth connect failed on complete_connect: %s (%s)", type(exc).__name__, exc
+            )
             return _home("connect=failed", back)
         except ProviderUnavailable as exc:
             logger.warning("OAuth connect provider unavailable: %s", exc)

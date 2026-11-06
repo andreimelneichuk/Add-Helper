@@ -121,10 +121,7 @@ async def interpret(
     if (
         langchain_agent
         and may_call_model()
-        and (
-            first.command.kind is Kind.UNKNOWN
-            or first.command.kind in (Kind.STATS, Kind.HISTORY)
-        )
+        and (first.command.kind is Kind.UNKNOWN or first.command.kind in (Kind.STATS, Kind.HISTORY))
     ):
         res = await langchain_agent.invoke(message, known, analytics_context)
         if res.command.kind in CHANGING:

@@ -142,6 +142,7 @@ def create_app(
         settings.text_model_project,
     )
     from adhelper.commands.application.langchain_agent import build_langchain_agent
+
     app.state.langchain_agent = build_langchain_agent(
         settings.text_model_base_url,
         settings.text_model_api_key,

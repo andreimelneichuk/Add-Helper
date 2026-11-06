@@ -107,10 +107,16 @@ class YandexOAuth:
             logger.warning("Yandex token server error: %s (%r)", response.status_code, body)
             raise ProviderUnavailable(f"token: {response.status_code}")
         if response.status_code != 200:
-            logger.warning("Yandex token request failed: status=%s, body=%r", response.status_code, body)
+            logger.warning(
+                "Yandex token request failed: status=%s, body=%r", response.status_code, body
+            )
             error = body.get("error") if isinstance(body, dict) else None
             error_description = body.get("error_description") if isinstance(body, dict) else None
-            msg = f"{error}: {error_description}" if error_description else str(error or response.status_code)
+            msg = (
+                f"{error}: {error_description}"
+                if error_description
+                else str(error or response.status_code)
+            )
             if error in REJECTED or response.status_code in (400, 401):
                 raise GrantRejected(msg)
             raise ProviderUnavailable(f"token: {response.status_code}")
