@@ -5,7 +5,7 @@ from sqlalchemy import URL, make_url
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(".env", "/etc/secrets/.env", "/etc/secrets/env"),
+        env_file=(".env", "env", "/etc/secrets/.env", "/etc/secrets/env"),
         extra="ignore",
     )
 
