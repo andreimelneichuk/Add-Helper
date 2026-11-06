@@ -64,9 +64,9 @@ below_chars = 1500
 # Конструкторы и виджеты записи, чьи прайсы дорисовывает скрипт.
 markers = ["tilda", "taplink", "yclients", "marquiz", "dikidi", "altegio"]
 # Одна страница в браузере, с ожиданием, пока стихнут запросы.
-timeout_seconds = 12
+timeout_seconds = 25
 # Все страницы одного сайта вместе: что не успело, в разбор не идёт.
-site_budget_seconds = 25
+site_budget_seconds = 50
 max_requests = 120
 max_resource_bytes = 5_000_000
 max_total_bytes = 25_000_000
