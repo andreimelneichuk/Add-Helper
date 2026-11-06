@@ -242,6 +242,7 @@ async function request<T>(path: string, init: RequestInit = {}, csrf?: string): 
 /** Своё фото владельца: уже приведено к требованиям Яндекса, без метаданных. */
 export type Photo = { id: number; width: number; height: number; url: string };
 export type Photos = { photos: Photo[]; max: number };
+export type SiteImage = { url: string; preview: string };
 
 /** Где и когда показывать и желаемая цена обращения; null — значение неизвестно или разное. */
 export type Display = {
@@ -342,6 +343,10 @@ export function createApi(businessId: string, csrf: string) {
         { method: "POST", body: file, headers: { "Content-Type": file.type || "application/octet-stream" } },
         csrf,
       ),
+    siteImages: (url: string) =>
+      request<{ images: SiteImage[] }>(`${base}/photos/site-candidates`, { method: "POST", body: JSON.stringify({ url }) }, csrf),
+    importSiteImages: (urls: string[], consent: boolean) =>
+      request<{ added: number; skipped: number }>(`${base}/photos/from-site`, { method: "POST", body: JSON.stringify({ urls, consent }) }, csrf),
     archivePhoto: (id: number) => request<{ archived: boolean }>(`${base}/photos/${id}/archive`, { method: "POST" }, csrf),
     connect: (then?: "start") =>
       request<{ authorize_url: string }>(`${base}/accounts/connect${then ? `?then=${then}` : ""}`, { method: "POST" }, csrf),

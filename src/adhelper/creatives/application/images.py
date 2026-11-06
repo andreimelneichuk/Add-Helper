@@ -64,6 +64,14 @@ async def add_owner_photo(
     return Added(await store.add(image, now))
 
 
+def previewable(raw: bytes, prepare: Prepare) -> bytes | None:
+    """Готовый JPEG для показа владельцу или None, если фото не подходит."""
+    try:
+        return prepare(raw).data
+    except ImageRejected:
+        return None
+
+
 async def owner_photos(store: ImageStore) -> Sequence[StoredImage]:
     """Свои фото владельца в подборе, по порядку добавления."""
     return await store.active(ImageSource.OWNER)
