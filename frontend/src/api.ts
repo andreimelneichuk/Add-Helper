@@ -293,13 +293,13 @@ export function createGuestApi() {
   return {
     readSite: (url: string) =>
       request<{ id: number; token: string; status: string; url: string }>("/api/site-reads", { method: "POST", body: JSON.stringify({ url }) }),
-    siteRead: (id: number, token: string) =>
-      request<SiteRead>(`/api/site-reads/${id}`, { headers: { "X-Read-Token": token } }),
+    siteRead: (id: number, token: string, init?: RequestInit) =>
+      request<SiteRead>(`/api/site-reads/${id}`, { ...init, headers: { "X-Read-Token": token } }),
     budgetOptions: () => request<{ min: number; max: number; presets: number[] }>("/api/budget-plan/options"),
     writeAds: (profile: AdDraftProfile) =>
       request<{ id: number; token: string; status: string }>("/api/creative-sets", { method: "POST", body: JSON.stringify(profile) }),
-    adSet: (id: number, token: string) =>
-      request<AdSet>(`/api/creative-sets/${id}`, { headers: { "X-Set-Token": token } }),
+    adSet: (id: number, token: string, init?: RequestInit) =>
+      request<AdSet>(`/api/creative-sets/${id}`, { ...init, headers: { "X-Set-Token": token } }),
   };
 }
 

@@ -1,7 +1,8 @@
-import { useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { createGuestApi } from "../../../api";
 import type { Ad } from "../../data";
 import { liveApi, type LiveStore } from "../../live";
+import { usePollingTask } from "../../polling";
 import { draftAd, useStoreState, type Store } from "../../store";
 
 type GenerateAdsModalProps = {
@@ -48,9 +49,11 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
   const [selectedIndices, setSelectedIndices] = useState<number[]>([0, 1]);
   const [adSetMeta, setAdSetMeta] = useState<{ id: number; token: string } | null>(null);
 
-  // Окно закрыли: опрос набора прекращаем, чтобы не спрашивать сервис впустую.
-  const openRef = useRef(isOpen);
-  openRef.current = isOpen;
+  // Окно закрыли: опрос набора и его запрос прекращаем, чтобы не спрашивать сервис впустую.
+  const poller = usePollingTask();
+  useEffect(() => {
+    if (!isOpen) poller.cancel();
+  }, [isOpen, poller]);
 
   if (!isOpen) return null;
 
@@ -69,21 +72,19 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
         features: profile.features,
       });
       setAdSetMeta({ id: queued.id, token: queued.token });
-      const started = Date.now();
-      for (;;) {
-        const set = await guest.adSet(queued.id, queued.token);
-        if (set.status === "failed") throw new Error(set.problem_text ?? "Не получилось написать объявления. Попробуйте ещё раз.");
-        if (set.status === "ready") {
-          if (!set.ads || set.ads.length === 0) throw new Error("По фактам профиля не получилось написать объявления. Добавьте услуги или особенности в настройках.");
-          setGenerated(set.ads);
-          setSelectedIndices(set.ads.map((_, i) => i));
-          setStatusText("");
-          return;
-        }
-        if (Date.now() - started > 45_000) throw new Error("Объявления пишутся дольше обычного. Попробуйте позже.");
-        await new Promise((r) => setTimeout(r, 2000));
-        if (!openRef.current) return;
-      }
+      const polled = await poller.run({
+        task: (signal) => guest.adSet(queued.id, queued.token, { signal }),
+        isDone: (set) => set.status === "failed" || set.status === "ready",
+      });
+      if (polled.status === "aborted") return;
+      if (polled.status === "timeout") throw new Error("Объявления пишутся дольше обычного. Попробуйте позже.");
+      const set = polled.value;
+      if (set.status === "failed") throw new Error(set.problem_text ?? "Не получилось написать объявления. Попробуйте ещё раз.");
+      if (!set.ads || set.ads.length === 0) throw new Error("По фактам профиля не получилось написать объявления. Добавьте услуги или особенности в настройках.");
+      setGenerated(set.ads);
+      setSelectedIndices(set.ads.map((_, i) => i));
+      setStatusText("");
+      return;
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Не получилось написать объявления. Попробуйте ещё раз.");
       setStatusText("");
@@ -117,25 +118,24 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
       setAdSetMeta({ id: queued.id, token: queued.token });
 
       // Опрашиваем воркер
-      const started = Date.now();
-      for (;;) {
-        const set = await guest.adSet(queued.id, queued.token);
-        if (set.status === "failed") {
-          throw new Error(set.problem_text ?? "Не получилось написать объявления. Попробуйте ещё раз.");
-        }
-        if (set.status === "ready" && set.ads && set.ads.length > 0) {
-          setGenerated(set.ads);
-          setSelectedIndices(set.ads.map((_, i) => i));
-          setStatusText("");
-          setBusy(false);
-          return;
-        }
-        if (Date.now() - started > 45_000) {
-          throw new Error("Генерация занимает дольше обычного.");
-        }
-        await new Promise((r) => setTimeout(r, 2000));
-        if (!openRef.current) return;
+      const polled = await poller.run({
+        task: (signal) => guest.adSet(queued.id, queued.token, { signal }),
+        isDone: (set) => set.status === "failed" || (set.status === "ready" && !!set.ads && set.ads.length > 0),
+      });
+      if (polled.status === "aborted") {
+        setBusy(false);
+        return;
       }
+      if (polled.status === "timeout") throw new Error("Генерация занимает дольше обычного.");
+      const set = polled.value;
+      if (set.status === "failed") {
+        throw new Error(set.problem_text ?? "Не получилось написать объявления. Попробуйте ещё раз.");
+      }
+      setGenerated(set.ads ?? []);
+      setSelectedIndices((set.ads ?? []).map((_, i) => i));
+      setStatusText("");
+      setBusy(false);
+      return;
     } catch (err: unknown) {
       // Запасной локальный вариант через шаблонный движок draftAd
       const fallbackAd = draftAd(s, null, wish || targetService);

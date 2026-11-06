@@ -3,6 +3,8 @@ import type { ReworkVariant } from "../../api";
 import type { Ad } from "../data";
 import { adName, adShown, adStat, draftAd, inTest, useStoreState } from "../store";
 import type { ReworkApi, State, Store } from "../store";
+import { usePollingTask } from "../polling";
+import { useObjectUrl } from "../useObjectUrl";
 import "./AdDetail.css";
 
 const STYLES = ["Короче", "Другой акцент"];
@@ -35,24 +37,14 @@ export function Compose({ s, base, current, useLabel, onUse, onCancel }: Compose
   const [typed, setTyped] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [made, setMade] = useState<ReturnType<typeof draftAd> | null>(null);
-  const [photo, setPhoto] = useState<string | null>(null);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const photo = useObjectUrl(photoFile);
   const [photoName, setPhotoName] = useState("");
   const [consent, setConsent] = useState(false);
 
-  useEffect(() => {
-    return () => {
-      if (photo && photo.startsWith("blob:")) {
-        URL.revokeObjectURL(photo);
-      }
-    };
-  }, [photo]);
-
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (photo && photo.startsWith("blob:")) {
-      URL.revokeObjectURL(photo);
-    }
-    setPhoto(file ? URL.createObjectURL(file) : null);
+    setPhotoFile(file ?? null);
     setPhotoName(file?.name ?? "");
     setConsent(false);
   };
@@ -122,6 +114,7 @@ export function LiveRework({ api, ad, hook, title, waitMs, onDone, onCancel }: L
   const [setId, setSetId] = useState<number | null>(null);
   const [picked, setPicked] = useState<number | null>(null);
   const [account, adId] = ad.id.split("/") as [string, string];
+  const poller = usePollingTask();
 
   const ask = async (wish: string) => {
     if (busy) return;
@@ -132,16 +125,18 @@ export function LiveRework({ api, ad, hook, title, waitMs, onDone, onCancel }: L
     try {
       const { id } = await api.rework(account, adId, wish);
       setSetId(id);
-      for (;;) {
-        const view = await api.reworkSet(id);
-        if (view.status === "failed") return setProblem(view.problem ?? "Вариантов нет. Старое объявление работает.");
-        if (view.status === "ready") {
-          setVariants(view.variants);
-          setPicked(view.variants[0]?.id ?? null);
-          return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, waitMs));
-      }
+      // Закрыли экран: запрос и таймер гасятся, ответ не придёт в размонтированный компонент.
+      const polled = await poller.run({
+        task: (signal) => api.reworkSet(id, { signal }),
+        isDone: (view) => view.status === "failed" || view.status === "ready",
+        intervalMs: waitMs,
+        timeoutMs: Infinity,
+      });
+      if (polled.status !== "done") return;
+      const view = polled.value;
+      if (view.status === "failed") return setProblem(view.problem ?? "Вариантов нет. Старое объявление работает.");
+      setVariants(view.variants);
+      setPicked(view.variants[0]?.id ?? null);
     } catch (e) {
       setProblem(say(e));
     } finally {
