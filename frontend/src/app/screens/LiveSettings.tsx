@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AdAccount, Api, Business, Channels as ChannelsData, Display, Photos as PhotosData, Profile, SiteFact, SiteRead } from "../../api";
 import { rub } from "../data";
+import { planProblem, ServiceSchema } from "../schemas";
 import { isAbort } from "../polling";
 import { liveApi, savedText } from "../live";
 import type { LiveStore } from "../live";
@@ -68,6 +69,8 @@ function PlanForm({ api, businesses }: { api: Api; businesses?: Business[] }) {
       ).finally(() => setBusy(false));
     } else {
       const amount = Number(draft);
+      const bad = planProblem(amount);
+      if (bad) { setBusy(false); setStatus(bad); return; }
       api.saveBudgetPlan(amount).then(
         (p) => api.saveBudgetPortfolio({ mode: "separate" }).then(
           () => setStatus(`Сохранил план: ${rub(p.rubles ?? amount)} в месяц. Лимиты в Яндексе поставлю при запуске рекламы.`),
@@ -429,7 +432,7 @@ const PRICE_IN_NAME = /\d[\d\s]*\s*(₽|р\.?|руб)/iu;
 export function servicesProblem(services: Profile["services"]): string | null {
   for (const x of services) {
     if (!x.name.trim()) continue;
-    if (x.price !== null && x.price <= 0) return `Цена услуги «${x.name.trim()}» должна быть больше нуля.`;
+    if (!ServiceSchema.shape.price.safeParse(x.price).success) return `Цена услуги «${x.name.trim()}» должна быть больше нуля.`;
     if (PRICE_IN_NAME.test(x.name)) return `В названии «${x.name.trim()}» есть цена. Уберите её из названия и впишите в поле цены: в рекламу цена идёт только оттуда.`;
   }
   return null;

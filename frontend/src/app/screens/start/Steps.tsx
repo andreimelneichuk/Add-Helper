@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ComponentType } from "react";
 import { ACCOUNT, MIN_BUDGET, rub } from "../../data";
+import { isInn } from "../../schemas";
 import type { Fact } from "../../data";
 import { saveStartSite } from "../../draft";
 import { AdArt, Compose } from "../AdDetail";
@@ -14,7 +15,7 @@ const PRESETS = [15000, 20000, 25000];
 const perDay = (month: number) => `около ${rub(month / 30)} в день`;
 
 export const adsLeft = (s: State) => s.ads.filter((a) => !s.draftOff[a.id]).length;
-export const innReady = (s: State) => s.inn.length === 10 || s.inn.length === 12;
+export const innReady = (s: State) => isInn(s.inn);
 
 function AboutStep({ store, s }: StepProps) {
   const reading = s.reading !== null;
