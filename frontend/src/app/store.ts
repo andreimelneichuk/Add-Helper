@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { ApiError } from "../api";
 import type { AdDraftProfile, AdSet, AdvertiserKind, Api, ChatCommand, Me, Business, SiteFact, SiteRead, UndoPreview, WizardAd } from "../api";
-import { clearDraft, clearWizard, draftProfile, loadWizard, saveDraft, loadDraft, transferDraft } from "./draft";
+import { clearDraft, clearStartReading, clearWizard, draftProfile, loadDraft, loadWizard, saveDraft, saveStartReading, saveStartSite, transferDraft } from "./draft";
 import type { TransferDeps } from "./draft";
 import { ADS, DAYS, FACTS, histFor, leadsWord, MIN_BUDGET, OPENING, OPTIONS, rub, STATS, STEPS } from "./data";
 import type { Ad, Day, Fact, HistoryEntry, HistoryKind, Live, Period, PeriodStats, SettingKey, Situation, View } from "./data";
@@ -39,6 +39,7 @@ export type State = {
   msgs: Message[];
   hist: HistoryEntry[];
   undone: Record<string, boolean>;
+  undoing: Record<string, boolean>;
   asked: Record<string, boolean>;
   /** Последствия отмены от сервиса; в прототипе их нет, берём текст записи. */
   undoInfo: Record<string, UndoPreview>;
@@ -83,6 +84,14 @@ export type State = {
   writing: { id: number; token: string } | "asking" | null;
   /** Готовый набор мастера; facts — по каким фактам писали, чтобы не писать заново без правок. */
   adSet: { id: number; token: string; template: boolean; needsReview: boolean; facts: string } | null;
+  /** Список всех доступных бизнесов пользователя. */
+  businesses: Business[];
+  /** ID активного бизнеса. */
+  activeBusinessId: string | null;
+  /** Режим распределения бюджета: раздельный по сайтам или единый общий пул. */
+  budgetMode?: "separate" | "shared";
+  /** Общая сумма бюджета на все сайты при shared-режиме. */
+  sharedBudget?: number | null;
 };
 
 export type BudgetOptions = { min: number; max: number; presets: number[] };
@@ -154,10 +163,11 @@ export function initialState(stage: State["stage"] = "work", situation: Situatio
   return {
     live: null, stage, situation, mode: "panel", view: "overview", notice: "", price: null, step: 0, input: "", pending: null,
     msgs: [msg("ai", stage === "start" ? GREETING : OPENING[situation])],
-    hist: histFor(situation), undone: {}, asked: {}, undoInfo: {}, adsOff: {}, ads: ADS, openAd: null, paused: false, topped: false, decided: null, extra: 0,
+    hist: histFor(situation), undone: {}, undoing: {}, asked: {}, undoInfo: {}, adsOff: {}, ads: ADS, openAd: null, paused: false, topped: false, decided: null, extra: 0,
     metric: "cost", selDay: null, period: "week", filter: "all", clientsInput: "", clients: null,
     f: { services: "маникюр и педикюр", area: "Сокольники", hours: "в часы работы", goal: 400, budget: 20000 },
     site: "", codeCopied: false, inn: "", yandex: false, metrica: false, block: "", draftOff: {}, budgetDraft: null, facts: FACTS, factEdit: null, reading: null, budgetOptions: null, account: null, advertiser: { kind: "legal", name: "", phone: "", okved: "" }, marked: false, writing: null, adSet: null,
+    businesses: [], activeBusinessId: null, budgetMode: "separate", sharedBudget: null,
   };
 }
 
@@ -220,7 +230,8 @@ function askRefusal(s: State, ask: string): string | null {
   const known = new Set(amounts([...s.facts.map((f) => f.value), s.price ? rub(s.price) : ""].join(" ")).map((a) => a.num));
   const unknown = amounts(ask).find((a) => !known.has(a.num));
   if (unknown) return `В профиле нет «${unknown.shown}». Добавьте это в профиль, и я смогу написать об этом в рекламе.`;
-  if (/скидк|акци/i.test(ask) && !s.facts.some((f) => f.id === "promo")) return "В профиле нет акции. Добавьте её в профиль, и я смогу написать о ней в рекламе.";
+  const hasPromo = s.facts.some((f) => f.id === "promo" || /скидк|акци/i.test(f.value) || /скидк|акци/i.test(f.label));
+  if (/скидк|акци/i.test(ask) && !hasPromo) return "В профиле нет акции. Добавьте её в профиль, и я смогу написать о ней в рекламе.";
   if (/отзыв/i.test(ask)) return "Отзыв можно использовать только с подтверждённым согласием клиента. Пока его нет, напишу без отзыва.";
   if (/лучш|№\s*1|гарантир/i.test(ask)) return "Такое обещание нечем подтвердить, а закон о рекламе требует подтверждения. Напишу о том, что есть в профиле.";
   return null;
@@ -234,6 +245,9 @@ export function draftAd(s: State, base: Ad | null, ask: string, attempt = 0): { 
   if (base && /короче/i.test(ask)) return { ad: { ...base, text: base.text.split(/(?<=\.)\s/)[0]! } };
   const topic = topicOf(ask) ?? (base ? topicOf(`${base.name} ${base.title}`) : null) ?? "manicure";
   const have = new Set(s.facts.map((f) => f.id));
+  if (s.facts.some((f) => f.id === "promo" || /скидк|акци/i.test(f.value) || /скидк|акци/i.test(f.label))) {
+    have.add("promo");
+  }
   const fit = TEMPLATES[topic].filter((t) => t.needs.every((n) => have.has(n)) && t.hook(s) !== base?.hook);
   const t = fit[attempt % Math.max(1, fit.length)];
   if (!t) return { refusal: "В профиле пока мало фактов для такого объявления. Добавьте услуги, цены или адрес." };
@@ -247,7 +261,10 @@ export const inTest = (s: State, id: string) => s.situation === "running" && (id
 
 /** Почему действие нельзя выполнить; общая проверка для панели и чата. */
 function refusalOf(s: State, a: Pending): string | null {
-  if (a.action === "setting" && a.value[0] === "budget" && Number(a.value[1]) + s.extra < spentOf(s)) return `В ноябре уже потрачено ${rub(spentOf(s))}, бюджет месяца не может быть меньше.`;
+  if (a.action === "setting" && a.value[0] === "budget" && Number(a.value[1]) + s.extra < spentOf(s)) {
+    const month = s.live ? "этом месяце" : "ноябре";
+    return `В ${month} уже потрачено ${rub(spentOf(s))}, бюджет месяца не может быть меньше.`;
+  }
   if (a.action === "ad" && !s.adsOff[a.value] && s.ads.every((x) => x.id === a.value || s.adsOff[x.id])) return "Это последнее объявление. Чтобы остановить показы, нажмите «Пауза».";
   return null;
 }
@@ -283,6 +300,8 @@ export class Store {
   reader: GuestReader | null = null;
   /** Пауза между опросами разбора; воркер берёт разбор раз в минуту. */
   waitMs = 3000;
+  /** Предельное время ожидания ответа сервиса при разборе сайта (мс). */
+  readTimeoutMs = 120_000;
   /** Переход на другую страницу: вход Яндекса и кабинет. В тестах подменяется. */
   navigate = (url: string) => window.location.assign(url);
   private resumed = false;
@@ -296,7 +315,28 @@ export class Store {
   getSnapshot = () => this.state;
   /** Спросить про отмену записи истории или передумать. */
   askUndo = (id: string) => this.set({ asked: { ...this.state.asked, [id]: !this.state.asked[id] } });
-  set = (patch: Partial<State>) => { this.state = { ...this.state, ...patch }; this.listeners.forEach((fn) => fn()); };
+  set = (patch: Partial<State>) => {
+    this.state = { ...this.state, ...patch };
+    if (this.state.stage === "start" && ("site" in patch || "facts" in patch || "step" in patch || "f" in patch || "draftOff" in patch || "adSet" in patch)) {
+      this.persistDraft();
+    }
+    this.listeners.forEach((fn) => fn());
+  };
+
+  private persistDraft() {
+    if (this.state.stage !== "start") return;
+    const s = this.state;
+    const kept = s.ads.map((a, i) => (s.draftOff[a.id] ? -1 : i)).filter((i) => i >= 0);
+    const ads = s.adSet ? { ads: { id: s.adSet.id, token: s.adSet.token, kept } } : {};
+    saveDraft({
+      site: s.site,
+      facts: s.facts,
+      budget: Number(s.f.budget),
+      step: s.step,
+      draftOff: s.draftOff,
+      ...ads,
+    });
+  }
 
   private entry(title: string, why: string, next: string, kind: HistoryKind, undo?: { note: string; revert: NonNullable<HistoryEntry["revert"]> }): HistoryEntry {
     return { id: "n" + nextId++, kind, when: "Сейчас", title, why, next, canUndo: !!undo, undoNote: undo?.note, revert: undo?.revert, state: "Записано" };
@@ -349,7 +389,8 @@ export class Store {
         return { price: a.value, hist: [this.entry(`Обновил цену маникюра: от ${rub(a.value)}`, "Вы сообщили об изменении.", "Исправил объявление, в котором была старая цена. Яндекс проверит его заново.", "ads"), ...s.hist], text: `Обновил профиль и объявление: маникюр от ${rub(a.value)}. Яндекс проверит его заново, обычно до суток.` };
       case "clients": {
         const w = week(s);
-        return { clients: a.value, text: `Записал ${a.value} из ${w.leads}. Клиент обошёлся в ${rub(w.cost / a.value)}.` };
+        const costPart = a.value > 0 ? `Клиент обошёлся в ${rub(w.cost / a.value)}.` : "Клиентов пока нет.";
+        return { clients: a.value, text: `Записал ${a.value} из ${w.leads}. ${costPart}` };
       }
     }
   }
@@ -410,7 +451,7 @@ export class Store {
       if (refusal) return this.reply(text, refusal, { pending: null });
     }
     if (/бюджет|трат/.test(t) && num >= 1000) return this.reply(text, `Понял так: бюджет ${rub(num)} в месяц. Сначала обновлю лимит в Яндексе, потом перераспределю деньги. Применить?`, { pending: { action: "setting", value: ["budget", num] } });
-    if (/клиент/.test(t) && num > 0 && num <= week(s).leads) { this.set({ input: "" }); return this.run({ action: "clients", value: num }, text); }
+    if (/клиент/.test(t) && num >= 0 && num <= week(s).leads) { this.set({ input: "" }); return this.run({ action: "clients", value: num }, text); }
     if (/отмени/.test(t)) {
       const h = s.hist.find((x) => x.canUndo && !s.undone[x.id]);
       if (!h) return this.reply(text, "Отменять пока нечего.");
@@ -433,7 +474,13 @@ export class Store {
     if (s.step === 0 && this.reader) { this.set({ site: text, input: "", msgs: [...s.msgs, msg("me", text)] }); void this.study(); return; }
     if (s.step === 0) { this.set({ site: s.site || text, input: "", step: 1, block: "", msgs: [...s.msgs, msg("me", text), msg("ai", STEPS[0]!.ai)] }); return; }
     if (s.step === 1 && !/верно|(^|\s)да(\s|$)|дальше/.test(t)) return this.reply(text, "Записал в профиль. Только такие факты попадут в рекламу.", { facts: [...s.facts, newFact(text)] });
-    if (s.step === 2) { const n = Number((t.match(/\d[\d\s]*/) || ["0"])[0].replace(/\s/g, "")); if (n >= 1000) return this.reply(text, `Поставил ${rub(n)} в месяц.`, { f: { ...s.f, budget: n } }); }
+    const num = Number((t.match(/\d[\d\s]*/) || ["0"])[0].replace(/\s/g, ""));
+    if ((s.step === 2 || /бюджет|трат/.test(t)) && num >= 1000) {
+      return this.reply(text, `Поставил ${rub(num)} в месяц.`, { f: { ...s.f, budget: num } });
+    }
+    if (/пауз|останов|выходн|воскрес/.test(t)) {
+      return this.reply(text, "Расписание и паузы смогу настроить после запуска рекламы. Сейчас настроим бюджет и объявления: напишите «дальше» или продолжите на вкладке «Настройка».");
+    }
     if (/верно|(^|\s)да(\s|$)|дальше|нравится|запуск|продолж/.test(t)) { this.set({ input: "" }); return this.next(text); }
     this.reply(text, "Понял. Когда будете готовы, напишите «дальше» или нажмите кнопку на вкладке «Настройка».");
   }
@@ -458,22 +505,49 @@ export class Store {
     this.set({ reading: "asking", block: "" });
     try {
       const queued = await reader.readSite(this.state.site.trim());
+      saveStartSite(queued.url);
+      saveStartReading({ id: queued.id, token: queued.token, url: queued.url });
       this.set({ reading: { id: queued.id, token: queued.token }, site: queued.url });
       await this.awaitRead(reader, queued.id, queued.token);
     } catch (e) {
+      clearStartReading();
+      this.set({ reading: null, block: e instanceof ApiError ? e.message : "Сервис не ответил. Попробуйте ещё раз или заполните профиль вручную." });
+    }
+  }
+  /** Продолжить опрос разбора сайта, запущенного до перезагрузки страницы. */
+  async resumeReading(id: number, token: string, url: string) {
+    const reader = this.reader;
+    if (!reader || this.state.reading || this.state.step !== 0) return;
+    this.set({ site: url, reading: { id, token }, block: "" });
+    try {
+      await this.awaitRead(reader, id, token);
+    } catch (e) {
+      clearStartReading();
       this.set({ reading: null, block: e instanceof ApiError ? e.message : "Сервис не ответил. Попробуйте ещё раз или заполните профиль вручную." });
     }
   }
   private async awaitRead(reader: GuestReader, id: number, token: string) {
+    const started = Date.now();
     for (;;) {
       const read = await reader.siteRead(id, token);
       const cur = this.state.reading;
       if (!cur || cur === "asking" || cur.id !== id) return;
-      if (read.status === "failed") return this.set({ reading: null, block: read.problem_text ?? "Сайт не прочитался. Заполните профиль вручную." });
+      if (read.status === "failed") {
+        clearStartReading();
+        return this.set({ reading: null, block: read.problem_text ?? "Сайт не прочитался. Заполните профиль вручную." });
+      }
       if (read.status === "ready") {
+        clearStartReading();
         const facts = siteFacts(read.facts);
         const ai = facts.length ? STEPS[0]!.ai : "На сайте не нашёл фактов, которые можно подтвердить цитатой. Добавьте их сами: в рекламу попадёт только это.";
         return this.set({ reading: null, facts, step: 1, block: "", msgs: [...this.state.msgs, msg("ai", ai)] });
+      }
+      if (Date.now() - started >= this.readTimeoutMs) {
+        clearStartReading();
+        return this.set({
+          reading: null,
+          block: "Разбор сайта занимает дольше обычного. Попробуйте ещё раз или заполните профиль вручную.",
+        });
       }
       await new Promise((resolve) => setTimeout(resolve, this.waitMs));
       const afterWait = this.state.reading;
@@ -481,7 +555,14 @@ export class Store {
     }
   }
   /** Сайта нет или он не читается: профиль с чистого листа. */
-  fillByHand = () => this.set({ facts: [], step: 1, block: "", reading: null });
+  fillByHand = () => {
+    clearStartReading();
+    this.set({ facts: [], step: 1, block: "", reading: null });
+  };
+  /** Прямой вход в аккаунт: если бизнес уже есть, сервер сразу откроет кабинет без мастера. */
+  loginDirect = () => {
+    this.navigate("/api/auth/yandex/login");
+  };
   /** Уйти на вход Яндекса. Черновик ждёт в браузере: вход перезагружает страницу. */
   login = () => {
     const s = this.state;
@@ -503,7 +584,7 @@ export class Store {
       const done = await transferDraft(deps, draft);
       if (done.status === "signed_out") return;
       if (done.status === "exists") {
-        return this.set({ block: `У вас уже есть бизнес «${done.name}». Черновик в него не переношу, чтобы не затереть профиль. Нажмите «Продолжить», чтобы открыть кабинет.`, account: { email: null } });
+        return this.set({ block: `У вас уже есть бизнес «${done.name}». Черновик в него не переношу, чтобы не затереть профиль. Нажмите «Создать как новый проект» или «Продолжить», чтобы открыть кабинет.`, account: { email: null } });
       }
       this.wizard = deps.open?.(done.businessId, done.csrf) ?? null;
       this.set({ account: { email: done.email }, msgs: [...this.state.msgs, msg("ai", "Вы вошли. Профиль и бюджет сохранены в сервисе: дальше они живут в настройках кабинета.")] });
@@ -512,6 +593,13 @@ export class Store {
       this.set({ block: `${e instanceof Error ? e.message : "Сервис не ответил"}. Черновик сохранён: обновите страницу, чтобы повторить.` });
     }
   }
+  /** Создать черновик как отдельный новый бизнес. */
+  createAsNew = async (deps: TransferDeps & Partial<Pick<WizardDeps, "open">>) => {
+    this.resumed = false;
+    const draft = loadDraft();
+    if (draft) saveDraft({ ...draft, createAsNew: true });
+    await this.resume(deps, null);
+  };
   /** Вернулись с подключения кабинета: мастер продолжается с шага «Кабинет». */
   async resumeConnect(deps: WizardDeps, problem: string | null) {
     if (this.resumed) return;
@@ -546,11 +634,18 @@ export class Store {
     try {
       const queued = await writer.writeAds(draft);
       this.set({ writing: { id: queued.id, token: queued.token } });
+      const started = Date.now();
       for (;;) {
         const set = await writer.adSet(queued.id, queued.token);
         if (set.status === "failed") return this.set({ writing: null, block: set.problem_text ?? "Не получилось написать объявления. Попробуйте ещё раз." });
         if (set.status === "ready") {
           return this.set({ writing: null, ads: writtenAds(set.ads), adSet: { id: queued.id, token: queued.token, template: set.template, needsReview: set.needs_review, facts } });
+        }
+        if (Date.now() - started >= this.readTimeoutMs) {
+          return this.set({
+            writing: null,
+            block: "Генерация объявлений занимает дольше обычного. Нажмите «Написать ещё раз».",
+          });
         }
         await new Promise((resolve) => setTimeout(resolve, this.waitMs));
       }
@@ -558,7 +653,7 @@ export class Store {
       this.set({ writing: null, block: e instanceof ApiError ? e.message : "Сервис не ответил. Попробуйте ещё раз." });
     }
   }
-  private advance(ai?: string) {
+  advance(ai?: string) {
     const s = this.state;
     this.set({ step: s.step + 1, msgs: [...s.msgs, msg("ai", ai ?? STEPS[s.step]!.ai)], block: "" });
   }
@@ -567,8 +662,18 @@ export class Store {
     if (!this.wizard) return;
     if (s.marked) return this.advance();
     const { kind, name, phone, okved } = s.advertiser;
+    const inn = s.inn.trim();
+    if (!/^(\d{10}|\d{12})$/.test(inn)) {
+      return this.set({ block: "ИНН это 10 или 12 цифр." });
+    }
+    if (!name.trim()) {
+      return this.set({ block: kind === "legal" ? "Укажите наименование организации." : "Укажите ФИО рекламодателя." });
+    }
+    if (kind === "person" && !phone?.trim()) {
+      return this.set({ block: "Укажите контактный телефон." });
+    }
     try {
-      await this.wizard.saveMarking({ kind, inn: s.inn.trim(), name, ...(kind === "person" ? { phone } : { okved }) });
+      await this.wizard.saveMarking({ kind, inn, name: name.trim(), ...(kind === "person" ? { phone: phone.trim() } : { okved }) });
       // ИНН и реквизиты сохранены зашифрованными в сервисе; полный ИНН в браузере не остаётся
       this.set({ marked: true, inn: "" });
       this.advance();
@@ -591,10 +696,10 @@ export class Store {
     const s = this.state;
     if (s.factEdit) return this.set({ block: "Сохраните или отмените правку факта." });
     const limits = s.budgetOptions ?? { min: MIN_BUDGET, max: Infinity };
-    if (s.step === 2 && s.budgetDraft !== null && Number(s.budgetDraft) < limits.min) return this.set({ block: `Укажите сумму от ${rub(limits.min)} в месяц.` });
+    if (s.step === 2 && s.budgetDraft !== null && Number(s.budgetDraft) < limits.min) return this.set({ block: `Укажите сумму от ${rub(limits.min)} в месяц: от 50 ₽ в день по правилам Яндекса плюс 10% резерва.` });
     if (s.step === 2 && s.budgetDraft !== null && Number(s.budgetDraft) > limits.max) return this.set({ block: `Больше ${rub(limits.max)} в месяц здесь не ставлю: проверьте, нет ли лишнего нуля.` });
     if (s.step === 2 && s.budgetDraft === null && (Number(s.f.budget) < limits.min || Number(s.f.budget) > limits.max)) {
-      return this.set({ block: `Укажите сумму от ${rub(limits.min)} в месяц.` });
+      return this.set({ block: `Укажите сумму от ${rub(limits.min)} в месяц: от 50 ₽ в день по правилам Яндекса плюс 10% резерва.` });
     }
     if (s.step === 0 && !s.site.trim()) return this.set({ block: this.reader ? "Вставьте ссылку или заполните профиль вручную." : "Вставьте ссылку или расскажите о бизнесе в чате." });
     if (s.step === 0 && this.reader) { void this.study(); return; }
@@ -604,7 +709,12 @@ export class Store {
     }
     if (s.step === 2 && this.writer) { this.advance("Пишу объявления по вашим фактам. Посмотрите их на вкладке «Настройка» и уберите лишние."); void this.writeAds(); return; }
     if (s.step === 3 && this.writer && s.writing) return this.set({ block: "Объявления ещё пишутся: это обычно меньше минуты." });
-    if (s.step === 3 && this.writer && !s.ads.length) return this.set({ block: "Объявлений пока нет: нажмите «Написать ещё раз»." });
+    if (s.step === 3 && this.writer && !s.ads.length) {
+      if (/писали|перегружен|лимит/i.test(s.block)) {
+        return this.advance("Переходим к кабинету: объявления можно составить внутри настроек.");
+      }
+      return this.set({ block: "Объявлений пока нет: нажмите «Написать ещё раз»." });
+    }
     if (s.step >= 3 && s.ads.every((a) => s.draftOff[a.id])) return this.set({ block: "Оставьте хотя бы одно объявление." });
     if (s.step >= 4 && this.reader) return this.nextReal(s);
     if (s.step === 4 && !s.yandex) return this.set({ block: "Подключите кабинет Яндекса." });

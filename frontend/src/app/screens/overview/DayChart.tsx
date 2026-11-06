@@ -12,10 +12,12 @@ export function DayChart({ s, store }: { s: State; store: Store }) {
   const monthName = s.live?.monthName ?? "ноябрь";
   const ticks = [1, 10, 20, MONTH];
   const columns = { gridTemplateColumns: `repeat(${MONTH}, minmax(0, 1fr))` };
-  const perDay = Math.max(0, (budgetOf(s) - spentOf(s)) / Math.max(1, MONTH - today));
+  const budget = budgetOf(s);
+  const perDay = budget > 0 ? Math.max(0, (budget - spentOf(s)) / Math.max(1, MONTH - today)) : 0;
   const cost = s.metric === "cost";
-  const top = cost ? Math.max(...days.map((d) => d[0]), perDay, 1000) : Math.max(4, ...days.map((d) => d[1]));
-  const sel = s.selDay ?? today - 1;
+  const maxDayCost = Math.max(...days.map((d) => d[0]), 0);
+  const top = cost ? (budget > 0 || maxDayCost > 0 ? Math.max(maxDayCost, perDay, 1000) : 0) : Math.max(4, ...days.map((d) => d[1]));
+  const sel = Math.max(0, Math.min(s.selDay ?? (today > 0 ? today - 1 : 0), MONTH - 1));
   const [selCost, selLeads] = days[sel] ?? [0, 0];
 
   return (
@@ -30,11 +32,11 @@ export function DayChart({ s, store }: { s: State; store: Store }) {
       </div>
       <div className="ov-chart" style={columns}>
         <span className="ov-chart-top">{cost ? rub(top) : String(top)}</span>
-        {cost && !s.paused && <div className="ov-chart-limit" aria-hidden="true" style={{ bottom: `${Math.round((perDay * 100) / top)}%` }} />}
+        {cost && !s.paused && top > 0 && perDay > 0 && <div className="ov-chart-limit" aria-hidden="true" style={{ bottom: `${Math.round((perDay * 100) / top)}%` }} />}
         {Array.from({ length: MONTH }, (_, i) => {
           const day = days[i];
           const value = day ? day[cost ? 0 : 1] : cost ? perDay : 0;
-          const height = Math.max(day || cost ? 2 : 0, Math.round((value * 100) / top));
+          const height = top > 0 ? Math.max(day || cost ? 2 : 0, Math.round((value * 100) / top)) : 0;
           const label = day ? `${i + 1} ${monthOf}: ${rub(day[0])}, обращений ${day[1]}` : `${i + 1} ${monthOf}: можно до ${rub(perDay)}`;
           const kind = !day ? "ov-bar-plan" : i === sel ? "ov-bar-picked" : "ov-bar-past";
           return (
@@ -47,7 +49,13 @@ export function DayChart({ s, store }: { s: State; store: Store }) {
       <div className="ov-chart-ticks" aria-hidden="true" style={columns}>
         {ticks.map((d) => <span key={d} style={{ gridColumn: d }}>{d}</span>)}
       </div>
-      <p className="ov-chart-note" aria-live="polite">{`${sel + 1} ${monthOf}: ${rub(selCost)}, обращений ${selLeads}. Пунктир и контур: дальше можно до ${rub(perDay)} в день, чтобы уложиться в бюджет.`}</p>
+      <p className="ov-chart-note" aria-live="polite">
+        {budget <= 0
+          ? "Бюджет на месяц ещё не задан. Укажите сумму в настройках, чтобы автопилот рассчитал дневной лимит показов."
+          : today === 0
+            ? `Показов в этом месяце ещё не было. Лимит до ${rub(perDay)} в день, чтобы уложиться в бюджет.`
+            : `${sel + 1} ${monthOf}: ${rub(selCost)}, обращений ${selLeads}. Пунктир и контур: дальше можно до ${rub(perDay)} в день, чтобы уложиться в бюджет.`}
+      </p>
     </section>
   );
 }

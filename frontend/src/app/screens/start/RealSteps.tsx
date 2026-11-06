@@ -257,12 +257,20 @@ export function RealAds({ store, s }: Props) {
           <div className="st-link-text">
             <div className="st-link-title">Нет готовых объявлений</div>
             <div className="ah-muted">
-              Объявления составляются по услугам из вашего профиля. Вернитесь на шаг «Профиль» и добавьте хотя бы одну услугу.
+              {s.facts.some((f) => f.field === "service" || f.id === "prices")
+                ? s.block || "Лимит генераций на сегодня исчерпан. Вы можете продолжить к кабинету и настроить объявления там."
+                : "Объявления составляются по услугам из вашего профиля. Вернитесь на шаг «Профиль» и добавьте хотя бы одну услугу."}
             </div>
           </div>
-          <button type="button" className="ah-btn ah-btn-primary" onClick={() => store.set({ step: 1, block: "" })}>
-            Вернуться в профиль
-          </button>
+          {s.facts.some((f) => f.field === "service" || f.id === "prices") ? (
+            <button type="button" className="ah-btn ah-btn-primary" onClick={() => store.advance("Переходим к кабинету: объявления можно составить внутри настроек.")}>
+              Продолжить к кабинету
+            </button>
+          ) : (
+            <button type="button" className="ah-btn ah-btn-primary" onClick={() => store.set({ step: 1, block: "" })}>
+              Вернуться в профиль
+            </button>
+          )}
         </div>
       )}
       <div className="st-ads">
@@ -272,7 +280,10 @@ export function RealAds({ store, s }: Props) {
           return (
             <article key={a.id} className={off ? "st-ad st-ad-plain is-off" : "st-ad st-ad-plain"}>
               <div className="st-ad-body">
-                <h2 className="st-ad-title">{a.title}</h2>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                  <h2 className="st-ad-title" style={{ margin: 0 }}>{a.title}</h2>
+                  <span className={off ? "ah-tag ah-tag-neutral" : "ah-tag ah-tag-good"}>{off ? "Убрано" : "В рекламу"}</span>
+                </div>
                 <p className="st-ad-text">{a.text}</p>
                 <p className="st-ad-facts">{a.facts}</p>
                 {!chosenSaved && (

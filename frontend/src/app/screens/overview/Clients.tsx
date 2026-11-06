@@ -17,13 +17,18 @@ export function Clients({ s, store }: { s: State; store: Store }) {
   if (s.live && (s.paused || !s.live.hasCampaigns)) return null;
   if (!s.live && (s.situation === "problem" || s.situation === "first" || s.situation === "access")) return null;
   const leads = week(s).leads;
-  if (s.clients) return <div className="ah-panel ov-clients ah-muted">{`Записал ${s.clients} ${clientsWord(s.clients)}. Цена клиента теперь считается.`}</div>;
+  if (leads <= 0) return null;
+  if (s.clients !== null) {
+    const detail = s.clients > 0 ? "Цена клиента теперь считается." : "Клиентов пока нет.";
+    return <div className="ah-panel ov-clients ah-muted">{`Записал ${s.clients} ${clientsWord(s.clients)}. ${detail}`}</div>;
+  }
   const save = (e: FormEvent) => {
     e.preventDefault();
+    if (s.clientsInput.trim() === "") return;
     const n = Number(s.clientsInput);
     if (n > leads) return setError(`Обращений было ${leads}, поэтому клиентов не больше ${leads}.`);
     setError("");
-    if (n <= 0) return;
+    if (n < 0) return;
     if (!api || !s.live) return store.run({ action: "clients", value: n });
     // Ответ — данные для цены клиента, площадку он не меняет, поэтому идёт прямо в API.
     const today = s.live.today;
@@ -31,7 +36,8 @@ export function Clients({ s, store }: { s: State; store: Store }) {
     api.answerClients({ since: dayAt(dayNumber(today) - 6), until: today }, n)
       .then(async () => {
         await (store as LiveStore).refresh();
-        store.set({ notice: `Записал ${n} из ${leads}. Клиент обошёлся в ${rub(week(store.state).cost / n)}. Исправить можно, ответив ещё раз.` });
+        const costPart = n > 0 ? `Клиент обошёлся в ${rub(week(store.state).cost / n)}.` : "Клиентов пока нет.";
+        store.set({ notice: `Записал ${n} из ${leads}. ${costPart} Исправить можно, ответив ещё раз.` });
       })
       .catch((e: unknown) => setError(e instanceof ApiError ? e.message : "Сервис не ответил. Ничего не записал, попробуйте позже."))
       .finally(() => setBusy(false));

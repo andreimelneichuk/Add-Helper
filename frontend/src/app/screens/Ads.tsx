@@ -6,6 +6,7 @@ import { liveApi } from "../live";
 import type { LiveStore } from "../live";
 import { AdArt, AdDetail, AdMaker } from "./AdDetail";
 import { Decisions } from "./Decisions";
+import { GenerateAdsModal } from "./ads/GenerateAdsModal";
 import "./Ads.css";
 
 function Card({ store, s, ad }: { store: Store; s: State; ad: Ad }) {
@@ -38,6 +39,7 @@ type Filter = "all" | "on" | "off";
 export function Ads({ store }: { store: Store }) {
   const s = useStoreState(store);
   const [filter, setFilter] = useState<Filter>("all");
+  const [genModalOpen, setGenModalOpen] = useState(false);
   if (s.openAd === "new") return <AdMaker store={store} />;
   if (s.openAd && s.ads.some((a) => a.id === s.openAd)) return <AdDetail store={store} id={s.openAd} />;
   const groups: Record<Filter, Ad[]> = { all: s.ads, on: s.ads.filter((a) => !s.adsOff[a.id]), off: s.ads.filter((a) => s.adsOff[a.id]) };
@@ -48,7 +50,12 @@ export function Ads({ store }: { store: Store }) {
     <>
       <div className="ads-list-head">
         <h2 id="ads-list-title" className="ah-panel-title">Объявления</h2>
-        {!s.live && <button type="button" className="ah-btn" onClick={() => store.openAdScreen("new")}>Новое объявление</button>}
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <button type="button" className="ah-btn ah-btn-primary" onClick={() => setGenModalOpen(true)}>
+            Сгенерировать объявления
+          </button>
+          {!s.live && <button type="button" className="ah-btn" onClick={() => store.openAdScreen("new")}>Новое объявление</button>}
+        </div>
       </div>
       <div className="ah-chips" role="group" aria-label="Какие показать">
         {filters.map(([id, label]) => (
@@ -59,6 +66,7 @@ export function Ads({ store }: { store: Store }) {
       <div className="ads-cards">
         {groups[filter].map((ad) => <Card key={ad.id} store={store} s={s} ad={ad} />)}
       </div>
+      <GenerateAdsModal isOpen={genModalOpen} onClose={() => setGenModalOpen(false)} store={store} />
     </>
   );
   return (

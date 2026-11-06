@@ -148,6 +148,27 @@ class SqlGuestSiteReads:
         recent = READS.c.created_at > now - DAY
         async with self._sessions.begin() as session:
             await session.execute(select(func.pg_advisory_xact_lock(GUEST_LOCK)))
+            existing = await session.execute(
+                select(READS.c.id)
+                .where(
+                    guests,
+                    recent,
+                    READS.c.guest_key == guest_key,
+                    READS.c.url == url,
+                    READS.c.status == ReadStatus.READY.value,
+                )
+                .order_by(READS.c.id.desc())
+                .limit(1)
+            )
+            row = existing.first()
+            if row is not None:
+                await session.execute(
+                    update(READS)
+                    .where(READS.c.id == row.id)
+                    .values(token_hash=token_hash)
+                )
+                return int(row.id)
+
             mine = await session.scalar(
                 select(func.count()).where(guests, recent, READS.c.guest_key == guest_key)
             )

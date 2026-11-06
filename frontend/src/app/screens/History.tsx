@@ -9,13 +9,14 @@ const FILTERS: [State["filter"], string][] = [["all", "Все"], ["money", "Де
 function Entry({ store, entry }: { store: Store; entry: HistoryEntry }) {
   const s = useStoreState(store);
   const undone = !!s.undone[entry.id];
-  const can = entry.canUndo && !undone;
+  const undoing = !!s.undoing?.[entry.id];
+  const can = entry.canUndo && !undone && !undoing;
   const asked = !!s.asked[entry.id] && can;
   const info = s.undoInfo[entry.id];
   // Сервис проверил заранее: если отменить нельзя, говорим почему и не предлагаем кнопку.
   const possible = info?.possible ?? true;
   const many = info && info.possible && info.directions > 1 ? info.directions : 0;
-  const state = undone ? "Отменено вами" : entry.state ?? "";
+  const state = undoing ? "Отменяю…" : undone ? "Отменено вами" : entry.state ?? "";
   const titleId = useId();
   const noteId = useId();
   const askRef = useRef<HTMLButtonElement>(null);

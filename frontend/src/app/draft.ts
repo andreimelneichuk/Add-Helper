@@ -11,6 +11,12 @@ export type StartDraft = {
   businessId?: string;
   /** Объявления, которые владелец оставил на шаге «Объявления». */
   ads?: AdsChoice;
+  /** Шаг мастера, на котором остановился владелец. */
+  step?: number;
+  /** Выключенные черновики объявлений. */
+  draftOff?: Record<string, boolean>;
+  /** Создать как новый бизнес, даже если у пользователя уже есть бизнесы. */
+  createAsNew?: boolean;
 };
 
 export type TransferDeps = {
@@ -29,8 +35,47 @@ export type Transfer =
   | { status: "signed_out" };
 
 const KEY = "adhelper.startDraft";
+const SITE_KEY = "adhelper.startSite";
+const READING_KEY = "adhelper.startReading";
 const MAX_SERVICES = 30;
 const MAX_FEATURES = 20;
+
+export type PendingRead = { id: number; token: string; url: string };
+
+export function saveStartSite(site: string) {
+  try {
+    if (site.trim()) {
+      window.localStorage.setItem(SITE_KEY, site.trim());
+    } else {
+      window.localStorage.removeItem(SITE_KEY);
+    }
+  } catch { /* без хранилища */ }
+}
+
+export function loadStartSite(): string {
+  try { return window.localStorage.getItem(SITE_KEY) ?? ""; } catch { return ""; }
+}
+
+export function clearStartSite() {
+  try { window.localStorage.removeItem(SITE_KEY); } catch { /* без хранилища */ }
+}
+
+export function saveStartReading(reading: PendingRead) {
+  try { window.localStorage.setItem(READING_KEY, JSON.stringify(reading)); } catch { /* без хранилища */ }
+}
+
+export function loadStartReading(): PendingRead | null {
+  try {
+    const raw = window.localStorage.getItem(READING_KEY);
+    return raw ? (JSON.parse(raw) as PendingRead) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearStartReading() {
+  try { window.localStorage.removeItem(READING_KEY); } catch { /* без хранилища */ }
+}
 
 // Хранилище может быть недоступно (приватный режим): тогда черновик просто не переживёт вход.
 export function saveDraft(draft: StartDraft) {
@@ -45,7 +90,11 @@ export function loadDraft(): StartDraft | null {
   }
 }
 export function clearDraft() {
-  try { window.localStorage.removeItem(KEY); } catch { /* без хранилища */ }
+  try {
+    window.localStorage.removeItem(KEY);
+    window.localStorage.removeItem(SITE_KEY);
+    window.localStorage.removeItem(READING_KEY);
+  } catch { /* без хранилища */ }
 }
 
 // Цену в карточку услуги ставит сам мастер в виде «Название, 1 500 ₽»; так же её и отделяем.
@@ -62,11 +111,11 @@ export function clearWizard() {
   try { window.localStorage.removeItem(WIZARD_KEY); } catch { /* без хранилища */ }
 }
 
-const PRICED = /^(.*\S),\s*(\d[\d\s]*)\s*₽$/u;
+const PRICED = /^(.*?)(?:,\s*|\s*[-–—]\s*|\s+)(\d[\d\s]*)\s*(?:₽|р\.?|руб\.?)?$/ui;
 
 function service(value: string): Profile["services"][number] {
   const m = PRICED.exec(value.trim());
-  return m ? { name: m[1]!, price: Number(m[2]!.replace(/\s/gu, "")) } : { name: value.trim(), price: null };
+  return m && m[2] ? { name: (m[1] || value).trim(), price: Number(m[2].replace(/\s/gu, "")) } : { name: value.trim(), price: null };
 }
 
 export function draftProfile(draft: StartDraft): Profile {
@@ -104,13 +153,14 @@ export async function transferDraft(deps: TransferDeps, draft: StartDraft): Prom
   let id = draft.businessId && session.businesses.some((b) => b.id === draft.businessId) ? draft.businessId : null;
   if (!id) {
     const existing = session.businesses[0];
-    if (existing) {
+    if (existing && !draft.createAsNew) {
       clearDraft();
       return { status: "exists", name: existing.name };
     }
     id = (await deps.createBusiness(businessName(draft), csrf)).id;
     saveDraft({ ...draft, businessId: id });
   }
+  try { window.localStorage.setItem("adhelper.activeBusinessId", id); } catch { /* без хранилища */ }
   const api = deps.business(id, csrf);
   await api.saveProfile(draftProfile(draft));
   await api.saveBudgetPlan(draft.budget);

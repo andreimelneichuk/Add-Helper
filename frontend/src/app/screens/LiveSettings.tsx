@@ -1,7 +1,7 @@
 // Настройки на настоящих данных: профиль, уведомления, кабинет Яндекса и выход.
 // Правка профиля не трогает площадку, поэтому идёт прямо в API, а не через журнал.
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AdAccount, Api, Channels as ChannelsData, Display, Photos as PhotosData, Profile, SiteFact, SiteRead } from "../../api";
+import type { AdAccount, Api, Business, Channels as ChannelsData, Display, Photos as PhotosData, Profile, SiteFact, SiteRead } from "../../api";
 import { rub } from "../data";
 import { liveApi, savedText } from "../live";
 import type { LiveStore } from "../live";
@@ -30,28 +30,102 @@ export const CONNECT_RESULT: Record<string, string> = {
 const message = (e: unknown) => (e instanceof Error ? e.message : "Сервис не ответил. Попробуйте позже.");
 
 /** До запуска периода нет: показываем план из мастера. Лимиты в Яндексе из него ставятся только при запуске. */
-function PlanForm({ api }: { api: Api }) {
+function PlanForm({ api, businesses }: { api: Api; businesses?: Business[] }) {
+  const [mode, setMode] = useState<"separate" | "shared">(() => {
+    try { return (localStorage.getItem("adhelper.budget_mode") as any) || "separate"; } catch { return "separate"; }
+  });
   const [draft, setDraft] = useState("");
+  const [sharedDraft, setSharedDraft] = useState(() => {
+    try { return localStorage.getItem("adhelper.shared_budget") || "30000"; } catch { return "30000"; }
+  });
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     api.budgetPlan().then((p) => setDraft(p.rubles ? String(p.rubles) : ""), (e: unknown) => setStatus(message(e)));
   }, [api]);
-  const amount = Number(draft);
+
+  const count = Math.max(1, businesses?.length ?? 1);
+  const sharedNum = Number(sharedDraft) || 0;
+  const perSite = Math.round(sharedNum / count);
+
+  const save = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    try { localStorage.setItem("adhelper.budget_mode", mode); } catch {}
+    if (mode === "shared") {
+      try { localStorage.setItem("adhelper.shared_budget", sharedDraft); } catch {}
+      api.saveBudgetPlan(perSite).then(
+        () => setStatus(`Сохранил общий бюджет: ${rub(sharedNum)} в месяц на ${count} ${count === 1 ? "сайт" : "сайта"}. На этот сайт выделено ${rub(perSite)}.`),
+        (err: unknown) => setStatus(message(err)),
+      ).finally(() => setBusy(false));
+    } else {
+      const amount = Number(draft);
+      api.saveBudgetPlan(amount).then(
+        (p) => setStatus(`Сохранил план: ${rub(p.rubles ?? amount)} в месяц. Лимиты в Яндексе поставлю при запуске рекламы.`),
+        (err: unknown) => setStatus(message(err)),
+      ).finally(() => setBusy(false));
+    }
+  };
+
   return (
-    <form className="set-form" aria-label="План бюджета" onSubmit={(e) => {
-      e.preventDefault();
-      if (!draft || busy) return;
-      setBusy(true);
-      api.saveBudgetPlan(amount).then((p) => setStatus(`Сохранил план: ${rub(p.rubles ?? amount)} в месяц. Лимиты в Яндексе поставлю при запуске рекламы.`), (err: unknown) => setStatus(message(err))).finally(() => setBusy(false));
-    }}>
-      <label>
-        <span className="ah-label">План на запуск, ₽ в месяц</span>
-        <input className="ah-input" inputMode="numeric" value={draft} onChange={(e) => { setStatus(""); setDraft(e.target.value.replace(/\D/g, "").slice(0, 9)); }} />
-      </label>
-      <p className="set-hint">Реклама ещё не запущена, денег не тратим. Лимиты в Яндексе поставлю при запуске, на эту сумму.</p>
+    <form className="set-form" aria-label="План бюджета" onSubmit={save}>
+      <span className="ah-label">Режим распределения бюджета</span>
+      <div className="ah-chips" role="group" aria-label="Режим бюджета" style={{ marginBottom: 12 }}>
+        <button
+          type="button"
+          className="ah-chip"
+          aria-pressed={mode === "separate"}
+          onClick={() => { setStatus(""); setMode("separate"); }}
+        >
+          Раздельный на каждый сайт
+        </button>
+        <button
+          type="button"
+          className="ah-chip"
+          aria-pressed={mode === "shared"}
+          onClick={() => { setStatus(""); setMode("shared"); }}
+        >
+          Общий на все сайты
+        </button>
+      </div>
+
+      {mode === "separate" ? (
+        <>
+          <label>
+            <span className="ah-label">План на запуск, ₽ в месяц</span>
+            <input
+              className="ah-input"
+              inputMode="numeric"
+              value={draft}
+              onChange={(e) => { setStatus(""); setDraft(e.target.value.replace(/\D/g, "").slice(0, 9)); }}
+            />
+          </label>
+          <p className="set-hint">Реклама ещё не запущена, денег не тратим. Лимиты в Яндексе поставлю при запуске, на эту сумму.</p>
+        </>
+      ) : (
+        <>
+          <label>
+            <span className="ah-label">Общий бюджет на все сайты, ₽ в месяц</span>
+            <input
+              className="ah-input"
+              inputMode="numeric"
+              value={sharedDraft}
+              onChange={(e) => { setStatus(""); setSharedDraft(e.target.value.replace(/\D/g, "").slice(0, 9)); }}
+            />
+          </label>
+          <p className="set-hint">
+            Единый лимит {rub(sharedNum)} в месяц делится между {count} {count === 1 ? "сайтом" : "сайтами"} (примерно по {rub(perSite)} на сайт, с перераспределением в пользу более эффективных).
+          </p>
+        </>
+      )}
+
       {status && <p className="set-hint" role="status">{status}</p>}
-      <div className="set-actions"><button type="submit" className="ah-btn" disabled={!draft || busy}>Сохранить план</button></div>
+      <div className="set-actions">
+        <button type="submit" className="ah-btn" disabled={busy || (mode === "separate" ? !draft : !sharedDraft)}>
+          Сохранить план
+        </button>
+      </div>
     </form>
   );
 }
@@ -65,7 +139,7 @@ function BudgetForm({ store }: { store: LiveStore }) {
   const spent = live.spent ?? 0;
   const problem = !draft ? "Укажите сумму." : amount < spent ? `В этом месяце уже потрачено ${rub(spent)}, бюджет не может быть меньше.` : null;
   const lower = amount < live.budget;
-  if (live.budget <= 0) return <PlanForm api={store.api} />;
+  if (live.budget <= 0) return <PlanForm api={store.api} businesses={s.businesses} />;
   return (
     <form className="set-form" aria-label="Бюджет месяца" onSubmit={(e) => { e.preventDefault(); if (!problem && amount !== live.budget) setAsking(true); }}>
       <label>
@@ -128,8 +202,9 @@ function DisplayForm({ api, store }: { api: Api; store: LiveStore }) {
   const names = (ids: number[]) => display.catalog.filter((r) => ids.includes(r.id)).map((r) => r.name).join(", ");
   const weeklyHours = days.length * Math.max(0, hours[1] - hours[0]);
   const scheduleProblem = !days.length ? "Выберите хотя бы один день." : hours[0] >= hours[1] ? "Начало должно быть раньше конца." : weeklyHours < display.min_weekly_hours ? `Яндекс не принимает меньше ${display.min_weekly_hours} часов показа в неделю, сейчас ${weeklyHours}.` : null;
-  const sameSchedule = !!display.schedule && display.schedule.days.join() === days.join() && display.schedule.start === hours[0] && display.schedule.end === hours[1];
-  const sameRegions = !!display.regions && display.regions.join() === [...regions].sort((a, b) => a - b).join();
+  const sorted = (arr: number[]) => [...arr].sort((a, b) => a - b).join();
+  const sameSchedule = !!display.schedule && sorted(display.schedule.days) === sorted(days) && display.schedule.start === hours[0] && display.schedule.end === hours[1];
+  const sameRegions = !!display.regions && sorted(display.regions) === sorted(regions);
   const scheduleText = describeSchedule(days, hours);
   const goalValue = Number(goal);
 
@@ -491,9 +566,10 @@ function Photos({ api }: { api: Api }) {
   };
   const upload = (files: FileList | null) => {
     const file = files?.[0];
-    if (!file) return;
+    if (!file || !consent) return;
     void act(async () => {
-      await api.uploadPhoto(file, consent);
+      await api.uploadPhoto(file, true);
+      setConsent(false);
       return "Фото добавил. Поставлю его в новые объявления: Яндекс проверит его вместе с текстом.";
     });
   };
