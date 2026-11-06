@@ -1,8 +1,10 @@
 """Настоящий воркер Procrastinate: задания из базы выполняются и не теряются."""
 
+import itertools
 from pathlib import Path
 from typing import Any
 
+import croniter  # type: ignore[import-untyped]
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -90,3 +92,13 @@ async def test_worker_runs_money_tasks_from_real_database(
         "site.tag_check": "succeeded",
         "experiments.run": "succeeded",
     }
+
+
+def test_site_and_creative_polling_fires_every_five_seconds() -> None:
+    periodic = app.periodic_registry.periodic_tasks
+    for name in ("site.read", "creatives.generate"):
+        task = next(item for item in periodic.values() if item.task.name == name)
+        clock = croniter.croniter(task.cron, 1_793_983_860.0)
+        ticks = [clock.get_next(float) for _ in range(6)]
+        gaps = {round(b - a) for a, b in itertools.pairwise(ticks)}
+        assert gaps == {5}, name
