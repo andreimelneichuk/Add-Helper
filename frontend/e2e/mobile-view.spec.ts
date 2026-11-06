@@ -80,7 +80,7 @@ test.describe("Задача 15. Мобильная адаптивность (mob
     await assertNoHorizontalScroll(page, "Чат");
 
     // 6. Экран «Настройки»
-    await navBar.getByRole("button", { name: "Настройки" }).click();
+    await mobileNav(page, "Настройки").click();
     await expect(page.locator(".set")).toBeVisible();
     await assertNoHorizontalScroll(page, "Настройки");
   });

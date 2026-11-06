@@ -388,6 +388,8 @@ def main() -> None:
     from adhelper.api.app import create_app
 
     app = create_app()
+    app.state.command_model = None
+    app.state.langchain_agent = None
     app.state.site_rules = dataclasses.replace(
         load_site_rules(),
         max_guest_reads_per_address=1000,

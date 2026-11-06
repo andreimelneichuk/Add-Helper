@@ -32,7 +32,7 @@ const MOBILE_VIEWS: [View, string][] = [
 const SITUATIONS: [Situation, string][] = [["running", "всё хорошо"], ["first", "первые дни"], ["problem", "нет денег"], ["verdict", "вывод проверки"], ["budget", "бюджет на исходе"], ["rejected", "отказ Яндекса"], ["access", "нет доступа"]];
 const SCREENS = { overview: Overview, stats: Stats, ads: Ads, history: History, settings: Settings };
 
-function BusinessSelector({ store, s, onAddSite }: { store: Store; s: State; onAddSite?: () => void }) {
+function BusinessSelector({ store, s }: { store: Store; s: State }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -93,8 +93,7 @@ function BusinessSelector({ store, s, onAddSite }: { store: Store; s: State; onA
             role="menuitem"
             onClick={() => {
               setOpen(false);
-              if (onAddSite) onAddSite();
-              else if (liveStore) liveStore.addNewSite();
+              if (liveStore) liveStore.addNewSite();
               else window.location.assign("/?start=new");
             }}
           >
@@ -139,7 +138,7 @@ export function AppShell({ store: given }: { store?: Store }) {
           </strong>
         ) : (
           <div className="ah-bar-site">
-            <BusinessSelector store={store} s={s} onAddSite={() => setShowNewSite(true)} />
+            <BusinessSelector store={store} s={s} />
             <button
               type="button"
               className="ah-btn ah-btn-small ah-bar-new"

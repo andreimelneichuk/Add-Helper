@@ -2,7 +2,7 @@ import { StrictMode, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createApi, createBusiness, createGuestApi, openSession } from "./api";
 import { AppShell } from "./app/AppShell";
-import { loadDraft, loadStartReading, loadStartSite } from "./app/draft";
+import { loadDraft, loadStartReading, loadStartSite, loadWizard } from "./app/draft";
 import { LiveStore, loadLive } from "./app/live";
 import { initialState, Store } from "./app/store";
 import { CONNECT_RESULT } from "./app/screens/LiveSettings";
@@ -20,6 +20,7 @@ function Root() {
 
 function GuestStart() {
   const store = useMemo(() => {
+    const isNew = new URLSearchParams(window.location.search).get("start") === "new";
     const savedSite = loadStartSite();
     const draft = loadDraft();
     const created = new Store({
@@ -27,12 +28,14 @@ function GuestStart() {
       // Объявления прототипа в настоящем запуске не показываем: их пишет сервис на шаге «Реклама».
       ads: [],
       ...(savedSite ? { site: savedSite } : {}),
+      ...(isNew ? { createAsNew: true } : {}),
       ...(draft ? {
         site: draft.site || savedSite,
         facts: draft.facts,
         f: { ...initialState("start").f, budget: draft.budget },
         step: draft.step ?? 0,
         draftOff: draft.draftOff ?? {},
+        createAsNew: isNew ? true : draft.createAsNew,
       } : {}),
     });
     created.reader = createGuestApi();
@@ -45,13 +48,20 @@ function GuestStart() {
     // Без ответа сервиса остаются пределы прототипа; сервис всё равно проверит сумму при сохранении.
     guest.budgetOptions().then((budgetOptions) => store.set({ budgetOptions }), () => undefined);
     openSession().then((session) => {
-      const isNew = new URLSearchParams(window.location.search).get("start") === "new";
-      if (session && session.businesses.length > 0 && !isNew) {
+      const search = new URLSearchParams(window.location.search);
+      const isNew = search.get("start") === "new";
+      const hasConnect = search.has("connect");
+      const wizardId = loadWizard();
+      const draft = loadDraft();
+      if (session && session.businesses.length > 0 && !isNew && !hasConnect && !wizardId && !draft) {
         window.location.replace("/");
         return;
       }
       if (session?.me?.email) {
         store.set({ account: { email: session.me.email }, businesses: session.businesses });
+        if (draft && store.transferDeps) {
+          void store.resume(store.transferDeps, login);
+        }
       }
     }).catch(() => undefined);
     const params = new URLSearchParams(window.location.search);

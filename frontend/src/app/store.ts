@@ -88,6 +88,8 @@ export type State = {
   businesses: Business[];
   /** ID активного бизнеса. */
   activeBusinessId: string | null;
+  /** Запуск для создания отдельного нового бизнеса (/?start=new). */
+  createAsNew?: boolean;
   /** Режим распределения бюджета: раздельный по сайтам или единый общий пул. */
   budgetMode?: "separate" | "shared";
   /** Общая сумма бюджета на все сайты при shared-режиме. */
@@ -339,6 +341,7 @@ export class Store {
       budget: Number(s.f.budget),
       step: s.step,
       draftOff: s.draftOff,
+      ...(s.createAsNew || loadDraft()?.createAsNew ? { createAsNew: true } : {}),
       ...ads,
     });
   }
@@ -584,10 +587,7 @@ export class Store {
   };
   /** Уйти на вход Яндекса. Черновик ждёт в браузере: вход перезагружает страницу. */
   login = () => {
-    const s = this.state;
-    const kept = s.ads.map((a, i) => (s.draftOff[a.id] ? -1 : i)).filter((i) => i >= 0);
-    const ads = s.adSet ? { ads: { id: s.adSet.id, token: s.adSet.token, kept } } : {};
-    saveDraft({ site: s.site, facts: s.facts, budget: Number(s.f.budget), ...ads });
+    this.persistDraft();
     this.navigate(LOGIN_URL);
   };
   /** Вернулись со входа: черновик становится бизнесом, профилем и планом бюджета. */

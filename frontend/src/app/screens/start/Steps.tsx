@@ -18,8 +18,25 @@ export const innReady = (s: State) => s.inn.length === 10 || s.inn.length === 12
 
 function AboutStep({ store, s }: StepProps) {
   const reading = s.reading !== null;
+  const signed = s.account !== null;
   return (
     <>
+      {!signed && (
+        <div className="st-auth-box">
+          <div className="st-auth-box-text">
+            <strong>Уже есть кабинет?</strong>
+            <span>Войдите через Яндекс, чтобы сразу открыть свой кабинет.</span>
+          </div>
+          <button type="button" className="ah-btn" onClick={store.loginDirect}>
+            Войти через Яндекс
+          </button>
+        </div>
+      )}
+      {signed && (
+        <div className="st-auth-box is-signed">
+          <span style={{ fontSize: "13px" }}>Вы вошли как <strong>{s.account?.email}</strong></span>
+        </div>
+      )}
       <label className="st-field">
         <span className="ah-label">Ссылка на сайт или страницу</span>
         <input className="ah-input st-input-big" inputMode="url" autoComplete="url" value={s.site} placeholder="Например: ваш-салон.рф" readOnly={reading} onChange={(e) => { store.set({ site: e.target.value, block: "" }); saveStartSite(e.target.value); }} />

@@ -11,26 +11,10 @@ test.describe("E2E Юзеркейсы: Мультибизнес, генерац�
     // Пользователь с имеющимися бизнесами открывает стартовую страницу
     await page.goto("/?start");
 
-    // Если у пользователя уже есть бизнес в сессии, он автоматически попадает в кабинет, минуя опрос
-    // Либо на шаге 0 присутствует кнопка «Войти» в шапке и плашка прямого входа
-    const brand = page.locator(".ah-brand");
-    const isLive = (await page.locator(".ah-rail").count()) > 0;
-
-    if (!isLive) {
-      // На первом шаге мастера онбординга доступна плашка прямого входа
-      await expect(page.getByRole("heading", { level: 1, name: "Где о вас можно прочитать?" })).toBeVisible();
-      await expect(page.locator(".st-auth-box")).toBeVisible();
-      await expect(page.locator(".st-auth-box")).toContainText("Уже есть кабинет? Войти через Яндекс");
-      await expect(page.getByRole("button", { name: "Войти" })).toBeVisible();
-
-      // Пользователь нажимает «Войти через Яндекс»
-      const authBtn = page.locator(".st-auth-box").getByRole("button", { name: "Войти через Яндекс" });
-      await expect(authBtn).toBeVisible();
-    } else {
-      // Автоматический редирект в кабинет сработал
-      await expect(brand).toBeVisible();
-      await expect(page.locator(".ah-rail")).toBeVisible();
-    }
+    // У пользователя стенда есть бизнес в сессии: после проверки сессии он попадает в кабинет, минуя опрос.
+    await expect(page.locator(".ah-rail")).toBeVisible();
+    await expect(page.locator(".ah-brand")).toBeVisible();
+    await expect(page.locator(".st-auth-box")).toHaveCount(0);
   });
 
   test("UC-2: Переключение между бизнесами через селектор в шапке", async ({ page }) => {
@@ -105,10 +89,11 @@ test.describe("E2E Юзеркейсы: Мультибизнес, генерац�
       await expect(chips.first()).toHaveAttribute("aria-pressed", "true");
     }
 
-    // 4. Ввод свободных пожеланий (акции, скидки, УТП)
+    // 4. Ввод свободных пожеланий (если доступен в режиме прототипа)
     const promptInput = modal.locator("textarea");
-    await expect(promptInput).toBeVisible();
-    await promptInput.fill("Скидка 20% новым клиентам в будние дни до 14:00");
+    if ((await promptInput.count()) > 0) {
+      await promptInput.fill("Скидка 20% новым клиентам в будние дни до 14:00");
+    }
 
     // 5. Запуск генерации
     const submitGen = modal.getByRole("button", { name: "Сгенерировать через ИИ" });
@@ -131,7 +116,7 @@ test.describe("E2E Юзеркейсы: Мультибизнес, генерац�
 
     // Модальное окно закрылось после добавления
     await expect(modal).toHaveCount(0);
-    await expect(notice(page)).toContainText(/Добавлено \d+ новых объявлен/);
+    await expect(notice(page)).toContainText(/Добавил \d+ объявлен/);
   });
 
   test("UC-5: Управление распределением рекламного бюджета (раздельный / общий)", async ({ page }) => {

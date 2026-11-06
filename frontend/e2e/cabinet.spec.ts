@@ -290,7 +290,7 @@ test.describe("Задача 15. Кабинет и управление рекл�
     await scheduleBlock.getByLabel("Показывать до").selectOption("16");
 
     // Появляется алерт ограничения площадки Яндекса
-    await expect(scheduleBlock.getByRole("alert")).toContainText("не принимает меньше 8 часов показа в неделю");
+    await expect(scheduleBlock.locator('[role="alert"]').filter({ hasText: "не принимает меньше 8 часов" })).toBeVisible();
     await expect(scheduleBlock.getByRole("button", { name: "Изменить время" })).toBeDisabled();
   });
 });

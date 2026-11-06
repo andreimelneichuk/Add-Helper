@@ -39,12 +39,8 @@ test.describe("Задача 15. Онбординг клиента (onboarding.sp
     await page.getByRole("button", { name: "Изучить" }).click();
     await expect(page.getByRole("alert")).toContainText("Вставьте ссылку или заполните профиль вручную.");
 
-    // 3. Кнопка «Можно спросить в чате» переключает на экран чата
-    await page.getByRole("button", { name: "Можно спросить в чате" }).click();
-    await expect(page.locator(".ah-chat")).toBeVisible();
-    // Возврат в мастер через раздел «Настройка»
-    await nav(page, "Настройка").click();
-    await expect(page.getByRole("heading", { level: 1, name: "Где о вас можно прочитать?" })).toBeVisible();
+    // 3. Чат и подсказка «Можно спросить в чате» скрыты на этапе онбординга
+    await expect(page.getByRole("button", { name: "Можно спросить в чате" })).toHaveCount(0);
 
     // 4. Кнопка «Заполнить вручную» переводит на шаг «Профиль» с чистым списком
     await page.getByRole("button", { name: "Заполнить вручную" }).click();

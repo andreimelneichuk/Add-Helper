@@ -137,12 +137,13 @@ test.describe("Интерактивная переделка объявлени�
     await expect(consentCheckbox).toBeVisible();
 
     const addPhotoBtn = photosSection.getByRole("button", { name: "Добавить фото" });
-    // Без чекбокса кнопка добавления заблокирована
-    await expect(addPhotoBtn).toBeDisabled();
+    // Без чекбокса нажатие показывает пояснение
+    await addPhotoBtn.click();
+    await expect(photosSection.getByRole("alert")).toContainText("Сначала отметьте");
 
     // Ставим согласие
     await consentCheckbox.check();
-    await expect(addPhotoBtn).toBeEnabled();
+    await expect(photosSection.getByRole("alert")).toHaveCount(0);
 
     // Загружаем тестовое фото через инпут файла
     const fileInput = photosSection.getByLabel("Файл фото");
