@@ -5,6 +5,7 @@
 клиентом, что и чтение сайта.
 """
 
+import asyncio
 import re
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
@@ -72,3 +73,24 @@ async def download_image(fetcher: SafeFetcher, url: str, max_bytes: int) -> byte
     except SiteUnavailable:
         return None
     return body
+
+
+async def download_many(
+    fetcher: SafeFetcher, urls: list[str], max_bytes: int, total_seconds: float = 20.0
+) -> list[bytes | None]:
+    """Картинки параллельно и в общий срок: что не успело, считается недоступным."""
+    gate = asyncio.Semaphore(4)
+
+    async def one(url: str) -> bytes | None:
+        async with gate:
+            return await download_image(fetcher, url, max_bytes)
+
+    tasks = [asyncio.ensure_future(one(url)) for url in urls]
+    await asyncio.wait(tasks, timeout=total_seconds)
+    for task in tasks:
+        if not task.done():
+            task.cancel()
+    return [
+        t.result() if t.done() and not t.cancelled() and t.exception() is None else None
+        for t in tasks
+    ]

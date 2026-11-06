@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from adhelper.api.cabinet import Owned, OwnedChecked
 from adhelper.business.adapters.fetcher import SafeFetcher
 from adhelper.business.adapters.rules_file import load_site_rules
-from adhelper.business.adapters.site_images import download_image, site_image_urls
+from adhelper.business.adapters.site_images import download_many, site_image_urls
 from adhelper.creatives.adapters.images_sql import SqlImages
 from adhelper.creatives.adapters.photos import prepare_image
 from adhelper.creatives.adapters.rules_file import load_image_rules
@@ -133,8 +133,8 @@ def images_router() -> APIRouter:
         if urls is None:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, SITE_FAILED)
         shown: list[dict[str, Any]] = []
-        for url in urls:
-            raw = await download_image(fetcher, url, rules.max_upload_bytes)
+        downloaded = await download_many(fetcher, urls, rules.max_upload_bytes)
+        for url, raw in zip(urls, downloaded, strict=True):
             if raw is None:
                 continue
             data = previewable(raw, lambda value: prepare_image(value, rules))
@@ -160,8 +160,8 @@ def images_router() -> APIRouter:
         store = SqlImages(_sessions(request), business_id)
         added = 0
         skipped = 0
-        for url in body.urls:
-            raw = await download_image(fetcher, url, rules.max_upload_bytes)
+        downloaded = await download_many(fetcher, body.urls, rules.max_upload_bytes)
+        for raw in downloaded:
             result = None
             if raw is not None:
                 result = await add_owner_photo(
