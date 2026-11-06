@@ -70,6 +70,18 @@ describe("настройки на настоящих данных", () => {
     expect(later).not.toContain("Пишу замену");
   });
 
+  it("удаление услуги не сбивает черновик цены другой строки", async () => {
+    const api = fakeApi({ profile: vi.fn(async () => ({ services: [{ name: "Маникюр", price: 1200 }, { name: "Педикюр", price: 1800 }], address: "Москва", features: [], niche: "", website: "" })) } as Partial<Api>);
+    render(<Settings store={await open(api)} />);
+    const second = await screen.findByLabelText("Цена услуги 2, ₽");
+    await userEvent.clear(second);
+    await userEvent.type(second, "-5");
+    await userEvent.click(screen.getByRole("button", { name: "Убрать услугу 1" }));
+    // Педикюр стал первой строкой, и его набранный текст остался в поле.
+    expect(screen.getByLabelText("Услуга 1")).toHaveValue("Педикюр");
+    expect(screen.getByLabelText("Цена услуги 1, ₽")).toHaveValue("-5");
+  });
+
   it("пустую услугу не сохраняет, отказ сервиса показывает как есть", async () => {
     const api = fakeApi({ saveProfile: vi.fn(async () => { throw new ApiError(422, "Слишком длинный адрес"); }) } as Partial<Api>);
     render(<Settings store={await open(api)} />);

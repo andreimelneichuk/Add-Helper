@@ -435,16 +435,26 @@ export function servicesProblem(services: Profile["services"]): string | null {
   return null;
 }
 
+const freshIds = (n: number): string[] => Array.from({ length: n }, () => crypto.randomUUID());
+
 function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [featuresText, setFeaturesText] = useState<string | null>(null);
   // Цена как её набрал владелец: «-5» показываем и не сохраняем, а не превращаем в 5.
-  const [priceText, setPriceText] = useState<Record<number, string>>({});
+  // Ключ строки услуги не зависит от места в списке: удаление строки не сбивает чужие черновики цен.
+  const [priceText, setPriceText] = useState<Record<string, string>>({});
+  const [rowIds, setRowIds] = useState<string[]>([]);
   // Первый пришедший профиль и есть форма: поздний ответ не затирает то, что владелец уже ввёл.
   useEffect(() => {
-    api.profile().then((loaded) => setProfile((current) => current ?? loaded), (e: unknown) => setStatus(message(e)));
+    api.profile().then((loaded) => {
+      setProfile((current) => {
+        if (current) return current;
+        setRowIds(freshIds(loaded.services.length));
+        return loaded;
+      });
+    }, (e: unknown) => setStatus(message(e)));
   }, [api]);
   const [read, setRead] = useState<SiteRead | null>(null);
   const [reading, setReading] = useState(false);
@@ -485,6 +495,8 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
       const services = profile.services.filter((x) => x.name.trim());
       const { outdated = [], ...saved } = await api.saveProfile({ ...profile, services, features: profile.features.map((f) => f.trim()).filter(Boolean) });
       setProfile(saved);
+      setRowIds(freshIds(saved.services.length));
+      setPriceText({});
       setFeaturesText(null);
       await store.refresh();
       setStatus(savedText(outdated));
@@ -509,7 +521,10 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
   };
   const apply = (facts: SiteFact[]) => {
     if (read) {
-      setProfile(mergeFacts(profile, facts, read.url));
+      const merged = mergeFacts(profile, facts, read.url);
+      setProfile(merged);
+      setRowIds(freshIds(merged.services.length));
+      setPriceText({});
       setFeaturesText(null);
     }
     setRead(null);
@@ -530,21 +545,26 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
       <fieldset className="set-services">
         <legend className="ah-label">Услуги и цены</legend>
         {profile.services.map((x, i) => (
-          <div key={i} className="set-service">
+          <div key={rowIds[i] ?? i} className="set-service">
             <input className="ah-input" aria-label={`Услуга ${i + 1}`} value={x.name} onChange={(e) => service(i, { name: e.target.value })} />
-            <input className="ah-input set-price" aria-label={`Цена услуги ${i + 1}, ₽`} inputMode="numeric" placeholder="₽" value={priceText[i] ?? x.price ?? ""} onChange={(e) => {
+            <input className="ah-input set-price" aria-label={`Цена услуги ${i + 1}, ₽`} inputMode="numeric" placeholder="₽" value={priceText[rowIds[i] ?? ""] ?? x.price ?? ""} onChange={(e) => {
               // Минус и буквы не отбрасываем молча: текст остаётся в поле, сохранить его нельзя.
               const raw = e.target.value.slice(0, 10);
-              setPriceText({ ...priceText, [i]: raw });
+              setPriceText({ ...priceText, [rowIds[i] ?? ""]: raw });
               const ok = PRICE_TEXT.test(raw);
               const digits = raw.replace(/\s/g, "");
               service(i, { price: ok && digits ? Number(digits) : null });
               if (!ok) setStatus(PRICE_PROBLEM);
             }} />
-            <button type="button" className="ah-link" aria-label={`Убрать услугу ${i + 1}`} onClick={() => { setPriceText({}); set({ services: profile.services.filter((_, j) => j !== i) }); }}>Убрать</button>
+            <button type="button" className="ah-link" aria-label={`Убрать услугу ${i + 1}`} onClick={() => {
+              const { [rowIds[i] ?? ""]: _gone, ...rest } = priceText;
+              setPriceText(rest);
+              setRowIds(rowIds.filter((_, j) => j !== i));
+              set({ services: profile.services.filter((_, j) => j !== i) });
+            }}>Убрать</button>
           </div>
         ))}
-        <button type="button" className="ah-btn" onClick={() => set({ services: [...profile.services, { name: "", price: null }] })}>Добавить услугу</button>
+        <button type="button" className="ah-btn" onClick={() => { setRowIds([...rowIds, crypto.randomUUID()]); set({ services: [...profile.services, { name: "", price: null }] }); }}>Добавить услугу</button>
       </fieldset>
       <label>
         <span className="ah-label">Чем вы отличаетесь, по одному факту в строке</span>
