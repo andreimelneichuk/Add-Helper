@@ -60,6 +60,7 @@ async def test_exchange_sends_verifier_and_reads_tokens() -> None:
     assert tokens.expires_at == NOW + timedelta(hours=1)
     assert seen[0]["grant_type"] == ["authorization_code"]
     assert seen[0]["code"] == ["code1"] and seen[0]["code_verifier"] == ["ver1"]
+    assert seen[0]["redirect_uri"] == ["unused"]
     assert seen[0]["client_secret"] == [SECRET]
 
 

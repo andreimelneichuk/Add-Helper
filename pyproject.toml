@@ -2,13 +2,16 @@
 name = "adhelper"
 version = "0.1.0"
 description = "Сервис, который сам ведёт рекламу малого бизнеса"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "alembic>=1.20.1",
     "cryptography>=50.0.2",
     "fastapi>=0.162.0",
     "font-roboto>=0.0.1",
     "httpx>=0.28.1",
+    "langchain>=1.4.9",
+    "langchain-core>=1.7.6",
+    "langchain-openai>=1.7.4",
     "pillow>=13.0.0",
     "playwright==1.64.1",
     "procrastinate>=3.10.0",

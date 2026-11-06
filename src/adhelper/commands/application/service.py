@@ -10,6 +10,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 
 from adhelper.commands.application.analytics import AnalyticsAgent, AnalyticsContext
+from adhelper.commands.application.langchain_agent import LangChainChatAgent
 from adhelper.commands.domain.model import (
     CHANGING,
     Command,
@@ -111,9 +112,25 @@ async def interpret(
     model: TextModel | None,
     may_call_model: Callable[[], bool],
     analytics_context: AnalyticsContext | None = None,
+    langchain_agent: LangChainChatAgent | None = None,
 ) -> Answer:
     found = parse_all(message, known, rules)
     first = found[0]
+
+    # Полноценный LangChain агент для свободного диалога, приветствий, консультаций и управления
+    if (
+        langchain_agent
+        and may_call_model()
+        and (
+            first.command.kind is Kind.UNKNOWN
+            or first.command.kind in (Kind.STATS, Kind.HISTORY)
+        )
+    ):
+        res = await langchain_agent.invoke(message, known, analytics_context)
+        if res.command.kind in CHANGING:
+            confirm = f"Понял так: {meaning(res.command)} Применить?"
+            return Answer(res.command, res.source, rules.version, confirm=confirm, reply=res.reply)
+        return Answer(res.command, res.source, rules.version, confirm="", reply=res.reply)
 
     specific_refusal = refusal(message)
     if first.command.kind is Kind.UNKNOWN and not first.question and specific_refusal != REFUSAL:

@@ -99,3 +99,25 @@ async def test_chat_history_inquiry_answers_with_details(anna: Anna) -> None:  #
     answer = await _say(client, csrf, business, "что ты делал?")
     assert answer["kind"] == "history"
     assert len(answer["reply"]) > 0
+
+
+async def test_chat_langchain_agent_handles_conversational_greeting(anna: Anna) -> None:  # noqa: F811
+    from unittest.mock import AsyncMock, MagicMock
+
+    from adhelper.commands.application.langchain_agent import LangChainChatAgent
+
+    client, csrf, business = anna
+    expected_reply = "Здравствуйте! Я ваш рекламный ассистент по Яндекс Директу. Чем могу помочь?"
+    mock_llm = MagicMock()
+    msg_mock = MagicMock()
+    msg_mock.content = json.dumps({"reply": expected_reply, "action": None}, ensure_ascii=False)
+    mock_llm.ainvoke = AsyncMock(return_value=msg_mock)
+    agent = LangChainChatAgent(mock_llm)
+
+    _app(client).state.langchain_agent = agent
+    answer = await _say(client, csrf, business, "Привет")
+    assert answer["kind"] == "unknown"
+    assert answer["reply"] == expected_reply
+    assert answer["confirm"] == ""
+
+

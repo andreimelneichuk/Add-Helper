@@ -111,6 +111,7 @@ def chat_router() -> APIRouter:
             request.app.state.command_model,
             lambda: calls.take(str(business_id), day, rules.model_calls_per_day),
             analytics_context=analytics_context,
+            langchain_agent=getattr(request.app.state, "langchain_agent", None),
         )
         return {**_shown(answer), "next": [_shown(more) for more in answer.more]}
 

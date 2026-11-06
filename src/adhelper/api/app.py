@@ -141,6 +141,13 @@ def create_app(
         settings.text_model_name,
         settings.text_model_project,
     )
+    from adhelper.commands.application.langchain_agent import build_langchain_agent
+    app.state.langchain_agent = build_langchain_agent(
+        settings.text_model_base_url,
+        settings.text_model_api_key,
+        settings.text_model_name,
+        settings.text_model_project,
+    )
     app.state.command_calls = CallBudget()
     token = settings.telegram_bot_token
     # Без токена бот не читает сообщения, и ссылка на привязку никуда бы не вела.

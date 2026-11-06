@@ -29,6 +29,7 @@ from adhelper.accounts.domain.ports import GrantRejected, ProviderUnavailable
 
 # В журнале httpx адреса запросов; секретов в адресах нет, но лишнего не пишем.
 logging.getLogger("httpx").setLevel(logging.WARNING)
+logger = logging.getLogger(__name__)
 
 OAUTH = "https://oauth.yandex.ru"
 LOGIN = "https://login.yandex.ru"
@@ -103,11 +104,15 @@ class YandexOAuth:
         response = await self._send("POST", f"{self._oauth}/token", data=form)
         body = _json(response)
         if response.status_code >= 500:
+            logger.warning("Yandex token server error: %s (%r)", response.status_code, body)
             raise ProviderUnavailable(f"token: {response.status_code}")
         if response.status_code != 200:
+            logger.warning("Yandex token request failed: status=%s, body=%r", response.status_code, body)
             error = body.get("error") if isinstance(body, dict) else None
+            error_description = body.get("error_description") if isinstance(body, dict) else None
+            msg = f"{error}: {error_description}" if error_description else str(error or response.status_code)
             if error in REJECTED or response.status_code in (400, 401):
-                raise GrantRejected(str(error or response.status_code))
+                raise GrantRejected(msg)
             raise ProviderUnavailable(f"token: {response.status_code}")
         try:
             access = str(body["access_token"])
@@ -120,10 +125,14 @@ class YandexOAuth:
         return OAuthTokens(access, refresh, self._clock() + timedelta(seconds=expires_in), scopes)
 
     async def exchange(self, code: str, verifier: str, redirect_uri: str) -> OAuthTokens:
-        # redirect_uri Яндекс сверяет с приложением при выдаче кода; в обмене его не ждёт.
-        return await self._token(
-            {"grant_type": "authorization_code", "code": code, "code_verifier": verifier}
-        )
+        form = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "code_verifier": verifier,
+        }
+        if redirect_uri:
+            form["redirect_uri"] = redirect_uri
+        return await self._token(form)
 
     async def refresh(self, refresh_token: str) -> OAuthTokens:
         return await self._token({"grant_type": "refresh_token", "refresh_token": refresh_token})
