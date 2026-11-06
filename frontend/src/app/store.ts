@@ -305,6 +305,11 @@ export class Store {
   /** Переход на другую страницу: вход Яндекса и кабинет. В тестах подменяется. */
   navigate = (url: string) => window.location.assign(url);
   private resumed = false;
+  /** Перенос черновика в сервис; есть — вошедший владелец сохраняет мастер как новый сайт на шаге «Кабинет». */
+  transferDeps: (TransferDeps & Partial<Pick<WizardDeps, "open">>) | null = null;
+  /** У владельца уже был бизнес, и черновик в него намеренно не перенесён. */
+  keptExisting = false;
+  private saving = false;
   /** Бизнес мастера после входа; null — вход не состоялся или у владельца уже был бизнес. */
   wizard: WizardApi | null = null;
   /** Есть — «Переделать» на экране объявления просит настоящего писателя. */
@@ -505,9 +510,13 @@ export class Store {
     const next = edit.id === null
       ? [...facts, newFact(value, field)]
       : facts.map((f) => (f.id === edit.id ? { ...f, field, label, value, source: "от вас", quote: undefined } : f));
-    this.set({ facts: next, factEdit: null, block: "" });
+    this.set({ facts: next, factEdit: null, block: "", ...this.staleAds() });
   };
-  removeFact = (id: string) => this.set({ facts: this.state.facts.filter((f) => f.id !== id), factEdit: null, block: "" });
+  removeFact = (id: string) => this.set({ facts: this.state.facts.filter((f) => f.id !== id), factEdit: null, block: "", ...this.staleAds() });
+  /** Факты поменялись: написанные по старым фактам объявления больше не годятся, на шаге «Реклама» напишем новые. */
+  private staleAds(): Partial<State> {
+    return this.writer && this.state.adSet ? { ads: [], adSet: null, draftOff: {} } : {};
+  }
   /** Разобрать сайт до входа. Шаг меняется, когда разбор готов; сбой оставляет путь вручную. */
   async study() {
     const reader = this.reader;
@@ -594,6 +603,7 @@ export class Store {
       const done = await transferDraft(deps, draft);
       if (done.status === "signed_out") return;
       if (done.status === "exists") {
+        this.keptExisting = true;
         return this.set({ block: `У вас уже есть бизнес «${done.name}». Черновик в него не переношу, чтобы не затереть профиль. Нажмите «Создать как новый проект» или «Продолжить», чтобы открыть кабинет.`, account: { email: null } });
       }
       this.wizard = deps.open?.(done.businessId, done.csrf) ?? null;
@@ -606,10 +616,36 @@ export class Store {
   /** Создать черновик как отдельный новый бизнес. */
   createAsNew = async (deps: TransferDeps & Partial<Pick<WizardDeps, "open">>) => {
     this.resumed = false;
+    this.keptExisting = false;
     const draft = loadDraft();
     if (draft) saveDraft({ ...draft, createAsNew: true });
     await this.resume(deps, null);
   };
+  /** Владелец уже вошёл: черновик мастера становится новым сайтом с профилем и планом бюджета. */
+  private async saveNewSite(deps: TransferDeps & Partial<Pick<WizardDeps, "open">>) {
+    if (this.saving) return;
+    this.saving = true;
+    const s = this.state;
+    const kept = s.ads.map((a, i) => (s.draftOff[a.id] ? -1 : i)).filter((i) => i >= 0);
+    const ads = s.adSet && kept.length > 0 ? { ads: { id: s.adSet.id, token: s.adSet.token, kept } } : {};
+    // Повтор после сбоя идёт в уже созданный бизнес, а не создаёт второй.
+    const businessId = loadDraft()?.businessId;
+    const draft = { site: s.site, facts: s.facts, budget: Number(s.f.budget), createAsNew: true, ...(businessId ? { businessId } : {}), ...ads };
+    saveDraft(draft);
+    this.set({ block: "" });
+    try {
+      const done = await transferDraft(deps, draft);
+      if (done.status === "signed_out") return this.set({ account: null, block: "Вход истёк. Войдите через Яндекс ещё раз: черновик сохранён." });
+      if (done.status === "exists") return this.set({ block: "Не получилось сохранить новый сайт. Обновите страницу и попробуйте ещё раз." });
+      this.wizard = deps.open?.(done.businessId, done.csrf) ?? null;
+      this.set({ account: { email: done.email }, msgs: [...this.state.msgs, msg("ai", "Сохранил профиль и бюджет нового сайта. Теперь подключите к нему кабинет Директа.")] });
+      await this.loadChosen();
+    } catch (e) {
+      this.set({ block: `${e instanceof Error ? e.message : "Сервис не ответил"}. Черновик сохранён: нажмите «Продолжить» ещё раз.` });
+    } finally {
+      this.saving = false;
+    }
+  }
   /** Вернулись с подключения кабинета: мастер продолжается с шага «Кабинет». */
   async resumeConnect(deps: WizardDeps, problem: string | null) {
     if (this.resumed) return;
@@ -694,6 +730,8 @@ export class Store {
   /** Шаги после входа в настоящем запуске: данные уходят в сервис, сводку проверяет сервис. */
   private nextReal(s: State) {
     if (s.step === 4 && !s.account) return this.set({ block: "Войдите через Яндекс: так профиль и бюджет сохранятся." });
+    // Вошли раньше, мастер для нового сайта: сохраняем черновик отдельным бизнесом, а не выбрасываем.
+    if (s.step === 4 && !this.wizard && this.transferDeps && !this.keptExisting) { void this.saveNewSite(this.transferDeps); return; }
     // Бизнес уже был: мастер его не трогает, дальше кабинет.
     if (s.step >= 4 && !this.wizard) { clearDraft(); return this.navigate("/"); }
     if (s.step === 5) { void this.saveMarking(); return; }
@@ -725,7 +763,8 @@ export class Store {
       }
       return this.set({ block: "Объявлений пока нет: нажмите «Написать ещё раз»." });
     }
-    if (s.step >= 3 && s.ads.every((a) => s.draftOff[a.id])) return this.set({ block: "Оставьте хотя бы одно объявление." });
+    // Без объявлений (исчерпан лимит) идём дальше: шаг «Реклама» сам обещает, что их напишем в кабинете.
+    if (s.step >= 3 && s.ads.length > 0 && s.ads.every((a) => s.draftOff[a.id])) return this.set({ block: "Оставьте хотя бы одно объявление." });
     if (s.step >= 4 && this.reader) return this.nextReal(s);
     if (s.step === 4 && !s.yandex) return this.set({ block: "Подключите кабинет Яндекса." });
     if (s.step === 5 && !/^(\d{10}|\d{12})$/.test(s.inn)) return this.set({ block: "ИНН это 10 или 12 цифр." });

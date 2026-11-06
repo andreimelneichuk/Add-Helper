@@ -217,13 +217,17 @@ function YandexStep({ store, s }: StepProps) {
   if (store.reader && s.account && store.wizard) return <RealYandex store={store} s={s} />;
   if (store.reader) {
     const signed = s.account !== null;
+    // Вошли раньше и черновик ещё в браузере: «Продолжить» сохранит его новым сайтом.
+    const unsaved = store.transferDeps !== null && !store.keptExisting;
     return (
       <div className="st-link">
         <div className="st-link-text">
-          <div className="st-link-title">Вход через Яндекс</div>
+          <div className="st-link-title">{signed ? "Вход выполнен" : "Вход через Яндекс"}</div>
           <div className="ah-muted">
             {signed
-              ? `${s.account?.email ? `Вы вошли: ${s.account.email}. ` : ""}Профиль и бюджет сохранены в сервисе. Кабинет Директа подключите в настройках: ИНН, код статистики и запуск появятся, когда Яндекс откроет доступ к API.`
+              ? `${s.account?.email ? `Вы вошли: ${s.account.email}. ` : ""}${unsaved
+                ? "Нажмите «Продолжить»: сохраню профиль и бюджет как новый сайт, затем подключим к нему кабинет Директа."
+                : "Профиль и бюджет сохранены в сервисе. Кабинет Директа подключите в настройках: ИНН, код статистики и запуск появятся, когда Яндекс откроет доступ к API."}`
               : "Войдите тем логином, где будет реклама. Профиль и бюджет сохранятся в сервисе, ничего вводить заново не придётся."}
           </div>
         </div>

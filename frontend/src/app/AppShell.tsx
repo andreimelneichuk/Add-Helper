@@ -145,6 +145,11 @@ export function AppShell({ store: given }: { store?: Store }) {
             {s.account.email}
           </span>
         )}
+        {starting && s.businesses.length > 0 && (
+          <button type="button" className="ah-btn ah-btn-small" onClick={() => store.navigate("/")}>
+            В кабинет
+          </button>
+        )}
         {!starting && <span className="ah-status" style={tone}><i aria-hidden="true" />{statusText(s)}</span>}
         {!starting && (s.live ? s.live.hasCampaigns : true) && <button type="button" className="ah-btn ah-bar-pause" onClick={() => store.run({ action: "pause" })}>{s.paused ? "Включить" : "Пауза"}</button>}
         {!starting && <button type="button" className="ah-btn ah-btn-icon" aria-label="Настройки" aria-current={!chat && s.view === "settings" ? "page" : undefined} onClick={() => store.goView("settings")}><Icon name="settings" /></button>}
