@@ -12,7 +12,7 @@ function siteApi(id: string): Api {
     ...fakeApi(),
     overview: vi.fn(async () => {
       const o = overview();
-      o.money[0].period.hard_limit = (limits[id] ?? 0) * MILLION;
+      o.money[0]!.period.hard_limit = (limits[id] ?? 0) * MILLION;
       return o;
     }),
     setBudget: vi.fn(async (rubles: number) => {

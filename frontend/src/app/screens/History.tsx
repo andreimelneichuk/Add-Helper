@@ -1,7 +1,7 @@
 import { memo, useEffect, useId, useRef } from "react";
 import type { UndoPreview } from "../../api";
 import type { HistoryEntry } from "../data";
-import { useStoreState } from "../store";
+import { useStore } from "../store";
 import type { State, Store } from "../store";
 import "./History.css";
 
@@ -70,7 +70,7 @@ const Entry = memo(function Entry({ entry, undone, undoing, asked, info, onAskUn
 });
 
 export function History({ store }: { store: Store }) {
-  const s = useStoreState(store);
+  const s = useStore(store, (x) => ({ hist: x.hist, filter: x.filter, undone: x.undone, undoing: x.undoing, asked: x.asked, undoInfo: x.undoInfo }));
   const list = s.hist.filter((h) => s.filter === "all" || h.kind === s.filter);
 
   const handleAskUndo = (id: string) => store.askUndo(id);

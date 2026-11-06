@@ -6,7 +6,7 @@ import { rub } from "../data";
 import { isAbort } from "../polling";
 import { liveApi, savedText } from "../live";
 import type { LiveStore } from "../live";
-import { useStoreState } from "../store";
+import { useStore } from "../store";
 import type { Store } from "../store";
 import "./Settings.css";
 
@@ -139,7 +139,7 @@ function PlanForm({ api, businesses }: { api: Api; businesses?: Business[] }) {
 }
 
 function BudgetForm({ store }: { store: LiveStore }) {
-  const s = useStoreState(store);
+  const s = useStore(store, (x) => ({ live: x.live, businesses: x.businesses }));
   const live = s.live!;
   const [mode, setMode] = useState<"separate" | "shared">("separate");
   const [draft, setDraft] = useState(live.budget > 0 ? String(live.budget) : "");
@@ -753,23 +753,12 @@ function Photos({ api }: { api: Api }) {
   );
 }
 
-// У каждого сайта свой API: формы настроек пересоздаются при смене сайта, чтобы не сохранить данные одного в другой.
-const apiKeys = new WeakMap<Api, number>();
-let lastApiKey = 0;
-function keyOf(api: Api): number {
-  let key = apiKeys.get(api);
-  if (key === undefined) {
-    key = ++lastApiKey;
-    apiKeys.set(api, key);
-  }
-  return key;
-}
-
+// У каждого сайта свои данные: формы настроек пересоздаются при смене сайта, чтобы не сохранить данные одного в другой.
 export function LiveSettings({ store }: { store: Store }) {
   // Подписка на магазин: смена сайта меняет API, и экран должен это увидеть.
-  const s = useStoreState(store);
+  const activeBusinessId = useStore(store, (s) => s.activeBusinessId);
   const api = liveApi(store)!;
-  return <SiteSettings key={s.activeBusinessId ?? keyOf(api)} store={store} api={api} />;
+  return <SiteSettings key={activeBusinessId ?? "none"} store={store} api={api} />;
 }
 
 function SiteSettings({ store, api }: { store: Store; api: Api }) {

@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { MIN_BUDGET, MIN_GOAL, OPTIONS, rub } from "../data";
 import type { SettingKey } from "../data";
-import { useStoreState } from "../store";
-import type { State, Store } from "../store";
+import { useStore } from "../store";
+import type { Store } from "../store";
 import { LiveSettings } from "./LiveSettings";
 import "./Settings.css";
 
@@ -10,12 +10,13 @@ const KEYS = Object.keys(OPTIONS) as SettingKey[];
 const OWN_MIN: Partial<Record<SettingKey, number>> = { budget: MIN_BUDGET, goal: MIN_GOAL };
 
 // Своё значение задаётся кнопкой и подтверждается: смена бюджета меняет лимит в Яндексе.
-function OwnAmount({ store, s, name, min }: { store: Store; s: State; name: SettingKey; min: number }) {
+function OwnAmount({ store, name, min }: { store: Store; name: SettingKey; min: number }) {
+  const current = useStore(store, (x) => x.f[name]);
   const [draft, setDraft] = useState("");
   const value = Number(draft);
   const low = draft !== "" && value < min;
   const apply = () => {
-    if (value < min || s.f[name] === value) return;
+    if (value < min || current === value) return;
     store.ask({ action: "setting", value: [name, value] });
     setDraft("");
   };
@@ -31,7 +32,8 @@ function OwnAmount({ store, s, name, min }: { store: Store; s: State; name: Sett
   );
 }
 
-function Options({ store, s }: { store: Store; s: State }) {
+function Options({ store }: { store: Store }) {
+  const f = useStore(store, (x) => x.f);
   return (
     <>
       {KEYS.map((key) => {
@@ -41,18 +43,18 @@ function Options({ store, s }: { store: Store; s: State }) {
             <div className="ah-label">{group.label}</div>
             <div className="set-options">
               {group.values.map((v) => {
-                const active = s.f[key] === v;
+                const active = f[key] === v;
                 return (
                   <button key={v} type="button" className="ah-chip" aria-pressed={active} onClick={() => { if (!active) store.ask({ action: "setting", value: [key, v] }); }}>
                     {typeof v === "number" ? rub(v) : v}
                   </button>
                 );
               })}
-              {typeof s.f[key] === "number" && !group.values.includes(s.f[key]) && (
-                <span className="ah-chip" aria-current="true">{rub(Number(s.f[key]))}</span>
+              {typeof f[key] === "number" && !group.values.includes(f[key]) && (
+                <span className="ah-chip" aria-current="true">{rub(Number(f[key]))}</span>
               )}
             </div>
-            {OWN_MIN[key] !== undefined && <OwnAmount store={store} s={s} name={key} min={OWN_MIN[key]} />}
+            {OWN_MIN[key] !== undefined && <OwnAmount store={store} name={key} min={OWN_MIN[key]} />}
           </div>
         );
       })}
@@ -61,7 +63,7 @@ function Options({ store, s }: { store: Store; s: State }) {
 }
 
 export function Settings({ store }: { store: Store }) {
-  const s = useStoreState(store);
+  const s = useStore(store, (x) => ({ live: !!x.live, price: x.price }));
   if (s.live) return <LiveSettings store={store} />;
   const profile: [string, string][] = [
     ["Цены", `маникюр от ${rub(s.price ?? 1200)}, педикюр от 1 800 ₽`],
@@ -73,7 +75,7 @@ export function Settings({ store }: { store: Store }) {
     <div className="set">
       <section className="ah-panel set-main" aria-labelledby="set-title">
         <h2 id="set-title" className="ah-panel-title">Настройки</h2>
-        <Options store={store} s={s} />
+        <Options store={store} />
         <p className="set-hint">Можно написать и в чат: «не показывай по воскресеньям». Любое изменение попадает в историю.</p>
       </section>
       <section className="ah-panel set-profile" aria-labelledby="set-profile-title">

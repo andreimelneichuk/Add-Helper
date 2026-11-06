@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useRef, useSyncExternalStore } from "react";
 import { ApiError } from "../api";
 import type { AdDraftProfile, AdSet, AdvertiserKind, Api, ChatCommand, Me, Business, SiteFact, SiteRead, UndoPreview, WizardAd } from "../api";
 import { pollUntil } from "./polling";
@@ -784,4 +784,32 @@ export class Store {
 
 export function useStoreState(store: Store): State {
   return useSyncExternalStore(store.subscribe, store.getSnapshot);
+}
+
+/** Поверхностное сравнение: те же ключи и те же значения по ссылке. */
+export function shallowEqual(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const ka = Object.keys(a);
+  if (ka.length !== Object.keys(b).length) return false;
+  return ka.every((k) => Object.prototype.hasOwnProperty.call(b, k) && Object.is((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
+}
+
+/**
+ * Подписка на часть состояния: экран перерисовывается, только когда выбранное
+ * изменилось (поверхностно). Селектор должен быть чистым и быстрым.
+ */
+export function useStore<T>(store: Store, select: (s: State) => T, isEqual: (a: T, b: T) => boolean = shallowEqual): T {
+  const cache = useRef<{ state: State; select: (s: State) => T; value: T } | null>(null);
+  const getSelection = () => {
+    const state = store.getSnapshot();
+    const prev = cache.current;
+    if (prev && prev.state === state && prev.select === select) return prev.value;
+    const value = select(state);
+    const kept = prev && isEqual(prev.value, value) ? prev.value : value;
+    cache.current = { state, select, value: kept };
+    return kept;
+  };
+  return useSyncExternalStore(store.subscribe, getSelection, getSelection);
 }
