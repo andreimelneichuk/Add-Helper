@@ -247,3 +247,69 @@ class SqlBudgetPlans:
         )
         async with self._sessions.begin() as session:
             await session.execute(statement)
+
+
+PORTFOLIOS = table(
+    "budget_portfolios",
+    column("user_id", Uuid),
+    column("mode", Text),
+    column("shared_monthly_micros", BigInteger),
+    column("updated_at", DateTime(timezone=True)),
+)
+
+
+class SqlBudgetPortfolio:
+    """Режим бюджета владельца и раздача общей суммы по сайтам. Запросы ограничены user_id."""
+
+    def __init__(self, sessions: async_sessionmaker[AsyncSession], user_id: UUID) -> None:
+        self._sessions = sessions
+        self._user_id = user_id
+
+    async def get(self) -> tuple[str, int | None] | None:
+        statement = select(PORTFOLIOS.c.mode, PORTFOLIOS.c.shared_monthly_micros).where(
+            PORTFOLIOS.c.user_id == self._user_id
+        )
+        async with self._sessions() as session:
+            row = (await session.execute(statement)).one_or_none()
+        return None if row is None else (str(row[0]), row[1])
+
+    async def business_ids(self) -> list[UUID]:
+        statement = text("SELECT id FROM businesses WHERE user_id = :user ORDER BY created_at, id")
+        async with self._sessions() as session:
+            rows = await session.execute(statement, {"user": self._user_id})
+            return [row[0] for row in rows]
+
+    async def save_shared(
+        self, total_micros: int, plans: dict[UUID, int], rules_version: str
+    ) -> bool:
+        """Режим и планы всех сайтов одной транзакцией. Ложь, если список сайтов изменился."""
+        async with self._sessions.begin() as session:
+            rows = await session.execute(
+                text("SELECT id FROM businesses WHERE user_id = :user ORDER BY id FOR UPDATE"),
+                {"user": self._user_id},
+            )
+            if {row[0] for row in rows} != set(plans):
+                return False
+            for business_id, micros in plans.items():
+                values = {"monthly_micros": micros, "rules_version": rules_version}
+                plan = insert(PLANS).values(business_id=business_id, **values)
+                await session.execute(
+                    plan.on_conflict_do_update(
+                        index_elements=[PLANS.c.business_id],
+                        set_={**values, "updated_at": func.now()},
+                    )
+                )
+            await session.execute(self._upsert("shared", total_micros))
+        return True
+
+    async def save_separate(self) -> None:
+        """Раздельный режим: планы сайтов остаются как есть."""
+        async with self._sessions.begin() as session:
+            await session.execute(self._upsert("separate", None))
+
+    def _upsert(self, mode: str, shared_micros: int | None) -> Any:
+        values = {"mode": mode, "shared_monthly_micros": shared_micros}
+        statement = insert(PORTFOLIOS).values(user_id=self._user_id, **values)
+        return statement.on_conflict_do_update(
+            index_elements=[PORTFOLIOS.c.user_id], set_={**values, "updated_at": func.now()}
+        )

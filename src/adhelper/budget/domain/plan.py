@@ -26,3 +26,14 @@ def check_plan(rubles: int, rules: PlanRules) -> PlanProblem | None:
     if rubles > rules.max_monthly_rubles:
         return PlanProblem.ABOVE_MAX
     return None
+
+
+def split_budget(total_rubles: int, parts: int) -> tuple[int, ...]:
+    """Общий бюджет на несколько сайтов: целые рубли, остаток по рублю первым сайтам.
+
+    Сумма долей равна общей: ничего не теряется и не добавляется при округлении.
+    """
+    if parts < 1:
+        raise ValueError("Нужен хотя бы один сайт")
+    base, extra = divmod(total_rubles, parts)
+    return tuple(base + 1 if i < extra else base for i in range(parts))
