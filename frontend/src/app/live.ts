@@ -21,10 +21,10 @@ const quote = (ad: OutdatedAd) => `«${ad.headline}» (${ad.numbers.join(", ")})
 
 /** Что стало с объявлениями после правки фактов: цифры подставляет код, а не модель. */
 export function savedText(outdated: OutdatedAd[]): string {
-  if (outdated.length === 0) return "Сохранил. Объявления пишутся по этим фактам, в идущих старых цифр нет.";
+  if (outdated.length === 0) return "Сохранил. Новые объявления пишутся по этим фактам, в уже идущих объявлениях старых цифр нет.";
   const now = outdated.filter((a) => a.replacing);
   const later = outdated.filter((a) => !a.replacing);
-  const parts = [`Сохранил. В идущих объявлениях остались старые цифры: ${outdated.map(quote).join(", ")}.`];
+  const parts = [`Сохранил. В уже идущих объявлениях остались старые цифры: ${outdated.map(quote).join(", ")}.`];
   if (now.length) parts.push(`Пишу замену по новым фактам (${now.length}), она встанет в очередь на запуск или попросит вашего решения в разделе «Реклама».`);
   if (later.length) parts.push(`Для ${later.length} лимит текстов на сегодня исчерпан, замену напишу завтра.`);
   parts.push("Пока Яндекс не проверил замену, старое объявление показывается. Если цена уже не действует, отключите его на экране объявления.");

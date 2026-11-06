@@ -659,7 +659,7 @@ describe("сетевые ошибки и граничные сценарии (50
   });
 
   it("проверяет savedText и summary в граничных случаях", async () => {
-    expect(savedText([])).toContain("в идущих старых цифр нет");
+    expect(savedText([])).toContain("в уже идущих объявлениях старых цифр нет");
     const laterAd = { account: "anna", ad_id: "1", headline: "Текст", text: "", numbers: ["100"], replacing: false };
     const nowAd = { account: "anna", ad_id: "2", headline: "Текст 2", text: "", numbers: ["200"], replacing: true };
     expect(savedText([laterAd])).toContain("лимит текстов на сегодня исчерпан");
