@@ -163,9 +163,7 @@ class SqlGuestSiteReads:
             row = existing.first()
             if row is not None:
                 await session.execute(
-                    update(READS)
-                    .where(READS.c.id == row.id)
-                    .values(token_hash=token_hash)
+                    update(READS).where(READS.c.id == row.id).values(token_hash=token_hash)
                 )
                 return int(row.id)
 

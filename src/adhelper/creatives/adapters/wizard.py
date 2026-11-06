@@ -67,7 +67,7 @@ class SqlWizardSets:
         profile_json = profile_to_json(profile)
         async with self._sessions.begin() as session:
             await session.execute(select(func.pg_advisory_xact_lock(GUEST_LOCK)))
-            # Кэширование: если для этого гостя и профиля уже есть готовый набор за сутки, возвращаем его
+            # Кэширование: готовый набор этого гостя и профиля за сутки возвращаем повторно
             if not force:
                 existing = await session.scalar(
                     select(CreativeSetRow)

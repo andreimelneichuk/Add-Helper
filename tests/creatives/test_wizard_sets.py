@@ -148,7 +148,6 @@ async def test_repeated_request_with_same_profile_returns_cached_ready_set(
     assert fresh is not None and fresh.status == SetStatus.QUEUED
 
 
-
 async def _creatives_count(sessions: Sessions) -> int:
     from sqlalchemy import text
 
