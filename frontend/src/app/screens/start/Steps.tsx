@@ -193,7 +193,10 @@ function MockAds({ store, s }: StepProps) {
           <article key={a.id} className={off ? "st-ad is-off" : "st-ad"}>
             <AdArt ad={a} hook={a.hook} />
             <div className="st-ad-body">
-              <h2 className="st-ad-title">{a.title}</h2>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                <h2 className="st-ad-title" style={{ margin: 0 }}>{a.title}</h2>
+                <span className={off ? "ah-tag ah-tag-neutral" : "ah-tag ah-tag-good"}>{off ? "Убрано" : "В рекламу"}</span>
+              </div>
               <p className="st-ad-text">{a.text}</p>
               <p className="st-ad-facts">{a.facts}</p>
               <button type="button" className="ah-btn st-ad-toggle" aria-label={`${action} «${a.name}»`} onClick={() => store.set({ draftOff: { ...s.draftOff, [a.id]: !off }, block: "" })}>{action}</button>
