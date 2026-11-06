@@ -1,6 +1,6 @@
 // Новый интерфейс на настоящих данных: сводит ответы API к состоянию экранов и шлёт действия владельца.
 // Деньги приходят целыми микроединицами; в рубли переводим только здесь и только для показа.
-import { ApiError, createApi, openSession } from "../api";
+import { ApiError, createApi, createBusiness, openSession } from "../api";
 import type { AdLine, Alert, Api, ChatCommand, HistoryLine, Money, OutdatedAd, Overview, Profile, UndoPreview } from "../api";
 import { clearDraft, clearStartReading, clearStartSite } from "./draft";
 import { ALERT } from "./words";
@@ -161,7 +161,8 @@ export async function loadLive(api: Api, name: string): Promise<Partial<State>> 
   const seen = new Set(adsWeek.map((a) => a.ad_id));
   const lines = [...adsWeek, ...adsMonth.filter((a) => !seen.has(a.ad_id)).map((a) => ({ ...a, totals: { impressions: 0, clicks: 0, cost: 0, conversions: 0 } }))];
   let ads = lines.map((line) => toAd(line, api.photoUrl));
-  if (ads.length === 0 && api.wizardAds) {
+  const hasProfileFacts = !!(profile && (profile.services?.some((s) => s.name?.trim()) || profile.features?.length > 0 || profile.niche?.trim()));
+  if (ads.length === 0 && api.wizardAds && hasProfileFacts) {
     try {
       const wizard = await api.wizardAds();
       if (wizard?.ads?.length) {
@@ -261,6 +262,34 @@ export class LiveStore extends Store {
     clearStartSite();
     clearStartReading();
     window.location.assign("/?start=new");
+  }
+
+  /** Создать новый бизнес/сайт прямо из панели и переключиться на него. */
+  async createSite(name: string, website?: string) {
+    const session = await openSession();
+    if (!session) throw new Error("Сессия не найдена. Войдите заново.");
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error("Укажите название бизнеса или сайта.");
+    const created = await createBusiness(trimmed, session.me.csrf_token);
+    try { window.localStorage.setItem("adhelper.activeBusinessId", created.id); } catch {}
+    const newApi = createApi(created.id, session.me.csrf_token);
+    this.api = newApi;
+    this.rework = newApi;
+    if (website?.trim()) {
+      try {
+        const p = await newApi.profile().catch(() => null);
+        if (p) await newApi.saveProfile({ ...p, website: website.trim() });
+      } catch {}
+    }
+    const freshSession = await openSession();
+    const loaded = await loadLive(newApi, created.name);
+    this.set({
+      ...loaded,
+      activeBusinessId: created.id,
+      businesses: freshSession?.businesses ?? [...this.state.businesses, created],
+      notice: `Создан новый сайт «${created.name}». Заполните профиль в настройках.`,
+    });
+    return created;
   }
 
   /** Перед вопросом «отменить?» узнаём у сервиса, что именно вернётся и можно ли вообще. */

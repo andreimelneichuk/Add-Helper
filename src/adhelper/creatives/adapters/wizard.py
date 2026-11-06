@@ -60,6 +60,7 @@ class SqlWizardSets:
         rules: WizardRules,
         creative_rules: str,
         now: datetime,
+        force: bool = False,
     ) -> int:
         guests = CreativeSetRow.business_id.is_(None)
         recent = CreativeSetRow.created_at > now - DAY
@@ -67,21 +68,22 @@ class SqlWizardSets:
         async with self._sessions.begin() as session:
             await session.execute(select(func.pg_advisory_xact_lock(GUEST_LOCK)))
             # Кэширование: если для этого гостя и профиля уже есть готовый набор за сутки, возвращаем его
-            existing = await session.scalar(
-                select(CreativeSetRow)
-                .where(
-                    guests,
-                    recent,
-                    CreativeSetRow.guest_key == guest_key,
-                    CreativeSetRow.profile == profile_json,
-                    CreativeSetRow.status == SetStatus.READY.value,
+            if not force:
+                existing = await session.scalar(
+                    select(CreativeSetRow)
+                    .where(
+                        guests,
+                        recent,
+                        CreativeSetRow.guest_key == guest_key,
+                        CreativeSetRow.profile == profile_json,
+                        CreativeSetRow.status == SetStatus.READY.value,
+                    )
+                    .order_by(CreativeSetRow.id.desc())
+                    .limit(1)
                 )
-                .order_by(CreativeSetRow.id.desc())
-                .limit(1)
-            )
-            if existing is not None:
-                existing.token_hash = token_hash
-                return existing.id
+                if existing is not None:
+                    existing.token_hash = token_hash
+                    return existing.id
 
             mine = await session.scalar(
                 select(func.count()).where(guests, recent, CreativeSetRow.guest_key == guest_key)
