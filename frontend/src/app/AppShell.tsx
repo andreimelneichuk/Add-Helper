@@ -54,13 +54,15 @@ function BusinessSelector({ store, s, onAddSite }: { store: Store; s: State; onA
         <div className="ah-brand-menu" role="menu">
           <div className="ah-brand-menu-header">Ваши сайты</div>
           {businesses.map((b) => {
-            const active = b.id === s.activeBusinessId || b.name === currentName;
+            const active = s.activeBusinessId ? b.id === s.activeBusinessId : b.name === currentName;
             return (
               <button
                 key={b.id}
                 type="button"
                 className={`ah-brand-menu-item ${active ? "is-active" : ""}`}
-                role="menuitem"
+                role="menuitemradio"
+                aria-checked={active}
+                aria-label={b.name}
                 onClick={() => {
                   setOpen(false);
                   if (liveStore && b.id !== s.activeBusinessId) liveStore.switchBusiness(b.id);

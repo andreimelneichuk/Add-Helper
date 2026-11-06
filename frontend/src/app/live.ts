@@ -277,6 +277,9 @@ export class LiveStore extends Store {
   /** Переключить активный бизнес/сайт на другой из списка. */
   async switchBusiness(id: string) {
     try { window.localStorage.setItem("adhelper.activeBusinessId", id); } catch { /* без хранилища */ }
+    const name = this.state.businesses.find((b) => b.id === id)?.name;
+    // Загрузка занимает секунду: без отклика кажется, что нажатие не сработало.
+    if (name) this.set({ notice: `Переключаю на сайт «${name}»…` });
     const session = await openSession();
     if (!session) return;
     const business = session.businesses.find((b) => b.id === id);
