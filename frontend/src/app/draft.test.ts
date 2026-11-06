@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api";
 import type { Fact } from "./data";
-import { businessName, clearDraft, clearWizard, draftProfile, loadDraft, loadWizard, saveDraft, saveWizard, transferDraft } from "./draft";
+import { businessName, clearDraft, clearStartReading, clearStartSite, clearWizard, draftProfile, loadDraft, loadStartReading, loadStartSite, loadWizard, saveDraft, saveStartReading, saveStartSite, saveWizard, transferDraft } from "./draft";
 import type { StartDraft, TransferDeps } from "./draft";
 import { siteFacts } from "./store";
 
@@ -98,6 +98,14 @@ describe("черновик запуска", () => {
     expect(loadDraft()).toBeNull();
   });
 
+  it("при createAsNew создает новый бизнес для другого сайта", async () => {
+    saveDraft({ ...draft, createAsNew: true });
+    const { full, saved } = deps({ session: vi.fn(async () => ({ me: { email: "owner@test.ru", csrf_token: "c" }, businesses: [{ id: "old", name: "Салон Анны" }] })) });
+    expect(await transferDraft(full, { ...draft, createAsNew: true })).toMatchObject({ status: "done", businessId: "b1" });
+    expect(full.createBusiness).toHaveBeenCalledWith("nogti.ru", "c");
+    expect(saved.profile).toHaveBeenCalled();
+  });
+
   it("сбой посередине не создаёт второй бизнес при повторе", async () => {
     saveDraft(draft);
     const failing = vi.fn(async () => { throw new Error("Сервис не ответил"); });
@@ -154,5 +162,26 @@ describe("черновик запуска", () => {
     expect(loadWizard()).toBe("biz-123");
     clearWizard();
     expect(loadWizard()).toBeNull();
+  });
+
+  it("сохраняет и очищает введенный сайт и текущий разбор для восстановления при перезагрузке", () => {
+    saveStartSite("salebot.site/st/bigoodi_perm");
+    expect(loadStartSite()).toBe("salebot.site/st/bigoodi_perm");
+
+    saveStartReading({ id: 12, token: "tok12", url: "https://salebot.site/st/bigoodi_perm" });
+    expect(loadStartReading()).toEqual({ id: 12, token: "tok12", url: "https://salebot.site/st/bigoodi_perm" });
+
+    clearStartReading();
+    expect(loadStartReading()).toBeNull();
+    expect(loadStartSite()).toBe("salebot.site/st/bigoodi_perm");
+
+    clearStartSite();
+    expect(loadStartSite()).toBe("");
+
+    saveStartSite("site.ru");
+    saveStartReading({ id: 13, token: "tok13", url: "https://site.ru" });
+    clearDraft();
+    expect(loadStartSite()).toBe("");
+    expect(loadStartReading()).toBeNull();
   });
 });

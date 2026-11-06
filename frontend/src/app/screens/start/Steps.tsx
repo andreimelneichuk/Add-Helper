@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ComponentType } from "react";
 import { ACCOUNT, MIN_BUDGET, rub } from "../../data";
 import type { Fact } from "../../data";
+import { saveStartSite } from "../../draft";
 import { AdArt, Compose } from "../AdDetail";
 import { RealAds, RealCode, RealLaunch, RealMarking, RealYandex } from "./RealSteps";
 import type { State, Store } from "../../store";
@@ -17,11 +18,28 @@ export const innReady = (s: State) => s.inn.length === 10 || s.inn.length === 12
 
 function AboutStep({ store, s }: StepProps) {
   const reading = s.reading !== null;
+  const signed = s.account !== null;
   return (
     <>
+      {!signed && (
+        <div className="st-auth-box">
+          <div className="st-auth-box-text">
+            <strong>Уже есть кабинет?</strong>
+            <span>Войдите через Яндекс, чтобы сразу открыть свой кабинет.</span>
+          </div>
+          <button type="button" className="ah-btn" onClick={store.loginDirect}>
+            Войти через Яндекс
+          </button>
+        </div>
+      )}
+      {signed && (
+        <div className="st-auth-box is-signed">
+          <span style={{ fontSize: "13px" }}>Вы вошли как <strong>{s.account?.email}</strong></span>
+        </div>
+      )}
       <label className="st-field">
         <span className="ah-label">Ссылка на сайт или страницу</span>
-        <input className="ah-input st-input-big" inputMode="url" autoComplete="url" value={s.site} placeholder="salon-primer.ru" readOnly={reading} onChange={(e) => store.set({ site: e.target.value, block: "" })} />
+        <input className="ah-input st-input-big" inputMode="url" autoComplete="url" value={s.site} placeholder="Например: ваш-салон.рф" readOnly={reading} onChange={(e) => { store.set({ site: e.target.value, block: "" }); saveStartSite(e.target.value); }} />
       </label>
       {reading && <p role="status" className="st-reading">Читаю сайт: главную и страницы с ценами и контактами. Обычно это занимает одну-две минуты.</p>}
       {store.reader ? (
@@ -103,9 +121,11 @@ function ProfileStep({ store, s }: StepProps) {
       <div className="st-grid-2">
         {s.facts.map((f) => (s.factEdit?.id === f.id ? <FactEditor key={f.id} store={store} s={s} label={f.label} id={f.id} /> : (
           <div key={f.id} className="st-fact">
-            <div className="st-fact-head"><span>{f.label}</span><span>{f.source}</span></div>
-            <div className="st-fact-value">{f.value}</div>
-            {f.quote && <blockquote className="st-fact-quote">«{f.quote}»</blockquote>}
+            <div className="st-fact-body">
+              <div className="st-fact-head"><span>{f.label}</span><span>{f.source}</span></div>
+              <div className="st-fact-value">{f.value}</div>
+              {f.quote && <blockquote className="st-fact-quote">«{f.quote}»</blockquote>}
+            </div>
             <button type="button" className="ah-btn st-fact-edit" aria-label={`Изменить: ${f.label}`} onClick={() => store.set({ factEdit: { id: f.id, value: f.value, field: f.field }, block: "" })}>Изменить</button>
           </div>
         )))}
@@ -137,7 +157,7 @@ function BudgetStep({ store, s }: StepProps) {
       </div>
       <label className={custom ? "st-budget-own is-on" : "st-budget-own"}>
         <span className="ah-label">Своя сумма в месяц, ₽</span>
-        <input className="ah-input" inputMode="numeric" autoComplete="off" placeholder={`От ${min}`} value={s.budgetDraft ?? ""} onChange={(e) => {
+        <input className="ah-input" inputMode="numeric" autoComplete="off" placeholder={`От ${rub(min)}`} value={s.budgetDraft ?? ""} onChange={(e) => {
           const draft = e.target.value.replace(/\D/g, "").slice(0, 8);
           const n = Number(draft);
           const presets = s.budgetOptions?.presets ?? PRESETS;
@@ -148,7 +168,7 @@ function BudgetStep({ store, s }: StepProps) {
             ...(!draft ? { f: { ...s.f, budget: defaultPreset } } : n >= min && n <= max ? { f: { ...s.f, budget: n } } : {}),
           });
         }} />
-        {custom && <span className="ah-muted">{typed >= min ? perDay(typed) : `Минимум ${rub(min)}`}</span>}
+        {custom && <span className="ah-muted">{typed >= min ? perDay(typed) : `Минимум ${rub(min)} в месяц: от 50 ₽ в день по правилам Яндекса плюс 10% резерва`}</span>}
       </label>
       <p className="ah-muted">Прогноз обращений покажу, когда подключите кабинет: его считает Яндекс по вашему району и услугам. Больше выбранной суммы не потрачу: лимит будет стоять в самом Яндексе.</p>
     </>

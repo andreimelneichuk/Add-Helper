@@ -7,7 +7,7 @@ import { clearDraft, clearWizard, loadDraft, loadWizard } from "../draft";
 import type { TransferDeps } from "../draft";
 import { initialState, Store } from "../store";
 import type { GuestReader, GuestWriter, WizardApi } from "../store";
-import { Start } from "./Start";
+import { formatSite, Start } from "./Start";
 
 function setup(patch: Parameters<Store["set"]>[0] = {}) {
   const store = new Store({ ...initialState("start"), ...patch });
@@ -238,13 +238,23 @@ describe("разбор сайта до входа", () => {
     expect(store.state.site).toBe("https://nogti.ru/");
   });
 
-  it("пока сайт читается, второй разбор не ставится", async () => {
+  it("пока сайт читается, кнопка «Изучить» отключена и второй разбор не ставится", async () => {
     const { reader, user } = withReader({ siteRead: vi.fn(() => new Promise<SiteRead>(() => undefined)) });
     await user.type(screen.getByLabelText("Ссылка на сайт или страницу"), "nogti.ru");
     await user.click(button("Изучить"));
     expect(await screen.findByRole("status")).toHaveTextContent("Читаю сайт");
+    expect(button("Изучить")).toBeDisabled();
     await user.click(button("Изучить"));
     expect(reader.readSite).toHaveBeenCalledTimes(1);
+  });
+
+  it("в боковой панели сайт форматируется без протокола и имеет подсказку", async () => {
+    const { user } = setup();
+    await user.type(screen.getByLabelText("Ссылка на сайт или страницу"), "https://salebot.site/st/bigoodi_perm");
+    const siteEl = side().getByText("salebot.site/st/bigoodi_perm");
+    expect(siteEl).toBeInTheDocument();
+    expect(siteEl).toHaveAttribute("title", "https://salebot.site/st/bigoodi_perm");
+    expect(side().queryByText(/https:\/\//)).not.toBeInTheDocument();
   });
 
   it("правка факта с сайта снимает цитату: теперь это слова владельца", async () => {
@@ -736,5 +746,21 @@ describe("объявления мастера на сервисе", () => {
     expect(screen.getByText("К услугам")).toBeInTheDocument();
     await user.click(screen.getByText("К услугам"));
     expect(store.state.step).toBe(1);
+  });
+
+  describe("formatSite", () => {
+    it("очищает url от протоколов, www и слэшей", () => {
+      expect(formatSite("https://salebot.site/st/bigoodi_perm")).toBe("salebot.site/st/bigoodi_perm");
+      expect(formatSite("http://www.salebot.site/st/bigoodi_perm/")).toBe("salebot.site/st/bigoodi_perm");
+      expect(formatSite("https://nogti.ru/")).toBe("nogti.ru");
+      expect(formatSite("salon-primer.ru")).toBe("salon-primer.ru");
+      expect(formatSite("   https://test.ru   ")).toBe("test.ru");
+      expect(formatSite("")).toBe("");
+    });
+
+    it("декодирует кириллические url", () => {
+      expect(formatSite("https://салон-красоты.рф/цены/")).toBe("салон-красоты.рф/цены");
+      expect(formatSite("https://example.com/%D1%82%D0%B5%D1%81%D1%82")).toBe("example.com/тест");
+    });
   });
 });

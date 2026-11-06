@@ -1,7 +1,8 @@
 // Новый интерфейс на настоящих данных: сводит ответы API к состоянию экранов и шлёт действия владельца.
 // Деньги приходят целыми микроединицами; в рубли переводим только здесь и только для показа.
-import { ApiError } from "../api";
+import { ApiError, createApi, openSession } from "../api";
 import type { AdLine, Alert, Api, ChatCommand, HistoryLine, Money, OutdatedAd, Overview, Profile, UndoPreview } from "../api";
+import { clearDraft, clearStartReading, clearStartSite } from "./draft";
 import { ALERT } from "./words";
 import { MICROS_PER_RUBLE } from "./money";
 import { leadsWord, rub } from "./data";
@@ -159,7 +160,26 @@ export async function loadLive(api: Api, name: string): Promise<Partial<State>> 
   const money = overview.money[0];
   const seen = new Set(adsWeek.map((a) => a.ad_id));
   const lines = [...adsWeek, ...adsMonth.filter((a) => !seen.has(a.ad_id)).map((a) => ({ ...a, totals: { impressions: 0, clicks: 0, cost: 0, conversions: 0 } }))];
-  const ads = lines.map((line) => toAd(line, api.photoUrl));
+  let ads = lines.map((line) => toAd(line, api.photoUrl));
+  if (ads.length === 0 && api.wizardAds) {
+    try {
+      const wizard = await api.wizardAds();
+      if (wizard?.ads?.length) {
+        ads = wizard.ads.map((w, i) => ({
+          id: `w${i}`,
+          name: w.headline,
+          tag: "готово к запуску",
+          tagTone: "accent" as const,
+          leads: 0,
+          cost: 0,
+          hook: w.headline,
+          title: w.headline,
+          text: w.text,
+          facts: w.facts.join(", "),
+        }));
+      }
+    } catch { /* без мастера */ }
+  }
   const running = overview.campaigns.filter((c) => c.state !== "archived");
   const alerts = overview.alerts.map((a) => alertOf(a, money));
   const stats: Record<Period, PeriodStats> = {
@@ -204,7 +224,8 @@ function summary(s: State): string {
 
 export class LiveStore extends Store {
   private queue: ChatCommand[] = [];
-  constructor(readonly api: Api, loaded: Partial<State>) {
+  public override rework: Api | null = null;
+  constructor(public api: Api, loaded: Partial<State>) {
     super({ ...initialState(), msgs: [], ...loaded });
     this.state = { ...this.state, msgs: [msg("ai", summary(this.state))] };
     this.rework = api;
@@ -213,6 +234,33 @@ export class LiveStore extends Store {
   /** Перечитать данные после действия, которое прошло мимо журнала: профиль, решения по объявлениям. */
   async refresh() {
     this.set(await loadLive(this.api, this.state.live?.name ?? ""));
+  }
+
+  /** Переключить активный бизнес/сайт на другой из списка. */
+  async switchBusiness(id: string) {
+    try { window.localStorage.setItem("adhelper.activeBusinessId", id); } catch { /* без хранилища */ }
+    const session = await openSession();
+    if (!session) return;
+    const business = session.businesses.find((b) => b.id === id);
+    if (!business) return;
+    const newApi = createApi(business.id, session.me.csrf_token);
+    this.api = newApi;
+    this.rework = newApi;
+    const loaded = await loadLive(newApi, business.name);
+    this.set({
+      ...loaded,
+      activeBusinessId: id,
+      businesses: session.businesses,
+      notice: `Вы переключились на сайт «${business.name}»`,
+    });
+  }
+
+  /** Открыть мастер создания нового сайта для этого же аккаунта. */
+  addNewSite() {
+    clearDraft();
+    clearStartSite();
+    clearStartReading();
+    window.location.assign("/?start=new");
   }
 
   /** Перед вопросом «отменить?» узнаём у сервиса, что именно вернётся и можно ли вообще. */
@@ -389,7 +437,12 @@ export class LiveStore extends Store {
 
   override run(a: State["pending"] & object, userText?: string) {
     const msgs = userText ? [...this.state.msgs, msg("me", userText)] : this.state.msgs;
-    this.set({ pending: null, msgs, asked: a.action === "undo" ? { ...this.state.asked, [a.value]: false } : this.state.asked });
+    this.set({
+      pending: null,
+      msgs,
+      asked: a.action === "undo" ? { ...this.state.asked, [a.value]: false } : this.state.asked,
+      undoing: a.action === "undo" ? { ...this.state.undoing, [a.value]: true } : this.state.undoing,
+    });
     void this.finish(a, !!userText);
   }
 
@@ -401,6 +454,10 @@ export class LiveStore extends Store {
     } catch (error) {
       // Отказ сервиса показываем как есть: состояние на экране не меняли, значит и врать нечему.
       text = error instanceof ApiError ? error.message : "Сервис не ответил. Ничего не изменилось, попробуйте позже.";
+    } finally {
+      if (a.action === "undo") {
+        this.set({ undoing: { ...this.state.undoing, [a.value]: false } });
+      }
     }
     this.set({ msgs: [...this.state.msgs, msg(fromChat ? "ai" : "note", text)], notice: this.state.mode === "panel" ? text : "" });
     if (fromChat) this.nextRequest();

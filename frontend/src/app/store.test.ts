@@ -308,6 +308,32 @@ describe("хранилище прототипа", () => {
     store.fillByHand();
     expect(store.state.step).toBe(1);
     expect(store.state.facts).toEqual([]);
+
+    // таймаут при долгом разборе
+    const timeoutStore = new Store(initialState("start"));
+    timeoutStore.waitMs = 5;
+    timeoutStore.readTimeoutMs = 15;
+    timeoutStore.set({ site: "https://hangingsite.ru" });
+    const hangingReader = {
+      readSite: vi.fn().mockResolvedValue({ id: 99, token: "tok99", status: "pending", url: "https://hangingsite.ru" }),
+      siteRead: vi.fn().mockResolvedValue({ id: 99, status: "pending", facts: [] }),
+    };
+    timeoutStore.reader = hangingReader;
+    await timeoutStore.study();
+    expect(timeoutStore.state.reading).toBeNull();
+    expect(timeoutStore.state.block).toContain("дольше обычного");
+
+    // resumeReading восстанавливает опрос и обрабатывает готовность
+    const resumeStore = new Store(initialState("start"));
+    resumeStore.waitMs = 5;
+    resumeStore.reader = {
+      readSite: vi.fn(),
+      siteRead: vi.fn().mockResolvedValue({ id: 55, status: "ready", facts: [{ field: "niche", value: "барбершоп", quote: "барбер", price: null, page: "/" }] }),
+    };
+    await resumeStore.resumeReading(55, "tok55", "https://barber.ru");
+    expect(resumeStore.state.step).toBe(1);
+    expect(resumeStore.state.site).toBe("https://barber.ru");
+    expect(resumeStore.state.facts[0]?.value).toBe("барбершоп");
   });
 
   it("writeAds опрашивает генерацию объявлений", async () => {

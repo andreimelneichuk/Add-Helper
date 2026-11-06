@@ -1,8 +1,9 @@
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import "@fontsource-variable/onest";
 import "./tokens.css";
 import type { Situation, View } from "./data";
 import { BrandLogo, Icon } from "./icons";
+import { LiveStore } from "./live";
 import { Ads } from "./screens/Ads";
 import { Chat } from "./screens/Chat";
 import { History } from "./screens/History";
@@ -11,10 +12,82 @@ import { Settings } from "./screens/Settings";
 import { Start } from "./screens/Start";
 import { Stats } from "./screens/Stats";
 import { confirmText, initialState, statusText, stopped, Store, useStoreState, warned } from "./store";
+import type { State } from "./store";
 
 const VIEWS: [View, string][] = [["overview", "Обзор"], ["stats", "Статистика"], ["ads", "Реклама"], ["history", "История"]];
 const SITUATIONS: [Situation, string][] = [["running", "всё хорошо"], ["first", "первые дни"], ["problem", "нет денег"], ["verdict", "вывод проверки"], ["budget", "бюджет на исходе"], ["rejected", "отказ Яндекса"], ["access", "нет доступа"]];
 const SCREENS = { overview: Overview, stats: Stats, ads: Ads, history: History, settings: Settings };
+
+function BusinessSelector({ store, s }: { store: Store; s: State }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    if (open) document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [open]);
+
+  const liveStore = store instanceof LiveStore ? store : null;
+  const currentName = s.live?.name ?? "Салон «Пример»";
+  const businesses = s.businesses && s.businesses.length > 0 ? s.businesses : (s.live ? [{ id: s.activeBusinessId || "cur", name: currentName }] : []);
+
+  return (
+    <div ref={ref} className="ah-brand-selector">
+      <button
+        type="button"
+        className="ah-brand-btn"
+        aria-expanded={open}
+        aria-haspopup="true"
+        aria-label={`Выбрать сайт (текущий: ${currentName})`}
+        onClick={() => setOpen(!open)}
+      >
+        <span>{currentName}</span>
+        <span className="ah-brand-arrow" aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <div className="ah-brand-menu" role="menu">
+          <div className="ah-brand-menu-header">Ваши сайты</div>
+          {businesses.map((b) => {
+            const active = b.id === s.activeBusinessId || b.name === currentName;
+            return (
+              <button
+                key={b.id}
+                type="button"
+                className={`ah-brand-menu-item ${active ? "is-active" : ""}`}
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  if (liveStore && b.id !== s.activeBusinessId) liveStore.switchBusiness(b.id);
+                }}
+              >
+                <span className="ah-brand-check" aria-hidden="true">{active ? "✓ " : "  "}</span>
+                <span>{b.name}</span>
+              </button>
+            );
+          })}
+          <div className="ah-brand-menu-divider" />
+          <button
+            type="button"
+            className="ah-brand-menu-action"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              if (liveStore) liveStore.addNewSite();
+              else window.location.assign("/?start=new");
+            }}
+          >
+            <span>+ Добавить сайт</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function AppShell({ store: given }: { store?: Store }) {
   const store = useMemo(() => {
@@ -46,11 +119,21 @@ export function AppShell({ store: given }: { store?: Store }) {
               <span>Ad Helper</span>
             </span>
           ) : (
-            s.live?.name ?? "Салон «Пример»"
+            <BusinessSelector store={store} s={s} />
           )}
         </strong>
+        {starting && !s.account && (
+          <button type="button" className="ah-btn" style={{ marginLeft: "auto" }} onClick={store.loginDirect}>
+            Войти
+          </button>
+        )}
+        {starting && s.account && (
+          <span className="ah-muted" style={{ marginLeft: "auto", fontSize: "13px" }}>
+            {s.account.email}
+          </span>
+        )}
         {!starting && <span className="ah-status" style={tone}><i aria-hidden="true" />{statusText(s)}</span>}
-        {!starting && <button type="button" className="ah-btn ah-bar-pause" onClick={() => store.run({ action: "pause" })}>{s.paused ? "Включить" : "Пауза"}</button>}
+        {!starting && (s.live ? s.live.hasCampaigns : true) && <button type="button" className="ah-btn ah-bar-pause" onClick={() => store.run({ action: "pause" })}>{s.paused ? "Включить" : "Пауза"}</button>}
         {!starting && <button type="button" className="ah-btn ah-btn-icon" aria-label="Настройки" aria-current={!chat && s.view === "settings" ? "page" : undefined} onClick={() => store.goView("settings")}><Icon name="settings" /></button>}
       </header>
       {!starting && !s.live && (

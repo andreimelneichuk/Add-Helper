@@ -1,19 +1,36 @@
 import { useEffect, useRef } from "react";
 import type { FormEvent } from "react";
+import { createApi, createBusiness, openSession } from "../../api";
 import { rub, STEPS } from "../data";
 import { useStoreState } from "../store";
 import type { State, Store } from "../store";
 import { adsLeft, innReady, STEP_BODIES } from "./start/Steps";
 import "./Start.css";
 
+export function formatSite(url: string): string {
+  let s = url.trim();
+  try {
+    s = decodeURI(s);
+  } catch {
+    // ignore malformed URI
+  }
+  return s
+    .replace(/^https?:\/\//i, "")
+    .replace(/^www\./i, "")
+    .replace(/\/+$/, "");
+}
+
 function summary(s: State, real: boolean) {
   const site = s.site.trim();
+  const siteDisplay = site ? formatSite(site) : "пока нет";
   const links = [s.yandex, real ? s.marked : innReady(s), s.metrica].filter(Boolean).length;
+  const adsCount = adsLeft(s);
+  const adsOn = (adsCount > 0 && s.step >= 3) || s.step > 3;
   return [
-    { label: "Сайт", value: site || "пока нет", on: !!site },
+    { label: "Сайт", value: siteDisplay, title: site || undefined, on: !!site },
     { label: "Профиль", value: s.step > 1 ? "подтверждён" : s.step === 1 ? "на проверке" : "пока нет", on: s.step > 1 },
     { label: "Бюджет", value: s.step > 2 ? `${rub(Number(s.f.budget))} в месяц` : "пока нет", on: s.step > 2 },
-    { label: "Объявления", value: s.step > 3 ? `${adsLeft(s)} готово` : "пока нет", on: s.step > 3 },
+    { label: "Объявления", value: adsOn ? `${adsCount} готово` : "пока нет", on: adsOn },
     { label: "Подключения", value: `${links} из 3`, on: links === 3 },
   ];
 }
@@ -37,8 +54,11 @@ export function Start({ store }: { store: Store }) {
     title.current?.focus();
   }, [s.step]);
 
+  const isBusy = s.step === 0 && s.reading !== null;
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
+    if (isBusy) return;
     store.next();
   };
 
@@ -59,7 +79,7 @@ export function Start({ store }: { store: Store }) {
           <p className="st-lead">{step.lead}</p>
           <Body store={store} s={s} />
           <div className="st-actions">
-            <button type="submit" className="ah-btn ah-btn-primary st-next">{store.reader && s.step === STEPS.length - 1 ? "Открыть кабинет" : step.cta}</button>
+            <button type="submit" className="ah-btn ah-btn-primary st-next" disabled={isBusy}>{store.reader && s.step === STEPS.length - 1 ? "Открыть кабинет" : step.cta}</button>
             {s.step > 0 && <button type="button" className="ah-btn" onClick={() => store.set({ step: s.step - 1, block: "" })}>Назад</button>}
             {s.block && (
               <span className="st-block-wrap">
@@ -67,6 +87,18 @@ export function Start({ store }: { store: Store }) {
                 {s.step === 3 && (
                   <button type="button" className="ah-btn st-block-action" onClick={() => store.set({ step: 1, block: "" })}>
                     К услугам
+                  </button>
+                )}
+                {s.step >= 4 && s.block.includes("У вас уже есть бизнес") && (
+                  <button
+                    type="button"
+                    className="ah-btn ah-btn-primary st-block-action"
+                    onClick={() => {
+                      const deps = { session: openSession, createBusiness, business: createApi, open: createApi };
+                      void store.createAsNew(deps);
+                    }}
+                  >
+                    Создать как новый проект
                   </button>
                 )}
               </span>
@@ -82,7 +114,7 @@ export function Start({ store }: { store: Store }) {
               <i aria-hidden="true" className={r.on ? "is-on" : undefined} />
               <div>
                 <div className="ah-muted">{r.label}</div>
-                <div className="st-side-value">{r.value}</div>
+                <div className="st-side-value" title={r.title}>{r.value}</div>
               </div>
             </div>
           ))}
