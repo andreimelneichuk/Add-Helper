@@ -1,7 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import { rub, STATS } from "../data";
+import { rub } from "../data";
+import { mockFixtures } from "../../mock/fixtures";
+const { STATS } = mockFixtures;
 import { initialState, Store } from "../store";
 import { Stats } from "./Stats";
 

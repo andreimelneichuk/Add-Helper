@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { DAYS, rub } from "../data";
+import {  rub } from "../data";
+import { mockFixtures } from "../../mock/fixtures";
+const { DAYS } = mockFixtures;
 import type { Situation } from "../data";
 import { initialState, Store, week } from "../store";
 import { fakeApi, open } from "../testLive";

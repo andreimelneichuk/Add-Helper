@@ -40,13 +40,14 @@ function PlanForm({ api, businesses }: { api: Api; businesses?: Business[] }) {
   const [sharedDraft, setSharedDraft] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+  const picked = useRef(false);
   useEffect(() => {
     const controller = new AbortController();
     const init = { signal: controller.signal };
     api.budgetPlan(init).then((p) => setDraft(p.rubles ? String(p.rubles) : ""), (e: unknown) => { if (!isAbort(e)) setStatus(message(e)); });
     api.budgetPortfolio(init).then((p) => {
-      setMode(p.mode);
-      if (p.rubles) setSharedDraft(String(p.rubles));
+      if (!picked.current) setMode(p.mode);
+      if (p.rubles) setSharedDraft((now) => now || String(p.rubles));
     }, (e: unknown) => { if (!isAbort(e)) setStatus(message(e)); });
     return () => controller.abort();
   }, [api]);
@@ -88,7 +89,7 @@ function PlanForm({ api, businesses }: { api: Api; businesses?: Business[] }) {
           type="button"
           className="ah-chip"
           aria-pressed={mode === "separate"}
-          onClick={() => { setStatus(""); setMode("separate"); }}
+          onClick={() => { picked.current = true; setStatus(""); setMode("separate"); }}
         >
           Раздельный на каждый сайт
         </button>
@@ -96,7 +97,7 @@ function PlanForm({ api, businesses }: { api: Api; businesses?: Business[] }) {
           type="button"
           className="ah-chip"
           aria-pressed={mode === "shared"}
-          onClick={() => { setStatus(""); setMode("shared"); }}
+          onClick={() => { picked.current = true; setStatus(""); setMode("shared"); }}
         >
           Общий на все сайты
         </button>
@@ -150,13 +151,16 @@ function BudgetForm({ store }: { store: LiveStore }) {
   const [sharedDraft, setSharedDraft] = useState("");
   const [savedMode, setSavedMode] = useState<"separate" | "shared">("separate");
   const [asking, setAsking] = useState(false);
+  const picked = useRef(false);
+  const pick = (next: "separate" | "shared") => { picked.current = true; setAsking(false); setMode(next); };
   // Режим и общая сумма хранятся на сервере, а не в браузере.
   useEffect(() => {
     const controller = new AbortController();
     store.api.budgetPortfolio({ signal: controller.signal }).then((p) => {
-      setMode(p.mode);
+      // Поздний ответ не перебивает выбор, который владелец уже сделал.
+      if (!picked.current) setMode(p.mode);
       setSavedMode(p.mode);
-      if (p.rubles) setSharedDraft(String(p.rubles));
+      if (p.rubles) setSharedDraft((now) => now || String(p.rubles));
     }, (e: unknown) => { if (!isAbort(e)) store.set({ notice: message(e) }); });
     return () => controller.abort();
   }, [store]);
@@ -177,7 +181,7 @@ function BudgetForm({ store }: { store: LiveStore }) {
           type="button"
           className="ah-chip"
           aria-pressed={mode === "separate"}
-          onClick={() => { setAsking(false); setMode("separate"); }}
+          onClick={() => pick("separate")}
         >
           Раздельный на каждый сайт
         </button>
@@ -185,7 +189,7 @@ function BudgetForm({ store }: { store: LiveStore }) {
           type="button"
           className="ah-chip"
           aria-pressed={mode === "shared"}
-          onClick={() => { setAsking(false); setMode("shared"); }}
+          onClick={() => pick("shared")}
         >
           Общий на все сайты
         </button>

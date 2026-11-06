@@ -1,12 +1,13 @@
 import { useState } from "react";
-import { MIN_BUDGET, MIN_GOAL, OPTIONS, rub } from "../data";
+import { MIN_BUDGET, MIN_GOAL, rub } from "../data";
+import { fixtures } from "../fixtures";
 import type { SettingKey } from "../data";
 import { useStore } from "../store";
 import type { Store } from "../store";
 import { LiveSettings } from "./LiveSettings";
 import "./Settings.css";
 
-const KEYS = Object.keys(OPTIONS) as SettingKey[];
+const settingKeys = () => Object.keys(fixtures.OPTIONS) as SettingKey[];
 const OWN_MIN: Partial<Record<SettingKey, number>> = { budget: MIN_BUDGET, goal: MIN_GOAL };
 
 // Своё значение задаётся кнопкой и подтверждается: смена бюджета меняет лимит в Яндексе.
@@ -36,8 +37,8 @@ function Options({ store }: { store: Store }) {
   const f = useStore(store, (x) => x.f);
   return (
     <>
-      {KEYS.map((key) => {
-        const group = OPTIONS[key];
+      {settingKeys().map((key) => {
+        const group = fixtures.OPTIONS[key];
         return (
           <div key={key} role="group" aria-label={group.label}>
             <div className="ah-label">{group.label}</div>
@@ -65,12 +66,7 @@ function Options({ store }: { store: Store }) {
 export function Settings({ store }: { store: Store }) {
   const s = useStore(store, (x) => ({ live: !!x.live, price: x.price }));
   if (s.live) return <LiveSettings store={store} />;
-  const profile: [string, string][] = [
-    ["Цены", `маникюр от ${rub(s.price ?? 1200)}, педикюр от 1 800 ₽`],
-    ["Адрес", "Москва, у метро Сокольники"],
-    ["Часы", "каждый день, 10:00–21:00"],
-    ["Акция", "скидка 20% на первый визит"],
-  ];
+  const profile = fixtures.TEXT.profile(s.price);
   return (
     <div className="set">
       <section className="ah-panel set-main" aria-labelledby="set-title">

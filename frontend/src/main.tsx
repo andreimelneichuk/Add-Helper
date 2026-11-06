@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useMemo, useState } from "react";
+import { lazy, StrictMode, Suspense, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createApi, createBusiness, createGuestApi, openSession } from "./api";
 import { AppShell } from "./app/AppShell";
@@ -11,9 +11,12 @@ import "./app/base.css";
 
 // `/` — кабинет на данных сервиса, а без входа или бизнеса — запуск (`/?start`), шаги идут через сервис.
 // Подставной прототип (`/?mock`) есть только в сборке для разработки: владелец его не увидит.
+// Условие вычисляется при сборке: в боевой сборке ветка и вся папка `src/mock` отбрасываются.
+const MockApp = import.meta.env.DEV ? lazy(async () => ({ default: (await import("./mock/entry")).MockApp })) : null;
+
 function Root() {
   const params = new URLSearchParams(window.location.search);
-  if (import.meta.env.DEV && params.has("mock")) return <AppShell />;
+  if (MockApp && params.has("mock")) return <Suspense fallback={null}><MockApp /></Suspense>;
   if (params.has("start")) return <GuestStart />;
   return <Live />;
 }
@@ -47,12 +50,13 @@ function GuestStart() {
     const guest = createGuestApi();
     // Без ответа сервиса остаются пределы прототипа; сервис всё равно проверит сумму при сохранении.
     guest.budgetOptions().then((budgetOptions) => store.set({ budgetOptions }), () => undefined);
+    // Черновик и мастер читаем сразу: к ответу сервиса владелец уже печатает, и его же набранное нельзя принять за черновик до входа.
+    const wizardId = loadWizard();
+    const draft = loadDraft();
     openSession().then((session) => {
       const search = new URLSearchParams(window.location.search);
       const isNew = search.get("start") === "new";
       const hasConnect = search.has("connect");
-      const wizardId = loadWizard();
-      const draft = loadDraft();
       if (session && session.businesses.length > 0 && !isNew && !hasConnect && !wizardId && !draft) {
         window.location.replace("/");
         return;

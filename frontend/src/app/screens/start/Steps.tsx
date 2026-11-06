@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ComponentType } from "react";
-import { ACCOUNT, MIN_BUDGET, rub } from "../../data";
+import { MIN_BUDGET, rub } from "../../data";
+import { fixtures } from "../../fixtures";
 import { isInn } from "../../schemas";
 import type { Fact } from "../../data";
 import { saveStartSite } from "../../draft";
@@ -298,9 +299,9 @@ function LaunchStep({ store, s }: StepProps) {
   const rows = [
     { label: "Бюджет", value: `${rub(Number(s.f.budget))} в месяц` },
     { label: "Где покажем", value: "Поиск и сайты Яндекса" },
-    { label: "Кому", value: "Жителям Сокольников" },
+    { label: "Кому", value: fixtures.TEXT.audience },
     { label: "Объявления", value: String(adsLeft(s)) },
-    { label: "На счёте в Яндексе", value: rub(ACCOUNT.running) },
+    { label: "На счёте в Яндексе", value: rub(fixtures.ACCOUNT.running) },
   ];
   return (
     <dl className="st-grid-2 st-rows" aria-label="Итоговая сводка">

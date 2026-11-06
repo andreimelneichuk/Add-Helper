@@ -4,7 +4,8 @@ import type { AdDraftProfile, AdSet, AdvertiserKind, Api, ChatCommand, Me, Busin
 import { pollUntil } from "./polling";
 import { clearDraft, clearStartReading, clearWizard, draftProfile, loadDraft, loadWizard, saveDraft, saveStartReading, saveStartSite, transferDraft } from "./draft";
 import type { TransferDeps } from "./draft";
-import { ADS, DAYS, FACTS, histFor, leadsWord, MIN_BUDGET, OPENING, OPTIONS, rub, STATS, STEPS } from "./data";
+import { leadsWord, MIN_BUDGET, rub, STEPS } from "./data";
+import { fixtures } from "./fixtures";
 import type { Ad, Day, Fact, HistoryEntry, HistoryKind, Live, Period, PeriodStats, SettingKey, Situation, View } from "./data";
 
 export type Who = "me" | "ai" | "note";
@@ -24,7 +25,8 @@ type Pending =
   | { action: "test"; value: string; answer: "agree" | "decline" | "cancel" };
 type Action = Pending | { action: "clients"; value: number };
 
-export type State = {
+/** Сессия и оболочка: кто вошёл, какой сайт открыт, что показываем. */
+export type SessionState = {
   /** Данные сервиса; null в прототипе на подставных данных. */
   live: Live | null;
   stage: "work" | "start";
@@ -33,11 +35,59 @@ export type State = {
   view: View;
   /** Итог действия на панели; в чате итог виден в ленте. */
   notice: string;
-  price: number | null;
-  step: number;
-  input: string;
   pending: Pending | null;
+  /** Вход в настоящем запуске состоялся, черновик перенесён в бизнес. */
+  account: { email: string | null } | null;
+  /** Список всех доступных бизнесов пользователя. */
+  businesses: Business[];
+  /** ID активного бизнеса. */
+  activeBusinessId: string | null;
+  /** Запуск для создания отдельного нового бизнеса (/?start=new). */
+  createAsNew?: boolean;
+  /** Режим распределения бюджета: раздельный по сайтам или единый общий пул. */
+  budgetMode?: "separate" | "shared";
+  /** Общая сумма бюджета на все сайты при shared-режиме. */
+  sharedBudget?: number | null;
+};
+
+/** Чат: лента и поле ввода. */
+export type ChatState = {
+  input: string;
   msgs: Message[];
+};
+
+/** Мастер запуска: шаги, факты о бизнесе, подключения. */
+export type WizardState = {
+  step: number;
+  site: string;
+  codeCopied: boolean;
+  inn: string;
+  yandex: boolean;
+  metrica: boolean;
+  block: string;
+  draftOff: Record<string, boolean>;
+  /** Своя сумма на шаге бюджета; null, когда выбран готовый вариант. */
+  budgetDraft: string | null;
+  facts: Fact[];
+  /** Открытая правка факта; id null у нового факта. */
+  factEdit: { id: string | null; value: string; field?: Fact["field"] } | null;
+  /** Разбор сайта до входа идёт: ключ доступа знает только этот браузер. */
+  reading: { id: number; token: string } | "asking" | null;
+  /** Пределы и варианты бюджета из правил сервиса; null — прототип на подставных. */
+  budgetOptions: BudgetOptions | null;
+  /** Данные для маркировки, кроме ИНН: ИНН живёт в поле inn. */
+  advertiser: { kind: AdvertiserKind; name: string; phone: string; okved: string };
+  /** Маркировка сохранена в сервисе, и владелец её не правит. */
+  marked: boolean;
+  /** Писатель пишет объявления мастера: ключ набора знает только этот браузер. */
+  writing: { id: number; token: string } | "asking" | null;
+  /** Готовый набор мастера; facts — по каким фактам писали, чтобы не писать заново без правок. */
+  adSet: { id: number; token: string; template: boolean; needsReview: boolean; facts: string } | null;
+};
+
+/** Кабинет: объявления, история, период и настройки на экранах. */
+export type CabinetState = {
+  price: number | null;
   hist: HistoryEntry[];
   undone: Record<string, boolean>;
   undoing: Record<string, boolean>;
@@ -59,43 +109,9 @@ export type State = {
   clientsInput: string;
   clients: number | null;
   f: Record<SettingKey, string | number>;
-  site: string;
-  codeCopied: boolean;
-  inn: string;
-  yandex: boolean;
-  metrica: boolean;
-  block: string;
-  draftOff: Record<string, boolean>;
-  /** Своя сумма на шаге бюджета; null, когда выбран готовый вариант. */
-  budgetDraft: string | null;
-  facts: Fact[];
-  /** Открытая правка факта; id null у нового факта. */
-  factEdit: { id: string | null; value: string; field?: Fact["field"] } | null;
-  /** Разбор сайта до входа идёт: ключ доступа знает только этот браузер. */
-  reading: { id: number; token: string } | "asking" | null;
-  /** Пределы и варианты бюджета из правил сервиса; null — прототип на подставных. */
-  budgetOptions: BudgetOptions | null;
-  /** Вход в настоящем запуске состоялся, черновик перенесён в бизнес. */
-  account: { email: string | null } | null;
-  /** Данные для маркировки, кроме ИНН: ИНН живёт в поле inn. */
-  advertiser: { kind: AdvertiserKind; name: string; phone: string; okved: string };
-  /** Маркировка сохранена в сервисе, и владелец её не правит. */
-  marked: boolean;
-  /** Писатель пишет объявления мастера: ключ набора знает только этот браузер. */
-  writing: { id: number; token: string } | "asking" | null;
-  /** Готовый набор мастера; facts — по каким фактам писали, чтобы не писать заново без правок. */
-  adSet: { id: number; token: string; template: boolean; needsReview: boolean; facts: string } | null;
-  /** Список всех доступных бизнесов пользователя. */
-  businesses: Business[];
-  /** ID активного бизнеса. */
-  activeBusinessId: string | null;
-  /** Запуск для создания отдельного нового бизнеса (/?start=new). */
-  createAsNew?: boolean;
-  /** Режим распределения бюджета: раздельный по сайтам или единый общий пул. */
-  budgetMode?: "separate" | "shared";
-  /** Общая сумма бюджета на все сайты при shared-режиме. */
-  sharedBudget?: number | null;
 };
+
+export type State = SessionState & ChatState & WizardState & CabinetState;
 
 export type BudgetOptions = { min: number; max: number; presets: number[] };
 /** Шаги мастера после входа работают с бизнесом через эти методы. */
@@ -165,27 +181,27 @@ const GREETING = "Здравствуйте! Я веду рекламу мало�
 export function initialState(stage: State["stage"] = "work", situation: Situation = "running"): State {
   return {
     live: null, stage, situation, mode: "panel", view: "overview", notice: "", price: null, step: 0, input: "", pending: null,
-    msgs: [msg("ai", stage === "start" ? GREETING : OPENING[situation])],
-    hist: histFor(situation), undone: {}, undoing: {}, asked: {}, undoInfo: {}, adsOff: {}, ads: ADS, openAd: null, paused: false, topped: false, decided: null, extra: 0,
+    msgs: [msg("ai", stage === "start" ? GREETING : fixtures.OPENING[situation])],
+    hist: fixtures.histFor(situation), undone: {}, undoing: {}, asked: {}, undoInfo: {}, adsOff: {}, ads: fixtures.ADS, openAd: null, paused: false, topped: false, decided: null, extra: 0,
     metric: "cost", selDay: null, period: "week", filter: "all", clientsInput: "", clients: null,
-    f: { services: "маникюр и педикюр", area: "Сокольники", hours: "в часы работы", goal: 400, budget: 20000 },
-    site: "", codeCopied: false, inn: "", yandex: false, metrica: false, block: "", draftOff: {}, budgetDraft: null, facts: FACTS, factEdit: null, reading: null, budgetOptions: null, account: null, advertiser: { kind: "legal", name: "", phone: "", okved: "" }, marked: false, writing: null, adSet: null,
+    f: { services: "маникюр и педикюр", area: fixtures.TEXT.area, hours: "в часы работы", goal: 400, budget: 20000 },
+    site: "", codeCopied: false, inn: "", yandex: false, metrica: false, block: "", draftOff: {}, budgetDraft: null, facts: fixtures.FACTS, factEdit: null, reading: null, budgetOptions: null, account: null, advertiser: { kind: "legal", name: "", phone: "", okved: "" }, marked: false, writing: null, adSet: null,
     businesses: [], activeBusinessId: null, budgetMode: "separate", sharedBudget: null,
   };
 }
 
 /** Расход и обращения за 7 дней и за 7 дней до них. */
 export function week(s: State) {
-  const d = s.live?.trail ?? DAYS[s.situation];
+  const d = s.live?.trail ?? fixtures.DAYS[s.situation];
   const sum = (a: typeof d, i: 0 | 1) => a.reduce((x, y) => x + y[i], 0);
   const last = d.slice(-7);
   const prev = d.slice(-14, -7);
   return { cost: sum(last, 0), leads: sum(last, 1), prevCost: sum(prev, 0), prevLeads: sum(prev, 1) };
 }
-export const daysOf = (s: State): Day[] => s.live?.days ?? DAYS[s.situation];
-export const statsOf = (s: State, period: Period): PeriodStats => s.live?.stats[period] ?? STATS[period];
+export const daysOf = (s: State): Day[] => s.live?.days ?? fixtures.DAYS[s.situation];
+export const statsOf = (s: State, period: Period): PeriodStats => s.live?.stats[period] ?? fixtures.STATS[period];
 export const budgetOf = (s: State) => s.live?.budget ?? Number(s.f.budget) + s.extra;
-export const spentOf = (s: State) => (s.live ? (s.live.spent ?? 0) : DAYS[s.situation].reduce((x, d) => x + d[0], 0));
+export const spentOf = (s: State) => (s.live ? (s.live.spent ?? 0) : fixtures.DAYS[s.situation].reduce((x, d) => x + d[0], 0));
 const STOPPING = new Set(["zero_balance", "balance_mismatch", "budget_stopped"]);
 export const stopped = (s: State) => (s.live ? s.live.alerts?.some((a) => STOPPING.has(a.kind)) ?? false : s.situation === "problem" && !s.topped);
 export const warned = (s: State) => (s.live ? (s.live.alerts?.length ?? 0) > 0 : s.situation === "budget" && !s.decided);
@@ -197,7 +213,7 @@ export const statusText = (s: State) =>
 export const adName = (s: State, id: string) => (s.price && id === "a2" ? `Маникюр от ${rub(s.price)}` : (s.ads.find((a) => a.id === id)?.name ?? id));
 /** Что написано на объявлении: подставная цена не должна затирать уже переделанный текст. */
 export function adShown(s: State, ad: Ad) {
-  const priced = !!s.price && ad.id === "a2" && ad.hook === ADS[1]!.hook;
+  const priced = !!s.price && ad.id === "a2" && ad.hook === fixtures.ADS[1]?.hook;
   return { hook: priced ? adName(s, ad.id) : ad.hook, title: priced ? adName(s, ad.id) : ad.title };
 }
 export function adStat(s: State, ad: Ad) {
@@ -207,56 +223,9 @@ export function adStat(s: State, ad: Ad) {
   return `${ad.leads} ${leadsWord(ad.leads)}, по ${rub(ad.cost / ad.leads)}`;
 }
 
-type Template = { needs: string[]; hook: (s: State) => string; title: (s: State) => string; text: string; facts: string };
-type Topic = "manicure" | "pedicure" | "promo";
-const manicurePrice = (s: State) => rub(s.price ?? 1200);
-// Заглушка на месте языковой модели: варианты собраны только из фактов профиля, needs говорит, из каких.
-const TEMPLATES: Record<Topic, Template[]> = {
-  manicure: [
-    { needs: ["where", "hours"], hook: () => "Маникюр у метро Сокольники", title: () => "Маникюр рядом с домом", text: "Открыты каждый день до 21:00. Запишитесь онлайн.", facts: "Адрес и часы из профиля" },
-    { needs: ["prices", "where"], hook: (s) => `Маникюр от ${manicurePrice(s)}`, title: (s) => `Маникюр от ${manicurePrice(s)} у метро Сокольники`, text: "Запишитесь онлайн на удобное время.", facts: "Цена и адрес из профиля" },
-    { needs: ["what"], hook: () => "Аккуратный маникюр", title: () => "Запишитесь на маникюр", text: "Свободное время видно сразу при записи.", facts: "Услуга из профиля" },
-  ],
-  pedicure: [
-    { needs: ["where", "hours"], hook: () => "Педикюр у метро Сокольники", title: () => "Педикюр рядом с домом", text: "Открыты каждый день до 21:00. Запишитесь онлайн.", facts: "Адрес и часы из профиля" },
-    { needs: ["prices", "where"], hook: () => "Педикюр от 1\u00a0800\u00a0₽", title: () => "Педикюр от 1\u00a0800\u00a0₽ у метро Сокольники", text: "Запишитесь онлайн на удобное время.", facts: "Цена и адрес из профиля" },
-    { needs: ["what"], hook: () => "Педикюр без спешки", title: () => "Запишитесь на педикюр", text: "Свободное время видно сразу при записи.", facts: "Услуга из профиля" },
-  ],
-  promo: [
-    { needs: ["promo", "where"], hook: () => "Минус 20% на первый визит", title: () => "Скидка 20% у метро Сокольники", text: "Для тех, кто приходит к нам впервые. Запишитесь онлайн.", facts: "Скидка и адрес из профиля" },
-    { needs: ["promo", "hours"], hook: () => "Первый визит на 20% дешевле", title: () => "Скидка 20% на первый визит", text: "Открыты каждый день до 21:00.", facts: "Скидка и часы из профиля" },
-  ],
-};
-const amounts = (text: string) => [...text.matchAll(/(\d[\d\s]*?)\s*(%|₽|руб|процент)/gi), ...text.matchAll(/скидк\S*\s+(\d+)()/gi)].map((m) => ({ num: m[1]!.replace(/\s/g, ""), shown: m[0].trim() }));
-/** Чего из просьбы нельзя писать: реклама говорит только то, что подтверждено профилем. */
-function askRefusal(s: State, ask: string): string | null {
-  const known = new Set(amounts([...s.facts.map((f) => f.value), s.price ? rub(s.price) : ""].join(" ")).map((a) => a.num));
-  const unknown = amounts(ask).find((a) => !known.has(a.num));
-  if (unknown) return `В профиле нет «${unknown.shown}». Добавьте это в профиль, и я смогу написать об этом в рекламе.`;
-  const hasPromo = s.facts.some((f) => f.id === "promo" || /скидк|акци/i.test(f.value) || /скидк|акци/i.test(f.label));
-  if (/скидк|акци/i.test(ask) && !hasPromo) return "В профиле нет акции. Добавьте её в профиль, и я смогу написать о ней в рекламе.";
-  if (/отзыв/i.test(ask)) return "Отзыв можно использовать только с подтверждённым согласием клиента. Пока его нет, напишу без отзыва.";
-  if (/лучш|№\s*1|гарантир/i.test(ask)) return "Такое обещание нечем подтвердить, а закон о рекламе требует подтверждения. Напишу о том, что есть в профиле.";
-  return null;
-}
-const topicOf = (text: string): Topic | null => (/педикюр/i.test(text) ? "pedicure" : /маникюр/i.test(text) ? "manicure" : /акци|скидк/i.test(text) ? "promo" : null);
 
-/** Новый вариант по просьбе; base null у нового объявления. В показы он сам не идёт. */
-export function draftAd(s: State, base: Ad | null, ask: string, attempt = 0): { ad: Ad } | { refusal: string } {
-  const refusal = askRefusal(s, ask);
-  if (refusal) return { refusal };
-  if (base && /короче/i.test(ask)) return { ad: { ...base, text: base.text.split(/(?<=\.)\s/)[0]! } };
-  const topic = topicOf(ask) ?? (base ? topicOf(`${base.name} ${base.title}`) : null) ?? "manicure";
-  const have = new Set(s.facts.map((f) => f.id));
-  if (s.facts.some((f) => f.id === "promo" || /скидк|акци/i.test(f.value) || /скидк|акци/i.test(f.label))) {
-    have.add("promo");
-  }
-  const fit = TEMPLATES[topic].filter((t) => t.needs.every((n) => have.has(n)) && t.hook(s) !== base?.hook);
-  const t = fit[attempt % Math.max(1, fit.length)];
-  if (!t) return { refusal: "В профиле пока мало фактов для такого объявления. Добавьте услуги, цены или адрес." };
-  const content = { hook: t.hook(s), title: t.title(s), text: t.text, facts: t.facts };
-  return { ad: base ? { ...base, ...content } : { id: "n" + nextId++, name: content.hook, tag: "новое", tagTone: "accent", leads: 0, cost: 0, ...content } };
-}
+/** Новый вариант по просьбе; пока писателя нет, прототип подставляет шаблоны из `src/mock`. */
+export const draftAd = (s: State, base: Ad | null, ask: string, attempt = 0): { ad: Ad } | { refusal: string } => fixtures.draftAd(s, base, ask, attempt);
 
 const shown = (v: string | number) => (typeof v === "number" ? rub(v) : v);
 /** Обе половины идущей проверки вариантов. */
@@ -283,7 +252,7 @@ export function confirmText(s: State, a: Pending): string {
       const [key, val] = a.value;
       return key === "budget"
         ? `Бюджет ${rub(Number(val))} в месяц. Сначала обновлю лимит в Яндексе, потом перераспределю деньги. Отменить можно в истории.`
-        : `${OPTIONS[key].label}: ${shown(val)}. Общий бюджет не изменится. Отменить можно в истории.`;
+        : `${fixtures.OPTIONS[key].label}: ${shown(val)}. Общий бюджет не изменится. Отменить можно в истории.`;
     }
     case "undo": { const h = s.hist.find((x) => x.id === a.value); return `Отменить «${h?.title}»? ${h?.undoNote ?? ""}`; }
     case "price": return `Маникюр теперь от ${rub(a.value)}. Обновлю профиль и объявление со старой ценой.`;
@@ -367,7 +336,7 @@ export class Store {
       }
       case "setting": {
         const [key, val] = a.value;
-        const label = OPTIONS[key].label;
+        const label = fixtures.OPTIONS[key].label;
         const undo = { note: `Вернётся прежнее значение: ${shown(s.f[key])}.`, revert: { setting: [key, s.f[key]] as [SettingKey, string | number] } };
         return { f: { ...s.f, [key]: val }, hist: [this.entry(`Изменил настройку. ${label}: ${shown(val)}`, "Вы попросили.", key === "budget" ? "Лимит в Яндексе обновлён." : "Бюджет не изменился.", key === "budget" ? "money" : "yours", undo), ...this.closed((h) => h.revert?.setting?.[0] === key)], text: `Готово. ${label}: ${shown(val)}. Отменить можно в истории.` };
       }
@@ -422,7 +391,7 @@ export class Store {
   openAdScreen = (id: string): void => this.set({ view: "ads", mode: "panel", openAd: id, notice: "" });
   // Вопрос с панели не переносим в чат: там он не был задан словами.
   openChat = (input = "") => this.set({ mode: "chat", notice: "", input, pending: this.state.mode === "panel" ? null : this.state.pending });
-  pickSituation = (situation: Situation) => this.set({ situation, mode: "panel", view: "overview", selDay: null, topped: false, decided: null, extra: 0, pending: null, notice: "", clients: null, undone: {}, asked: {}, adsOff: {}, ads: ADS, openAd: null, price: null, hist: histFor(situation), msgs: [msg("ai", OPENING[situation])] });
+  pickSituation = (situation: Situation) => this.set({ situation, mode: "panel", view: "overview", selDay: null, topped: false, decided: null, extra: 0, pending: null, notice: "", clients: null, undone: {}, asked: {}, adsOff: {}, ads: fixtures.ADS, openAd: null, price: null, hist: fixtures.histFor(situation), msgs: [msg("ai", fixtures.OPENING[situation])] });
   /** Отметка на панели и ответ ИИ для решений в баннере внимания. */
   private said(note: string, ai: string, patch: Partial<State>) { this.set({ ...patch, msgs: [...this.state.msgs, msg("note", note), msg("ai", ai)] }); }
   reportTopUp = () => this.said("Вы сообщили о пополнении", "Проверяю счёт. Как только деньги дойдут, включу показы, обычно за 5 минут.", { topped: true });
@@ -774,7 +743,7 @@ export class Store {
     const msgs = [...s.msgs];
     if (userText) msgs.push(msg("me", userText));
     if (s.step === STEPS.length - 1) {
-      msgs.push(msg("ai", "Запустил. Яндекс проверяет объявления, лимит поставлен в самом кабинете.\n\nПрототип: перематываю на 14 ноября, как будто прошло две недели."), msg("ai", OPENING.running));
+      msgs.push(msg("ai", "Запустил. Яндекс проверяет объявления, лимит поставлен в самом кабинете.\n\n" + fixtures.TEXT.rewind), msg("ai", fixtures.OPENING.running));
       return this.set({ stage: "work", mode: "panel", view: "overview", msgs, block: "" });
     }
     msgs.push(msg("ai", STEPS[s.step]!.ai));

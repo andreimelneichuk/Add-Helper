@@ -1,5 +1,6 @@
 import type { TodayCard } from "../../../api";
-import { DAYS, leadsWord, rub } from "../../data";
+import { leadsWord, rub } from "../../data";
+import { fixtures } from "../../fixtures";
 import { budgetOf, spentOf, week } from "../../store";
 import type { State, Store } from "../../store";
 
@@ -59,9 +60,9 @@ function messageOf(s: State, store: Store): Message {
   const toHistory = () => store.goView("history");
   switch (s.situation) {
     case "first":
-      return { tone: "info", title: `День ${DAYS.first.length} из примерно 14: выводы делать рано`, text: `Яндекс проверил объявления, показы идут, первое обращение получено. Первые выводы примерно через ${14 - DAYS.first.length} дней.`, actions: [] };
+      return { tone: "info", title: `День ${fixtures.DAYS.first.length} из примерно 14: выводы делать рано`, text: `Яндекс проверил объявления, показы идут, первое обращение получено. Первые выводы примерно через ${14 - fixtures.DAYS.first.length} дней.`, actions: [] };
     case "rejected":
-      return { tone: "info", title: "Яндекс отклонил объявление, я уже исправил", text: "В «Маникюр от 1 200 ₽» не хватало адреса. Добавил его из профиля и жду повторной проверки. От вас ничего не нужно.", actions: [{ label: "Посмотреть в истории", pick: toHistory }] };
+      return { tone: "info", title: "Яндекс отклонил объявление, я уже исправил", text: fixtures.TEXT.rejected, actions: [{ label: "Посмотреть в истории", pick: toHistory }] };
     case "access":
       if (s.topped) return calmOf(s);
       return { tone: "bad", title: "Пропал доступ к кабинету Яндекса", text: "Я остановил все изменения. Лимиты стоят в самом кабинете, поэтому перерасхода не будет.", actions: [{ label: "Подключить заново", pick: store.reconnect }] };
@@ -74,7 +75,7 @@ function messageOf(s: State, store: Store): Message {
       const left = Math.max(0, budgetOf(s) - spentOf(s));
       return {
         tone: "warn",
-        title: `Осталось ${rub(left)} на ${30 - DAYS.budget.length} дня`,
+        title: `Осталось ${rub(left)} на ${30 - fixtures.DAYS.budget.length} дня`,
         text: "Показы сами остановятся примерно 29 ноября и включатся 1 декабря. Перерасхода не будет.",
         actions: [{ label: "Добавить 3 000 ₽", pick: store.addBudget }, { label: "Оставить", pick: store.keepBudget, quiet: true }],
       };

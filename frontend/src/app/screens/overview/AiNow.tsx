@@ -1,4 +1,5 @@
-import { ACCOUNT, rub } from "../../data";
+import { rub } from "../../data";
+import { fixtures } from "../../fixtures";
 import { adName } from "../../store";
 import type { State } from "../../store";
 
@@ -48,7 +49,7 @@ export function AiNow({ s }: { s: State }) {
     <section aria-labelledby="ov-now-title" className="ah-panel ov-now">
       <h2 id="ov-now-title" className="ah-panel-title">{sit === "running" ? "ИИ сейчас" : "Счёт в Яндексе"}</h2>
       {sit === "running" && <RunningTest s={s} />}
-      <div className="ov-check">{`На счёте ${rub(s.topped ? ACCOUNT_AFTER_TOP_UP : ACCOUNT[sit])}. Сверка: разница 0 ₽, сегодня в 9:40. Лимит стоит в самом Яндексе и сработает, даже если мы остановимся.`}</div>
+      <div className="ov-check">{`На счёте ${rub(s.topped ? ACCOUNT_AFTER_TOP_UP : fixtures.ACCOUNT[sit])}. Сверка: разница 0 ₽, сегодня в 9:40. Лимит стоит в самом Яндексе и сработает, даже если мы остановимся.`}</div>
     </section>
   );
 }

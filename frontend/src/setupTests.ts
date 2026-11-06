@@ -24,3 +24,8 @@ afterEach(() => {
   cleanup();
   localStorage.clear();
 });
+
+// Тесты гоняют прототип на его подставных данных; в боевой сборке их нет.
+import { installFixtures } from "./app/fixtures";
+import { mockFixtures } from "./mock/fixtures";
+installFixtures(mockFixtures);
