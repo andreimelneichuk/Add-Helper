@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AdAccount, Api, Business, Channels as ChannelsData, Display, Photos as PhotosData, Profile, SiteFact, SiteRead } from "../../api";
 import { rub } from "../data";
-import { planProblem, ServiceSchema } from "../schemas";
+import * as v from "valibot";
+import { PriceSchema, planProblem } from "../schemas";
 import { isAbort } from "../polling";
 import { liveApi, savedText } from "../live";
 import type { LiveStore } from "../live";
@@ -266,14 +267,18 @@ function DisplayForm({ api, store }: { api: Api; store: LiveStore }) {
   const [ask, setAsk] = useState<Ask>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const load = useCallback(async () => {
+  // Первый ответ не затирает то, что владелец уже выбрал; после сохранения форму перечитываем всегда.
+  const loaded = useRef(false);
+  const load = useCallback(async (force = true) => {
     const d = await api.display();
+    if (!force && loaded.current) return;
+    loaded.current = true;
     setDisplay(d);
     setRegions(d.regions ?? []);
     if (d.schedule) { setDays(d.schedule.days); setHours([d.schedule.start, d.schedule.end]); }
     setGoal(d.goal ? String(d.goal) : "");
   }, [api]);
-  useEffect(() => { load().catch((e: unknown) => setStatus(message(e))); }, [load]);
+  useEffect(() => { load(false).catch((e: unknown) => setStatus(message(e))); }, [load]);
   if (!display) return <p className="ah-muted">{status ?? "Загружаю…"}</p>;
 
   const names = (ids: number[]) => display.catalog.filter((r) => ids.includes(r.id)).map((r) => r.name).join(", ");
@@ -432,7 +437,7 @@ const PRICE_IN_NAME = /\d[\d\s]*\s*(₽|р\.?|руб)/iu;
 export function servicesProblem(services: Profile["services"]): string | null {
   for (const x of services) {
     if (!x.name.trim()) continue;
-    if (!ServiceSchema.shape.price.safeParse(x.price).success) return `Цена услуги «${x.name.trim()}» должна быть больше нуля.`;
+    if (!v.safeParse(PriceSchema, x.price).success) return `Цена услуги «${x.name.trim()}» должна быть больше нуля.`;
     if (PRICE_IN_NAME.test(x.name)) return `В названии «${x.name.trim()}» есть цена. Уберите её из названия и впишите в поле цены: в рекламу цена идёт только оттуда.`;
   }
   return null;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import * as v from "valibot";
 import { InnSchema, isInn, planProblem, ServiceSchema } from "./schemas";
 
 describe("схемы форм", () => {
@@ -8,7 +9,7 @@ describe("схемы форм", () => {
     expect(isInn("770708389")).toBe(false);
     expect(isInn("77070838930")).toBe(false);
     expect(isInn("77070838a3")).toBe(false);
-    expect(InnSchema.safeParse("12").success).toBe(false);
+    expect(v.safeParse(InnSchema, "12").success).toBe(false);
   });
 
   it("план бюджета — целые рубли больше нуля", () => {
@@ -19,8 +20,8 @@ describe("схемы форм", () => {
   });
 
   it("услуга: цена задана или пуста, но не ноль", () => {
-    expect(ServiceSchema.safeParse({ name: "Маникюр", price: null }).success).toBe(true);
-    expect(ServiceSchema.safeParse({ name: "Маникюр", price: 0 }).success).toBe(false);
-    expect(ServiceSchema.safeParse({ name: " ", price: 100 }).success).toBe(false);
+    expect(v.safeParse(ServiceSchema, { name: "Маникюр", price: null }).success).toBe(true);
+    expect(v.safeParse(ServiceSchema, { name: "Маникюр", price: 0 }).success).toBe(false);
+    expect(v.safeParse(ServiceSchema, { name: " ", price: 100 }).success).toBe(false);
   });
 });

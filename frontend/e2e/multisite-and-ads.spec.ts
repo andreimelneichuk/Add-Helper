@@ -149,6 +149,8 @@ test.describe("E2E Юзеркейсы: Мультибизнес, генерац�
     await budgetForm.getByRole("button", { name: "Изменить бюджет" }).click();
     await expect(budgetForm.locator(".set-confirm")).toBeVisible();
     await budgetForm.getByRole("button", { name: "Применить" }).click();
+    // Лимиты сайтов ставятся по одному через сервис: ждём итог, а не гоним дальше.
+    await expect(notice(page)).toContainText(/Общий бюджет .* сохранён|Остановился на сайте/, { timeout: 30_000 });
 
     // 5. Возврат в раздельный режим
     await sepChip.click();
