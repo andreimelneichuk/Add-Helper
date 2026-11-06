@@ -123,11 +123,11 @@ export function AppShell({ store: given }: { store?: Store }) {
             </span>
           </strong>
         ) : (
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+          <div className="ah-bar-site">
             <BusinessSelector store={store} s={s} onAddSite={() => setShowNewSite(true)} />
             <button
               type="button"
-              className="ah-btn ah-btn-small"
+              className="ah-btn ah-btn-small ah-bar-new"
               onClick={() => setShowNewSite(true)}
               aria-label="Создать новый сайт"
             >
