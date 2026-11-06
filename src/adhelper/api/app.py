@@ -2,7 +2,7 @@ import hashlib
 import hmac
 import logging
 import secrets
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -42,6 +42,19 @@ from adhelper.platforms.adapters.direct.factory import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Те же заголовки, что ставит deploy/Caddyfile: приложение защищено и без Caddy.
+_SECURITY_HEADERS = {
+    "Strict-Transport-Security": "max-age=31536000",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "same-origin",
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; "
+        "base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    ),
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+}
 
 
 def _utc_now() -> datetime:
@@ -101,7 +114,24 @@ def create_app(
             await platforms.aclose()
         await engine.dispose()
 
-    app = FastAPI(title="Ad Helper", lifespan=lifespan)
+    # Служебные страницы наружу не отдаём: сервис может стоять без Caddy (например, на Render).
+    app = FastAPI(
+        title="Ad Helper",
+        lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
+
+    @app.middleware("http")
+    async def security_headers(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        response = await call_next(request)
+        for name, value in _SECURITY_HEADERS.items():
+            response.headers.setdefault(name, value)
+        return response
+
     app.state.engine = engine
     # Без приложения Яндекс ID в настройках вход честно отвечает 503.
     oauth_provider = oauth_provider or yandex_provider(settings, _utc_now)
