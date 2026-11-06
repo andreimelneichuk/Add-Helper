@@ -25,7 +25,7 @@ function summary(s: State, real: boolean) {
   const siteDisplay = site ? formatSite(site) : "пока нет";
   const links = [s.yandex, real ? s.marked : innReady(s), s.metrica].filter(Boolean).length;
   const adsCount = adsLeft(s);
-  const adsOn = (adsCount > 0 && s.step >= 3) || s.step > 3;
+  const adsOn = adsCount > 0;
   return [
     { label: "Сайт", value: siteDisplay, title: site || undefined, on: !!site },
     { label: "Профиль", value: s.step > 1 ? "подтверждён" : s.step === 1 ? "на проверке" : "пока нет", on: s.step > 1 },

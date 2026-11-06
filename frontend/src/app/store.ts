@@ -446,6 +446,11 @@ export class Store {
     if (/пауз|останов/.test(t)) return this.reply(text, s.paused ? "Понял так: включить рекламу снова. Применить?" : "Понял так: остановить все показы. Настройки сохранятся. Применить?", { pending: { action: "pause" } });
     if (/включ/.test(t) && s.paused) return this.reply(text, "Понял так: включить рекламу снова. Применить?", { pending: { action: "pause" } });
     if (/воскрес/.test(t)) return this.reply(text, "Понял так: не показывать рекламу по воскресеньям. Бюджет не изменится. Применить?", { pending: { action: "setting", value: ["hours", "кроме воскресений"] } });
+    if (/какой.*бюджет|сколько.*бюджет|каков.*бюджет/.test(t)) {
+      const b = budgetOf(s);
+      const spent = spentOf(s);
+      return this.reply(text, `Бюджет ${rub(b)} в месяц, потрачено ${rub(spent)}. Изменить бюджет можно на вкладке «Настройки».`, {}, { label: "Открыть настройки", view: "settings" });
+    }
     if (/бюджет|трат/.test(t) && num >= 1000) {
       const refusal = refusalOf(s, { action: "setting", value: ["budget", num] });
       if (refusal) return this.reply(text, refusal, { pending: null });
@@ -475,10 +480,15 @@ export class Store {
     if (s.step === 0) { this.set({ site: s.site || text, input: "", step: 1, block: "", msgs: [...s.msgs, msg("me", text), msg("ai", STEPS[0]!.ai)] }); return; }
     if (s.step === 1 && !/верно|(^|\s)да(\s|$)|дальше/.test(t)) return this.reply(text, "Записал в профиль. Только такие факты попадут в рекламу.", { facts: [...s.facts, newFact(text)] });
     const num = Number((t.match(/\d[\d\s]*/) || ["0"])[0].replace(/\s/g, ""));
-    if ((s.step === 2 || /бюджет|трат/.test(t)) && num >= 1000) {
+    const hasPause = /пауз|останов|выходн|воскрес/.test(t);
+    const hasBudget = (s.step === 2 || /бюджет|трат/.test(t)) && num >= 1000;
+    if (hasPause && hasBudget) {
+      return this.reply(text, `Поставил ${rub(num)} в месяц. Расписание и паузы смогу настроить после запуска рекламы.`, { f: { ...s.f, budget: num } });
+    }
+    if (hasBudget) {
       return this.reply(text, `Поставил ${rub(num)} в месяц.`, { f: { ...s.f, budget: num } });
     }
-    if (/пауз|останов|выходн|воскрес/.test(t)) {
+    if (hasPause) {
       return this.reply(text, "Расписание и паузы смогу настроить после запуска рекламы. Сейчас настроим бюджет и объявления: напишите «дальше» или продолжите на вкладке «Настройка».");
     }
     if (/верно|(^|\s)да(\s|$)|дальше|нравится|запуск|продолж/.test(t)) { this.set({ input: "" }); return this.next(text); }
