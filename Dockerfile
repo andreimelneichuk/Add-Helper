@@ -29,7 +29,11 @@ RUN useradd --create-home adhelper
 # Копируем собранный фронтенд в директорию frontend/dist, откуда FastAPI отдаёт SPA и статику
 COPY --from=frontend-builder --chown=adhelper:adhelper /web/dist /app/frontend/dist
 
+# Скрипт одновременного запуска воркера и веб-сервера (для Render / единого контейнера)
+COPY --chown=adhelper:adhelper scripts/start.sh /app/scripts/start.sh
+RUN chmod +x /app/scripts/start.sh
+
 USER adhelper
 
 EXPOSE 8000
-CMD ["sh", "-c", "alembic upgrade head && uvicorn --factory adhelper.api.app:create_app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips=*"]
+CMD ["/app/scripts/start.sh"]
