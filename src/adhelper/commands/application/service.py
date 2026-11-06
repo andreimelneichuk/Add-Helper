@@ -9,6 +9,7 @@ import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 
+from adhelper.commands.application.analytics import AnalyticsAgent, AnalyticsContext
 from adhelper.commands.domain.model import (
     CHANGING,
     Command,
@@ -20,7 +21,7 @@ from adhelper.commands.domain.model import (
     Source,
 )
 from adhelper.commands.domain.parse import SCHEMA, from_model, parse_all
-from adhelper.commands.domain.words import meaning, refusal
+from adhelper.commands.domain.words import REFUSAL, meaning, refusal
 from adhelper.creatives.domain.model import BusinessProfile, ModelUnavailable, TextModel
 
 CURRENT_RULES = "commands-2"
@@ -109,10 +110,19 @@ async def interpret(
     rules: CommandRules,
     model: TextModel | None,
     may_call_model: Callable[[], bool],
+    analytics_context: AnalyticsContext | None = None,
 ) -> Answer:
     found = parse_all(message, known, rules)
     first = found[0]
-    if (
+
+    specific_refusal = refusal(message)
+    if first.command.kind is Kind.UNKNOWN and not first.question and specific_refusal != REFUSAL:
+        first = Parsed(Command(Kind.UNKNOWN), Source.RULES, reply=specific_refusal)
+    elif len(found) == 1 and first.command.kind in (Kind.STATS, Kind.HISTORY) and analytics_context:
+        agent = AnalyticsAgent(model if (model and may_call_model()) else None)
+        ans = await agent.answer(message, analytics_context, target_kind=first.command.kind)
+        first = Parsed(Command(ans.kind), ans.source, reply=ans.reply)
+    elif (
         len(found) == 1
         and first.command.kind is Kind.UNKNOWN
         and not first.question
@@ -120,6 +130,11 @@ async def interpret(
         and may_call_model()
     ):
         first = await _ask_model(model, message, known, rules)
+        if first.command.kind in (Kind.STATS, Kind.HISTORY) and analytics_context:
+            agent = AnalyticsAgent(model if may_call_model() else None)
+            ans = await agent.answer(message, analytics_context, target_kind=first.command.kind)
+            first = Parsed(Command(ans.kind), ans.source, reply=ans.reply)
+
     answers = [_answer(parsed, message, rules) for parsed in (first, *found[1:])]
     return replace(answers[0], more=tuple(answers[1:]))
 
@@ -131,7 +146,6 @@ def _answer(parsed: Parsed, message: str, rules: CommandRules) -> Answer:
             command, parsed.source, rules.version, f"Понял так: {meaning(command)} Применить?", ""
         )
     if command.kind is Kind.UNKNOWN:
-        return Answer(
-            command, parsed.source, rules.version, "", parsed.question or refusal(message)
-        )
-    return Answer(command, parsed.source, rules.version, "", "")
+        reply_msg = parsed.question or parsed.reply or refusal(message)
+        return Answer(command, parsed.source, rules.version, "", reply_msg)
+    return Answer(command, parsed.source, rules.version, "", parsed.reply)

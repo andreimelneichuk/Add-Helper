@@ -507,7 +507,7 @@ export class LiveStore extends Store {
         if (s.hist.length === 0) return this.say("Изменений пока не было: я ещё ничего не менял.");
         return this.say("В истории все изменения с причинами. Там же можно отменить.", { label: "Открыть историю", view: "history" });
       case "stats":
-        return this.say(summary(s), { label: "Открыть статистику", view: "stats" });
+        return this.say(c.reply && !c.reply.startsWith("Этого я пока") ? c.reply : summary(s), { label: "Открыть статистику", view: "stats" });
       default:
         return this.say(c.reply);
     }

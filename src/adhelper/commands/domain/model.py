@@ -86,3 +86,4 @@ class Parsed:
     command: Command
     source: Source
     question: str = ""
+    reply: str = ""

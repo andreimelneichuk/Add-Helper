@@ -104,7 +104,6 @@ export function Start({ store }: { store: Store }) {
               </span>
             )}
           </div>
-          <button type="button" className="ah-btn st-hint" onClick={() => store.openChat()}>Можно спросить в чате</button>
         </form>
 
         <aside className="ah-panel st-side" aria-label="Что уже готово">

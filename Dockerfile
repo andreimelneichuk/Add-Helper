@@ -18,3 +18,6 @@ RUN playwright install --with-deps --only-shell chromium && rm -rf /var/lib/apt/
 
 RUN useradd --create-home adhelper
 USER adhelper
+
+EXPOSE 8000
+CMD ["sh", "-c", "alembic upgrade head && uvicorn --factory adhelper.api.app:create_app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips=*"]

@@ -13,7 +13,7 @@ describe("изменения с панели", () => {
   it("настройка применяется только после подтверждения", async () => {
     const store = new Store();
     render(<AppShell store={store} />);
-    await userEvent.click(button("Настройки"));
+    await userEvent.click(screen.getAllByRole("button", { name: "Настройки" })[0]!);
     await userEvent.click(button("вся Москва"));
     expect(store.state.f.area).toBe("Сокольники");
     expect(screen.getByRole("group", { name: "Подтверждение" })).toHaveTextContent("вся Москва");

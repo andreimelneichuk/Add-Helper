@@ -94,7 +94,7 @@ describe("экран запуска", () => {
     heading("Вот ваши объявления");
     await user.click(button("Нравится"));
     heading("Подключите кабинет Яндекса");
-    await user.click(button("Войти через Яндекс"));
+    await user.click(button("Подключено"));
     await user.click(button("Продолжить"));
     heading("Укажите ИНН для маркировки");
     await user.type(screen.getByLabelText("ИНН для маркировки"), "7701234567");
@@ -124,8 +124,8 @@ describe("экран запуска", () => {
       expect(screen.getByRole("alert")).toHaveTextContent(why);
     };
     await blocked(4, "Подключите кабинет");
-    await user.click(button("Войти через Яндекс"));
-    expect(screen.getByText("Подключён: логин salon-primer")).toBeInTheDocument();
+    await user.click(button("Подключено"));
+    expect(screen.getByText(/логин salon-primer/)).toBeInTheDocument();
     await user.click(button("Продолжить"));
 
     await blocked(5, "10 или 12 цифр");
@@ -190,11 +190,10 @@ describe("экран запуска", () => {
     expect(store.state.step).toBe(4);
   });
 
-  it("чат открывается плашкой, постоянной строки чата нет", async () => {
-    const { store, user } = setup({ step: 1 });
+  it("чат и подсказка 'Можно спросить в чате' отключены на этапе онбординга", () => {
+    setup({ step: 1 });
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
-    await user.click(button("Можно спросить в чате"));
-    expect(store.state.mode).toBe("chat");
+    expect(screen.queryByRole("button", { name: "Можно спросить в чате" })).not.toBeInTheDocument();
   });
 });
 

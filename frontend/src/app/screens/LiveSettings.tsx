@@ -740,6 +740,11 @@ function SiteSettings({ store, api }: { store: Store; api: Api }) {
     setLeaving("Выхожу…");
     try {
       await api.logout();
+      try {
+        document.cookie = "ah_guest=1; path=/";
+      } catch {
+        // ignore in environments without cookie access
+      }
       window.location.assign("/");
     } catch (e) {
       setLeaving(message(e));

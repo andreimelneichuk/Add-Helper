@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from adhelper.api.cabinet import OwnedChecked
 from adhelper.commands.adapters.rules_file import load_rules
+from adhelper.commands.application.analytics import AdStatSummary, AnalyticsContext
 from adhelper.commands.application.service import (
     CURRENT_RULES,
     Answer,
@@ -56,14 +57,50 @@ def chat_router() -> APIRouter:
     ) -> dict[str, Any]:
         sessions: async_sessionmaker[AsyncSession] = request.app.state.sessions
         now: datetime = request.app.state.clock()
-        lines = await ads(
-            SqlDashboard(sessions, business_id), window(platform_today(now), None, None)
-        )
+        dashboard = SqlDashboard(sessions, business_id)
+        lines = await ads(dashboard, window(platform_today(now), None, None))
+        history_lines = await dashboard.history(limit=10)
         found = await SqlProfiles(sessions, business_id).get()
         known = known_from(
             [(f"{line.account}/{line.ad_id}", line.title) for line, _ in lines],
             found[0] if found else None,
         )
+
+        cost_micros = sum(line.totals.cost for line, _ in lines)
+        impressions = sum(line.totals.impressions for line, _ in lines)
+        clicks = sum(line.totals.clicks for line, _ in lines)
+        conversions = sum(line.totals.conversions for line, _ in lines)
+        ad_summaries = tuple(
+            AdStatSummary(
+                id=f"{line.account}/{line.ad_id}",
+                title=line.title,
+                impressions=line.totals.impressions,
+                clicks=line.totals.clicks,
+                conversions=line.totals.conversions,
+                cost_micros=line.totals.cost,
+                ctr_percent=((ratios.ctr_bp or 0) / 100.0) if ratios else 0.0,
+            )
+            for line, ratios in lines
+        )
+        recent_history = tuple(
+            {
+                "at": h.at.isoformat() if hasattr(h.at, "isoformat") else str(h.at),
+                "explanation": h.explanation,
+                "kind": h.kind,
+                "source": h.source,
+            }
+            for h in history_lines
+        )
+        analytics_context = AnalyticsContext(
+            period_label="За 7 дней",
+            cost_micros=cost_micros,
+            impressions=impressions,
+            clicks=clicks,
+            conversions=conversions,
+            ads=ad_summaries,
+            recent_history=recent_history,
+        )
+
         rules = load_rules(CURRENT_RULES)
         calls: CallBudget = request.app.state.command_calls
         day = now.astimezone(PLATFORM_ZONE).date().isoformat()
@@ -73,6 +110,7 @@ def chat_router() -> APIRouter:
             rules,
             request.app.state.command_model,
             lambda: calls.take(str(business_id), day, rules.model_calls_per_day),
+            analytics_context=analytics_context,
         )
         return {**_shown(answer), "next": [_shown(more) for more in answer.more]}
 

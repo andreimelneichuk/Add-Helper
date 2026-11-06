@@ -3,7 +3,7 @@ import secrets
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
@@ -161,8 +161,13 @@ def accounts_router(settings: Settings) -> APIRouter:
         return response
 
     @router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
-    async def logout(request: Request, service: Service, _: CheckedSession) -> None:
-        await service.logout(request.cookies[SESSION_COOKIE])
+    async def logout(request: Request, service: Service, _: CheckedSession) -> Response:
+        token = request.cookies.get(SESSION_COOKIE)
+        if token:
+            await service.logout(token)
+        response = Response(status_code=status.HTTP_204_NO_CONTENT)
+        response.delete_cookie(SESSION_COOKIE, path="/")
+        return response
 
     @router.get("/me")
     async def me(info: CurrentSession) -> dict[str, Any]:

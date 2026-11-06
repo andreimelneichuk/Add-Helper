@@ -76,3 +76,26 @@ async def test_other_business_is_not_reachable(anna: Anna) -> None:  # noqa: F81
         f"/api/businesses/{other}/chat/command", json={"text": "пауза"}, headers=csrf
     )
     assert reply.status_code == 404
+
+
+async def test_chat_analytics_agent_answers_with_stats_context(anna: Anna) -> None:  # noqa: F811
+    client, csrf, business = anna
+    answer = await _say(client, csrf, business, "как дела с рекламой?")
+    assert answer["kind"] == "stats"
+    assert "потрачено" in answer["reply"].lower() or "обращений" in answer["reply"].lower()
+
+
+async def test_chat_proposal_card_for_budget_mutation(anna: Anna) -> None:  # noqa: F811
+    client, csrf, business = anna
+    answer = await _say(client, csrf, business, "бюджет 25000")
+    assert answer["kind"] == "set_budget"
+    assert answer["rubles"] == 25000
+    assert "25 000 ₽" in answer["confirm"] or "25 000" in answer["confirm"]
+    assert answer["confirm"].endswith("Применить?")
+
+
+async def test_chat_history_inquiry_answers_with_details(anna: Anna) -> None:  # noqa: F811
+    client, csrf, business = anna
+    answer = await _say(client, csrf, business, "что ты делал?")
+    assert answer["kind"] == "history"
+    assert len(answer["reply"]) > 0

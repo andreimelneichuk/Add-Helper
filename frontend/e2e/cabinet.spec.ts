@@ -224,7 +224,7 @@ test.describe("Задача 15. Кабинет и управление рекл�
 
   test("5. Настройки: изменение месячного/суточного бюджета с валидацией лимитов", async ({ page }) => {
     await page.goto("/");
-    await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+    await page.locator(".ah-rail").getByRole("button", { name: "Настройки" }).click();
     await expect(page.locator(".set")).toBeVisible();
 
     const budgetForm = page.getByRole("form", { name: "Бюджет месяца" });
@@ -262,7 +262,7 @@ test.describe("Задача 15. Кабинет и управление рекл�
 
     // 5. Перезагрузка страницы — бюджет обновлён
     await page.reload();
-    await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+    await page.locator(".ah-rail").getByRole("button", { name: "Настройки" }).click();
     await expect(page.getByLabel("Бюджет в месяц, ₽")).toHaveValue(String(newTarget));
 
     // Возвращаем исходный бюджет
@@ -275,7 +275,7 @@ test.describe("Задача 15. Кабинет и управление рекл�
 
   test("6. Настройки: валидация расписания показов (не менее 8 часов в неделю Яндекса)", async ({ page }) => {
     await page.goto("/");
-    await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+    await page.locator(".ah-rail").getByRole("button", { name: "Настройки" }).click();
 
     const scheduleBlock = page.getByRole("region", { name: "Где и когда показывать" });
     await expect(scheduleBlock).toBeVisible();

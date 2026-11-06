@@ -1,0 +1,61 @@
+.ah-login-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: var(--gutter);
+  background: var(--canvas);
+}
+
+.ah-login-card {
+  width: 100%;
+  max-width: 400px;
+  padding: 40px 32px;
+  text-align: center;
+  border-radius: var(--r-surface);
+  box-shadow: 0 4px 24px rgba(20, 26, 46, 0.05);
+}
+
+.ah-login-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.ah-login-title {
+  font-size: var(--t-head);
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+}
+
+.ah-login-subtitle {
+  color: var(--muted);
+  font-size: var(--t-body);
+  line-height: 1.5;
+  margin: 0 0 28px;
+}
+
+.ah-login-alert {
+  padding: 10px 14px;
+  margin-bottom: 20px;
+  border-radius: var(--r-field);
+  background: var(--bad-soft);
+  color: var(--bad);
+  font-size: 13px;
+  text-align: left;
+}
+
+.ah-login-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ah-login-btn {
+  width: 100%;
+  min-height: 44px;
+  font-size: 15px;
+}

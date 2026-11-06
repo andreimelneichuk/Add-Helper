@@ -38,7 +38,7 @@ test.describe("Задача 15. Мобильная адаптивность (mob
     await expect(navBar).toBeVisible();
 
     // Проверяем кнопки разделов в таб-баре
-    const tabs = ["Обзор", "Статистика", "Реклама", "История", "Чат"];
+    const tabs = ["Обзор", "Статистика", "Реклама", "История", "Настройки", "Чат"];
     for (const tab of tabs) {
       await expect(navBar.getByRole("button", { name: tab })).toBeVisible();
     }
@@ -49,7 +49,7 @@ test.describe("Задача 15. Мобильная адаптивность (mob
     // Шапка: статус виден
     await expect(page.locator(".ah-status")).toBeVisible();
     await expect(page.locator(".ah-bar-pause")).toBeVisible();
-    await expect(page.locator(".ah-bar").getByRole("button", { name: "Настройки" })).toBeVisible();
+    await expect(navBar.getByRole("button", { name: "Настройки" })).toBeVisible();
   });
 
   test("2. Отсутствие горизонтального скролла на всех экранах кабинета (iPhone 14, 390x844)", async ({ page }) => {
@@ -80,7 +80,7 @@ test.describe("Задача 15. Мобильная адаптивность (mob
     await assertNoHorizontalScroll(page, "Чат");
 
     // 6. Экран «Настройки»
-    await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+    await navBar.getByRole("button", { name: "Настройки" }).click();
     await expect(page.locator(".set")).toBeVisible();
     await assertNoHorizontalScroll(page, "Настройки");
   });

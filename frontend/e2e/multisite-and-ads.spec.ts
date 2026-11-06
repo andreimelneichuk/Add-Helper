@@ -138,7 +138,7 @@ test.describe("E2E Юзеркейсы: Мультибизнес, генерац�
     await page.goto("/");
 
     // Переходим в настройки кабинета
-    await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+    await page.locator(".ah-rail").getByRole("button", { name: "Настройки" }).click();
     await expect(page.locator(".set")).toBeVisible();
 
     const budgetForm = page.getByRole("form", { name: "Бюджет месяца" });

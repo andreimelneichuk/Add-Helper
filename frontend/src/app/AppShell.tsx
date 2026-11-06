@@ -15,7 +15,20 @@ import { Stats } from "./screens/Stats";
 import { confirmText, initialState, statusText, stopped, Store, useStoreState, warned } from "./store";
 import type { State } from "./store";
 
-const VIEWS: [View, string][] = [["overview", "Обзор"], ["stats", "Статистика"], ["ads", "Реклама"], ["history", "История"]];
+const VIEWS: [View, string][] = [
+  ["overview", "Обзор"],
+  ["stats", "Статистика"],
+  ["ads", "Реклама"],
+  ["history", "История"],
+  ["settings", "Настройки"],
+];
+const MOBILE_VIEWS: [View, string][] = [
+  ["overview", "Обзор"],
+  ["stats", "Статистика"],
+  ["ads", "Реклама"],
+  ["history", "История"],
+  ["settings", "Настройки"],
+];
 const SITUATIONS: [Situation, string][] = [["running", "всё хорошо"], ["first", "первые дни"], ["problem", "нет денег"], ["verdict", "вывод проверки"], ["budget", "бюджет на исходе"], ["rejected", "отказ Яндекса"], ["access", "нет доступа"]];
 const SCREENS = { overview: Overview, stats: Stats, ads: Ads, history: History, settings: Settings };
 
@@ -137,11 +150,6 @@ export function AppShell({ store: given }: { store?: Store }) {
             </button>
           </div>
         )}
-        {starting && !s.account && (
-          <button type="button" className="ah-btn" style={{ marginLeft: "auto" }} onClick={store.loginDirect}>
-            Войти
-          </button>
-        )}
         {starting && s.account && (
           <span className="ah-muted" style={{ marginLeft: "auto", fontSize: "13px" }}>
             {s.account.email}
@@ -154,7 +162,6 @@ export function AppShell({ store: given }: { store?: Store }) {
         )}
         {!starting && <span className="ah-status" style={tone}><i aria-hidden="true" />{statusText(s)}</span>}
         {!starting && (s.live ? s.live.hasCampaigns : true) && <button type="button" className="ah-btn ah-bar-pause" onClick={() => store.run({ action: "pause" })}>{s.paused ? "Включить" : "Пауза"}</button>}
-        {!starting && <button type="button" className="ah-btn ah-btn-icon" aria-label="Настройки" aria-current={!chat && s.view === "settings" ? "page" : undefined} onClick={() => store.goView("settings")}><Icon name="settings" /></button>}
       </header>
       {!starting && !s.live && (
         <div className="ah-proto">
@@ -190,7 +197,7 @@ export function AppShell({ store: given }: { store?: Store }) {
           )}
       </div>
       <nav className="ah-nav" aria-label="Разделы на телефоне">
-        {tabs.map(([id, label]) => (
+        {(starting ? tabs : MOBILE_VIEWS).map(([id, label]) => (
           <button key={id} type="button" aria-current={!chat && (starting || s.view === id) ? "page" : undefined} onClick={() => store.goView(id)}><Icon name={starting ? "settings" : id} />{label}</button>
         ))}
         <button type="button" aria-current={chat ? "page" : undefined} onClick={() => store.openChat()}><Icon name="chat" />Чат</button>

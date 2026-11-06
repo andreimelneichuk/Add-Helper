@@ -18,25 +18,8 @@ export const innReady = (s: State) => s.inn.length === 10 || s.inn.length === 12
 
 function AboutStep({ store, s }: StepProps) {
   const reading = s.reading !== null;
-  const signed = s.account !== null;
   return (
     <>
-      {!signed && (
-        <div className="st-auth-box">
-          <div className="st-auth-box-text">
-            <strong>Уже есть кабинет?</strong>
-            <span>Войдите через Яндекс, чтобы сразу открыть свой кабинет.</span>
-          </div>
-          <button type="button" className="ah-btn" onClick={store.loginDirect}>
-            Войти через Яндекс
-          </button>
-        </div>
-      )}
-      {signed && (
-        <div className="st-auth-box is-signed">
-          <span style={{ fontSize: "13px" }}>Вы вошли как <strong>{s.account?.email}</strong></span>
-        </div>
-      )}
       <label className="st-field">
         <span className="ah-label">Ссылка на сайт или страницу</span>
         <input className="ah-input st-input-big" inputMode="url" autoComplete="url" value={s.site} placeholder="Например: ваш-салон.рф" readOnly={reading} onChange={(e) => { store.set({ site: e.target.value, block: "" }); saveStartSite(e.target.value); }} />
@@ -235,13 +218,28 @@ function YandexStep({ store, s }: StepProps) {
       </div>
     );
   }
+  const signed = s.account !== null;
+  const login = s.account?.email?.split("@")[0] || "salon-primer";
   return (
     <div className="st-link">
       <div className="st-link-text">
         <div className="st-link-title">Кабинет Яндекса</div>
-        <div className="ah-muted">{s.yandex ? "Подключён: логин salon-primer" : "Вход и доступ к кабинету одним согласием. Кабинет подключим после входа."}</div>
+        <div className="ah-muted">
+          {signed
+            ? `Вы вошли: ${s.account?.email}. Профиль и бюджет сохранены в сервисе. Кабинет Директа подключён вместе с аккаунтом Яндекса.`
+            : `Подключён: логин ${login}. Кабинет Директа подключён вместе с аккаунтом Яндекса.`}
+        </div>
       </div>
-      <button type="button" className={s.yandex ? "ah-btn st-link-done" : "ah-btn ah-btn-primary"} onClick={() => store.set({ yandex: true, block: "" })}>{s.yandex ? "Подключено" : "Войти через Яндекс"}</button>
+      <button
+        type="button"
+        className="ah-btn st-link-done"
+        onClick={() => {
+          store.set({ yandex: true, block: "" });
+          if (!signed) store.login();
+        }}
+      >
+        Подключено
+      </button>
     </div>
   );
 }

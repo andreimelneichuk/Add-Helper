@@ -128,7 +128,7 @@ test.describe("Интерактивная переделка объявлени�
 
   test("3. Живой кабинет (Настройки): фото для объявлений — чекбокс согласия, загрузка и удаление", async ({ page }) => {
     await page.goto("/");
-    await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+    await page.locator(".ah-rail").getByRole("button", { name: "Настройки" }).click();
 
     const photosSection = page.locator(".set-section[aria-labelledby='set-photos-title']");
     await expect(photosSection).toBeVisible();

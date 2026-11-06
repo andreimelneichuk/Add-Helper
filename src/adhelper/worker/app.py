@@ -26,7 +26,7 @@ PERIODIC_TASKS = (
 
 
 def connector_for(settings: Settings) -> PsycopgConnector:
-    return PsycopgConnector(conninfo=settings.postgres_dsn)
+    return PsycopgConnector(conninfo=settings.postgres_dsn_unpooled)
 
 
 app = App(connector=connector_for(Settings()))

@@ -1,15 +1,23 @@
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy import URL
+from sqlalchemy import URL, make_url
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=(".env", "/etc/secrets/.env", "/etc/secrets/env"),
+        extra="ignore",
+    )
+
+    # Neon / Lakebase Postgres
+    database_url_env: SecretStr | None = Field(default=None, alias="database_url")
+    database_url_unpooled_env: SecretStr | None = Field(default=None, alias="database_url_unpooled")
+    neon_branch: str | None = None
 
     postgres_host: str = "localhost"
     postgres_port: int = 5433
     postgres_user: str = "adhelper"
-    postgres_password: SecretStr
+    postgres_password: SecretStr = SecretStr("")
     postgres_db: str = "adhelper"
 
     public_base_url: str = "http://localhost:8000"
@@ -58,11 +66,29 @@ class Settings(BaseSettings):
 
     @property
     def postgres_dsn(self) -> str:
+        if self.database_url_env:
+            raw = self.database_url_env.get_secret_value()
+            if raw:
+                url = make_url(raw).set(drivername="postgresql")
+                return url.render_as_string(hide_password=False)
         url = self.database_url.set(drivername="postgresql")
         return url.render_as_string(hide_password=False)
 
     @property
+    def postgres_dsn_unpooled(self) -> str:
+        if self.database_url_unpooled_env:
+            raw = self.database_url_unpooled_env.get_secret_value()
+            if raw:
+                url = make_url(raw).set(drivername="postgresql")
+                return url.render_as_string(hide_password=False)
+        return self.postgres_dsn
+
+    @property
     def database_url(self) -> URL:
+        if self.database_url_env:
+            raw = self.database_url_env.get_secret_value()
+            if raw:
+                return make_url(raw).set(drivername="postgresql+psycopg")
         return URL.create(
             "postgresql+psycopg",
             username=self.postgres_user,
@@ -71,3 +97,11 @@ class Settings(BaseSettings):
             port=self.postgres_port,
             database=self.postgres_db,
         )
+
+    @property
+    def migration_database_url(self) -> URL:
+        if self.database_url_unpooled_env:
+            raw = self.database_url_unpooled_env.get_secret_value()
+            if raw:
+                return make_url(raw).set(drivername="postgresql+psycopg")
+        return self.database_url

@@ -8,7 +8,7 @@ from alembic.command import upgrade
 from alembic.config import Config
 from hypothesis import settings as hypothesis_settings
 from psycopg import sql
-from sqlalchemy.engine import make_url
+from sqlalchemy import URL
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from adhelper.config import Settings
@@ -22,13 +22,22 @@ hypothesis_settings.load_profile("default_no_deadline")
 
 
 def _admin_dsn(settings: Settings) -> str:
-    url = make_url(settings.database_url).set(drivername="postgresql", database="postgres")
+    url = URL.create(
+        "postgresql",
+        username=settings.postgres_user,
+        password=settings.postgres_password.get_secret_value() or "adhelper",
+        host=settings.postgres_host,
+        port=settings.postgres_port,
+        database="postgres",
+    )
     return url.render_as_string(hide_password=False)
 
 
 @pytest.fixture
 def settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[Settings]:
     """Настройки с отдельной временной базой: тесты не трогают рабочую."""
+    monkeypatch.setenv("DATABASE_URL", "")
+    monkeypatch.setenv("DATABASE_URL_UNPOOLED", "")
     name = f"adhelper_test_{uuid.uuid4().hex}"
     admin_dsn = _admin_dsn(Settings())
     with psycopg.connect(admin_dsn, autocommit=True) as admin:

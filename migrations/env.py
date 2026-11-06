@@ -40,7 +40,7 @@ def _only_our_tables(
 
 
 def run_migrations() -> None:
-    engine = create_engine(Settings().database_url)
+    engine = create_engine(Settings().migration_database_url)
     with engine.connect() as connection:
         context.configure(
             connection=connection,

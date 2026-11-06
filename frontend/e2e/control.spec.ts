@@ -125,7 +125,7 @@ test("пауза владельца снимается кнопкой, оста�
 
 test("бюджет ниже потраченного не принимается, снижение доходит до сервиса", async ({ page }) => {
   await page.goto("/");
-  await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+  await page.locator(".ah-rail").getByRole("button", { name: "Настройки" }).click();
   const form = page.getByRole("form", { name: "Бюджет месяца" });
   const input = form.getByLabel("Бюджет в месяц, ₽");
   await input.fill("1000");
@@ -141,13 +141,13 @@ test("бюджет ниже потраченного не принимается
   await expect(notice(page)).toContainText(`Бюджет месяца теперь`);
 
   await page.reload();
-  await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+  await page.locator(".ah-rail").getByRole("button", { name: "Настройки" }).click();
   await expect(page.getByLabel("Бюджет в месяц, ₽")).toHaveValue(String(target));
 });
 
 test("регион показа меняется через журнал, видно в истории, отмена возвращает прежний", async ({ page }) => {
   await page.goto("/");
-  await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+  await page.locator(".ah-rail").getByRole("button", { name: "Настройки" }).click();
   const block = page.getByRole("region", { name: "Где и когда показывать" });
   await expect(block).toContainText("Сейчас: у направлений разный регион");
   await block.getByRole("button", { name: "Санкт-Петербург", exact: true }).click();
@@ -156,7 +156,7 @@ test("регион показа меняется через журнал, вид
   await expect(block.getByRole("status")).toContainText("Регион показов теперь: Санкт-Петербург");
 
   await page.reload();
-  await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+  await page.locator(".ah-rail").getByRole("button", { name: "Настройки" }).click();
   await expect(page.getByRole("region", { name: "Где и когда показывать" })).toContainText("Сейчас: Санкт-Петербург.");
 
   await nav(page, "История").click();
@@ -168,13 +168,13 @@ test("регион показа меняется через журнал, вид
   await row.getByRole("button", { name: "Только это направление" }).click();
   await expect(notice(page)).toContainText("Отменил");
   // Отменено для одного направления: у остальных новый регион, общего значения больше нет.
-  await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+  await page.locator(".ah-rail").getByRole("button", { name: "Настройки" }).click();
   await expect(page.getByRole("region", { name: "Где и когда показывать" })).toContainText("разный регион");
 });
 
 test("расписание короче порога Яндекса не отправляется", async ({ page }) => {
   await page.goto("/");
-  await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+  await page.locator(".ah-rail").getByRole("button", { name: "Настройки" }).click();
   const block = page.getByRole("region", { name: "Где и когда показывать" });
   for (const day of ["пн", "вт", "ср", "чт", "пт", "сб"]) await block.getByRole("button", { name: day, exact: true }).click();
   await block.getByLabel("Показывать с").selectOption("10");
@@ -185,7 +185,7 @@ test("расписание короче порога Яндекса не отп�
 
 test("сайт разбирается в черновик, в профиль попадает только подтверждённое", async ({ page }) => {
   await page.goto("/");
-  await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+  await page.locator(".ah-rail").getByRole("button", { name: "Настройки" }).click();
   const site = page.getByLabel("Сайт");
   await site.fill("nogti.ru");
   await page.getByRole("button", { name: "Заполнить с сайта" }).click();
@@ -199,7 +199,7 @@ test("сайт разбирается в черновик, в профиль п�
   await expect(page.getByRole("status").filter({ hasText: "Сохранил" })).toBeVisible();
 
   await page.reload();
-  await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+  await page.locator(".ah-rail").getByRole("button", { name: "Настройки" }).click();
   await expect(page.getByLabel("Чем занимаетесь")).toHaveValue("маникюр");
   const services = page.locator(".set-service input[aria-label^='Услуга']");
   await expect(services.last()).toHaveValue("Маникюр с покрытием гель-лаком");
@@ -283,7 +283,7 @@ test("черновик после входа не затирает бизнес,
   await page.getByRole("button", { name: "Продолжить" }).click();
   await expect(page).toHaveURL(/:\d+\/$/);
   await page.goto("/");
-  await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+  await page.locator(".ah-rail").getByRole("button", { name: "Настройки" }).click();
   await expect(page.getByLabel("Сайт")).not.toHaveValue("https://nogti.ru/");
 });
 
@@ -480,7 +480,7 @@ test("переделка объявления: выдумка отклонена
 test("правка цены: объявления со старой ценой названы, замену пишет писатель и ждёт решения", async ({ page, request }) => {
   // Две правки профиля, каждая с циклом хранителя, и писатель стенда между ними.
   test.setTimeout(150_000);
-  const settings = page.locator(".ah-bar").getByRole("button", { name: "Настройки" });
+  const settings = page.locator(".ah-rail").getByRole("button", { name: "Настройки" });
   await page.goto("/");
   await settings.click();
   const price = page.getByLabel("Цена услуги 1, ₽");

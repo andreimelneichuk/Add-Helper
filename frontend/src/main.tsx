@@ -6,6 +6,7 @@ import { loadDraft, loadStartReading, loadStartSite } from "./app/draft";
 import { LiveStore, loadLive } from "./app/live";
 import { initialState, Store } from "./app/store";
 import { CONNECT_RESULT } from "./app/screens/LiveSettings";
+import { Login } from "./app/screens/Login";
 import "./app/base.css";
 
 // `/` — кабинет на данных сервиса, а без входа или бизнеса — запуск (`/?start`), шаги идут через сервис.
@@ -74,16 +75,37 @@ function GuestStart() {
   return <AppShell store={store} />;
 }
 
-// Есть вход и бизнес: настоящие данные. Нет: запуск с первого шага.
+// Новый экран входа, а после входа:
+// - человека (бизнеса) нет -> запускаем стартовый опрос
+// - человек есть -> запускаем основное меню со всеми функциями
 function Live() {
-  const [store, setStore] = useState<LiveStore | "start" | "failed" | null>(null);
+  const [store, setStore] = useState<LiveStore | "start" | "login" | "failed" | null>(null);
+  const [loginError, setLoginError] = useState<string | null>(null);
+
   useEffect(() => {
     // В режиме разработки эффект запускается дважды. Без отмены второй магазин придёт позже
     // и заменит первый, в котором владелец уже успел перейти в другой раздел.
     let cancelled = false;
     const params = new URLSearchParams(window.location.search);
+    const loginParam = params.get("login");
+    if (loginParam !== null) {
+      const err = loginParam === "denied"
+        ? "Вход не состоялся: доступ в Яндексе не дан."
+        : loginParam === "unavailable"
+          ? "Вход сейчас не работает. Попробуйте позже."
+          : "Вход не состоялся. Попробуйте ещё раз.";
+      setLoginError(err);
+      window.history.replaceState(null, "", "/");
+    }
+
     openSession().then(async (session) => {
-      if (!session || !session.businesses.length) return cancelled || setStore("start");
+      if (cancelled) return;
+      if (!session) {
+        return setStore("login");
+      }
+      if (!session.businesses || session.businesses.length === 0) {
+        return setStore("start");
+      }
       let activeId: string | null = null;
       try { activeId = localStorage.getItem("adhelper.activeBusinessId"); } catch {}
       const business = session.businesses.find((b) => b.id === activeId) ?? session.businesses[0]!;
@@ -102,6 +124,7 @@ function Live() {
   }, []);
   if (store === null) return <p className="ah-boot" role="status">Загружаем данные…</p>;
   if (store === "failed") return <p className="ah-boot" role="alert">Сервис не ответил. Обновите страницу через минуту.</p>;
+  if (store === "login") return <Login error={loginError} />;
   if (store === "start") return <GuestStart />;
   return <AppShell store={store} />;
 }

@@ -98,7 +98,7 @@ test.describe("Комплексное тестирование экранов и
 
   test("3. Настройки: профиль бизнеса, добавление/удаление услуги и каналы уведомлений", async ({ page }) => {
     await page.goto("/");
-    await page.locator(".ah-bar").getByRole("button", { name: "Настройки" }).click();
+    await page.locator(".ah-rail").getByRole("button", { name: "Настройки" }).click();
 
     const profileSection = page.locator(".set-section[aria-labelledby='set-profile-title']");
     await expect(profileSection).toBeVisible();

@@ -23,6 +23,8 @@ export function RealYandex({ store, s }: Props) {
     }, (e: unknown) => setStatus(say(e)));
   }, [api, store]);
   const connected = accounts?.find((a) => a.state === "connected");
+  const isConnected = !!connected || s.yandex;
+  const login = connected?.login || s.account?.email?.split("@")[0] || "Яндекс Директ";
   const connect = () => {
     if (!api) return;
     setStatus("");
@@ -31,16 +33,20 @@ export function RealYandex({ store, s }: Props) {
   return (
     <div className="st-link">
       <div className="st-link-text">
-        <div className="st-link-title">{connected ? `Кабинет подключён: ${connected.login}` : "Кабинет Директа"}</div>
+        <div className="st-link-title">{isConnected ? `Кабинет подключён: ${login}` : "Кабинет Директа"}</div>
         <div className="ah-muted">
           {s.account?.email ? `Вы вошли как ${s.account.email}. ` : ""}
-          {connected
-            ? "Кампании запуск создаст в этом кабинете."
+          {isConnected
+            ? "Директ подключён вместе с аккаунтом Яндекса. Кампании запуск создаст в этом кабинете."
             : "Чтобы сервис мог управлять рекламой в вашем Директе, предоставьте доступ к кабинету: нажмите кнопку «Подключить кабинет»."}
         </div>
         {status && <p className="st-letter" role="status">{status}</p>}
       </div>
-      {api && !connected && <button type="button" className="ah-btn ah-btn-primary" onClick={connect}>Подключить кабинет</button>}
+      {isConnected ? (
+        <button type="button" className="ah-btn st-link-done" disabled>Подключено</button>
+      ) : (
+        api && <button type="button" className="ah-btn ah-btn-primary" onClick={connect}>Подключить кабинет</button>
+      )}
     </div>
   );
 }

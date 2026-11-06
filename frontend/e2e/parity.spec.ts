@@ -4,7 +4,7 @@ import type { Page } from "@playwright/test";
 
 const notice = (page: Page) => page.locator(".ah-notice");
 const nav = (page: Page, name: string) => page.locator(".ah-rail").getByRole("button", { name });
-const settings = (page: Page) => page.locator(".ah-bar").getByRole("button", { name: "Настройки" });
+const settings = (page: Page) => page.locator(".ah-rail").getByRole("button", { name: "Настройки" });
 
 test.describe.configure({ mode: "serial" });
 
