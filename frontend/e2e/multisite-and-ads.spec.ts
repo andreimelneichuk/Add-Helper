@@ -116,7 +116,7 @@ test.describe("E2E Юзеркейсы: Мультибизнес, генерац�
     await submitGen.click();
 
     // 6. Появление сгенерированных карточек объявлений (воркер или быстрый шаблон)
-    const previewCards = modal.locator(".gen-card");
+    const previewCards = modal.getByRole("article");
     await expect(previewCards.first()).toBeVisible({ timeout: 20_000 });
     expect(await previewCards.count()).toBeGreaterThanOrEqual(1);
 
@@ -125,13 +125,13 @@ test.describe("E2E Юзеркейсы: Мультибизнес, генерац�
     await expect(firstCheckbox).toBeChecked();
 
     // 8. Добавление выбранных объявлений в кабинет
-    const addSelectedBtn = modal.getByRole("button", { name: /Добавить выбранные в показы/ });
+    const addSelectedBtn = modal.getByRole("button", { name: /Добавить выбранные/ });
     await expect(addSelectedBtn).toBeVisible();
     await addSelectedBtn.click();
 
     // Модальное окно закрылось после добавления
     await expect(modal).toHaveCount(0);
-    await expect(notice(page)).toContainText(/Добавлено объявлений:/);
+    await expect(notice(page)).toContainText(/Добавлено \d+ новых объявлен/);
   });
 
   test("UC-5: Управление распределением рекламного бюджета (раздельный / общий)", async ({ page }) => {
