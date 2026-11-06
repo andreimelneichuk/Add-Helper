@@ -1,6 +1,6 @@
 // Новый интерфейс на настоящих данных: сводит ответы API к состоянию экранов и шлёт действия владельца.
 // Деньги приходят целыми микроединицами; в рубли переводим только здесь и только для показа.
-import { ApiError, createApi, createBusiness, openSession } from "../api";
+import { ApiError, createApi, createBusiness, createGuestApi, openSession } from "../api";
 import type { AdLine, Alert, Api, ChatCommand, HistoryLine, Money, OutdatedAd, Overview, Profile, UndoPreview } from "../api";
 import { clearDraft, clearStartReading, clearStartSite } from "./draft";
 import { ALERT } from "./words";
@@ -223,8 +223,11 @@ function summary(s: State): string {
   return `За 7 дней ${w.leads} ${leadsWord(w.leads)} по ${rub(w.cost / w.leads)}, неделей раньше ${w.prevLeads}.`;
 }
 
+const NOT_LAUNCHED = "Реклама ещё не запущена: в Директе нет направлений. Сначала подключите кабинет и завершите запуск в настройках.";
+
 export class LiveStore extends Store {
   private queue: ChatCommand[] = [];
+  private budgetMax: number | null = null;
   public override rework: Api | null = null;
   constructor(public api: Api, loaded: Partial<State>) {
     super({ ...initialState(), msgs: [], ...loaded });
@@ -400,6 +403,10 @@ export class LiveStore extends Store {
       this.say(error instanceof ApiError ? error.message : NO_ANSWER);
       return;
     }
+    // Предел суммы из правил плана: тот же, что предупреждает о лишнем нуле в мастере.
+    if ([c, ...(c.next ?? [])].some((x) => x.kind === "set_budget") && this.budgetMax === null) {
+      this.budgetMax = await createGuestApi().budgetOptions().then((o) => o.max, () => null);
+    }
     // Несколько просьб в одном сообщении: по одной, у каждой своё «да».
     this.queue = [...(c.next ?? [])];
     if (this.queue.length) this.say(`Вижу ${this.queue.length + 1} просьбы, спрошу про каждую по очереди.`);
@@ -416,17 +423,24 @@ export class LiveStore extends Store {
     const s = this.state;
     switch (c.kind) {
       case "pause":
-        if (s.paused) return this.say("Реклама уже на паузе. Чтобы включить, напишите «включи».");
-        return this.offer(c.confirm, { action: "pause" });
       case "resume":
-        if (!s.paused) return this.say("Реклама и так идёт, включать нечего.");
+        // Без направлений в Директе нечего ни останавливать, ни включать: говорим сразу, без «Применить?».
+        if (s.live && !s.live.hasCampaigns) return this.say(NOT_LAUNCHED, { label: "Открыть настройки", view: "settings" });
+        if (c.kind === "resume") {
+          if (!s.paused) return this.say("Реклама и так идёт, включать нечего.");
+          return this.offer(c.confirm, { action: "pause" });
+        }
+        if (s.paused) return this.say("Реклама уже на паузе. Чтобы включить, напишите «включи».");
         return this.offer(c.confirm, { action: "pause" });
       case "set_budget": {
         const amount = c.rubles ?? 0;
         const spent = s.live?.spent ?? 0;
         if (amount < spent) return this.say(`В этом месяце уже потрачено ${rub(spent)}, бюджет не может быть меньше.`);
         const lower = amount < budgetOf(s);
-        return this.offer(`Понял так: бюджет ${rub(amount)} в месяц.${lower ? " Сначала снижу лимиты в Яндексе, потом сменю бюджет." : ""} Применить?`, { action: "setting", value: ["budget", amount] });
+        const huge = this.budgetMax !== null && amount > this.budgetMax
+          ? ` Это больше ${rub(this.budgetMax)}: проверьте, нет ли лишнего нуля.`
+          : "";
+        return this.offer(`Понял так: бюджет ${rub(amount)} в месяц.${huge}${lower ? " Сначала снижу лимиты в Яндексе, потом сменю бюджет." : ""} Применить?`, { action: "setting", value: ["budget", amount] });
       }
       case "ad_off":
       case "ad_on": {
@@ -448,6 +462,7 @@ export class LiveStore extends Store {
       case "rework_ad":
         return this.say(`Переделка — на экране объявления: откройте «${c.ad!.name}» в разделе «Реклама» и нажмите «Переделать». Там видно варианты до замены.`, { label: "Открыть рекламу", view: "ads" });
       case "history":
+        if (s.hist.length === 0) return this.say("Изменений пока не было: я ещё ничего не менял.");
         return this.say("В истории все изменения с причинами. Там же можно отменить.", { label: "Открыть историю", view: "history" });
       case "stats":
         return this.say(summary(s), { label: "Открыть статистику", view: "stats" });
