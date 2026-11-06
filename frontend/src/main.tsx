@@ -23,6 +23,8 @@ function GuestStart() {
     const draft = loadDraft();
     const created = new Store({
       ...initialState("start"),
+      // Объявления прототипа в настоящем запуске не показываем: их пишет сервис на шаге «Реклама».
+      ads: [],
       ...(savedSite ? { site: savedSite } : {}),
       ...(draft ? {
         site: draft.site || savedSite,
@@ -34,6 +36,7 @@ function GuestStart() {
     });
     created.reader = createGuestApi();
     created.writer = created.reader as ReturnType<typeof createGuestApi>;
+    created.transferDeps = { session: openSession, createBusiness, business: createApi, open: createApi };
     return created;
   }, []);
   useEffect(() => {
@@ -47,7 +50,7 @@ function GuestStart() {
         return;
       }
       if (session?.me?.email) {
-        store.set({ account: { email: session.me.email } });
+        store.set({ account: { email: session.me.email }, businesses: session.businesses });
       }
     }).catch(() => undefined);
     const params = new URLSearchParams(window.location.search);
