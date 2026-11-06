@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { STEPS } from "./data";
 import { draftProfile, loadDraft, saveDraft } from "./draft";
 import { initialState, Store } from "./store";
 import { Start } from "./screens/Start";
+import { Overview } from "./screens/Overview";
+import { AppShell } from "./AppShell";
 import { DayChart } from "./screens/overview/DayChart";
 
 describe("Review 3 Reproduction & Fix Verification Tests (BUG-019 – BUG-031, BUG-038)", () => {
@@ -164,6 +166,41 @@ describe("Review 3 Reproduction & Fix Verification Tests (BUG-019 – BUG-031, B
       const lastReply = store.state.msgs.at(-1)?.text;
       expect(lastReply).toContain("15 000 ₽");
       expect(lastReply).toContain("Изменить бюджет можно");
+    });
+  });
+
+  describe("BUG-037: Overview shows empty state when ads/profile are empty", () => {
+    it("37.1: renders helpful message when no ads or profile facts exist", () => {
+      const store = new Store(initialState());
+      store.set({ ads: [] });
+      render(<Overview store={store} />);
+      expect(screen.getByText(/Объявлений пока нет\. Заполните услуги в профиле/i)).toBeInTheDocument();
+    });
+  });
+
+  describe("BUG-040: 'Написать другие варианты' requests fresh set with force=true", () => {
+    it("40.1: passes force: true when requesting other variants", async () => {
+      const store = new Store(initialState("start"));
+      let capturedProfile: any = null;
+      store.writer = {
+        writeAds: async (p) => { capturedProfile = p; return { id: 10, token: "tok", status: "ready" }; },
+        adSet: async () => ({ id: 10, status: "ready", source: "model", template: false, needs_review: false, problem_text: null, ads: [] }),
+      } as any;
+      store.set({ step: 3, ads: [{ id: "a1", name: "Реклама 1", title: "Заголовок", hook: "", text: "", facts: "" }] });
+      await store.writeAds(true);
+      expect(capturedProfile?.force).toBe(true);
+    });
+  });
+
+  describe("UX: Main panel site creation", () => {
+    it("renders '+ Новый сайт' button in header and opens CreateSiteModal", async () => {
+      const store = new Store(initialState("work"));
+      store.set({ live: { name: "Салон Пермь", budget: 20000, spent: 5000, hasCampaigns: true, alerts: [] } as any });
+      render(<AppShell store={store} />);
+      const btn = screen.getByRole("button", { name: "Создать новый сайт" });
+      expect(btn).toBeInTheDocument();
+      fireEvent.click(btn);
+      expect(screen.getByRole("dialog", { name: "Добавить сайт или бизнес" })).toBeInTheDocument();
     });
   });
 });

@@ -3,6 +3,7 @@ import "@fontsource-variable/onest";
 import "./tokens.css";
 import type { Situation, View } from "./data";
 import { BrandLogo, Icon } from "./icons";
+import { CreateSiteModal } from "./screens/CreateSiteModal";
 import { LiveStore } from "./live";
 import { Ads } from "./screens/Ads";
 import { Chat } from "./screens/Chat";
@@ -18,7 +19,7 @@ const VIEWS: [View, string][] = [["overview", "Обзор"], ["stats", "Стат
 const SITUATIONS: [Situation, string][] = [["running", "всё хорошо"], ["first", "первые дни"], ["problem", "нет денег"], ["verdict", "вывод проверки"], ["budget", "бюджет на исходе"], ["rejected", "отказ Яндекса"], ["access", "нет доступа"]];
 const SCREENS = { overview: Overview, stats: Stats, ads: Ads, history: History, settings: Settings };
 
-function BusinessSelector({ store, s }: { store: Store; s: State }) {
+function BusinessSelector({ store, s, onAddSite }: { store: Store; s: State; onAddSite?: () => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -77,7 +78,8 @@ function BusinessSelector({ store, s }: { store: Store; s: State }) {
             role="menuitem"
             onClick={() => {
               setOpen(false);
-              if (liveStore) liveStore.addNewSite();
+              if (onAddSite) onAddSite();
+              else if (liveStore) liveStore.addNewSite();
               else window.location.assign("/?start=new");
             }}
           >
@@ -103,6 +105,7 @@ export function AppShell({ store: given }: { store?: Store }) {
   const tabs: [View, string][] = starting ? [["overview", "Настройка"]] : VIEWS;
   const Screen = SCREENS[s.view];
   const main = useRef<HTMLElement>(null);
+  const [showNewSite, setShowNewSite] = useState(false);
 
   // Экран всегда открывается с начала: иначе тревога остаётся выше видимой части.
   useLayoutEffect(() => {
@@ -120,7 +123,17 @@ export function AppShell({ store: given }: { store?: Store }) {
             </span>
           </strong>
         ) : (
-          <BusinessSelector store={store} s={s} />
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+            <BusinessSelector store={store} s={s} onAddSite={() => setShowNewSite(true)} />
+            <button
+              type="button"
+              className="ah-btn ah-btn-small"
+              onClick={() => setShowNewSite(true)}
+              aria-label="Создать новый сайт"
+            >
+              + Новый сайт
+            </button>
+          </div>
         )}
         {starting && !s.account && (
           <button type="button" className="ah-btn" style={{ marginLeft: "auto" }} onClick={store.loginDirect}>
@@ -175,6 +188,7 @@ export function AppShell({ store: given }: { store?: Store }) {
         ))}
         <button type="button" aria-current={chat ? "page" : undefined} onClick={() => store.openChat()}><Icon name="chat" />Чат</button>
       </nav>
+      <CreateSiteModal isOpen={showNewSite} onClose={() => setShowNewSite(false)} store={store} />
     </div>
   );
 }

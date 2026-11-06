@@ -187,7 +187,7 @@ export type AdSet = {
   ads: WizardAd[];
 };
 /** Черновик профиля для писателя: только подтверждённые владельцем факты. */
-export type AdDraftProfile = Omit<Profile, "website">;
+export type AdDraftProfile = Omit<Profile, "website"> & { force?: boolean };
 /** Выбор владельца в мастере: какой набор и какие объявления из него оставить. */
 export type AdsChoice = { id: number; token: string; kept: number[] };
 

@@ -73,6 +73,7 @@
 .ah-btn-primary:hover { border-color: var(--accent-ink); background: var(--accent-ink); }
 .ah-btn-primary:disabled { border-color: var(--line); background: var(--line); color: var(--muted); }
 .ah-btn-icon { width: var(--control); padding: 0; }
+.ah-btn-small { min-height: 28px; padding: 2px 10px; font-size: 13px; font-weight: 500; }
 .ah-btn-icon[aria-current="page"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
 
 /* Название, которое открывает свой экран: строка таблицы или списка */

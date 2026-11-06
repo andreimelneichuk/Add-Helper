@@ -184,14 +184,14 @@ export const statsOf = (s: State, period: Period): PeriodStats => s.live?.stats[
 export const budgetOf = (s: State) => s.live?.budget ?? Number(s.f.budget) + s.extra;
 export const spentOf = (s: State) => (s.live ? (s.live.spent ?? 0) : DAYS[s.situation].reduce((x, d) => x + d[0], 0));
 const STOPPING = new Set(["zero_balance", "balance_mismatch", "budget_stopped"]);
-export const stopped = (s: State) => (s.live ? s.live.alerts.some((a) => STOPPING.has(a.kind)) : s.situation === "problem" && !s.topped);
-export const warned = (s: State) => (s.live ? s.live.alerts.length > 0 : s.situation === "budget" && !s.decided);
+export const stopped = (s: State) => (s.live ? s.live.alerts?.some((a) => STOPPING.has(a.kind)) ?? false : s.situation === "problem" && !s.topped);
+export const warned = (s: State) => (s.live ? (s.live.alerts?.length ?? 0) > 0 : s.situation === "budget" && !s.decided);
 const liveStatus = (s: State) => (s.paused ? "На паузе" : stopped(s) ? "Показы остановлены" : warned(s) ? "Нужно внимание" : s.live?.hasCampaigns ? "Реклама идёт" : "Реклама не запущена");
 export const statusText = (s: State) =>
   s.live ? liveStatus(s) : s.paused ? "На паузе" : stopped(s) ? "Показы остановлены" : warned(s) ? "Бюджет на исходе" : s.situation === "problem" ? "Жду деньги"
     : s.situation === "access" && !s.topped ? "Нет доступа" : s.situation === "first" ? "Собираю данные" : "Реклама идёт";
 /** Название объявления с учётом новой цены из профиля. */
-export const adName = (s: State, id: string) => (s.price && id === "a2" ? `Маникюр от ${rub(s.price)}` : s.ads.find((a) => a.id === id)!.name);
+export const adName = (s: State, id: string) => (s.price && id === "a2" ? `Маникюр от ${rub(s.price)}` : (s.ads.find((a) => a.id === id)?.name ?? id));
 /** Что написано на объявлении: подставная цена не должна затирать уже переделанный текст. */
 export function adShown(s: State, ad: Ad) {
   const priced = !!s.price && ad.id === "a2" && ad.hook === ADS[1]!.hook;
@@ -637,7 +637,7 @@ export class Store {
     const writer = this.writer;
     if (!writer || this.state.writing) return;
     const { niche, address, services, features } = draftProfile({ site: this.state.site, facts: this.state.facts, budget: 0 });
-    const draft: AdDraftProfile = { niche, address, services, features };
+    const draft: AdDraftProfile = { niche, address, services, features, ...(force ? { force: true } : {}) };
     const facts = JSON.stringify(draft);
     if (!force && this.state.adSet?.facts === facts) return;
     this.set({ writing: "asking", adSet: null, ads: [], draftOff: {}, block: "" });

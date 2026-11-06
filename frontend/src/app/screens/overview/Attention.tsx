@@ -16,7 +16,7 @@ function calmOf(s: State): Message {
 }
 
 function liveMessage(s: State, store: Store): Message {
-  const first = s.live!.alerts[0];
+  const first = s.live?.alerts?.[0];
   const toHistory = () => store.goView("history");
   if (first) {
     const others = s.live!.alerts.slice(1).map((a) => a.title).join(". ");
