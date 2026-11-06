@@ -39,7 +39,10 @@ REJECTED = {"invalid_grant", "invalid_client", "unauthorized_client", "bad_verif
 
 @functools.cache
 def _yandex_ssl_context() -> ssl.SSLContext:
-    """SSL-контекст с TLS 1.2: шлюзы Яндекс ID / Passport зависают на TLS 1.3 ClientHello OpenSSL 3."""
+    """SSL-контекст с TLS 1.2.
+
+    Шлюзы Яндекс ID / Passport зависают на TLS 1.3 ClientHello OpenSSL 3.
+    """
     ctx = ssl.create_default_context()
     ctx.maximum_version = ssl.TLSVersion.TLSv1_2
     return ctx

@@ -51,7 +51,7 @@ describe("Review 3 Reproduction & Fix Verification Tests (BUG-019 – BUG-031, B
       store.set({
         site: "salon.ru",
         step: 3,
-        ads: [{ id: "a1", name: "Реклама 1", title: "Заголовок 1", hook: "Крючок", text: "Текст", facts: "Факты" }],
+        ads: [{ tag: "", tagTone: "accent", leads: 0, cost: 0, id: "a1", name: "Реклама 1", title: "Заголовок 1", hook: "Крючок", text: "Текст", facts: "Факты" }],
         draftOff: {},
       });
       // Step back to step 2
@@ -90,8 +90,8 @@ describe("Review 3 Reproduction & Fix Verification Tests (BUG-019 – BUG-031, B
       store.set({
         step: 3,
         ads: [
-          { id: "a1", name: "Объявление 1", title: "Объявление 1", hook: "Крючок", text: "Текст 1", facts: "Факты" },
-          { id: "a2", name: "Объявление 2", title: "Объявление 2", hook: "Крючок", text: "Текст 2", facts: "Факты" },
+          { tag: "", tagTone: "accent", leads: 0, cost: 0, id: "a1", name: "Объявление 1", title: "Объявление 1", hook: "Крючок", text: "Текст 1", facts: "Факты" },
+          { tag: "", tagTone: "accent", leads: 0, cost: 0, id: "a2", name: "Объявление 2", title: "Объявление 2", hook: "Крючок", text: "Текст 2", facts: "Факты" },
         ],
         draftOff: { a2: true },
       });
@@ -183,10 +183,10 @@ describe("Review 3 Reproduction & Fix Verification Tests (BUG-019 – BUG-031, B
       const store = new Store(initialState("start"));
       let capturedProfile: any = null;
       store.writer = {
-        writeAds: async (p) => { capturedProfile = p; return { id: 10, token: "tok", status: "ready" }; },
+        writeAds: async (p: unknown) => { capturedProfile = p; return { id: 10, token: "tok", status: "ready" }; },
         adSet: async () => ({ id: 10, status: "ready", source: "model", template: false, needs_review: false, problem_text: null, ads: [] }),
       } as any;
-      store.set({ step: 3, ads: [{ id: "a1", name: "Реклама 1", title: "Заголовок", hook: "", text: "", facts: "" }] });
+      store.set({ step: 3, ads: [{ tag: "", tagTone: "accent", leads: 0, cost: 0, id: "a1", name: "Реклама 1", title: "Заголовок", hook: "", text: "", facts: "" }] });
       await store.writeAds(true);
       expect(capturedProfile?.force).toBe(true);
     });

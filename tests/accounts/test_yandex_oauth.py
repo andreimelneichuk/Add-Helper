@@ -127,6 +127,7 @@ def test_addresses_come_from_configuration_and_must_be_http() -> None:
 
 def test_yandex_ssl_context_uses_tls_1_2() -> None:
     import ssl
+
     from adhelper.accounts.adapters.yandex_oauth import _yandex_ssl_context
 
     ctx = _yandex_ssl_context()
