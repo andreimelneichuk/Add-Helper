@@ -554,3 +554,25 @@ async def test_configured_yandex_app_sends_owner_to_its_address(api_settings: Se
     assert response.headers["location"].startswith("http://stand.test/oauth/authorize?")
     assert "client_id=app-id" in response.headers["location"]
     await app.state.engine.dispose()
+
+
+async def test_https_site_never_sets_cookies_without_secure(
+    api_settings: Settings, provider: FakeProvider
+) -> None:
+    settings = api_settings.model_copy(
+        update={"cookie_secure": False, "public_base_url": "https://ads.example.com"}
+    )
+    app = create_app(settings, provider)
+    transport = httpx.ASGITransport(app=app)
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url="https://ads.example.com") as c:
+            start = await c.get("/api/auth/yandex/login")
+    finally:
+        await app.state.engine.dispose()
+
+    cookie = next(
+        value
+        for value in start.headers.get_list("set-cookie")
+        if value.startswith("ah_oauth_state=")
+    ).lower()
+    assert "secure" in cookie

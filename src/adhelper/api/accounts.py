@@ -105,7 +105,8 @@ def _account_view(account: Any) -> dict[str, Any]:
 
 def accounts_router(settings: Settings) -> APIRouter:
     router = APIRouter(prefix="/api")
-    secure = settings.cookie_secure
+    # Сайт по https всегда отдаёт Secure-куки: COOKIE_SECURE=false нужен только локальному http.
+    secure = settings.cookie_secure or settings.public_base_url.startswith("https://")
 
     @router.get("/auth/yandex/login")
     async def login(service: Service, then: str | None = None) -> RedirectResponse:
