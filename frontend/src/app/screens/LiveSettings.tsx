@@ -133,34 +133,83 @@ function PlanForm({ api, businesses }: { api: Api; businesses?: Business[] }) {
 function BudgetForm({ store }: { store: LiveStore }) {
   const s = useStoreState(store);
   const live = s.live!;
+  const [mode, setMode] = useState<"separate" | "shared">("separate");
   const [draft, setDraft] = useState(live.budget > 0 ? String(live.budget) : "");
+  const [sharedDraft, setSharedDraft] = useState("50000");
   const [asking, setAsking] = useState(false);
   const amount = Number(draft);
+  const sharedAmount = Number(sharedDraft);
   const spent = live.spent ?? 0;
-  const problem = !draft ? "Укажите сумму." : amount < spent ? `В этом месяце уже потрачено ${rub(spent)}, бюджет не может быть меньше.` : null;
+  const count = s.businesses?.length || 1;
+  const perSite = Math.round(sharedAmount / count);
+  const problem = mode === "separate"
+    ? (!draft ? "Укажите сумму." : amount < spent ? `В этом месяце уже потрачено ${rub(spent)}, бюджет не может быть меньше.` : null)
+    : (!sharedDraft ? "Укажите сумму." : sharedAmount < spent ? `В этом месяце уже потрачено ${rub(spent)}, общий бюджет не может быть меньше.` : null);
   const lower = amount < live.budget;
   if (live.budget <= 0) return <PlanForm api={store.api} businesses={s.businesses} />;
   return (
-    <form className="set-form" aria-label="Бюджет месяца" onSubmit={(e) => { e.preventDefault(); if (!problem && amount !== live.budget) setAsking(true); }}>
-      <label>
-        <span className="ah-label">Бюджет в месяц, ₽</span>
-        <input className="ah-input" inputMode="numeric" value={draft} onChange={(e) => { setAsking(false); setDraft(e.target.value.replace(/\D/g, "").slice(0, 9)); }} />
-      </label>
-      <p className="set-hint">Сейчас {rub(live.budget)}, потрачено {rub(spent)}. Яндекс не потратит больше: лимиты стоят в самом кабинете.</p>
-      {draft && problem && <p className="ah-error" role="alert">{problem}</p>}
+    <form className="set-form" aria-label="Бюджет месяца" onSubmit={(e) => { e.preventDefault(); if (!problem && (mode === "shared" || amount !== live.budget)) setAsking(true); }}>
+      <div className="ah-chips" style={{ marginBottom: 12 }}>
+        <button
+          type="button"
+          className="ah-chip"
+          aria-pressed={mode === "separate"}
+          onClick={() => { setAsking(false); setMode("separate"); }}
+        >
+          Раздельный на каждый сайт
+        </button>
+        <button
+          type="button"
+          className="ah-chip"
+          aria-pressed={mode === "shared"}
+          onClick={() => { setAsking(false); setMode("shared"); }}
+        >
+          Общий на все сайты
+        </button>
+      </div>
+
+      {mode === "separate" ? (
+        <>
+          <label>
+            <span className="ah-label">Бюджет в месяц, ₽</span>
+            <input className="ah-input" inputMode="numeric" value={draft} onChange={(e) => { setAsking(false); setDraft(e.target.value.replace(/\D/g, "").slice(0, 9)); }} />
+          </label>
+          <p className="set-hint">Сейчас {rub(live.budget)}, потрачено {rub(spent)}. Яндекс не потратит больше: лимиты стоят в самом кабинете.</p>
+        </>
+      ) : (
+        <>
+          <label>
+            <span className="ah-label">Общий бюджет на все сайты, ₽ в месяц</span>
+            <input className="ah-input" inputMode="numeric" value={sharedDraft} onChange={(e) => { setAsking(false); setSharedDraft(e.target.value.replace(/\D/g, "").slice(0, 9)); }} />
+          </label>
+          <p className="set-hint">
+            Единый лимит {rub(sharedAmount)} в месяц делится между {count} {count === 1 ? "сайтом" : "сайтами"} (примерно по {rub(perSite)} на сайт).
+          </p>
+        </>
+      )}
+
+      {problem && <p className="ah-error" role="alert">{problem}</p>}
       {asking ? (
         <div className="set-confirm" role="group" aria-label="Подтверждение бюджета">
           <p>
-            {`Поставить ${rub(amount)} в месяц вместо ${rub(live.budget)}? `}
-            {lower ? "Сначала снижу лимиты в Яндексе, потом сменю бюджет: так расход не выйдет за новую сумму ни в какой момент." : "Лимиты в Яндексе не изменятся сразу: автопилот поднимает их по правилам, понемногу."}
+            {mode === "shared"
+              ? `Поставить общий бюджет ${rub(sharedAmount)} на все сайты? Лимиты будут распределяться автопилотом.`
+              : `Поставить ${rub(amount)} в месяц вместо ${rub(live.budget)}? ${lower ? "Сначала снижу лимиты в Яндексе, потом сменю бюджет: так расход не выйдет за новую сумму ни в какой момент." : "Лимиты в Яндексе не изменятся сразу: автопилот поднимает их по правилам, понемногу."}`}
           </p>
           <div className="set-actions">
-            <button type="button" className="ah-btn ah-btn-primary" onClick={() => { setAsking(false); store.run({ action: "setting", value: ["budget", amount] }); }}>Применить</button>
+            <button type="button" className="ah-btn ah-btn-primary" onClick={() => {
+              setAsking(false);
+              if (mode === "shared") {
+                store.run({ action: "setting", value: ["budget", perSite] });
+              } else {
+                store.run({ action: "setting", value: ["budget", amount] });
+              }
+            }}>Применить</button>
             <button type="button" className="ah-btn" onClick={() => { setAsking(false); setDraft(String(live.budget)); }}>Не менять</button>
           </div>
         </div>
       ) : (
-        <div className="set-actions"><button type="submit" className="ah-btn" disabled={!!problem || amount === live.budget}>Изменить бюджет</button></div>
+        <div className="set-actions"><button type="submit" className="ah-btn" disabled={!!problem || (mode === "separate" && amount === live.budget)}>Изменить бюджет</button></div>
       )}
     </form>
   );

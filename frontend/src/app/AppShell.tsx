@@ -38,6 +38,7 @@ function BusinessSelector({ store, s }: { store: Store; s: State }) {
 
   return (
     <div ref={ref} className="ah-brand-selector">
+      <strong className="ah-brand">{currentName}</strong>
       <button
         type="button"
         className="ah-brand-btn"
@@ -46,7 +47,6 @@ function BusinessSelector({ store, s }: { store: Store; s: State }) {
         aria-label={`Выбрать сайт (текущий: ${currentName})`}
         onClick={() => setOpen(!open)}
       >
-        <span>{currentName}</span>
         <span className="ah-brand-arrow" aria-hidden="true">▾</span>
       </button>
       {open && (
@@ -112,16 +112,16 @@ export function AppShell({ store: given }: { store?: Store }) {
   return (
     <div className="ah">
       <header className={starting ? "ah-bar is-start" : "ah-bar"}>
-        <strong className="ah-brand">
-          {starting ? (
+        {starting ? (
+          <strong className="ah-brand">
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
               <BrandLogo size={22} />
               <span>Ad Helper</span>
             </span>
-          ) : (
-            <BusinessSelector store={store} s={s} />
-          )}
-        </strong>
+          </strong>
+        ) : (
+          <BusinessSelector store={store} s={s} />
+        )}
         {starting && !s.account && (
           <button type="button" className="ah-btn" style={{ marginLeft: "auto" }} onClick={store.loginDirect}>
             Войти
