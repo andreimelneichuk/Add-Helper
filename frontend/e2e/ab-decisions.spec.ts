@@ -63,11 +63,11 @@ test.describe("Жизненный цикл A/B-тестирования и ре�
     await nav(page, "Реклама").click();
 
     // Блок «Нужно ваше решение»
-    const decide = page.locator(".ads-decide");
+    const decide = page.locator(".ann-decide");
     await expect(decide).toBeVisible();
     await expect(decide.getByRole("heading", { level: 2 })).toHaveText("Нужно ваше решение");
 
-    const card = decide.locator(".ads-card").filter({ hasText: "Педикюр в студии «Лак»" });
+    const card = decide.locator(".ann-card").filter({ hasText: "Педикюр в студии «Лак»" });
     await expect(card).toBeVisible();
 
     // Нажимаем «Не запускать»
@@ -77,7 +77,7 @@ test.describe("Жизненный цикл A/B-тестирования и ре�
 
     // Проверяем нотис и исчезновение карточки
     await expect(notice(page)).toContainText("Не запускаю «Педикюр в студии «Лак»»");
-    await expect(decide.locator(".ads-card").filter({ hasText: "Педикюр в студии «Лак»" })).toHaveCount(0);
+    await expect(decide.locator(".ann-card").filter({ hasText: "Педикюр в студии «Лак»" })).toHaveCount(0);
   });
 
   test("3. Экран «Реклама»: отзыв подготовленного объявления из блока «Готовлю к запуску»", async ({ page }) => {
@@ -85,7 +85,7 @@ test.describe("Жизненный цикл A/B-тестирования и ре�
     await nav(page, "Реклама").click();
 
     // Блок «Готовлю к запуску»
-    const queue = page.locator(".ads-queue");
+    const queue = page.locator(".ann-queue");
     await expect(queue).toBeVisible();
     await expect(queue.getByRole("heading", { level: 2 })).toHaveText("Готовлю к запуску");
 

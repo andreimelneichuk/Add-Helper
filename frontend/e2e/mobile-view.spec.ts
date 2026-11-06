@@ -66,7 +66,7 @@ test.describe("Задача 15. Мобильная адаптивность (mob
 
     // 3. Экран «Реклама»
     await mobileNav(page, "Реклама").click();
-    await expect(page.locator(".ads")).toBeVisible();
+    await expect(page.locator(".ann")).toBeVisible();
     await assertNoHorizontalScroll(page, "Реклама");
 
     // 4. Экран «История»
@@ -88,12 +88,12 @@ test.describe("Задача 15. Мобильная адаптивность (mob
   test("3. Корректность диалога подтверждения (Proposal pattern .ah-confirm) на мобильном экране", async ({ page }) => {
     await page.goto("/");
     await mobileNav(page, "Реклама").click();
-    await expect(page.locator(".ads")).toBeVisible();
+    await expect(page.locator(".ann")).toBeVisible();
 
     // Находим карточку объявления
-    const card = page.locator(".ads-card").filter({ has: page.getByRole("button", { name: /^Отключить/ }) }).first();
+    const card = page.locator(".ann-card").filter({ has: page.getByRole("button", { name: /^Отключить/ }) }).first();
     await expect(card).toBeVisible();
-    const adTitle = await card.locator(".ads-title").innerText();
+    const adTitle = await card.locator(".ann-title").innerText();
 
     // Нажимаем «Отключить» — появляется липкий диалог подтверждения внизу
     await card.getByRole("button", { name: /^Отключить/ }).click();

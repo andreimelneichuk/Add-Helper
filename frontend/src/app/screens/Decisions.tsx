@@ -39,13 +39,13 @@ const QUEUE_WORD: Record<string, string> = { launch_pending: "уйдёт в Ян
 
 function Queue({ items, busy, act }: { items: Item[]; busy: boolean; act: (item: Item, launch: boolean) => void }) {
   return (
-    <section className="ah-panel ads-queue" aria-labelledby="ads-queue-title">
-      <h2 id="ads-queue-title" className="ah-panel-title">Готовлю к запуску</h2>
+    <section className="ah-panel ann-queue" aria-labelledby="ann-queue-title">
+      <h2 id="ann-queue-title" className="ah-panel-title">Готовлю к запуску</h2>
       <p className="ah-muted">Эти объявления я написал сам по фактам профиля. Если какое-то вам не нравится, снимите его, и я напишу другое.</p>
-      <ul className="ads-queue-list">
+      <ul className="ann-queue-list">
         {items.map((c) => (
           <li key={c.id}>
-            <div><strong>{c.headline}</strong><div className="ads-facts">{campaignOf(c)}, {QUEUE_WORD[c.state]}</div></div>
+            <div><strong>{c.headline}</strong><div className="ann-facts">{campaignOf(c)}, {QUEUE_WORD[c.state]}</div></div>
             <button type="button" className="ah-btn" disabled={busy} aria-label={`Не запускать «${c.headline}»`} onClick={() => act(c, false)}>Не запускать</button>
           </li>
         ))}
@@ -57,14 +57,14 @@ function Queue({ items, busy, act }: { items: Item[]; busy: boolean; act: (item:
 function Decision({ item, busy, act }: { item: Item; busy: boolean; act: (item: Item, launch: boolean) => void }) {
   const facts = [...new Set(item.sources.map((x) => x.label))].join(", ");
   return (
-    <article className="ads-card" aria-label={`Решение по «${item.headline}»`}>
-      <div className="ads-body">
+    <article className="ann-card" aria-label={`Решение по «${item.headline}»`}>
+      <div className="ann-body">
         <div className="ah-label">{campaignOf(item)}</div>
-        <div className="ads-title">{item.headline}</div>
-        <div className="ads-text">{item.text}</div>
-        <div className="ads-facts">{facts ? `Факты из профиля: ${facts}` : "В тексте нет фактов из профиля"}</div>
-        {STATE_REASON[item.state_reason] && <div className="ads-facts">{STATE_REASON[item.state_reason]}</div>}
-        <div className="ads-foot">
+        <div className="ann-title">{item.headline}</div>
+        <div className="ann-text">{item.text}</div>
+        <div className="ann-facts">{facts ? `Факты из профиля: ${facts}` : "В тексте нет фактов из профиля"}</div>
+        {STATE_REASON[item.state_reason] && <div className="ann-facts">{STATE_REASON[item.state_reason]}</div>}
+        <div className="ann-foot">
           <button type="button" className="ah-btn ah-btn-primary" disabled={busy} onClick={() => act(item, true)}>Запустить</button>
           <button type="button" className="ah-btn" disabled={busy} onClick={() => act(item, false)}>Не запускать</button>
         </div>
@@ -112,10 +112,10 @@ export function Decisions({ api, store, children }: { api: Api; store: LiveStore
   return (
     <>
       {decide.length > 0 && (
-        <section className="ah-panel ads-decide" aria-labelledby="ads-decide-title">
-          <h2 id="ads-decide-title" className="ah-panel-title">Нужно ваше решение</h2>
+        <section className="ah-panel ann-decide" aria-labelledby="ann-decide-title">
+          <h2 id="ann-decide-title" className="ah-panel-title">Нужно ваше решение</h2>
           <p className="ah-muted">{CREATIVE_NEXT.needs_owner}</p>
-          <div className="ads-cards">
+          <div className="ann-cards">
             {decide.map((c) => <Decision key={c.id} item={c} busy={busy} act={act} />)}
           </div>
         </section>

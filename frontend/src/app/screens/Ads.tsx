@@ -15,17 +15,17 @@ function Card({ store, s, ad }: { store: Store; s: State; ad: Ad }) {
   const { hook, title } = adShown(s, ad);
   const action = off ? "Включить" : "Отключить";
   return (
-    <article className={off ? "ads-card ads-card-off" : "ads-card"}>
-      <div className="ads-thumb">
+    <article className={off ? "ann-card ann-card-off" : "ann-card"}>
+      <div className="ann-thumb">
         <AdArt ad={ad} hook={hook} />
-        {!off && s.situation !== "first" && <span className={`ah-tag ah-tag-${ad.tagTone} ads-badge`}>{ad.tag}</span>}
+        {!off && s.situation !== "first" && <span className={`ah-tag ah-tag-${ad.tagTone} ann-badge`}>{ad.tag}</span>}
       </div>
-      <div className="ads-body">
-        <div className="ads-title">{title}</div>
-        <div className="ads-text">{ad.text}</div>
-        <div className="ads-stat">{adStat(s, ad)}</div>
-        <div className="ads-facts">{ad.facts}</div>
-        <div className="ads-foot">
+      <div className="ann-body">
+        <div className="ann-title">{title}</div>
+        <div className="ann-text">{ad.text}</div>
+        <div className="ann-stat">{adStat(s, ad)}</div>
+        <div className="ann-facts">{ad.facts}</div>
+        <div className="ann-foot">
           <button type="button" className="ah-btn" aria-label={`Открыть «${name}»`} onClick={() => store.openAdScreen(ad.id)}>Открыть</button>
           <button type="button" className="ah-btn" aria-label={`${action} «${name}»`} onClick={() => (off ? store.run({ action: "ad", value: ad.id }) : store.ask({ action: "ad", value: ad.id }))}>{action}</button>
         </div>
@@ -48,8 +48,8 @@ export function Ads({ store }: { store: Store }) {
 
   const list = (
     <>
-      <div className="ads-list-head">
-        <h2 id="ads-list-title" className="ah-panel-title">Объявления</h2>
+      <div className="ann-list-head">
+        <h2 id="ann-list-title" className="ah-panel-title">Объявления</h2>
         <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
           <button type="button" className="ah-btn ah-btn-primary" onClick={() => setGenModalOpen(true)}>
             Сгенерировать объявления
@@ -63,14 +63,14 @@ export function Ads({ store }: { store: Store }) {
         ))}
       </div>
       {groups[filter].length === 0 && <p className="ah-muted">{filter === "off" ? "Отключённых объявлений нет." : "Сейчас ни одно объявление не показывается."}</p>}
-      <div className="ads-cards">
+      <div className="ann-cards">
         {groups[filter].map((ad) => <Card key={ad.id} store={store} s={s} ad={ad} />)}
       </div>
       <GenerateAdsModal isOpen={genModalOpen} onClose={() => setGenModalOpen(false)} store={store} />
     </>
   );
   return (
-    <section className="ads" aria-labelledby="ads-list-title">
+    <section className="ann" aria-labelledby="ann-list-title">
       {api ? <Decisions api={api} store={store as LiveStore}>{list}</Decisions> : list}
     </section>
   );

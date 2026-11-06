@@ -134,8 +134,8 @@ test.describe("Комплексное тестирование экранов и
     await nav(page, "Реклама").click();
 
     // 1. Находим работающее объявление и нажимаем «Отключить»
-    const card = page.locator(".ads-card").filter({ has: page.getByRole("button", { name: /^Отключить/ }) }).first();
-    const adTitle = await card.locator(".ads-title").innerText();
+    const card = page.locator(".ann-card").filter({ has: page.getByRole("button", { name: /^Отключить/ }) }).first();
+    const adTitle = await card.locator(".ann-title").innerText();
     await card.getByRole("button", { name: /^Отключить/ }).click();
 
     // 2. Появляется плашка подтверждения .ah-confirm
