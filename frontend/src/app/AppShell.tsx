@@ -1,8 +1,10 @@
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import "@fontsource-variable/onest";
 import "./tokens.css";
 import type { Situation, View } from "./data";
 import { BrandLogo, Icon } from "./icons";
+import { CreateSiteModal } from "./screens/CreateSiteModal";
+import { LiveStore } from "./live";
 import { Ads } from "./screens/Ads";
 import { Chat } from "./screens/Chat";
 import { History } from "./screens/History";
@@ -11,10 +13,85 @@ import { Settings } from "./screens/Settings";
 import { Start } from "./screens/Start";
 import { Stats } from "./screens/Stats";
 import { confirmText, initialState, statusText, stopped, Store, useStoreState, warned } from "./store";
+import type { State } from "./store";
 
 const VIEWS: [View, string][] = [["overview", "Обзор"], ["stats", "Статистика"], ["ads", "Реклама"], ["history", "История"]];
 const SITUATIONS: [Situation, string][] = [["running", "всё хорошо"], ["first", "первые дни"], ["problem", "нет денег"], ["verdict", "вывод проверки"], ["budget", "бюджет на исходе"], ["rejected", "отказ Яндекса"], ["access", "нет доступа"]];
 const SCREENS = { overview: Overview, stats: Stats, ads: Ads, history: History, settings: Settings };
+
+function BusinessSelector({ store, s, onAddSite }: { store: Store; s: State; onAddSite?: () => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    if (open) document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [open]);
+
+  const liveStore = store instanceof LiveStore ? store : null;
+  const currentName = s.live?.name ?? "Салон «Пример»";
+  const businesses = s.businesses && s.businesses.length > 0 ? s.businesses : (s.live ? [{ id: s.activeBusinessId || "cur", name: currentName }] : []);
+
+  return (
+    <div ref={ref} className="ah-brand-selector">
+      <strong className="ah-brand">{currentName}</strong>
+      <button
+        type="button"
+        className="ah-brand-btn"
+        aria-expanded={open}
+        aria-haspopup="true"
+        aria-label={`Выбрать сайт (текущий: ${currentName})`}
+        onClick={() => setOpen(!open)}
+      >
+        <span className="ah-brand-arrow" aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <div className="ah-brand-menu" role="menu">
+          <div className="ah-brand-menu-header">Ваши сайты</div>
+          {businesses.map((b) => {
+            const active = s.activeBusinessId ? b.id === s.activeBusinessId : b.name === currentName;
+            return (
+              <button
+                key={b.id}
+                type="button"
+                className={`ah-brand-menu-item ${active ? "is-active" : ""}`}
+                role="menuitemradio"
+                aria-checked={active}
+                aria-label={b.name}
+                onClick={() => {
+                  setOpen(false);
+                  if (liveStore && b.id !== s.activeBusinessId) liveStore.switchBusiness(b.id);
+                }}
+              >
+                <span className="ah-brand-check" aria-hidden="true">{active ? "✓ " : "  "}</span>
+                <span>{b.name}</span>
+              </button>
+            );
+          })}
+          <div className="ah-brand-menu-divider" />
+          <button
+            type="button"
+            className="ah-brand-menu-action"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              if (onAddSite) onAddSite();
+              else if (liveStore) liveStore.addNewSite();
+              else window.location.assign("/?start=new");
+            }}
+          >
+            <span>+ Добавить сайт</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function AppShell({ store: given }: { store?: Store }) {
   const store = useMemo(() => {
@@ -30,6 +107,7 @@ export function AppShell({ store: given }: { store?: Store }) {
   const tabs: [View, string][] = starting ? [["overview", "Настройка"]] : VIEWS;
   const Screen = SCREENS[s.view];
   const main = useRef<HTMLElement>(null);
+  const [showNewSite, setShowNewSite] = useState(false);
 
   // Экран всегда открывается с начала: иначе тревога остаётся выше видимой части.
   useLayoutEffect(() => {
@@ -39,18 +117,43 @@ export function AppShell({ store: given }: { store?: Store }) {
   return (
     <div className="ah">
       <header className={starting ? "ah-bar is-start" : "ah-bar"}>
-        <strong className="ah-brand">
-          {starting ? (
+        {starting ? (
+          <strong className="ah-brand">
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
               <BrandLogo size={22} />
               <span>Ad Helper</span>
             </span>
-          ) : (
-            s.live?.name ?? "Салон «Пример»"
-          )}
-        </strong>
+          </strong>
+        ) : (
+          <div className="ah-bar-site">
+            <BusinessSelector store={store} s={s} onAddSite={() => setShowNewSite(true)} />
+            <button
+              type="button"
+              className="ah-btn ah-btn-small ah-bar-new"
+              onClick={() => setShowNewSite(true)}
+              aria-label="Создать новый сайт"
+            >
+              + Новый сайт
+            </button>
+          </div>
+        )}
+        {starting && !s.account && (
+          <button type="button" className="ah-btn" style={{ marginLeft: "auto" }} onClick={store.loginDirect}>
+            Войти
+          </button>
+        )}
+        {starting && s.account && (
+          <span className="ah-muted" style={{ marginLeft: "auto", fontSize: "13px" }}>
+            {s.account.email}
+          </span>
+        )}
+        {starting && s.businesses.length > 0 && (
+          <button type="button" className="ah-btn ah-btn-small" onClick={() => store.navigate("/")}>
+            В кабинет
+          </button>
+        )}
         {!starting && <span className="ah-status" style={tone}><i aria-hidden="true" />{statusText(s)}</span>}
-        {!starting && <button type="button" className="ah-btn ah-bar-pause" onClick={() => store.run({ action: "pause" })}>{s.paused ? "Включить" : "Пауза"}</button>}
+        {!starting && (s.live ? s.live.hasCampaigns : true) && <button type="button" className="ah-btn ah-bar-pause" onClick={() => store.run({ action: "pause" })}>{s.paused ? "Включить" : "Пауза"}</button>}
         {!starting && <button type="button" className="ah-btn ah-btn-icon" aria-label="Настройки" aria-current={!chat && s.view === "settings" ? "page" : undefined} onClick={() => store.goView("settings")}><Icon name="settings" /></button>}
       </header>
       {!starting && !s.live && (
@@ -92,6 +195,7 @@ export function AppShell({ store: given }: { store?: Store }) {
         ))}
         <button type="button" aria-current={chat ? "page" : undefined} onClick={() => store.openChat()}><Icon name="chat" />Чат</button>
       </nav>
+      <CreateSiteModal isOpen={showNewSite} onClose={() => setShowNewSite(false)} store={store} />
     </div>
   );
 }

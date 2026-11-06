@@ -29,17 +29,18 @@ function kpisOf(s: State): Kpi[] {
   };
   const clients: Kpi = {
     label: "Клиенты, 7 дней",
-    value: s.clients ? String(s.clients) : "нет ответа",
-    sub: s.clients ? `цена клиента ${rub(w.cost / s.clients)}` : "спрашиваю раз в неделю",
+    value: s.clients !== null ? String(s.clients) : "нет ответа",
+    sub: s.clients !== null ? (s.clients > 0 ? `цена клиента ${rub(w.cost / s.clients)}` : "клиентов пока нет") : "спрашиваю раз в неделю",
     ink: "muted",
   };
   if (s.live) {
     const price = (cost: number, leads: number) => (leads > 0 ? rub(cost / leads) : "—");
-    return [
+    const base: Kpi[] = [
       money,
       { label: "Обращения, 7 дней", value: String(w.leads), sub: `было ${w.prevLeads}`, ink: w.leads >= w.prevLeads ? "good" : "bad", spark: last14.map((d) => d[1]) },
       { label: "Цена обращения", value: price(w.cost, w.leads), sub: `было ${price(w.prevCost, w.prevLeads)}`, ink: "muted", spark: last14.map((d) => (d[1] > 0 ? d[0] / d[1] : 0)) },
     ];
+    return s.clients !== null ? [...base, clients] : base;
   }
   // Первые дни: данных мало, поэтому сравнений и выводов о цене нет.
   if (s.situation === "first") {
@@ -59,9 +60,10 @@ function kpisOf(s: State): Kpi[] {
 }
 
 export function Kpis({ s }: { s: State }) {
+  const kpis = kpisOf(s);
   return (
-    <div className={s.live ? "ov-kpis ov-kpis-three" : "ov-kpis"}>
-      {kpisOf(s).map((k) => (
+    <div className={kpis.length === 3 ? "ov-kpis ov-kpis-three" : "ov-kpis"}>
+      {kpis.map((k) => (
         <div key={k.label} className="ah-panel ov-kpi">
           <div className="ov-kpi-label">{k.label}</div>
           <div className="ov-kpi-value">{k.value}</div>

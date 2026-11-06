@@ -2,6 +2,7 @@ import { StrictMode, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createApi, createBusiness, createGuestApi, openSession } from "./api";
 import { AppShell } from "./app/AppShell";
+import { loadDraft, loadStartReading, loadStartSite } from "./app/draft";
 import { LiveStore, loadLive } from "./app/live";
 import { initialState, Store } from "./app/store";
 import { CONNECT_RESULT } from "./app/screens/LiveSettings";
@@ -18,15 +19,40 @@ function Root() {
 
 function GuestStart() {
   const store = useMemo(() => {
-    const created = new Store(initialState("start"));
+    const savedSite = loadStartSite();
+    const draft = loadDraft();
+    const created = new Store({
+      ...initialState("start"),
+      // Объявления прототипа в настоящем запуске не показываем: их пишет сервис на шаге «Реклама».
+      ads: [],
+      ...(savedSite ? { site: savedSite } : {}),
+      ...(draft ? {
+        site: draft.site || savedSite,
+        facts: draft.facts,
+        f: { ...initialState("start").f, budget: draft.budget },
+        step: draft.step ?? 0,
+        draftOff: draft.draftOff ?? {},
+      } : {}),
+    });
     created.reader = createGuestApi();
     created.writer = created.reader as ReturnType<typeof createGuestApi>;
+    created.transferDeps = { session: openSession, createBusiness, business: createApi, open: createApi };
     return created;
   }, []);
   useEffect(() => {
     const guest = createGuestApi();
     // Без ответа сервиса остаются пределы прототипа; сервис всё равно проверит сумму при сохранении.
     guest.budgetOptions().then((budgetOptions) => store.set({ budgetOptions }), () => undefined);
+    openSession().then((session) => {
+      const isNew = new URLSearchParams(window.location.search).get("start") === "new";
+      if (session && session.businesses.length > 0 && !isNew) {
+        window.location.replace("/");
+        return;
+      }
+      if (session?.me?.email) {
+        store.set({ account: { email: session.me.email }, businesses: session.businesses });
+      }
+    }).catch(() => undefined);
     const params = new URLSearchParams(window.location.search);
     const login = params.get("login");
     const connect = params.get("connect");
@@ -36,7 +62,14 @@ function GuestStart() {
       void store.resumeConnect({ session: openSession, open: createApi }, connect === "ok" ? null : CONNECT_RESULT[connect] ?? CONNECT_RESULT.failed!);
       return;
     }
-    void store.resume({ session: openSession, createBusiness, business: createApi, open: createApi }, login);
+    const pending = loadStartReading();
+    if (pending && store.reader && store.state.step === 0 && !login) {
+      void store.resumeReading(pending.id, pending.token, pending.url);
+      return;
+    }
+    if (login !== null) {
+      void store.resume({ session: openSession, createBusiness, business: createApi, open: createApi }, login);
+    }
   }, [store]);
   return <AppShell store={store} />;
 }
@@ -50,10 +83,13 @@ function Live() {
     let cancelled = false;
     const params = new URLSearchParams(window.location.search);
     openSession().then(async (session) => {
-      const business = session?.businesses[0];
-      if (!session || !business) return cancelled || setStore("start");
+      if (!session || !session.businesses.length) return cancelled || setStore("start");
+      let activeId: string | null = null;
+      try { activeId = localStorage.getItem("adhelper.activeBusinessId"); } catch {}
+      const business = session.businesses.find((b) => b.id === activeId) ?? session.businesses[0]!;
       const api = createApi(business.id, session.me.csrf_token);
-      const live = new LiveStore(api, await loadLive(api, business.name));
+      // Номер бизнеса нужен уже конструктору: по нему поднимается лента чата.
+      const live = new LiveStore(api, { ...(await loadLive(api, business.name)), businesses: session.businesses, activeBusinessId: business.id });
       if (cancelled) return;
       const connect = params.get("connect");
       if (connect !== null) {

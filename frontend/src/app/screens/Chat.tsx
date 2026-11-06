@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useStoreState } from "../store";
 import type { State, Store } from "../store";
@@ -8,7 +8,14 @@ type Chip = { label: string; send?: string; primary?: boolean };
 
 function chipsFor(s: State): Chip[] {
   if (s.pending) return [{ label: "Применить", primary: true }, { label: "Не надо" }];
-  if (s.live) return [{ label: "Как дела?" }, { label: "Поставь на паузу" }, { label: "Отмени последнее" }, { label: "Что ты делал?" }];
+  // Подсказки нужны, пока владелец не написал сам; дальше они только дублируют ленту.
+  if (s.live && s.msgs.some((m) => m.who === "me")) return [];
+  if (s.live) return [
+    { label: "Как дела?" },
+    { label: s.paused ? "Включи рекламу" : "Поставь на паузу", send: s.paused ? "Включи" : "Поставь на паузу" },
+    { label: "Отмени последнее" },
+    { label: "Что ты делал?" },
+  ];
   if (s.stage === "start") {
     if (s.step === 0) return [{ label: "salon-primer.ru" }];
     if (s.step === 1) return [{ label: "Работаем до 22:00" }];
@@ -24,6 +31,7 @@ export function Chat({ store }: { store: Store }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const lastId = s.msgs[s.msgs.length - 1]?.id;
   const chips = chipsFor(s);
+  const [empty, setEmpty] = useState(false);
 
   useLayoutEffect(() => {
     const log = logRef.current;
@@ -32,6 +40,7 @@ export function Chat({ store }: { store: Store }) {
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
+    setEmpty(!s.input.trim());
     store.send(s.input);
     inputRef.current?.focus();
   };
@@ -65,13 +74,15 @@ export function Chat({ store }: { store: Store }) {
               className="ah-input ah-chat-input"
               autoComplete="off"
               value={s.input}
-              onChange={(e) => store.set({ input: e.target.value })}
+              onChange={(e) => { setEmpty(false); store.set({ input: e.target.value }); }}
+              aria-describedby={empty ? "ah-chat-empty" : undefined}
               placeholder={s.stage === "start" ? "Ссылка или пара слов о бизнесе" : "Что поменять?"}
             />
             <button type="submit" className="ah-btn ah-btn-primary ah-chat-send" aria-label="Отправить">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
             </button>
           </form>
+          {empty && <p id="ah-chat-empty" className="ah-muted" role="status">Напишите, что поменять: например, «поставь на паузу» или «бюджет 20 000 в месяц».</p>}
         </div>
       </div>
     </section>

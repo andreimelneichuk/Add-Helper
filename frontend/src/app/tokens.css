@@ -73,6 +73,7 @@
 .ah-btn-primary:hover { border-color: var(--accent-ink); background: var(--accent-ink); }
 .ah-btn-primary:disabled { border-color: var(--line); background: var(--line); color: var(--muted); }
 .ah-btn-icon { width: var(--control); padding: 0; }
+.ah-btn-small { min-height: 28px; padding: 2px 10px; font-size: 13px; font-weight: 500; }
 .ah-btn-icon[aria-current="page"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
 
 /* Название, которое открывает свой экран: строка таблицы или списка */
@@ -114,6 +115,10 @@
 .ah-status { display: inline-flex; align-items: center; flex: none; gap: 6px; padding: 3px 10px; border-radius: var(--r-control); font-size: var(--t-caption); font-weight: 500; white-space: nowrap; }
 .ah-status i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .ah-bar .ah-bar-pause { margin-left: auto; }
+/* Название сайта сжимается первым: состояние рекламы и настройки должны оставаться на экране. */
+.ah-bar-site { display: inline-flex; flex: 0 1 auto; align-items: center; gap: 10px; min-width: 0; }
+.ah-bar-site .ah-brand-selector { min-width: 0; }
+.ah-bar-new, .ah-bar .ah-btn-icon { flex: none; }
 
 /* Боковое меню: на широком экране значок и подпись в строку, на среднем значок над подписью */
 .ah-icon { flex: none; }
@@ -155,4 +160,33 @@
 /* На узком телефоне название салона не помещается целиком, а состояние рекламы важнее. */
 @media (max-width: 479px) {
   .ah-brand:has(+ .ah-status) { display: none; }
+  /* «Добавить сайт» есть в меню выбора сайта. */
+  .ah-bar-new { display: none; }
+  .ah-bar .ah-status { flex: 0 1 auto; min-width: 0; white-space: normal; line-height: 1.2; }
 }
+
+/* Выпадающий список выбора сайтов в шапке */
+.ah-brand-selector { position: relative; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
+.ah-brand-btn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: 1px solid transparent; border-radius: var(--r-field); background: none; color: inherit; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+.ah-brand-btn:hover { background: var(--canvas); border-color: var(--line-strong); }
+.ah-brand-arrow { font-size: 13px; color: var(--muted); }
+.ah-brand-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 1000; min-width: 240px; max-width: 340px; padding: 6px 0; border: 1px solid var(--line-strong); border-radius: var(--r-surface); background: var(--panel); box-shadow: 0 12px 32px rgba(20, 26, 46, 0.14); display: flex; flex-direction: column; }
+.ah-brand-menu-header { padding: 6px 16px 4px; font-size: var(--t-caption); font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.ah-brand-menu-item { display: flex; align-items: center; width: 100%; padding: 8px 16px; border: 0; background: none; font: inherit; font-size: var(--t-body); color: var(--ink); text-align: left; cursor: pointer; transition: background 0.15s; }
+.ah-brand-menu-item:hover { background: var(--canvas); }
+.ah-brand-menu-item.is-active { font-weight: 700; color: var(--accent); background: var(--accent-soft); }
+.ah-brand-check { width: 18px; flex: none; font-weight: 700; color: var(--accent); }
+.ah-brand-menu-divider { height: 1px; margin: 4px 0; background: var(--line); }
+.ah-brand-menu-action { display: flex; align-items: center; gap: 6px; width: 100%; padding: 8px 16px; border: 0; background: none; font: inherit; font-size: var(--t-body); font-weight: 600; color: var(--accent); text-align: left; cursor: pointer; transition: background 0.15s; }
+.ah-brand-menu-action:hover { background: var(--accent-soft); }
+
+/* Модальные окна */
+.ah-modal-overlay { position: fixed; inset: 0; z-index: 1100; display: flex; align-items: center; justify-content: center; padding: var(--gutter); background: rgba(20, 26, 46, 0.45); backdrop-filter: blur(4px); }
+.ah-modal { position: relative; width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; padding: 24px; border: 1px solid var(--line); border-radius: var(--r-surface); background: var(--panel); box-shadow: 0 20px 48px rgba(20, 26, 46, 0.2); }
+.ah-modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.ah-modal-title { font-size: var(--t-head); font-weight: 700; margin: 0; }
+.ah-modal-close { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--canvas); color: var(--muted); font-size: 18px; cursor: pointer; }
+.ah-modal-close:hover { background: var(--line-strong); color: var(--ink); }
+.ah-modal-body { display: flex; flex-direction: column; gap: 16px; }
+.ah-modal-foot { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+

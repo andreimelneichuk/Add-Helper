@@ -428,7 +428,8 @@ describe("сетевые ошибки и граничные сценарии (50
     expect(store.state.msgs.at(-1)?.text).toContain("Переделка — на экране объявления");
     expect(store.state.msgs.at(-1)?.link?.view).toBe("ads");
 
-    // history
+    // history: с записями — ссылка на историю (пустую историю проверяет bugsReview4 47.4)
+    store.set({ hist: [{ id: "x", kind: "money", when: "Сейчас", title: "Бюджет", why: "", next: "", canUndo: false, state: "Записано" }] });
     store.send("история");
     await settled();
     expect(store.state.msgs.at(-1)?.text).toContain("В истории все изменения с причинами");
@@ -659,7 +660,7 @@ describe("сетевые ошибки и граничные сценарии (50
   });
 
   it("проверяет savedText и summary в граничных случаях", async () => {
-    expect(savedText([])).toContain("в идущих старых цифр нет");
+    expect(savedText([])).toContain("в уже идущих объявлениях старых цифр нет");
     const laterAd = { account: "anna", ad_id: "1", headline: "Текст", text: "", numbers: ["100"], replacing: false };
     const nowAd = { account: "anna", ad_id: "2", headline: "Текст 2", text: "", numbers: ["200"], replacing: true };
     expect(savedText([laterAd])).toContain("лимит текстов на сегодня исчерпан");

@@ -11,7 +11,10 @@ import { dayAt, dayNumber, periodStats, rubles } from "../live";
 const MAX_DAYS = 366;
 
 const message = (e: unknown) => (e instanceof Error ? e.message : "Сервис не ответил. Попробуйте позже.");
-const short = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString("ru-RU", { day: "numeric", month: "short", timeZone: "UTC" });
+const short = (day: string) =>
+  new Date(`${day}T12:00:00Z`)
+    .toLocaleDateString("ru-RU", { day: "numeric", month: "short", timeZone: "UTC" })
+    .replace(/\.$/, "");
 
 /** Подпись периода: «3–10 нояб.» или один день. */
 export const rangeLabel = (r: Range) => (r.since === r.until ? short(r.since) : `${short(r.since)} – ${short(r.until)}`);

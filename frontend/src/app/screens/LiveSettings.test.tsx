@@ -318,9 +318,10 @@ describe("план бюджета до запуска", () => {
     const api = fakeApi({ photos, uploadPhoto } as Partial<Api>);
     render(<Settings store={await open(api)} />);
     const add = await screen.findByRole("button", { name: "Добавить фото" });
-    expect(add).toBeDisabled();
+    await userEvent.click(add);
+    expect(screen.getByRole("alert")).toHaveTextContent("Сначала отметьте");
     await userEvent.click(screen.getByLabelText(/согласны на рекламу/));
-    expect(add).toBeEnabled();
+    expect(screen.queryByRole("alert")).toBeNull();
     const file = new File(["x"], "salon.jpg", { type: "image/jpeg" });
 
     await userEvent.upload(screen.getByLabelText("Файл фото"), file);
@@ -344,7 +345,8 @@ describe("план бюджета до запуска", () => {
 
     expect(api.archivePhoto).toHaveBeenCalledWith(1);
     expect(await screen.findByRole("status")).toHaveTextContent("работают дальше");
-    expect(screen.getByRole("button", { name: "Добавить фото" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Добавить фото" })).toBeInTheDocument();
+    expect(screen.getByLabelText(/согласны на рекламу/)).not.toBeChecked();
   });
 
   it("подключение кабинета и обработка сбоев", async () => {

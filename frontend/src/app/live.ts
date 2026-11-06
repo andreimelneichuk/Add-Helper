@@ -1,7 +1,8 @@
 // Новый интерфейс на настоящих данных: сводит ответы API к состоянию экранов и шлёт действия владельца.
 // Деньги приходят целыми микроединицами; в рубли переводим только здесь и только для показа.
-import { ApiError } from "../api";
+import { ApiError, createApi, createBusiness, createGuestApi, openSession } from "../api";
 import type { AdLine, Alert, Api, ChatCommand, HistoryLine, Money, OutdatedAd, Overview, Profile, UndoPreview } from "../api";
+import { clearDraft, clearStartReading, clearStartSite } from "./draft";
 import { ALERT } from "./words";
 import { MICROS_PER_RUBLE } from "./money";
 import { leadsWord, rub } from "./data";
@@ -20,10 +21,10 @@ const quote = (ad: OutdatedAd) => `«${ad.headline}» (${ad.numbers.join(", ")})
 
 /** Что стало с объявлениями после правки фактов: цифры подставляет код, а не модель. */
 export function savedText(outdated: OutdatedAd[]): string {
-  if (outdated.length === 0) return "Сохранил. Объявления пишутся по этим фактам, в идущих старых цифр нет.";
+  if (outdated.length === 0) return "Сохранил. Новые объявления пишутся по этим фактам, в уже идущих объявлениях старых цифр нет.";
   const now = outdated.filter((a) => a.replacing);
   const later = outdated.filter((a) => !a.replacing);
-  const parts = [`Сохранил. В идущих объявлениях остались старые цифры: ${outdated.map(quote).join(", ")}.`];
+  const parts = [`Сохранил. В уже идущих объявлениях остались старые цифры: ${outdated.map(quote).join(", ")}.`];
   if (now.length) parts.push(`Пишу замену по новым фактам (${now.length}), она встанет в очередь на запуск или попросит вашего решения в разделе «Реклама».`);
   if (later.length) parts.push(`Для ${later.length} лимит текстов на сегодня исчерпан, замену напишу завтра.`);
   parts.push("Пока Яндекс не проверил замену, старое объявление показывается. Если цена уже не действует, отключите его на экране объявления.");
@@ -159,7 +160,27 @@ export async function loadLive(api: Api, name: string): Promise<Partial<State>> 
   const money = overview.money[0];
   const seen = new Set(adsWeek.map((a) => a.ad_id));
   const lines = [...adsWeek, ...adsMonth.filter((a) => !seen.has(a.ad_id)).map((a) => ({ ...a, totals: { impressions: 0, clicks: 0, cost: 0, conversions: 0 } }))];
-  const ads = lines.map((line) => toAd(line, api.photoUrl));
+  let ads = lines.map((line) => toAd(line, api.photoUrl));
+  const hasProfileFacts = !!(profile && (profile.services?.some((s) => s.name?.trim()) || profile.features?.length > 0 || profile.niche?.trim()));
+  if (ads.length === 0 && api.wizardAds && hasProfileFacts) {
+    try {
+      const wizard = await api.wizardAds();
+      if (wizard?.ads?.length) {
+        ads = wizard.ads.map((w, i) => ({
+          id: `w${i}`,
+          name: w.headline,
+          tag: "готово к запуску",
+          tagTone: "accent" as const,
+          leads: 0,
+          cost: 0,
+          hook: w.headline,
+          title: w.headline,
+          text: w.text,
+          facts: w.facts.join(", "),
+        }));
+      }
+    } catch { /* без мастера */ }
+  }
   const running = overview.campaigns.filter((c) => c.state !== "archived");
   const alerts = overview.alerts.map((a) => alertOf(a, money));
   const stats: Record<Period, PeriodStats> = {
@@ -202,17 +223,118 @@ function summary(s: State): string {
   return `За 7 дней ${w.leads} ${leadsWord(w.leads)} по ${rub(w.cost / w.leads)}, неделей раньше ${w.prevLeads}.`;
 }
 
+const FEED_KEY = "adhelper.chat.";
+const FEED_MAX = 60;
+
+/** Сохранённая лента сайта; ключ по бизнесу, чтобы разговоры сайтов не смешивались. */
+function loadFeed(id: string | null): Message[] {
+  if (!id) return [];
+  try {
+    const raw = window.sessionStorage.getItem(FEED_KEY + id);
+    const list: unknown = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(list)) return [];
+    return list
+      .filter((m): m is Message => typeof m?.text === "string" && ["ai", "me", "note"].includes(m?.who))
+      .map((m) => msg(m.who, m.text, m.link));
+  } catch {
+    return [];
+  }
+}
+
+function saveFeed(id: string | null, msgs: Message[]) {
+  if (!id) return;
+  try {
+    const kept = msgs.slice(-FEED_MAX).map(({ who, text, link }) => ({ who, text, link }));
+    window.sessionStorage.setItem(FEED_KEY + id, JSON.stringify(kept));
+  } catch { /* без хранилища лента живёт до перезагрузки */ }
+}
+
+const NOT_LAUNCHED = "Реклама ещё не запущена: в Директе нет направлений. Сначала подключите кабинет и завершите запуск в настройках.";
+
 export class LiveStore extends Store {
   private queue: ChatCommand[] = [];
-  constructor(readonly api: Api, loaded: Partial<State>) {
+  private budgetMax: number | null = null;
+  public override rework: Api | null = null;
+  constructor(public api: Api, loaded: Partial<State>) {
     super({ ...initialState(), msgs: [], ...loaded });
-    this.state = { ...this.state, msgs: [msg("ai", summary(this.state))] };
+    const saved = loadFeed(this.state.activeBusinessId);
+    this.state = { ...this.state, msgs: saved.length ? saved : [msg("ai", summary(this.state))] };
     this.rework = api;
+    // Лента живёт до закрытия вкладки: перезагрузка страницы не стирает разговор.
+    let last = this.state.msgs;
+    this.subscribe(() => {
+      if (this.state.msgs === last) return;
+      last = this.state.msgs;
+      saveFeed(this.state.activeBusinessId, last);
+    });
   }
 
   /** Перечитать данные после действия, которое прошло мимо журнала: профиль, решения по объявлениям. */
   async refresh() {
     this.set(await loadLive(this.api, this.state.live?.name ?? ""));
+  }
+
+  /** Переключить активный бизнес/сайт на другой из списка. */
+  async switchBusiness(id: string) {
+    try { window.localStorage.setItem("adhelper.activeBusinessId", id); } catch { /* без хранилища */ }
+    const name = this.state.businesses.find((b) => b.id === id)?.name;
+    // Загрузка занимает секунду: без отклика кажется, что нажатие не сработало.
+    if (name) this.set({ notice: `Переключаю на сайт «${name}»…` });
+    const session = await openSession();
+    if (!session) return;
+    const business = session.businesses.find((b) => b.id === id);
+    if (!business) return;
+    const newApi = createApi(business.id, session.me.csrf_token);
+    this.api = newApi;
+    this.rework = newApi;
+    const loaded = await loadLive(newApi, business.name);
+    const saved = loadFeed(id);
+    this.set({
+      ...loaded,
+      msgs: saved.length ? saved : [msg("ai", summary({ ...this.state, ...loaded }))],
+      pending: null,
+      activeBusinessId: id,
+      businesses: session.businesses,
+      notice: `Вы переключились на сайт «${business.name}»`,
+    });
+  }
+
+  /** Открыть мастер создания нового сайта для этого же аккаунта. */
+  addNewSite() {
+    clearDraft();
+    clearStartSite();
+    clearStartReading();
+    window.location.assign("/?start=new");
+  }
+
+  /** Создать новый бизнес/сайт прямо из панели и переключиться на него. */
+  async createSite(name: string, website?: string) {
+    const session = await openSession();
+    if (!session) throw new Error("Сессия не найдена. Войдите заново.");
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error("Укажите название бизнеса или сайта.");
+    const created = await createBusiness(trimmed, session.me.csrf_token);
+    try { window.localStorage.setItem("adhelper.activeBusinessId", created.id); } catch {}
+    const newApi = createApi(created.id, session.me.csrf_token);
+    this.api = newApi;
+    this.rework = newApi;
+    if (website?.trim()) {
+      try {
+        const p = await newApi.profile().catch(() => null);
+        if (p) await newApi.saveProfile({ ...p, website: website.trim() });
+      } catch {}
+    }
+    const freshSession = await openSession();
+    const loaded = await loadLive(newApi, created.name);
+    this.set({
+      ...loaded,
+      msgs: [msg("ai", summary({ ...this.state, ...loaded }))],
+      pending: null,
+      activeBusinessId: created.id,
+      businesses: freshSession?.businesses ?? [...this.state.businesses, created],
+      notice: `Создан новый сайт «${created.name}». Заполните профиль в настройках.`,
+    });
+    return created;
   }
 
   /** Перед вопросом «отменить?» узнаём у сервиса, что именно вернётся и можно ли вообще. */
@@ -323,6 +445,10 @@ export class LiveStore extends Store {
       this.say(error instanceof ApiError ? error.message : NO_ANSWER);
       return;
     }
+    // Предел суммы из правил плана: тот же, что предупреждает о лишнем нуле в мастере.
+    if ([c, ...(c.next ?? [])].some((x) => x.kind === "set_budget") && this.budgetMax === null) {
+      this.budgetMax = await createGuestApi().budgetOptions().then((o) => o.max, () => null);
+    }
     // Несколько просьб в одном сообщении: по одной, у каждой своё «да».
     this.queue = [...(c.next ?? [])];
     if (this.queue.length) this.say(`Вижу ${this.queue.length + 1} просьбы, спрошу про каждую по очереди.`);
@@ -339,17 +465,24 @@ export class LiveStore extends Store {
     const s = this.state;
     switch (c.kind) {
       case "pause":
-        if (s.paused) return this.say("Реклама уже на паузе. Чтобы включить, напишите «включи».");
-        return this.offer(c.confirm, { action: "pause" });
       case "resume":
-        if (!s.paused) return this.say("Реклама и так идёт, включать нечего.");
+        // Без направлений в Директе нечего ни останавливать, ни включать: говорим сразу, без «Применить?».
+        if (s.live && !s.live.hasCampaigns) return this.say(NOT_LAUNCHED, { label: "Открыть настройки", view: "settings" });
+        if (c.kind === "resume") {
+          if (!s.paused) return this.say("Реклама и так идёт, включать нечего.");
+          return this.offer(c.confirm, { action: "pause" });
+        }
+        if (s.paused) return this.say("Реклама уже на паузе. Чтобы включить, напишите «включи».");
         return this.offer(c.confirm, { action: "pause" });
       case "set_budget": {
         const amount = c.rubles ?? 0;
         const spent = s.live?.spent ?? 0;
         if (amount < spent) return this.say(`В этом месяце уже потрачено ${rub(spent)}, бюджет не может быть меньше.`);
         const lower = amount < budgetOf(s);
-        return this.offer(`Понял так: бюджет ${rub(amount)} в месяц.${lower ? " Сначала снижу лимиты в Яндексе, потом сменю бюджет." : ""} Применить?`, { action: "setting", value: ["budget", amount] });
+        const huge = this.budgetMax !== null && amount > this.budgetMax
+          ? ` Это больше ${rub(this.budgetMax)}: проверьте, нет ли лишнего нуля.`
+          : "";
+        return this.offer(`Понял так: бюджет ${rub(amount)} в месяц.${huge}${lower ? " Сначала снижу лимиты в Яндексе, потом сменю бюджет." : ""} Применить?`, { action: "setting", value: ["budget", amount] });
       }
       case "ad_off":
       case "ad_on": {
@@ -371,6 +504,7 @@ export class LiveStore extends Store {
       case "rework_ad":
         return this.say(`Переделка — на экране объявления: откройте «${c.ad!.name}» в разделе «Реклама» и нажмите «Переделать». Там видно варианты до замены.`, { label: "Открыть рекламу", view: "ads" });
       case "history":
+        if (s.hist.length === 0) return this.say("Изменений пока не было: я ещё ничего не менял.");
         return this.say("В истории все изменения с причинами. Там же можно отменить.", { label: "Открыть историю", view: "history" });
       case "stats":
         return this.say(summary(s), { label: "Открыть статистику", view: "stats" });
@@ -389,7 +523,12 @@ export class LiveStore extends Store {
 
   override run(a: State["pending"] & object, userText?: string) {
     const msgs = userText ? [...this.state.msgs, msg("me", userText)] : this.state.msgs;
-    this.set({ pending: null, msgs, asked: a.action === "undo" ? { ...this.state.asked, [a.value]: false } : this.state.asked });
+    this.set({
+      pending: null,
+      msgs,
+      asked: a.action === "undo" ? { ...this.state.asked, [a.value]: false } : this.state.asked,
+      undoing: a.action === "undo" ? { ...this.state.undoing, [a.value]: true } : this.state.undoing,
+    });
     void this.finish(a, !!userText);
   }
 
@@ -401,6 +540,10 @@ export class LiveStore extends Store {
     } catch (error) {
       // Отказ сервиса показываем как есть: состояние на экране не меняли, значит и врать нечему.
       text = error instanceof ApiError ? error.message : "Сервис не ответил. Ничего не изменилось, попробуйте позже.";
+    } finally {
+      if (a.action === "undo") {
+        this.set({ undoing: { ...this.state.undoing, [a.value]: false } });
+      }
     }
     this.set({ msgs: [...this.state.msgs, msg(fromChat ? "ai" : "note", text)], notice: this.state.mode === "panel" ? text : "" });
     if (fromChat) this.nextRequest();

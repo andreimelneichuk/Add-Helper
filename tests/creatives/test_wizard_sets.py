@@ -139,6 +139,13 @@ async def test_repeated_request_with_same_profile_returns_cached_ready_set(
     cached = await sets.get(cached_id, "new-token")
     assert cached is not None and cached.status == SetStatus.READY
 
+    # Запрос с force=True (кнопка «Написать другие варианты») игнорирует кэш
+    fresh_id = await SqlWizardSets(sessions).request(
+        DRAFT, "net-a", "fresh-token", WIZARD, CURRENT_RULES, NOW, force=True
+    )
+    assert fresh_id != set_id
+    fresh = await sets.get(fresh_id, "fresh-token")
+    assert fresh is not None and fresh.status == SetStatus.QUEUED
 
 
 async def _creatives_count(sessions: Sessions) -> int:

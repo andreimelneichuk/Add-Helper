@@ -187,7 +187,7 @@ export type AdSet = {
   ads: WizardAd[];
 };
 /** Черновик профиля для писателя: только подтверждённые владельцем факты. */
-export type AdDraftProfile = Omit<Profile, "website">;
+export type AdDraftProfile = Omit<Profile, "website"> & { force?: boolean };
 /** Выбор владельца в мастере: какой набор и какие объявления из него оставить. */
 export type AdsChoice = { id: number; token: string; kept: number[] };
 
@@ -201,6 +201,25 @@ export class ApiError extends Error {
   }
 }
 
+export function formatErrorDetail(raw: unknown): string {
+  if (typeof raw === "string" && raw.trim()) return raw;
+  if (Array.isArray(raw) && raw.length > 0) {
+    const msgs = raw
+      .map((item) => {
+        if (typeof item === "object" && item !== null && "msg" in item) {
+          return String((item as { msg: unknown }).msg);
+        }
+        return typeof item === "string" ? item : "";
+      })
+      .filter(Boolean);
+    if (msgs.length > 0) return msgs.join("; ");
+  }
+  if (typeof raw === "object" && raw !== null && "msg" in raw) {
+    return String((raw as { msg: unknown }).msg);
+  }
+  return "Сервис не ответил";
+}
+
 async function request<T>(path: string, init: RequestInit = {}, csrf?: string): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json", ...(init.headers as Record<string, string> | undefined) };
   if (init.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
@@ -209,7 +228,8 @@ async function request<T>(path: string, init: RequestInit = {}, csrf?: string): 
   if (!response.ok) {
     let detail = "Сервис не ответил";
     try {
-      detail = ((await response.json()) as { detail?: string }).detail ?? detail;
+      const data = (await response.json()) as { detail?: unknown; message?: unknown };
+      detail = formatErrorDetail(data.detail ?? data.message ?? detail);
     } catch {
       // Ответ без тела: оставляем общий текст.
     }

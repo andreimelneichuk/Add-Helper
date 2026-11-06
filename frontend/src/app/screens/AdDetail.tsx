@@ -138,6 +138,7 @@ export function LiveRework({ api, ad, hook, title, waitMs, onDone, onCancel }: L
       onDone(view.text ?? "Новый вариант поставлен в очередь.");
     } catch (e) {
       setProblem(say(e));
+    } finally {
       setBusy(false);
     }
   };
@@ -204,7 +205,21 @@ export function AdDetail({ store, id }: { store: Store; id: string }) {
         <span className={`ah-tag ah-tag-${ad.tagTone}`}>{ad.tag}</span>
       </div>
       {composing && s.live && store.rework ? (
-        <LiveRework api={store.rework} ad={ad} hook={hook} title={title} waitMs={store.waitMs} onCancel={() => setComposing(false)} onDone={(text) => { setComposing(false); store.set({ notice: text }); }} />
+        <LiveRework
+          api={store.rework}
+          ad={ad}
+          hook={hook}
+          title={title}
+          waitMs={store.waitMs}
+          onCancel={() => setComposing(false)}
+          onDone={async (text) => {
+            setComposing(false);
+            store.set({ notice: text });
+            if ("refresh" in store && typeof (store as any).refresh === "function") {
+              await (store as any).refresh();
+            }
+          }}
+        />
       ) : composing ? (
         <Compose s={s} base={ad} useLabel="Поставить в показы" onCancel={() => setComposing(false)} onUse={(value) => store.ask({ action: "adSave", value })} />
       ) : (

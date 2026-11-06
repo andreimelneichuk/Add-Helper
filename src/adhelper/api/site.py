@@ -143,8 +143,9 @@ def guest_site_router() -> APIRouter:
         except TooManyReads:
             raise HTTPException(
                 status.HTTP_429_TOO_MANY_REQUESTS,
-                f"С этого адреса сайт сегодня разбирали уже {rules.max_guest_reads_per_address}"
-                " раза. Заполните профиль вручную или попробуйте завтра",
+                "С вашего устройства (IP-сети) сайт сегодня разбирали уже"
+                f" {rules.max_guest_reads_per_address} раза."
+                " Заполните профиль вручную или попробуйте завтра",
             ) from None
         except TooManyGuestReads:
             raise HTTPException(

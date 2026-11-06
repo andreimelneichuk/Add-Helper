@@ -15,6 +15,7 @@ from adhelper.worker.app import (
     budget_watch,
     connector_for,
     creatives_generate,
+    experiments_run,
     notifications_send,
     site_read,
     site_tag_check,
@@ -65,6 +66,7 @@ async def test_worker_runs_money_tasks_from_real_database(
             await telegram_poll.defer_async(**periodic_arguments)
             await site_read.defer_async(**periodic_arguments)
             await site_tag_check.defer_async(**periodic_arguments)
+            await experiments_run.defer_async(**periodic_arguments)
             await test_app.run_worker_async(
                 queues=["budget", "creatives", "notifications"],
                 wait=False,
