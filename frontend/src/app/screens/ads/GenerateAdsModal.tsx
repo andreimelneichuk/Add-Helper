@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createGuestApi } from "../../../api";
 import type { Ad } from "../../data";
 import { liveApi, type LiveStore } from "../../live";
@@ -9,6 +9,8 @@ type GenerateAdsModalProps = {
   onClose: () => void;
   store: Store;
 };
+
+const NO_SERVICES = "В профиле нет услуг. Заполните профиль в настройках: объявления пишутся только по его фактам.";
 
 type GeneratedItem = {
   headline: string;
@@ -27,7 +29,12 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
     ?.map((item: string) => item.trim().replace(/,\s*\d.*$/u, ""))
     ?.filter(Boolean) ?? [];
 
-  const serviceOptions: string[] = profileServices.length > 0 ? profileServices : ["Все услуги", "Стрижка", "Маникюр", "Акция"];
+  // В кабинете услуги только из профиля: выдуманная услуга стала бы фактом, которого нет у бизнеса.
+  const live = api !== null;
+  const noServices = live && profileServices.length === 0;
+  const serviceOptions: string[] = live
+    ? (profileServices.length > 1 ? ["Все услуги", ...profileServices] : profileServices)
+    : ["Все услуги", "Стрижка", "Маникюр", "Акция"];
 
   const [selectedService, setSelectedService] = useState(serviceOptions[0] ?? "Все услуги");
   const [customService, setCustomService] = useState("");
@@ -39,7 +46,49 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
   const [selectedIndices, setSelectedIndices] = useState<number[]>([0, 1]);
   const [adSetMeta, setAdSetMeta] = useState<{ id: number; token: string } | null>(null);
 
+  // Окно закрыли: опрос набора прекращаем, чтобы не спрашивать сервис впустую.
+  const openRef = useRef(isOpen);
+  openRef.current = isOpen;
+
   if (!isOpen) return null;
+
+  /** Набор по профилю бизнеса: никаких запасных шаблонов, при сбое только причина. */
+  const generateLive = async (live: NonNullable<typeof api>) => {
+    try {
+      const profile = await live.profile();
+      const named = profile.services.filter((x) => x.name.trim());
+      const services = selectedService === "Все услуги" ? named : named.filter((x) => x.name.trim() === selectedService);
+      if (services.length === 0) throw new Error(NO_SERVICES);
+      const guest = createGuestApi();
+      const queued = await guest.writeAds({
+        niche: profile.niche,
+        address: profile.address,
+        services: services.map((x) => ({ name: x.name, price: x.price })),
+        features: profile.features,
+      });
+      setAdSetMeta({ id: queued.id, token: queued.token });
+      const started = Date.now();
+      for (;;) {
+        const set = await guest.adSet(queued.id, queued.token);
+        if (set.status === "failed") throw new Error(set.problem_text ?? "Не получилось написать объявления. Попробуйте ещё раз.");
+        if (set.status === "ready") {
+          if (!set.ads || set.ads.length === 0) throw new Error("По фактам профиля не получилось написать объявления. Добавьте услуги или особенности в настройках.");
+          setGenerated(set.ads);
+          setSelectedIndices(set.ads.map((_, i) => i));
+          setStatusText("");
+          return;
+        }
+        if (Date.now() - started > 45_000) throw new Error("Объявления пишутся дольше обычного. Попробуйте позже.");
+        await new Promise((r) => setTimeout(r, 2000));
+        if (!openRef.current) return;
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Не получилось написать объявления. Попробуйте ещё раз.");
+      setStatusText("");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,6 +96,10 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
     setError(null);
     setStatusText("ИИ пишет варианты и проверяет факты по вашему профилю…");
 
+    if (api) {
+      await generateLive(api);
+      return;
+    }
     const targetService = selectedService === "Своя услуга" ? customService.trim() || "Услуга" : selectedService;
     const features = wish.trim() ? [wish.trim()] : [];
 
@@ -79,6 +132,7 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
           throw new Error("Генерация занимает дольше обычного.");
         }
         await new Promise((r) => setTimeout(r, 2000));
+        if (!openRef.current) return;
       }
     } catch (err: unknown) {
       // Запасной локальный вариант через шаблонный движок draftAd
@@ -104,12 +158,15 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
     setBusy(true);
 
     try {
-      if (api && adSetMeta) {
-        try {
-          await api.adoptAds({ id: adSetMeta.id, token: adSetMeta.token, kept: selectedIndices });
-        } catch {
-          /* если набор уже принят или локальный */
-        }
+      if (api) {
+        // В кабинете объявления живут на сервере: показываем их только после того, как сервис их принял.
+        if (!adSetMeta) throw new Error("Набор объявлений не найден. Напишите варианты ещё раз.");
+        await api.adoptAds({ id: adSetMeta.id, token: adSetMeta.token, kept: selectedIndices });
+        const n = selectedIndices.length;
+        store.set({ notice: `Добавил ${n} ${n === 1 ? "объявление" : "объявления"} к запуску.` });
+        await (store as LiveStore).refresh();
+        onClose();
+        return;
       }
 
       // Добавляем объявления в локальное состояние store
@@ -157,7 +214,7 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
           <div>
             <h2 id="gen-ads-title" className="ah-modal-title">Сгенерировать новые объявления</h2>
             <p className="ah-muted" style={{ marginTop: 4 }}>
-              ИИ составит рекламные тексты по фактам сайта и вашим пожеланиям.
+              ИИ составит рекламные тексты по фактам из профиля бизнеса.
             </p>
           </div>
           <button type="button" className="ah-modal-close" aria-label="Закрыть" onClick={onClose} disabled={busy}>
@@ -166,6 +223,15 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
         </div>
 
         {!generated ? (
+          noServices ? (
+            <div className="ah-modal-body">
+              <p role="alert">{NO_SERVICES}</p>
+              <div className="ah-modal-foot">
+                <button type="button" className="ah-btn" onClick={onClose}>Закрыть</button>
+                <button type="button" className="ah-btn ah-btn-primary" onClick={() => { onClose(); store.goView("settings"); }}>Открыть настройки</button>
+              </div>
+            </div>
+          ) : (
           <form onSubmit={handleGenerate} className="ah-modal-body">
             <div>
               <span className="ah-label">Какая услуга или направление</span>
@@ -181,14 +247,14 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
                     {opt}
                   </button>
                 ))}
-                <button
+                {!live && <button
                   type="button"
                   className="ah-chip"
                   aria-pressed={selectedService === "Своя услуга"}
                   onClick={() => setSelectedService("Своя услуга")}
                 >
                   + Своя услуга
-                </button>
+                </button>}
               </div>
 
               {selectedService === "Своя услуга" && (
@@ -203,6 +269,11 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
               )}
             </div>
 
+            {live ? (
+              <p className="ah-muted">
+                ИИ пишет только по фактам профиля: услугам, ценам, адресу и особенностям. Чтобы добавить акцию, впишите её в профиль в настройках.
+              </p>
+            ) : (
             <div>
               <label htmlFor="gen-wish" className="ah-label">
                 Пожелания к объявлениям (своими словами)
@@ -219,6 +290,7 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
                 Объявления составляются строго по правилам закона о рекламе и фактам вашего бизнеса.
               </span>
             </div>
+            )}
 
             {statusText && (
               <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--accent)", fontWeight: 500 }}>
@@ -238,6 +310,7 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
               </button>
             </div>
           </form>
+          )
         ) : (
           <div className="ah-modal-body">
             <p className="ah-muted">
