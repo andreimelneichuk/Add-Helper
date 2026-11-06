@@ -184,6 +184,9 @@ async def read_site(
         elif not isinstance(page, SiteUnavailable):
             raise page
     urls = [page.url for page in fetched]
+    logger.info(
+        "Главная %s: %s зн., страниц всего %s", urlsplit(url).netloc, len(home.text), len(fetched)
+    )
     if len(home.text) < rules.min_text_chars:
         return _failed(ReadProblem.EMPTY_PAGE, urls)
     if model is None:
@@ -199,6 +202,15 @@ async def read_site(
     except (ModelUnavailable, ValueError, KeyError, TypeError):
         return _failed(ReadProblem.MODEL_UNAVAILABLE, urls)
     facts, problems = check_facts(raw, pages, rules)
+    logger.info(
+        "Разбор %s: страниц %s, текста %s зн., модель вернула %s фактов, принято %s, отсеяно %s",
+        urlsplit(url).netloc,
+        len(pages),
+        sum(len(page.text) for page in pages),
+        len(raw),
+        len(facts),
+        dict(problems),
+    )
     return SiteRead(
         ReadStatus.READY,
         facts=tuple(facts),
