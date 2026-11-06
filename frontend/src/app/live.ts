@@ -223,6 +223,32 @@ function summary(s: State): string {
   return `За 7 дней ${w.leads} ${leadsWord(w.leads)} по ${rub(w.cost / w.leads)}, неделей раньше ${w.prevLeads}.`;
 }
 
+const FEED_KEY = "adhelper.chat.";
+const FEED_MAX = 60;
+
+/** Сохранённая лента сайта; ключ по бизнесу, чтобы разговоры сайтов не смешивались. */
+function loadFeed(id: string | null): Message[] {
+  if (!id) return [];
+  try {
+    const raw = window.sessionStorage.getItem(FEED_KEY + id);
+    const list: unknown = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(list)) return [];
+    return list
+      .filter((m): m is Message => typeof m?.text === "string" && ["ai", "me", "note"].includes(m?.who))
+      .map((m) => msg(m.who, m.text, m.link));
+  } catch {
+    return [];
+  }
+}
+
+function saveFeed(id: string | null, msgs: Message[]) {
+  if (!id) return;
+  try {
+    const kept = msgs.slice(-FEED_MAX).map(({ who, text, link }) => ({ who, text, link }));
+    window.sessionStorage.setItem(FEED_KEY + id, JSON.stringify(kept));
+  } catch { /* без хранилища лента живёт до перезагрузки */ }
+}
+
 const NOT_LAUNCHED = "Реклама ещё не запущена: в Директе нет направлений. Сначала подключите кабинет и завершите запуск в настройках.";
 
 export class LiveStore extends Store {
@@ -231,8 +257,16 @@ export class LiveStore extends Store {
   public override rework: Api | null = null;
   constructor(public api: Api, loaded: Partial<State>) {
     super({ ...initialState(), msgs: [], ...loaded });
-    this.state = { ...this.state, msgs: [msg("ai", summary(this.state))] };
+    const saved = loadFeed(this.state.activeBusinessId);
+    this.state = { ...this.state, msgs: saved.length ? saved : [msg("ai", summary(this.state))] };
     this.rework = api;
+    // Лента живёт до закрытия вкладки: перезагрузка страницы не стирает разговор.
+    let last = this.state.msgs;
+    this.subscribe(() => {
+      if (this.state.msgs === last) return;
+      last = this.state.msgs;
+      saveFeed(this.state.activeBusinessId, last);
+    });
   }
 
   /** Перечитать данные после действия, которое прошло мимо журнала: профиль, решения по объявлениям. */
@@ -251,8 +285,11 @@ export class LiveStore extends Store {
     this.api = newApi;
     this.rework = newApi;
     const loaded = await loadLive(newApi, business.name);
+    const saved = loadFeed(id);
     this.set({
       ...loaded,
+      msgs: saved.length ? saved : [msg("ai", summary({ ...this.state, ...loaded }))],
+      pending: null,
       activeBusinessId: id,
       businesses: session.businesses,
       notice: `Вы переключились на сайт «${business.name}»`,
@@ -288,6 +325,8 @@ export class LiveStore extends Store {
     const loaded = await loadLive(newApi, created.name);
     this.set({
       ...loaded,
+      msgs: [msg("ai", summary({ ...this.state, ...loaded }))],
+      pending: null,
       activeBusinessId: created.id,
       businesses: freshSession?.businesses ?? [...this.state.businesses, created],
       notice: `Создан новый сайт «${created.name}». Заполните профиль в настройках.`,
