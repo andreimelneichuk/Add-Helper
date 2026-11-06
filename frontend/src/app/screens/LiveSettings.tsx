@@ -36,7 +36,8 @@ function PlanForm({ api, businesses }: { api: Api; businesses?: Business[] }) {
   });
   const [draft, setDraft] = useState("");
   const [sharedDraft, setSharedDraft] = useState(() => {
-    try { return localStorage.getItem("adhelper.shared_budget") || "30000"; } catch { return "30000"; }
+    // Сумму не придумываем: только то, что владелец сам задал раньше.
+    try { return localStorage.getItem("adhelper.shared_budget") || ""; } catch { return ""; }
   });
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
@@ -115,7 +116,7 @@ function PlanForm({ api, businesses }: { api: Api; businesses?: Business[] }) {
             />
           </label>
           <p className="set-hint">
-            Единый лимит {rub(sharedNum)} в месяц делится между {count} {count === 1 ? "сайтом" : "сайтами"} (примерно по {rub(perSite)} на сайт, с перераспределением в пользу более эффективных).
+            {sharedNum > 0 ? <>Единый лимит {rub(sharedNum)} в месяц делится между {count} {count === 1 ? "сайтом" : "сайтами"} (примерно по {rub(perSite)} на сайт, с перераспределением в пользу более эффективных).</> : `Укажите общую сумму: она поделится между ${count} ${count === 1 ? "сайтом" : "сайтами"}.`}
           </p>
         </>
       )}
@@ -280,19 +281,20 @@ function DisplayForm({ api, store }: { api: Api; store: LiveStore }) {
       {noCampaigns && <p className="set-hint">Кампаний ещё нет: регион и часы зададутся при запуске.</p>}
       <div role="group" aria-label="Где показывать">
         <div className="ah-label">Где показывать</div>
-        <p className="set-hint">Сейчас: {display.regions_text ?? "у направлений разный регион или Яндекс его ещё не передал"}.</p>
+        {!noCampaigns && <p className="set-hint">Сейчас: {display.regions_text ?? "у направлений разный регион или Яндекс его ещё не передал"}.</p>}
         <div className="set-options">
           {display.catalog.map((r) => (
             <button key={r.id} type="button" className="ah-chip" aria-pressed={regions.includes(r.id)} onClick={() => { setStatus(null); setRegions(toggle(regions, r.id)); }}>{r.name}</button>
           ))}
         </div>
+        {!noCampaigns && !regions.length && <p className="ah-error" role="alert">Выберите хотя бы один регион.</p>}
         <div className="set-actions">
           <button type="button" className="ah-btn" disabled={noCampaigns || !regions.length || sameRegions || busy} onClick={() => setAsk({ text: `Показывать рекламу: ${names(regions)}${display.regions_text ? ` вместо «${display.regions_text}»` : ""}? Это изменится в Яндексе для всех направлений, отменить можно в истории.`, apply: async () => { await api.setRegions(regions, crypto.randomUUID()); return `Регион показов теперь: ${names(regions)}. Вы попросили. Отменить можно в истории.`; } })}>Изменить регион</button>
         </div>
       </div>
       <div role="group" aria-label="Когда показывать">
         <div className="ah-label">Когда показывать</div>
-        <p className="set-hint">Сейчас: {display.schedule_text ?? "у направлений разное время или Яндекс его ещё не передал"}.</p>
+        {!noCampaigns && <p className="set-hint">Сейчас: {display.schedule_text ?? "у направлений разное время или Яндекс его ещё не передал"}.</p>}
         <div className="set-options">
           {DAY_NAMES.map((name, d) => (
             <button key={name} type="button" className="ah-chip" aria-pressed={days.includes(d)} onClick={() => { setStatus(null); setDays(toggle(days, d).sort((a, b) => a - b)); }}>{name}</button>
@@ -326,6 +328,7 @@ function DisplayForm({ api, store }: { api: Api; store: LiveStore }) {
           <span className="ah-label">Желаемая цена обращения, ₽</span>
           <input className="ah-input" inputMode="numeric" value={goal} placeholder={display.goal ? undefined : "Например, 400"} onChange={(e) => { setStatus(null); setGoal(e.target.value.replace(/\D/g, "").slice(0, 7)); }} />
         </label>
+        {goal !== "" && goalValue < 1 && <p className="ah-error" role="alert">Цена должна быть больше нуля.</p>}
         <p className="set-hint">{display.goal ? `Сейчас ${rub(display.goal)}.` : "Пока не задана."} В Яндексе это ничего не меняет: это мерка для решений автопилота.</p>
         <div className="set-actions"><button type="submit" className="ah-btn" disabled={busy || goalValue < 1 || goalValue === display.goal}>Задать цену</button></div>
       </form>
@@ -392,10 +395,28 @@ function SiteDraft({ read, onApply, onClose }: { read: SiteRead; onApply: (facts
   );
 }
 
+const PRICE_TEXT = /^[\d\s]*$/u;
+const PRICE_PROBLEM = "Цена — положительное число, без минуса и букв.";
+
+/** Цена в названии услуги: «Стрижка 500р», «маникюр 1 200 ₽». */
+const PRICE_IN_NAME = /\d[\d\s]*\s*(₽|р\.?|руб)/iu;
+
+/** Что не так с услугами, словами владельца; null, если можно сохранять. */
+export function servicesProblem(services: Profile["services"]): string | null {
+  for (const x of services) {
+    if (!x.name.trim()) continue;
+    if (x.price !== null && x.price <= 0) return `Цена услуги «${x.name.trim()}» должна быть больше нуля.`;
+    if (PRICE_IN_NAME.test(x.name)) return `В названии «${x.name.trim()}» есть цена. Уберите её из названия и впишите в поле цены: в рекламу цена идёт только оттуда.`;
+  }
+  return null;
+}
+
 function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Цена как её набрал владелец: «-5» показываем и не сохраняем, а не превращаем в 5.
+  const [priceText, setPriceText] = useState<Record<number, string>>({});
   // Первый пришедший профиль и есть форма: поздний ответ не затирает то, что владелец уже ввёл.
   useEffect(() => {
     api.profile().then((loaded) => setProfile((current) => current ?? loaded), (e: unknown) => setStatus(message(e)));
@@ -432,6 +453,8 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
   const service = (i: number, patch: Partial<Profile["services"][number]>) =>
     set({ services: profile.services.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
   const save = async () => {
+    const problem = Object.values(priceText).some((t) => !PRICE_TEXT.test(t)) ? PRICE_PROBLEM : servicesProblem(profile.services);
+    if (problem) return setStatus(problem);
     setBusy(true);
     try {
       const services = profile.services.filter((x) => x.name.trim());
@@ -480,8 +503,16 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
         {profile.services.map((x, i) => (
           <div key={i} className="set-service">
             <input className="ah-input" aria-label={`Услуга ${i + 1}`} value={x.name} onChange={(e) => service(i, { name: e.target.value })} />
-            <input className="ah-input set-price" aria-label={`Цена услуги ${i + 1}, ₽`} inputMode="numeric" placeholder="₽" value={x.price ?? ""} onChange={(e) => { const d = e.target.value.replace(/\D/g, "").slice(0, 7); service(i, { price: d ? Number(d) : null }); }} />
-            <button type="button" className="ah-link" aria-label={`Убрать услугу ${i + 1}`} onClick={() => set({ services: profile.services.filter((_, j) => j !== i) })}>Убрать</button>
+            <input className="ah-input set-price" aria-label={`Цена услуги ${i + 1}, ₽`} inputMode="numeric" placeholder="₽" value={priceText[i] ?? x.price ?? ""} onChange={(e) => {
+              // Минус и буквы не отбрасываем молча: текст остаётся в поле, сохранить его нельзя.
+              const raw = e.target.value.slice(0, 10);
+              setPriceText({ ...priceText, [i]: raw });
+              const ok = PRICE_TEXT.test(raw);
+              const digits = raw.replace(/\s/g, "");
+              service(i, { price: ok && digits ? Number(digits) : null });
+              if (!ok) setStatus(PRICE_PROBLEM);
+            }} />
+            <button type="button" className="ah-link" aria-label={`Убрать услугу ${i + 1}`} onClick={() => { setPriceText({}); set({ services: profile.services.filter((_, j) => j !== i) }); }}>Убрать</button>
           </div>
         ))}
         <button type="button" className="ah-btn" onClick={() => set({ services: [...profile.services, { name: "", price: null }] })}>Добавить услугу</button>
@@ -591,6 +622,24 @@ function Accounts({ api }: { api: Api }) {
 }
 
 /** Свои фото для объявлений. Яндекс показывает картинку рядом с текстом; без фото объявления идут как есть. */
+const PHOTO_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+// Совпадает с подписью раздела; окончательно размер проверяет сервис.
+const MIN_PHOTO_SIDE = 450;
+const NO_CONSENT = "Сначала отметьте, что люди на фото согласны на рекламу или людей на фото нет.";
+
+/** Короткая сторона картинки; null, если браузер не умеет её прочитать — тогда решит сервис. */
+async function shortSide(file: Blob): Promise<number | null> {
+  if (typeof createImageBitmap !== "function") return null;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const side = Math.min(bitmap.width, bitmap.height);
+    bitmap.close();
+    return side;
+  } catch {
+    return null;
+  }
+}
+
 function Photos({ api }: { api: Api }) {
   const [data, setData] = useState<PhotosData | null>(null);
   const picker = useRef<HTMLInputElement>(null);
@@ -613,9 +662,18 @@ function Photos({ api }: { api: Api }) {
       setBusy(false);
     }
   };
-  const upload = (files: FileList | null) => {
+  const refuse = (text: string) => {
+    setStatus(null);
+    setError(text);
+  };
+  const upload = async (files: FileList | null) => {
     const file = files?.[0];
-    if (!file || !consent) return;
+    if (!file) return;
+    // Каждый отказ называет причину и убирает прошлое «Фото добавил».
+    if (!consent) return refuse(NO_CONSENT);
+    if (!PHOTO_TYPES.includes(file.type)) return refuse("Нужна картинка JPEG, PNG, GIF или WebP.");
+    const side = await shortSide(file);
+    if (side !== null && side < MIN_PHOTO_SIDE) return refuse(`Фото меньше ${MIN_PHOTO_SIDE} точек по короткой стороне (сейчас ${side}). Возьмите фото крупнее.`);
     void act(async () => {
       await api.uploadPhoto(file, true);
       setConsent(false);
@@ -642,12 +700,12 @@ function Photos({ api }: { api: Api }) {
       ) : (
         <>
           <label className="set-check">
-            <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+            <input type="checkbox" checked={consent} onChange={(e) => { setConsent(e.target.checked); setError(null); }} />
             <span>Люди на фото согласны на рекламу, или людей на фото нет</span>
           </label>
           <div className="set-actions">
-            <button type="button" className="ah-btn" disabled={!consent || busy} onClick={() => picker.current?.click()}>{busy ? "Загружаю…" : "Добавить фото"}</button>
-            <input ref={picker} type="file" aria-label="Файл фото" accept="image/jpeg,image/png,image/gif,image/webp" className="set-file" tabIndex={-1} onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
+            <button type="button" className="ah-btn" disabled={busy} onClick={() => (consent ? picker.current?.click() : refuse(NO_CONSENT))}>{busy ? "Загружаю…" : "Добавить фото"}</button>
+            <input ref={picker} type="file" aria-label="Файл фото" accept={PHOTO_TYPES.join(",")} className="set-file" tabIndex={-1} onChange={(e) => { void upload(e.target.files); e.target.value = ""; }} />
           </div>
         </>
       )}
@@ -657,8 +715,26 @@ function Photos({ api }: { api: Api }) {
   );
 }
 
+// У каждого сайта свой API: формы настроек пересоздаются при смене сайта, чтобы не сохранить данные одного в другой.
+const apiKeys = new WeakMap<Api, number>();
+let lastApiKey = 0;
+function keyOf(api: Api): number {
+  let key = apiKeys.get(api);
+  if (key === undefined) {
+    key = ++lastApiKey;
+    apiKeys.set(api, key);
+  }
+  return key;
+}
+
 export function LiveSettings({ store }: { store: Store }) {
+  // Подписка на магазин: смена сайта меняет API, и экран должен это увидеть.
+  useStoreState(store);
   const api = liveApi(store)!;
+  return <SiteSettings key={keyOf(api)} store={store} api={api} />;
+}
+
+function SiteSettings({ store, api }: { store: Store; api: Api }) {
   const [leaving, setLeaving] = useState<string | null>(null);
   const logout = async () => {
     setLeaving("Выхожу…");
