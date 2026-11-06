@@ -5,6 +5,8 @@ import { clearDraft } from "./draft";
 import { initialState, Store } from "./store";
 import type { WizardApi } from "./store";
 import { display, fakeApi, open, overview, said, settled } from "./testLive";
+import { LiveStore, loadLive } from "./live";
+import { Chat } from "./screens/Chat";
 
 const guest = vi.hoisted(() => ({
   writeAds: vi.fn(),
@@ -262,6 +264,38 @@ describe("Review 4 Reproduction & Fix Verification Tests (BUG-041 – BUG-051)",
       store.send("Что ты делал?");
       await settled();
       expect(store.state.msgs.at(-1)?.text).toContain("Изменений пока не было");
+    });
+
+    it("47.5: лента чата переживает перезагрузку страницы", async () => {
+      sessionStorage.clear();
+      const api = fakeApi({ history: vi.fn(async () => []), command: vi.fn(async () => said({ kind: "history" })) });
+      const first = new LiveStore(api, { ...(await loadLive(api, "Салон Анны")), activeBusinessId: "b1" });
+      first.send("Что ты делал?");
+      await settled();
+      const again = new LiveStore(api, { ...(await loadLive(api, "Салон Анны")), activeBusinessId: "b1" });
+      expect(again.state.msgs.map((m) => m.text)).toContain("Что ты делал?");
+      expect(again.state.msgs.at(-1)?.text).toContain("Изменений пока не было");
+      const other = new LiveStore(api, { ...(await loadLive(api, "Бигуди")), activeBusinessId: "b2" });
+      expect(other.state.msgs.map((m) => m.text)).not.toContain("Что ты делал?");
+    });
+
+    it("47.6: подсказки уходят после первого сообщения и не дублируются", async () => {
+      sessionStorage.clear();
+      const store = await open(fakeApi({ command: vi.fn(async () => said({ kind: "stats" })) }));
+      render(<Chat store={store} />);
+      await userEvent.click(screen.getByRole("button", { name: "Как дела?" }));
+      await act(settled);
+      expect(screen.queryByRole("group", { name: "Подсказки" })).toBeNull();
+      expect(store.state.msgs.filter((m) => m.text === "Как дела?")).toHaveLength(1);
+    });
+
+    it("47.7: пустая отправка подсказывает, что написать", async () => {
+      const store = await open(fakeApi());
+      render(<Chat store={store} />);
+      await userEvent.click(screen.getByRole("button", { name: "Отправить" }));
+      expect(screen.getByText(/Напишите, что поменять/)).toBeInTheDocument();
+      await userEvent.type(screen.getByLabelText("Сообщение для ИИ"), "к");
+      expect(screen.queryByText(/Напишите, что поменять/)).toBeNull();
     });
   });
 

@@ -88,11 +88,8 @@ function Live() {
       try { activeId = localStorage.getItem("adhelper.activeBusinessId"); } catch {}
       const business = session.businesses.find((b) => b.id === activeId) ?? session.businesses[0]!;
       const api = createApi(business.id, session.me.csrf_token);
-      const live = new LiveStore(api, await loadLive(api, business.name));
-      live.set({
-        businesses: session.businesses,
-        activeBusinessId: business.id,
-      });
+      // Номер бизнеса нужен уже конструктору: по нему поднимается лента чата.
+      const live = new LiveStore(api, { ...(await loadLive(api, business.name)), businesses: session.businesses, activeBusinessId: business.id });
       if (cancelled) return;
       const connect = params.get("connect");
       if (connect !== null) {
