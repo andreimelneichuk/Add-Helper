@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { ApiError } from "../api";
 import type { AdDraftProfile, AdSet, AdvertiserKind, Api, ChatCommand, Me, Business, SiteFact, SiteRead, UndoPreview, WizardAd } from "../api";
+import { pollUntil } from "./polling";
 import { clearDraft, clearStartReading, clearWizard, draftProfile, loadDraft, loadWizard, saveDraft, saveStartReading, saveStartSite, transferDraft } from "./draft";
 import type { TransferDeps } from "./draft";
 import { ADS, DAYS, FACTS, histFor, leadsWord, MIN_BUDGET, OPENING, OPTIONS, rub, STATS, STEPS } from "./data";
@@ -114,13 +115,13 @@ const LOGIN_FAILED_OTHER = "Вход не состоялся. Черновик �
 /** Разбор сайта до входа: POST /api/site-reads и GET /api/site-reads/{id}. */
 export type GuestReader = {
   readSite: (url: string) => Promise<{ id: number; token: string; status: string; url: string }>;
-  siteRead: (id: number, token: string) => Promise<SiteRead>;
+  siteRead: (id: number, token: string, init?: RequestInit) => Promise<SiteRead>;
 };
 
 /** Писатель объявлений до входа: POST /api/creative-sets и GET /api/creative-sets/{id}. */
 export type GuestWriter = {
   writeAds: (profile: AdDraftProfile) => Promise<{ id: number; token: string; status: string }>;
-  adSet: (id: number, token: string) => Promise<AdSet>;
+  adSet: (id: number, token: string, init?: RequestInit) => Promise<AdSet>;
 };
 
 /** Объявления писателя в карточки шага: номер в наборе живёт в id, выбор уходит по нему. */
@@ -549,32 +550,35 @@ export class Store {
     }
   }
   private async awaitRead(reader: GuestReader, id: number, token: string) {
-    const started = Date.now();
-    for (;;) {
-      const read = await reader.siteRead(id, token);
+    // Владелец ушёл с шага или начал чтение заново: этот опрос больше не нужен.
+    const current = () => {
       const cur = this.state.reading;
-      if (!cur || cur === "asking" || cur.id !== id) return;
-      if (read.status === "failed") {
-        clearStartReading();
-        return this.set({ reading: null, block: read.problem_text ?? "Сайт не прочитался. Заполните профиль вручную." });
-      }
-      if (read.status === "ready") {
-        clearStartReading();
-        const facts = siteFacts(read.facts);
-        const ai = facts.length ? STEPS[0]!.ai : "На сайте не нашёл фактов, которые можно подтвердить цитатой. Добавьте их сами: в рекламу попадёт только это.";
-        return this.set({ reading: null, facts, step: 1, block: "", msgs: [...this.state.msgs, msg("ai", ai)] });
-      }
-      if (Date.now() - started >= this.readTimeoutMs) {
-        clearStartReading();
-        return this.set({
-          reading: null,
-          block: "Разбор сайта занимает дольше обычного. Попробуйте ещё раз или заполните профиль вручную.",
-        });
-      }
-      await new Promise((resolve) => setTimeout(resolve, this.waitMs));
-      const afterWait = this.state.reading;
-      if (!afterWait || afterWait === "asking" || afterWait.id !== id) return;
+      return !!cur && cur !== "asking" && cur.id === id;
+    };
+    const polled = await pollUntil({
+      task: (signal) => reader.siteRead(id, token, { signal }),
+      isDone: (read) => !current() || read.status === "failed" || read.status === "ready",
+      intervalMs: this.waitMs,
+      timeoutMs: this.readTimeoutMs,
+    });
+    if (polled.status === "aborted") return;
+    if (polled.status === "timeout") {
+      clearStartReading();
+      return this.set({
+        reading: null,
+        block: "Разбор сайта занимает дольше обычного. Попробуйте ещё раз или заполните профиль вручную.",
+      });
     }
+    if (!current()) return;
+    const read = polled.value;
+    if (read.status === "failed") {
+      clearStartReading();
+      return this.set({ reading: null, block: read.problem_text ?? "Сайт не прочитался. Заполните профиль вручную." });
+    }
+    clearStartReading();
+    const facts = siteFacts(read.facts);
+    const ai = facts.length ? STEPS[0]!.ai : "На сайте не нашёл фактов, которые можно подтвердить цитатой. Добавьте их сами: в рекламу попадёт только это.";
+    this.set({ reading: null, facts, step: 1, block: "", msgs: [...this.state.msgs, msg("ai", ai)] });
   }
   /** Сайта нет или он не читается: профиль с чистого листа. */
   fillByHand = () => {
@@ -680,21 +684,19 @@ export class Store {
     try {
       const queued = await writer.writeAds(draft);
       this.set({ writing: { id: queued.id, token: queued.token } });
-      const started = Date.now();
-      for (;;) {
-        const set = await writer.adSet(queued.id, queued.token);
-        if (set.status === "failed") return this.set({ writing: null, block: set.problem_text ?? "Не получилось написать объявления. Попробуйте ещё раз." });
-        if (set.status === "ready") {
-          return this.set({ writing: null, ads: writtenAds(set.ads), adSet: { id: queued.id, token: queued.token, template: set.template, needsReview: set.needs_review, facts } });
-        }
-        if (Date.now() - started >= this.readTimeoutMs) {
-          return this.set({
-            writing: null,
-            block: "Генерация объявлений занимает дольше обычного. Нажмите «Написать ещё раз».",
-          });
-        }
-        await new Promise((resolve) => setTimeout(resolve, this.waitMs));
+      const polled = await pollUntil({
+        task: (signal) => writer.adSet(queued.id, queued.token, { signal }),
+        isDone: (set) => set.status === "failed" || set.status === "ready",
+        intervalMs: this.waitMs,
+        timeoutMs: this.readTimeoutMs,
+      });
+      if (polled.status === "aborted") return;
+      if (polled.status === "timeout") {
+        return this.set({ writing: null, block: "Генерация объявлений занимает дольше обычного. Нажмите «Написать ещё раз»." });
       }
+      const set = polled.value;
+      if (set.status === "failed") return this.set({ writing: null, block: set.problem_text ?? "Не получилось написать объявления. Попробуйте ещё раз." });
+      this.set({ writing: null, ads: writtenAds(set.ads), adSet: { id: queued.id, token: queued.token, template: set.template, needsReview: set.needs_review, facts } });
     } catch (e) {
       this.set({ writing: null, block: e instanceof ApiError ? e.message : "Сервис не ответил. Попробуйте ещё раз." });
     }

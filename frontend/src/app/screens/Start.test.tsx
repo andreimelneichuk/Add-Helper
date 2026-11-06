@@ -228,7 +228,7 @@ describe("разбор сайта до входа", () => {
     await user.click(button("Изучить"));
     expect(reader.readSite).toHaveBeenCalledWith("nogti.ru");
     await screen.findByRole("heading", { level: 1, name: "Вот что я понял о вас" });
-    expect(reader.siteRead).toHaveBeenCalledWith(7, queued.token);
+    expect(reader.siteRead).toHaveBeenCalledWith(7, queued.token, { signal: expect.any(AbortSignal) });
     expect(screen.getByText(/^Маникюр с покрытием, 1.500.₽$/)).toBeInTheDocument();
     expect(screen.getByText("«Маникюр с покрытием — 1 500 ₽»")).toBeInTheDocument();
     expect(screen.getByText("Оплата картой")).toBeInTheDocument();
