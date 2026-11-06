@@ -138,9 +138,23 @@ async def _page(
     try:
         async with asyncio.timeout_at(deadline):
             rendered = await renderer.render(page.url)
-    except (SiteUnavailable, TimeoutError):
+    except (SiteUnavailable, TimeoutError) as error:
+        logger.warning(
+            "Браузер не помог для %s: %s; остаётся скачанный текст (%s зн.)",
+            urlsplit(page.url).netloc,
+            type(error).__name__,
+            len(page.text),
+        )
         return page
-    return rendered if len(rendered.text) > len(page.text) else page
+    chosen = rendered if len(rendered.text) > len(page.text) else page
+    logger.info(
+        "Страница %s: скачано %s зн., браузер %s зн., взято %s",
+        urlsplit(page.url).netloc,
+        len(page.text),
+        len(rendered.text),
+        "браузер" if chosen is rendered else "скачанное",
+    )
+    return chosen
 
 
 async def read_site(

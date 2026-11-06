@@ -159,6 +159,9 @@ class ChromiumRenderer:
         except PlaywrightError as error:
             logger.error("Браузер не запустился: %s", type(error).__name__)
             raise SiteUnavailable(FetchProblem.UNREACHABLE) from None
+        except Exception as error:
+            logger.error("Браузер упал при запуске: %s", type(error).__name__)
+            raise SiteUnavailable(FetchProblem.UNREACHABLE) from None
         context = await browser.new_context(
             # Представляемся так же, как скачивание: сервис читает сайт по просьбе владельца.
             user_agent=USER_AGENT,
@@ -171,6 +174,12 @@ class ChromiumRenderer:
             async with asyncio.timeout(self._render.timeout_seconds + 2):
                 return await self._read(context, target)
         except TimeoutError:
+            logger.warning(
+                "Браузер не успел прочитать страницу за %s с", self._render.timeout_seconds + 2
+            )
+            raise SiteUnavailable(FetchProblem.UNREACHABLE) from None
+        except PlaywrightError as error:
+            logger.warning("Браузер потерял страницу: %s", type(error).__name__)
             raise SiteUnavailable(FetchProblem.UNREACHABLE) from None
         finally:
             await context.unroute_all(behavior="ignoreErrors")
@@ -209,9 +218,17 @@ class ChromiumRenderer:
             response = await page.goto(
                 url, wait_until="commit", timeout=self._render.timeout_seconds * 1000
             )
-        except PlaywrightError:
+        except PlaywrightError as error:
+            logger.warning(
+                "Браузер не открыл страницу: %s, причина %s",
+                type(error).__name__,
+                budget.document_problem,
+            )
             raise SiteUnavailable(budget.document_problem or FetchProblem.UNREACHABLE) from None
         if response is None or response.status != 200:
+            logger.warning(
+                "Браузер получил ответ %s", None if response is None else response.status
+            )
             raise SiteUnavailable(FetchProblem.HTTP_ERROR)
         # Тишина в сети — признак, что скрипты дорисовали страницу.
         for state in ("domcontentloaded", "networkidle"):
@@ -253,7 +270,14 @@ class ChromiumRenderer:
                 continue
             if inner.text:
                 texts.append(inner.text)
-        return FetchedPage(found.url, "\n".join(texts), found.links, found.counters, found.builders)
+        text = "\n".join(texts)
+        logger.info(
+            "Браузер прочитал страницу: текст %s зн., теневых %s, фреймов %s",
+            len(text),
+            len(shadows),
+            len(texts) - 1 - len(shadows),
+        )
+        return FetchedPage(found.url, text, found.links, found.counters, found.builders)
 
     async def _route(self, route: Route, page: Page, budget: _Budget) -> None:
         request = route.request
