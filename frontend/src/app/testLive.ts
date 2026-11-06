@@ -55,6 +55,8 @@ export function fakeApi(over: Partial<Api> = {}) {
     readSite: vi.fn(async (url: string) => ({ id: 1, status: "queued", url: url.startsWith("http") ? url : `https://${url}/` })),
     siteRead: vi.fn(async () => null),
     budgetPlan: vi.fn(async () => ({ rubles: null })),
+    budgetPortfolio: vi.fn(async () => ({ mode: "separate" as const, rubles: null, businesses: 1 })),
+    saveBudgetPortfolio: vi.fn(async (body: { mode: "separate" } | { mode: "shared"; rubles: number }) => ({ mode: body.mode, rubles: body.mode === "shared" ? body.rubles : null, shares: [] })),
     marking: vi.fn(async () => ({ saved: null })),
     saveMarking: vi.fn(async (body: { kind: "legal" | "ip" | "person"; inn: string; name: string }) => ({ saved: { kind: body.kind, inn: `••••${body.inn.slice(-4)}`, name: body.name, phone: null, okved: null } })),
     tagCheck: vi.fn(async () => ({ check: null, site: "" })),

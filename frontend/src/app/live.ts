@@ -275,6 +275,40 @@ export class LiveStore extends Store {
     this.set(await loadLive(this.api, this.state.live?.name ?? ""));
   }
 
+  /**
+   * Общий бюджет на все сайты. Сервер хранит режим и делит сумму; живые лимиты каждого запущенного сайта
+   * меняются его же проверенным путём (журнал, снижение лимитов раньше смены бюджета). Сначала сайты,
+   * где бюджет снижается, потом где растёт: сумма лимитов не превышает большую из старой и новой.
+   * На первой ошибке останавливаемся и называем, что уже изменено.
+   */
+  async applySharedBudget(total: number): Promise<string> {
+    const session = await openSession();
+    if (!session) throw new Error("Сессия не найдена. Войдите заново.");
+    const saved = await this.api.saveBudgetPortfolio({ mode: "shared", rubles: total });
+    const sites = await Promise.all(session.businesses.map(async (b) => {
+      const api = createApi(b.id, session.me.csrf_token);
+      const share = saved.shares.find((x) => x.business_id === b.id)?.rubles ?? 0;
+      const current = sumMoney((await api.overview()).money, (m) => m.period.hard_limit);
+      return { id: b.id, name: b.name, api, share, current };
+    }));
+    // Сайты без запущенного периода получили долю в плане: лимиты им поставит запуск.
+    const changes = sites.filter((x) => x.current > 0 && x.share !== x.current).sort((a, b) => (a.share - a.current) - (b.share - b.current));
+    const done: string[] = [];
+    for (const site of changes) {
+      try {
+        await site.api.setBudget(site.share, crypto.randomUUID());
+        done.push(site.name);
+      } catch (e) {
+        const reason = e instanceof Error ? e.message : "Сервис не ответил";
+        const before = done.length ? `Уже изменил: ${done.map((n) => `«${n}»`).join(", ")}. ` : "Лимиты не менялись. ";
+        throw new Error(`Остановился на сайте «${site.name}»: ${reason}. ${before}Остальные сайты не менял, сумма лимитов не выросла.`);
+      }
+    }
+    await this.refresh();
+    const n = sites.length;
+    return `Общий бюджет ${rub(total)} в месяц на ${n} ${n === 1 ? "сайт" : n < 5 ? "сайта" : "сайтов"} сохранён. Бюджет изменился у ${done.length} из ${changes.length || 0} запущенных. Режим хранится в сервисе.`;
+  }
+
   /** Переключить активный бизнес/сайт на другой из списка. */
   async switchBusiness(id: string) {
     try { window.localStorage.setItem("adhelper.activeBusinessId", id); } catch { /* без хранилища */ }

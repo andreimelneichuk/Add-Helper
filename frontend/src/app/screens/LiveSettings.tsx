@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AdAccount, Api, Business, Channels as ChannelsData, Display, Photos as PhotosData, Profile, SiteFact, SiteRead } from "../../api";
 import { rub } from "../data";
+import { isAbort } from "../polling";
 import { liveApi, savedText } from "../live";
 import type { LiveStore } from "../live";
 import { useStoreState } from "../store";
@@ -31,41 +32,47 @@ const message = (e: unknown) => (e instanceof Error ? e.message : "Сервис 
 
 /** До запуска периода нет: показываем план из мастера. Лимиты в Яндексе из него ставятся только при запуске. */
 function PlanForm({ api, businesses }: { api: Api; businesses?: Business[] }) {
-  const [mode, setMode] = useState<"separate" | "shared">(() => {
-    try { return (localStorage.getItem("adhelper.budget_mode") as any) || "separate"; } catch { return "separate"; }
-  });
+  // Режим и общая сумма хранятся на сервере. Сумму не придумываем: только то, что владелец сам задал раньше.
+  const [mode, setMode] = useState<"separate" | "shared">("separate");
   const [draft, setDraft] = useState("");
-  const [sharedDraft, setSharedDraft] = useState(() => {
-    // Сумму не придумываем: только то, что владелец сам задал раньше.
-    try { return localStorage.getItem("adhelper.shared_budget") || ""; } catch { return ""; }
-  });
+  const [sharedDraft, setSharedDraft] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    api.budgetPlan().then((p) => setDraft(p.rubles ? String(p.rubles) : ""), (e: unknown) => setStatus(message(e)));
+    const controller = new AbortController();
+    const init = { signal: controller.signal };
+    api.budgetPlan(init).then((p) => setDraft(p.rubles ? String(p.rubles) : ""), (e: unknown) => { if (!isAbort(e)) setStatus(message(e)); });
+    api.budgetPortfolio(init).then((p) => {
+      setMode(p.mode);
+      if (p.rubles) setSharedDraft(String(p.rubles));
+    }, (e: unknown) => { if (!isAbort(e)) setStatus(message(e)); });
+    return () => controller.abort();
   }, [api]);
 
   const count = Math.max(1, businesses?.length ?? 1);
   const sharedNum = Number(sharedDraft) || 0;
-  const perSite = Math.round(sharedNum / count);
 
   const save = (e: React.FormEvent) => {
     e.preventDefault();
     if (busy) return;
     setBusy(true);
-    try { localStorage.setItem("adhelper.budget_mode", mode); } catch {}
     if (mode === "shared") {
-      try { localStorage.setItem("adhelper.shared_budget", sharedDraft); } catch {}
-      api.saveBudgetPlan(perSite).then(
-        () => setStatus(`Сохранил общий бюджет: ${rub(sharedNum)} в месяц на ${count} ${count === 1 ? "сайт" : "сайта"}. На этот сайт выделено ${rub(perSite)}.`),
+      // Сервер делит сумму между всеми сайтами и пишет доли одной операцией: либо у всех, либо ни у кого.
+      api.saveBudgetPortfolio({ mode: "shared", rubles: sharedNum }).then(
+        (saved) => {
+          setStatus(`Сохранил общий бюджет: ${rub(sharedNum)} в месяц на ${count} ${count === 1 ? "сайт" : "сайта"}. Доли записаны для каждого сайта.`);
+          api.budgetPlan().then((p) => setDraft(p.rubles ? String(p.rubles) : ""), () => undefined);
+          return saved;
+        },
         (err: unknown) => setStatus(message(err)),
       ).finally(() => setBusy(false));
     } else {
       const amount = Number(draft);
       api.saveBudgetPlan(amount).then(
-        (p) => setStatus(`Сохранил план: ${rub(p.rubles ?? amount)} в месяц. Лимиты в Яндексе поставлю при запуске рекламы.`),
-        (err: unknown) => setStatus(message(err)),
-      ).finally(() => setBusy(false));
+        (p) => api.saveBudgetPortfolio({ mode: "separate" }).then(
+          () => setStatus(`Сохранил план: ${rub(p.rubles ?? amount)} в месяц. Лимиты в Яндексе поставлю при запуске рекламы.`),
+        ),
+      ).catch((err: unknown) => setStatus(message(err))).finally(() => setBusy(false));
     }
   };
 
@@ -116,7 +123,7 @@ function PlanForm({ api, businesses }: { api: Api; businesses?: Business[] }) {
             />
           </label>
           <p className="set-hint">
-            {sharedNum > 0 ? <>Единый лимит {rub(sharedNum)} в месяц делится между {count} {count === 1 ? "сайтом" : "сайтами"} (примерно по {rub(perSite)} на сайт, с перераспределением в пользу более эффективных).</> : `Укажите общую сумму: она поделится между ${count} ${count === 1 ? "сайтом" : "сайтами"}.`}
+            {sharedNum > 0 ? <>Единый лимит {rub(sharedNum)} в месяц делится между {count} {count === 1 ? "сайтом" : "сайтами"} (примерно по {rub(Math.floor(sharedNum / count))} на сайт).</> : `Укажите общую сумму: она поделится между ${count} ${count === 1 ? "сайтом" : "сайтами"}.`}
           </p>
         </>
       )}
@@ -136,13 +143,24 @@ function BudgetForm({ store }: { store: LiveStore }) {
   const live = s.live!;
   const [mode, setMode] = useState<"separate" | "shared">("separate");
   const [draft, setDraft] = useState(live.budget > 0 ? String(live.budget) : "");
-  const [sharedDraft, setSharedDraft] = useState("50000");
+  const [sharedDraft, setSharedDraft] = useState("");
+  const [savedMode, setSavedMode] = useState<"separate" | "shared">("separate");
   const [asking, setAsking] = useState(false);
+  // Режим и общая сумма хранятся на сервере, а не в браузере.
+  useEffect(() => {
+    const controller = new AbortController();
+    store.api.budgetPortfolio({ signal: controller.signal }).then((p) => {
+      setMode(p.mode);
+      setSavedMode(p.mode);
+      if (p.rubles) setSharedDraft(String(p.rubles));
+    }, (e: unknown) => { if (!isAbort(e)) store.set({ notice: message(e) }); });
+    return () => controller.abort();
+  }, [store]);
   const amount = Number(draft);
   const sharedAmount = Number(sharedDraft);
   const spent = live.spent ?? 0;
   const count = s.businesses?.length || 1;
-  const perSite = Math.round(sharedAmount / count);
+  const perSite = Math.floor(sharedAmount / count);
   const problem = mode === "separate"
     ? (!draft ? "Укажите сумму." : amount < spent ? `В этом месяце уже потрачено ${rub(spent)}, бюджет не может быть меньше.` : null)
     : (!sharedDraft ? "Укажите сумму." : sharedAmount < spent ? `В этом месяце уже потрачено ${rub(spent)}, общий бюджет не может быть меньше.` : null);
@@ -184,7 +202,7 @@ function BudgetForm({ store }: { store: LiveStore }) {
             <input className="ah-input" inputMode="numeric" value={sharedDraft} onChange={(e) => { setAsking(false); setSharedDraft(e.target.value.replace(/\D/g, "").slice(0, 9)); }} />
           </label>
           <p className="set-hint">
-            Единый лимит {rub(sharedAmount)} в месяц делится между {count} {count === 1 ? "сайтом" : "сайтами"} (примерно по {rub(perSite)} на сайт).
+            Единый лимит {rub(sharedAmount)} в месяц делится между {count} {count === 1 ? "сайтом" : "сайтами"} (примерно по {rub(perSite)} на сайт). Сначала снижу бюджет там, где он уменьшается, потом подниму там, где растёт: сумма лимитов не выйдет за большую из старой и новой.
           </p>
         </>
       )}
@@ -194,16 +212,22 @@ function BudgetForm({ store }: { store: LiveStore }) {
         <div className="set-confirm" role="group" aria-label="Подтверждение бюджета">
           <p>
             {mode === "shared"
-              ? `Поставить общий бюджет ${rub(sharedAmount)} на все сайты? Лимиты будут распределяться автопилотом.`
+              ? `Поставить общий бюджет ${rub(sharedAmount)} на все сайты? Сумма поделится между ${count} ${count === 1 ? "сайтом" : "сайтами"}, у запущенных лимиты сменятся по очереди. Если на каком-то сайте не получится, остановлюсь и скажу, что уже изменено.`
               : `Поставить ${rub(amount)} в месяц вместо ${rub(live.budget)}? ${lower ? "Сначала снижу лимиты в Яндексе, потом сменю бюджет: так расход не выйдет за новую сумму ни в какой момент." : "Лимиты в Яндексе не изменятся сразу: автопилот поднимает их по правилам, понемногу."}`}
           </p>
           <div className="set-actions">
             <button type="button" className="ah-btn ah-btn-primary" onClick={() => {
               setAsking(false);
               if (mode === "shared") {
-                store.run({ action: "setting", value: ["budget", perSite] });
+                store.applySharedBudget(sharedAmount).then(
+                  (text) => { setSavedMode("shared"); store.set({ notice: text }); },
+                  (e: unknown) => store.set({ notice: message(e) }),
+                );
               } else {
                 store.run({ action: "setting", value: ["budget", amount] });
+                if (savedMode === "shared") {
+                  store.api.saveBudgetPortfolio({ mode: "separate" }).then(() => setSavedMode("separate"), () => undefined);
+                }
               }
             }}>Применить</button>
             <button type="button" className="ah-btn" onClick={() => { setAsking(false); setDraft(String(live.budget)); }}>Не менять</button>

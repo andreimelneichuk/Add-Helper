@@ -239,6 +239,10 @@ async function request<T>(path: string, init: RequestInit = {}, csrf?: string): 
   return (await response.json()) as T;
 }
 
+/** Режим бюджета владельца: раздельный на сайт или общий пул на все сайты. */
+export type BudgetPortfolio = { mode: "separate" | "shared"; rubles: number | null; businesses: number };
+export type PortfolioSaved = { mode: "separate" | "shared"; rubles: number | null; shares: { business_id: string; rubles: number }[] };
+
 /** Своё фото владельца: уже приведено к требованиям Яндекса, без метаданных. */
 export type Photo = { id: number; width: number; height: number; url: string };
 export type Photos = { photos: Photo[]; max: number };
@@ -390,6 +394,10 @@ export function createApi(businessId: string, csrf: string) {
     budgetPlan: (init?: RequestInit) => request<{ rubles: number | null }>(`${base}/budget-plan`, init),
     saveBudgetPlan: (rubles: number) =>
       request<{ rubles: number }>(`${base}/budget-plan`, { method: "PUT", body: JSON.stringify({ rubles }) }, csrf),
+    // Режим бюджета владельца хранится на сервере: общий пул делится по сайтам там же.
+    budgetPortfolio: (init?: RequestInit) => request<BudgetPortfolio>("/api/me/budget-portfolio", init),
+    saveBudgetPortfolio: (body: { mode: "separate" } | { mode: "shared"; rubles: number }) =>
+      request<PortfolioSaved>("/api/me/budget-portfolio", { method: "PUT", body: JSON.stringify(body) }, csrf),
     setGoal: (rubles: number) =>
       request<{ goal: number }>(`${base}/goal`, { method: "POST", body: JSON.stringify({ rubles }) }, csrf),
     answerClients: (range: Range, clients: number) =>
