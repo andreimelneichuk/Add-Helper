@@ -1,3 +1,12 @@
+# Этап 1: сборка клиентского приложения
+FROM node:22-alpine AS frontend-builder
+WORKDIR /web
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend/ ./
+RUN npm run build
+
+# Этап 2: образ бэкенда с Python и браузером
 FROM python:3.12-slim
 COPY --from=ghcr.io/astral-sh/uv:0.12.6 /uv /usr/local/bin/uv
 
@@ -17,6 +26,9 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 RUN playwright install --with-deps --only-shell chromium && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home adhelper
+# Копируем собранный фронтенд в директорию frontend/dist, откуда FastAPI отдаёт SPA и статику
+COPY --from=frontend-builder --chown=adhelper:adhelper /web/dist /app/frontend/dist
+
 USER adhelper
 
 EXPOSE 8000
