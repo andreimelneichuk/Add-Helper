@@ -5,6 +5,7 @@
 !alembic.ini
 !src/
 !migrations/
+!scripts/start.sh
 **/__pycache__
 !frontend/
 !deploy/
