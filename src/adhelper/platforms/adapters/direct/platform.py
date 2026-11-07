@@ -29,6 +29,7 @@ from adhelper.platforms.adapters.direct.transport import (
 from adhelper.platforms.domain.ports import (
     AdDay,
     AdImage,
+    Advertiser,
     ModerationState,
     ModerationVerdict,
     PublishedAd,
@@ -827,3 +828,80 @@ class DirectPlatform:
             account, group_id, [(ad.headline, ad.text, campaign.href) for ad in missing]
         )
         await self._moderate(account, await self._ads_of_campaigns(account, [campaign_id]))
+
+    # --- Маркировка (AdvertiserRegistry) ---
+
+    async def read_advertiser(self, account: str) -> Advertiser | None:
+        """Читает данные рекламодателя из Директа (Clients.get)."""
+        result = await self._call(
+            account,
+            "clients",
+            "get",
+            {
+                "FieldNames": ["ClientId", "Login", "ClientInfo", "Phone"],
+                "TinInfoFieldNames": ["TinType", "Tin"],
+                "OrganizationFieldNames": ["Name", "OkvedCode"],
+            },
+        )
+        clients = result.get("Clients")
+        if not isinstance(clients, list) or not clients or not isinstance(clients[0], Mapping):
+            return None
+        client = clients[0]
+        tin_info = client.get("TinInfo")
+        if not isinstance(tin_info, Mapping):
+            return None
+        tin = tin_info.get("Tin")
+        if not tin or not isinstance(tin, str):
+            return None
+        tin_type = str(tin_info.get("TinType", ""))
+        kind_map = {
+            "LEGAL": "legal",
+            "INDIVIDUAL": "ip",
+            "PHYSICAL": "person",
+        }
+        kind = kind_map.get(tin_type, tin_type.lower())
+        name = str(client.get("ClientInfo") or "")
+        phone = client.get("Phone")
+        phone_str = str(phone) if phone else None
+        erir = client.get("ErirAttributes") or {}
+        org = erir.get("Organization") if isinstance(erir, Mapping) else {}
+        okved = org.get("OkvedCode") if isinstance(org, Mapping) else None
+        return Advertiser(
+            kind=kind,
+            inn=tin,
+            name=name,
+            phone=phone_str,
+            okved=str(okved) if okved else None,
+        )
+
+    async def set_advertiser(self, account: str, advertiser: Advertiser) -> None:
+        """Обновляет реквизиты рекламодателя в Директе (Clients.update)."""
+        tin_type_map = {
+            "legal": "LEGAL",
+            "ip": "INDIVIDUAL",
+            "person": "PHYSICAL",
+        }
+        tin_type = tin_type_map.get(advertiser.kind, advertiser.kind.upper())
+        client_data: dict[str, Any] = {
+            "ClientInfo": advertiser.name,
+            "TinInfo": {
+                "TinType": tin_type,
+                "Tin": advertiser.inn,
+            },
+        }
+        if advertiser.phone:
+            client_data["Phone"] = advertiser.phone
+        if advertiser.okved:
+            client_data["ErirAttributes"] = {
+                "Organization": {
+                    "Name": advertiser.name,
+                    "OkvedCode": advertiser.okved,
+                }
+            }
+        result = await self._call(
+            account,
+            "clients",
+            "update",
+            {"Clients": [client_data]},
+        )
+        check_results(result.get("UpdateResults") or [])

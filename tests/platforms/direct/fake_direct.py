@@ -20,6 +20,7 @@ class FakeDirect:
     groups: dict[int, dict[str, Any]] = field(default_factory=dict)
     ads: dict[int, dict[str, Any]] = field(default_factory=dict)
     keywords: dict[int, dict[str, Any]] = field(default_factory=dict)
+    clients: dict[str, dict[str, Any]] = field(default_factory=dict)
     report_rows: list[tuple[str, str, int]] = field(default_factory=list)
     amount: str = "1500.5"
     calls: list[str] = field(default_factory=list)
@@ -224,6 +225,45 @@ class FakeDirect:
                 self.keywords[kw_id]["AutotargetingCategories"] = item["AutotargetingCategories"]
             results.append({"Id": kw_id})
         return {"AddResults": results}
+
+    # --- Клиенты и маркировка ---
+
+    def _clients_get(self, params: dict[str, Any]) -> dict[str, Any]:
+        if not self.clients:
+            return {"Clients": []}
+        org_fields = set(params.get("OrganizationFieldNames") or [])
+        clients = []
+        for c in self.clients.values():
+            client = dict(c)
+            if "ErirAttributes" in client and not org_fields:
+                client.pop("ErirAttributes", None)
+            clients.append(client)
+        return {"Clients": clients}
+
+    def _clients_update(self, params: dict[str, Any]) -> dict[str, Any]:
+        results: list[dict[str, Any]] = []
+        for item in params.get("Clients", []):
+            tin_info = item.get("TinInfo") or {}
+            tin = tin_info.get("Tin", "")
+            if tin == "invalid" or len(tin) not in (10, 12) or not tin.isdigit():
+                results.append(
+                    {
+                        "Errors": [
+                            {
+                                "Code": 5005,
+                                "Message": "Неверно указан ИНН",
+                                "Details": "Некорректный формат ИНН",
+                            }
+                        ]
+                    }
+                )
+                continue
+            login = item.get("Login") or "default"
+            client_id = item.get("ClientId") or 1000
+            current = self.clients.setdefault(login, {"ClientId": client_id, "Login": login})
+            current.update(item)
+            results.append({"ClientId": client_id})
+        return {"UpdateResults": results}
 
     # --- Отчёты и счёт ---
 

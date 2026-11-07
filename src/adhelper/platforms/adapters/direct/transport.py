@@ -115,6 +115,8 @@ def check_results(results: Sequence[Mapping[str, Any]]) -> list[int]:
             raise DirectRejected(int(first.get("Code", 0)), message)
         if "Id" in result:
             ids.append(int(result["Id"]))
+        elif "ClientId" in result:
+            ids.append(int(result["ClientId"]))
     return ids
 
 
