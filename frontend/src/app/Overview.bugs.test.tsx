@@ -1,20 +1,19 @@
+import type { Api } from "../api";
+import { MockStore } from "../mock/MockStore";
+import { Overview } from "./screens/Overview";
+import { Clients } from "./screens/overview/Clients";
+import { DayChart } from "./screens/overview/DayChart";
+import { Store, initialState, useStoreState } from "./store";
+import { fakeApi, open, overview, settled } from "./testLive";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import type { Api } from "../api";
-import { fakeApi, open, overview, settled } from "./testLive";
-import { initialState, Store, useStoreState, draftAd } from "./store";
-import { MockStore } from "../mock/MockStore";
-import { Clients } from "./screens/overview/Clients";
-import { DayChart } from "./screens/overview/DayChart";
-import { LiveSettings } from "./screens/LiveSettings";
-import { Chat } from "./screens/Chat";
 
 function LiveClients({ store }: { store: Store }) {
   return <Clients s={useStoreState(store)} store={store} />;
 }
 
-describe("Code Review Reproduction & Fix Verification Tests", () => {
+describe("Обзор: клиенты и график дня: регрессии (BUG-…)", () => {
   describe("BUG-014: Clients.tsx / store.ts: 0 leads deadlock & 0 clients rejection / division by zero", () => {
     it("14.1: does not render question when leads === 0", async () => {
       const answerClients = vi.fn();
@@ -116,68 +115,26 @@ describe("Code Review Reproduction & Fix Verification Tests", () => {
     });
   });
 
-  describe("BUG-016: LiveSettings.tsx Photos consent is reset after photo upload", () => {
-    it("16.1: consent resets to false after upload", async () => {
-      const api = fakeApi({
-        photos: vi.fn(async () => ({ photos: [], max: 5 })),
-        uploadPhoto: vi.fn(async () => ({ id: 1, url: "/photo1.jpg" })),
-      } as unknown as Partial<Api>);
-      const store = await open(api);
-      render(<LiveSettings store={store} />);
-
-      const consentBox = await screen.findByRole("checkbox", { name: /Люди на фото согласны/ });
-      expect(consentBox).not.toBeChecked();
-
-      // Check consent
-      await userEvent.click(consentBox);
-      expect(consentBox).toBeChecked();
-
-      // Upload file
-      const fileInput = screen.getByLabelText("Файл фото");
-      const file = new File(["dummy"], "photo.jpg", { type: "image/jpeg" });
-      await userEvent.upload(fileInput, file);
-      await settled();
-
-      expect(api.uploadPhoto).toHaveBeenCalledWith(file, true);
-
-      // Fixed: consent checkbox is reset to unchecked
-      expect(consentBox).not.toBeChecked();
+  describe("BUG-029: DayChart with zero budget", () => {
+    it("29.1: does not show fake 1000 ₽ scale and explains budget is not set", () => {
+      const store = new MockStore(initialState());
+      const s = {
+        ...initialState(),
+        f: { ...initialState().f, budget: 0 },
+        live: { budget: 0, spent: 0, days: [] } as any,
+      };
+      render(<DayChart s={s} store={store} />);
+      expect(screen.queryByText("1 000 ₽")).not.toBeInTheDocument();
+      expect(screen.getByText(/Бюджет на месяц ещё не задан/i)).toBeInTheDocument();
     });
   });
 
-  describe("BUG-017: Chat.tsx chips suggest 'Включи рекламу' when already paused", () => {
-    it("17.1: shows 'Включи рекламу' chip when s.paused is true", async () => {
-      const api = fakeApi({
-        overview: vi.fn(async () => overview()),
-      } as unknown as Partial<Api>);
-      const store = await open(api);
-      store.set({ paused: true, mode: "chat" });
-
-      render(<Chat store={store} />);
-      // Fixed: It shows "Включи рекламу" button instead of "Поставь на паузу"
-      expect(screen.getByRole("button", { name: "Включи рекламу" })).toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: "Поставь на паузу" })).not.toBeInTheDocument();
-    });
-  });
-
-  describe("BUG-018: askRefusal in store.ts supports user-added promo facts without f.id === 'promo'", () => {
-    it("18.1: allows discount request when user added a promo fact with custom id", () => {
-      const s = initialState();
-      s.facts = [
-        { id: "what", field: "niche", label: "Чем занимаетесь", value: "Маникюр", source: "с сайта" },
-        { id: "where", field: "address", label: "Где", value: "Москва", source: "с сайта" },
-        { id: "hours", field: "feature", label: "Когда", value: "Каждый день", source: "с сайта" },
-        // User added a promo fact!
-        { id: "n1", field: "feature", label: "Акция", value: "Скидка 20% на первый визит", source: "от вас" },
-      ];
-
-      // Request an ad about the promo/discount
-      const result = draftAd(s, null, "акция");
-      // Fixed: Generates promo ad successfully, no refusal
-      expect(result).toHaveProperty("ad");
-      if ("ad" in result) {
-        expect(result.ad.hook).toContain("первый визит");
-      }
+  describe("BUG-037: Overview shows empty state when ads/profile are empty", () => {
+    it("37.1: renders helpful message when no ads or profile facts exist", () => {
+      const store = new MockStore(initialState());
+      store.set({ ads: [] });
+      render(<Overview store={store} />);
+      expect(screen.getByText(/Объявлений пока нет\. Заполните услуги в профиле/i)).toBeInTheDocument();
     });
   });
 });

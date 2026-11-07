@@ -429,7 +429,7 @@ describe("сетевые ошибки и граничные сценарии (50
     expect(store.state.msgs.at(-1)?.text).toContain("Переделка — на экране объявления");
     expect(store.state.msgs.at(-1)?.link?.view).toBe("ads");
 
-    // history: с записями — ссылка на историю (пустую историю проверяет bugsReview4 47.4)
+    // history: с записями — ссылка на историю (пустую историю проверяет Chat.bugs 47.4)
     store.set({ hist: [{ id: "x", kind: "money", when: "Сейчас", title: "Бюджет", why: "", next: "", canUndo: false, state: "Записано" }] });
     store.send("история");
     await settled();
