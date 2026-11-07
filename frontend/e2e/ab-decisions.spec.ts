@@ -15,6 +15,9 @@ test.describe("Жизненный цикл A/B-тестирования и ре�
     const business = (await (await page.request.get("/api/businesses")).json())[0];
     const { csrf_token: csrf } = await (await page.request.get("/api/me")).json();
     const base = `/api/businesses/${business.id}`;
+    const changes = async () =>
+      ((await (await page.request.get(`${base}/history`)).json()) as { ref: string }[]).filter((line) => line.ref.startsWith("change-")).length;
+    const changesBefore = await changes();
 
     // Задаём цель стоимости обращения 300 ₽, чтобы автопилот нашёл объявление с перерасходом
     const goal = await page.request.post(`${base}/goal`, {
@@ -56,6 +59,13 @@ test.describe("Жизненный цикл A/B-тестирования и ре�
 
     await page.reload();
     await expect(page.getByRole("heading", { name: "Готовлю A/B-тест" })).toHaveCount(0);
+
+    // Отмена — тот же отказ: следующий цикл не предлагает это объявление снова.
+    await page.request.post(`${STAND}/api/stand/businesses/${business.id}/autopilot`);
+    const today = await (await page.request.get(`${base}/today`)).json();
+    expect(today.cards.filter((card: { kind: string }) => card.kind.startsWith("test_"))).toEqual([]);
+    // Ни предложение, ни подготовка, ни отмена не меняли площадку: журнал изменений тот же.
+    expect(await changes()).toBe(changesBefore);
   });
 
   test("2. Экран «Реклама»: отклонение объявления («Не запускать») из блока «Нужно ваше решение»", async ({ page }) => {
