@@ -86,3 +86,56 @@ async def test_big_body_is_refused_before_the_handler(settings: Settings) -> Non
         await app.state.engine.dispose()
     assert big.status_code == 413
     assert small.status_code != 413
+
+
+async def test_spa_prevents_path_traversal(settings: Settings) -> None:
+    app = create_app(settings)
+    transport = httpx.ASGITransport(app=app)
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            # Нормальный роут SPA отдаёт HTML
+            start = await client.get("/start")
+            assert start.status_code == 200
+            assert "text/html" in start.headers.get("content-type", "")
+
+            # Попытки выхода за границы frontend/dist не должны отдавать целевой файл
+            traversal = await client.get("/../../pyproject.toml")
+            assert "[project]" not in traversal.text
+
+            encoded = await client.get("/%2e%2e/%2e%2e/pyproject.toml")
+            assert "[project]" not in encoded.text
+    finally:
+        await app.state.engine.dispose()
+
+
+def test_guest_key_prefers_platform_headers() -> None:
+    from starlette.requests import Request
+
+    from adhelper.api.site import _guest_key
+
+    class DummyApp:
+        class State:
+            guest_secret = b"test-secret-key"
+
+        state = State()
+
+    def make_req(client_ip: str | None, headers: dict[str, str] | None = None) -> Request:
+        scope = {
+            "type": "http",
+            "app": DummyApp(),
+            "headers": [(k.lower().encode(), v.encode()) for k, v in (headers or {}).items()],
+            "client": (client_ip, 12345) if client_ip else None,
+        }
+        return Request(scope)
+
+    k1 = _guest_key(make_req("198.51.100.5"))
+    # Поддельный X-Forwarded-For не меняет ключ
+    k_spoof = _guest_key(make_req("198.51.100.5", {"x-forwarded-for": "1.2.3.4"}))
+    assert k1 == k_spoof
+
+    # Платформенные заголовки Cloudflare и Render имеют приоритет
+    k_cf = _guest_key(make_req("10.0.0.1", {"cf-connecting-ip": "198.51.100.5"}))
+    assert k_cf == k1
+
+    k_render = _guest_key(make_req("10.0.0.1", {"render-client-ip": "198.51.100.5"}))
+    assert k_render == k1

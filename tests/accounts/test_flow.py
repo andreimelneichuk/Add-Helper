@@ -172,9 +172,10 @@ async def test_state_cannot_be_reused(browser: Browser, provider: FakeProvider) 
 
 
 async def test_callback_in_other_browser_is_rejected(
-    browser: Browser, provider: FakeProvider
+    browser: Browser, provider: FakeProvider, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Вход по ссылке злоумышленника не должен привязать жертву к его аккаунту."""
+    caplog.set_level(logging.WARNING)
     attacker, victim = browser(), browser()
     start = await attacker.get("/api/auth/yandex/login")
     query = _query(start.headers["location"])
@@ -186,6 +187,8 @@ async def test_callback_in_other_browser_is_rejected(
 
     assert done.headers["location"] == "/?login=failed"
     assert (await victim.get("/api/me")).status_code == 401
+    assert "OAuth login state mismatch" in caplog.text
+    assert query["state"] not in caplog.text
 
 
 async def test_denied_login_creates_nothing(browser: Browser, engine: AsyncEngine) -> None:

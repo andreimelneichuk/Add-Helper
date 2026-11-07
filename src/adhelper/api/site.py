@@ -110,7 +110,11 @@ def site_router() -> APIRouter:
 
 def _guest_key(request: Request) -> str:
     """Ключ лимита: сеть /24 или /64 под HMAC. Сам адрес нигде не хранится."""
-    host = request.client.host if request.client else ""
+    host = (
+        request.headers.get("cf-connecting-ip")
+        or request.headers.get("render-client-ip")
+        or (request.client.host if request.client else "")
+    )
     try:
         address = ipaddress.ip_address(host)
     except ValueError:
