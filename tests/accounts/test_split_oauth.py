@@ -41,6 +41,9 @@ def test_second_app_is_used_only_when_both_settings_are_given() -> None:
     )
     assert isinstance(yandex_provider(base, _clock), YandexOAuth)
     both = base.model_copy(
-        update={"yandex_direct_client_id": "direct-app", "yandex_direct_client_secret": "s2"}
+        update={
+            "yandex_direct_client_id": "direct-app",
+            "yandex_direct_client_secret": SecretStr("s2"),
+        }
     )
     assert isinstance(yandex_provider(both, _clock), SplitYandexOAuth)
