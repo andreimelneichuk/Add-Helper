@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from adhelper.accounts.adapters.crypto import DecryptionFailed
 from adhelper.accounts.adapters.sql import SqlAccountTokens
-from adhelper.accounts.adapters.yandex_oauth import YandexOAuth
+from adhelper.accounts.adapters.yandex_oauth import SplitYandexOAuth, YandexOAuth
 from adhelper.accounts.application.service import OAuthProvider, ReconnectRequired, TokenVault
 from adhelper.accounts.domain.ports import TokenCipher
 from adhelper.config import Settings
@@ -28,13 +28,27 @@ def yandex_provider(settings: Settings, clock: Callable[[], datetime]) -> OAuthP
     secret = settings.yandex_client_secret
     if not settings.yandex_client_id or secret is None or not secret.get_secret_value():
         return None
-    return YandexOAuth(
+    login = YandexOAuth(
         settings.yandex_client_id,
         secret,
         clock,
         settings.yandex_oauth_url,
         settings.yandex_login_url,
     )
+    direct_secret = settings.yandex_direct_client_secret
+    if not settings.yandex_direct_client_id or direct_secret is None:
+        return login
+    if not direct_secret.get_secret_value():
+        return login
+    # Второе приложение: у него одобрен доступ к API Директа, вход остаётся в первом.
+    direct = YandexOAuth(
+        settings.yandex_direct_client_id,
+        direct_secret,
+        clock,
+        settings.yandex_oauth_url,
+        settings.yandex_login_url,
+    )
+    return SplitYandexOAuth(login, direct)
 
 
 class DirectPlatforms:

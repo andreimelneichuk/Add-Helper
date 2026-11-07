@@ -163,6 +163,36 @@ class YandexOAuth:
         return ExternalIdentity(uid, login, email if isinstance(email, str) else None)
 
 
+class SplitYandexOAuth:
+    """Два приложения Яндекса: одно для входа, другое с одобренным доступом к API Директа.
+
+    Вход идёт через приложение входа, подключение кабинета и обновление его токенов — через
+    приложение Директа: токен обновляет только то приложение, что его выдало.
+    """
+
+    CONNECT_PATH = "/accounts/yandex/callback"
+
+    def __init__(self, login: YandexOAuth, direct: YandexOAuth) -> None:
+        self._login = login
+        self._direct = direct
+
+    def authorize_url(
+        self, state: str, code_challenge: str, redirect_uri: str, scopes: Sequence[str]
+    ) -> str:
+        app = self._direct if "direct:api" in scopes else self._login
+        return app.authorize_url(state, code_challenge, redirect_uri, scopes)
+
+    async def exchange(self, code: str, verifier: str, redirect_uri: str) -> OAuthTokens:
+        app = self._direct if redirect_uri.endswith(self.CONNECT_PATH) else self._login
+        return await app.exchange(code, verifier, redirect_uri)
+
+    async def refresh(self, refresh_token: str) -> OAuthTokens:
+        return await self._direct.refresh(refresh_token)
+
+    async def identity(self, access_token: str) -> ExternalIdentity:
+        return await self._login.identity(access_token)
+
+
 def _json(response: httpx.Response) -> Any:
     try:
         return response.json()

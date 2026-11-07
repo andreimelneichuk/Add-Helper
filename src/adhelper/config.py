@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     # Приложение Яндекс ID заказчика. Пусто: вход и подключение кабинета отвечают 503.
     yandex_client_id: str = ""
     yandex_client_secret: SecretStr | None = None
+    # Второе приложение, если доступ к API Директа одобрен не у приложения входа.
+    # Пусто — всё идёт через первое.
+    yandex_direct_client_id: str = ""
+    yandex_direct_client_secret: SecretStr | None = None
     # Адреса Яндекс ID меняются только для стенда сквозных тестов.
     yandex_oauth_url: str = "https://oauth.yandex.ru"
     yandex_login_url: str = "https://login.yandex.ru"
