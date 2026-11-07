@@ -15,7 +15,7 @@ test("правка профиля сохраняется в базе", async ({ 
   const price = page.getByLabel("Цена услуги 3, ₽");
   await expect(price).toHaveValue("2800");
   await price.fill("2900");
-  await page.getByRole("button", { name: "Сохранить" }).click();
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Сохранил" })).toBeVisible();
 
   await page.reload();
@@ -24,6 +24,7 @@ test("правка профиля сохраняется в базе", async ({ 
 });
 
 test("объявление, ждущее владельца, запускается и уходит в очередь", async ({ page }) => {
+  await page.request.post("http://localhost:8011/api/stand/creatives/restore-needs-owner");
   await page.goto("/");
   await nav(page, "Реклама").click();
   const decide = page.getByRole("region", { name: "Нужно ваше решение" });

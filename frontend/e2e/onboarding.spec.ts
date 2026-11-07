@@ -189,9 +189,11 @@ test.describe("Задача 15. Онбординг клиента (onboarding.sp
     await page.getByRole("button", { name: "Изучить" }).click();
 
     // 2. Автопарсинг услуг и цен
-    await page.getByRole("button", { name: "Всё верно" }).click({ timeout: 25_000 });
+    await expect(page.getByRole("heading", { level: 1, name: "Вот что я понял о вас" })).toBeVisible({ timeout: 25_000 });
+    await page.getByRole("button", { name: "Всё верно" }).click();
 
     // 3. Выбор бюджета
+    await expect(page.getByRole("heading", { level: 1, name: "Сколько готовы тратить в месяц?" })).toBeVisible();
     await page.getByRole("button", { name: "Продолжить" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Вот ваши объявления" })).toBeVisible();
 

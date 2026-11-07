@@ -450,19 +450,20 @@ test("переделка объявления: выдумка отклонена
 test("правка цены: объявления со старой ценой названы, замену пишет писатель и ждёт решения", async ({ page, request }) => {
   // Две правки профиля, каждая с циклом хранителя, и писатель стенда между ними.
   test.setTimeout(150_000);
+  const businesses = await (await request.get("/api/businesses")).json();
+  await request.post(`http://localhost:8011/api/stand/businesses/${businesses[0].id}/reset-sets`);
   const settings = page.locator(".ah-rail").getByRole("button", { name: "Настройки" });
   await page.goto("/");
   await settings.click();
   const price = page.getByLabel("Цена услуги 1, ₽");
   await expect(price).toHaveValue("1500");
   await price.fill("1600");
-  await page.getByRole("button", { name: "Сохранить" }).click();
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   const status = page.getByRole("status").filter({ hasText: "Сохранил" });
   await expect(status).toContainText("«Маникюр с покрытием 1500 ₽» (1500)");
   await expect(status).toContainText("Пишу замену");
 
   // Замену пишет воркер стенда: цена в ней из нового профиля, без судьи её запускает владелец.
-  const businesses = await (await request.get("/api/businesses")).json();
   const base = `/api/businesses/${businesses[0].id}`;
   type Row = { headline: string; text: string; state: string; reason: string };
   await expect(async () => {
@@ -481,7 +482,7 @@ test("правка цены: объявления со старой ценой �
   await settings.click();
   await expect(page.getByLabel("Цена услуги 1, ₽")).toHaveValue("1600");
   await page.getByLabel("Цена услуги 1, ₽").fill("1500");
-  await page.getByRole("button", { name: "Сохранить" }).click();
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Сохранил" })).toContainText("старых цифр нет");
   const board = await (await request.get(`${base}/creatives`)).json();
   expect(board.creatives.filter((c: Row) => c.reason === "fact_changed" && c.state === "needs_owner" && c.headline.includes("1600"))).toHaveLength(0);

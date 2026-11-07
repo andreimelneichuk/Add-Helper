@@ -88,6 +88,9 @@ test.describe("Жизненный цикл A/B-тестирования и ре�
     // Проверяем нотис и исчезновение карточки
     await expect(notice(page)).toContainText("Не запускаю «Педикюр в студии «Лак»»");
     await expect(decide.locator(".ann-card").filter({ hasText: "Педикюр в студии «Лак»" })).toHaveCount(0);
+
+    // Восстанавливаем объявление для последующих сценариев в сьюте
+    await page.request.post("http://localhost:8011/api/stand/creatives/restore-needs-owner");
   });
 
   test("3. Экран «Реклама»: отзыв подготовленного объявления из блока «Готовлю к запуску»", async ({ page }) => {

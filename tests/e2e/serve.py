@@ -55,6 +55,11 @@ def _recreate_database() -> None:
     dsn = url.render_as_string(hide_password=False)
     with psycopg.connect(dsn, autocommit=True) as admin:
         admin.execute(
+            sql.SQL(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = {}"
+            ).format(sql.Literal(DATABASE))
+        )
+        admin.execute(
             sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(DATABASE))
         )
         admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(DATABASE)))
@@ -215,7 +220,12 @@ def _yandex_router() -> APIRouter:
         code_challenge_method: str,
         scope: str = "",
     ) -> RedirectResponse:
-        if client_id != "stand-app" or code_challenge_method != "S256":
+        valid_clients = {
+            "stand-app",
+            os.environ.get("YANDEX_CLIENT_ID"),
+            os.environ.get("YANDEX_DIRECT_CLIENT_ID"),
+        }
+        if client_id not in valid_clients or code_challenge_method != "S256":
             raise HTTPException(400, "bad request")
         if deny["next"]:
             deny["next"] = False
@@ -237,7 +247,12 @@ def _yandex_router() -> APIRouter:
     async def token(request: Request) -> JSONResponse:
         # Форма без python-multipart: тело `application/x-www-form-urlencoded`.
         form = {k: v[0] for k, v in parse_qs((await request.body()).decode()).items()}
-        if form.get("client_id") != "stand-app" or form.get("client_secret") != YANDEX_SECRET:
+        valid_clients = {
+            "stand-app",
+            os.environ.get("YANDEX_CLIENT_ID"),
+            os.environ.get("YANDEX_DIRECT_CLIENT_ID"),
+        }
+        if form.get("client_id") not in valid_clients or form.get("client_secret") != YANDEX_SECRET:
             return JSONResponse({"error": "invalid_client"}, 401)
         if form.get("grant_type") == "refresh_token":
             who = tokens.get(str(form.get("refresh_token")))
@@ -318,6 +333,29 @@ def _stand_router(app: Any) -> APIRouter:
         )
         return {"accounts": await runtime.autopilot_run(only=business_id)}
 
+    @router.post("/businesses/{business_id}/reset-sets")
+    async def reset_sets(business_id: uuid.UUID) -> dict[str, str]:
+        """Сброс суточного лимита наборов для непрерывных e2e тестов."""
+        yesterday = datetime.now(UTC) - timedelta(days=2)
+        async with app.state.sessions.begin() as session:
+            await session.execute(
+                text("UPDATE creative_sets SET created_at = :y WHERE business_id = :b"),
+                {"y": yesterday, "b": business_id},
+            )
+        return {"status": "ok"}
+
+    @router.post("/creatives/restore-needs-owner")
+    async def restore_needs_owner() -> dict[str, str]:
+        """Восстановление креатива в needs_owner для повторных e2e проверок."""
+        async with app.state.sessions.begin() as session:
+            await session.execute(
+                text(
+                    "UPDATE creatives SET state = 'needs_owner'"
+                    " WHERE headline = 'Педикюр в студии «Лак»'"
+                ),
+            )
+        return {"status": "ok"}
+
     @router.post("/businesses/{business_id}/verdicts")
     async def verdicts(business_id: uuid.UUID, body: dict[str, Any]) -> dict[str, int]:
         """Итог проверки Яндекса для объявлений «на проверке», чей заголовок содержит `headline`.
@@ -375,6 +413,8 @@ def main() -> None:
     # Вход и подключение кабинета идут через подставной Яндекс ID стенда, а не подменой в тесте.
     os.environ["YANDEX_CLIENT_ID"] = "stand-app"
     os.environ["YANDEX_CLIENT_SECRET"] = YANDEX_SECRET
+    os.environ["YANDEX_DIRECT_CLIENT_ID"] = "stand-app"
+    os.environ["YANDEX_DIRECT_CLIENT_SECRET"] = YANDEX_SECRET
     os.environ["YANDEX_OAUTH_URL"] = f"http://localhost:{PORT}{YANDEX_PATH}"
     os.environ["YANDEX_LOGIN_URL"] = f"http://localhost:{PORT}{YANDEX_PATH}"
     # Возврат из Яндекса — на адрес интерфейса: cookie входа ставится там же, где браузер.
@@ -383,6 +423,10 @@ def main() -> None:
     subprocess.run(["alembic", "upgrade", "head"], check=True)
     write_demo_env(STATE)
     _load_env()
+    os.environ["YANDEX_CLIENT_ID"] = "stand-app"
+    os.environ["YANDEX_CLIENT_SECRET"] = YANDEX_SECRET
+    os.environ["YANDEX_DIRECT_CLIENT_ID"] = "stand-app"
+    os.environ["YANDEX_DIRECT_CLIENT_SECRET"] = YANDEX_SECRET
     asyncio.run(_seed())
 
     from adhelper.api.app import create_app
