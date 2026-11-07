@@ -224,6 +224,9 @@ def create_app(
 
         @app.get("/{full_path:path}")
         async def serve_spa(full_path: str) -> Response:
+            # Служебные адреса не отдаём и как интерфейс: как в Caddyfile, это 404.
+            if full_path in ("docs", "redoc", "openapi.json"):
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Not Found")
             if full_path.startswith(("api/", "stand-yandex/")):
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "Not Found")
             file_path = frontend_dist / full_path
