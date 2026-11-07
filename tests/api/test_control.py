@@ -267,7 +267,7 @@ async def test_budget_below_spent_is_refused_with_minimum(
         headers=csrf,
     )
     assert response.status_code == 409
-    assert "до 10 000 ₽" in response.json()["detail"]
+    assert "до 8 889 ₽" in response.json()["detail"]
     assert await _hard_limit(sessions, business) == 30_000 * RUB
     assert await _rows(sessions, business) == []
 
