@@ -3,7 +3,7 @@ import { createGuestApi } from "../../../api";
 import type { Ad } from "../../data";
 import { liveApi, type LiveStore } from "../../live";
 import { usePollingTask } from "../../polling";
-import { draftAd, useStoreState, type Store } from "../../store";
+import { useStoreState, type Store } from "../../store";
 
 type GenerateAdsModalProps = {
   isOpen: boolean;
@@ -137,21 +137,10 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
       setBusy(false);
       return;
     } catch (err: unknown) {
-      // Запасной локальный вариант через шаблонный движок draftAd
-      const fallbackAd = draftAd(s, null, wish || targetService);
-      if ("ad" in fallbackAd) {
-        setGenerated([
-          { headline: fallbackAd.ad.title, text: fallbackAd.ad.text, facts: [fallbackAd.ad.facts] },
-          { headline: `${targetService}: онлайн-запись`, text: `${fallbackAd.ad.text} Запишитесь на удобное время.`, facts: ["из профиля"] },
-        ]);
-        setSelectedIndices([0, 1]);
-        setStatusText("");
-        setBusy(false);
-      } else {
-        setError(fallbackAd.refusal);
-        setStatusText("");
-        setBusy(false);
-      }
+      // Шаблон вместо писателя не подставляем: реклама говорит только то, что подтверждено профилем.
+      setError(err instanceof Error ? err.message : "Не получилось написать объявления. Попробуйте ещё раз.");
+      setStatusText("");
+      setBusy(false);
     }
   };
 

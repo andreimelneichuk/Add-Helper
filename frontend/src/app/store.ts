@@ -210,13 +210,13 @@ export const statusText = (s: State) =>
   s.live ? liveStatus(s) : s.paused ? "На паузе" : stopped(s) ? "Показы остановлены" : warned(s) ? "Бюджет на исходе" : s.situation === "problem" ? "Жду деньги"
     : s.situation === "access" && !s.topped ? "Нет доступа" : s.situation === "first" ? "Собираю данные" : "Реклама идёт";
 /** Название объявления с учётом новой цены из профиля. */
-export const adName = (s: State, id: string) => (s.price && id === "a2" ? `Маникюр от ${rub(s.price)}` : (s.ads.find((a) => a.id === id)?.name ?? id));
+export const adName = (s: Pick<State, "price" | "ads">, id: string) => (s.price && id === "a2" ? `Маникюр от ${rub(s.price)}` : (s.ads.find((a) => a.id === id)?.name ?? id));
 /** Что написано на объявлении: подставная цена не должна затирать уже переделанный текст. */
-export function adShown(s: State, ad: Ad) {
+export function adShown(s: Pick<State, "price" | "ads">, ad: Ad) {
   const priced = !!s.price && ad.id === "a2" && ad.hook === fixtures.ADS[1]?.hook;
   return { hook: priced ? adName(s, ad.id) : ad.hook, title: priced ? adName(s, ad.id) : ad.title };
 }
-export function adStat(s: State, ad: Ad) {
+export function adStat(s: Pick<State, "adsOff" | "situation">, ad: Ad) {
   if (s.adsOff[ad.id]) return "Отключено";
   // В первые дни показатели карточки ещё не накоплены: суммы из данных относятся к работающей рекламе.
   if (s.situation === "first" || ad.leads <= 0) return "Собираю данные";

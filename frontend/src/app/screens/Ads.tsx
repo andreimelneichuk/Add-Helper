@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Ad } from "../data";
-import { adName, adShown, adStat, useStoreState } from "../store";
+import { adName, adShown, adStat, useStore } from "../store";
 import type { State, Store } from "../store";
 import { liveApi } from "../live";
 import type { LiveStore } from "../live";
@@ -9,7 +9,8 @@ import { Decisions } from "./Decisions";
 import { GenerateAdsModal } from "./ads/GenerateAdsModal";
 import "./Ads.css";
 
-function Card({ store, s, ad }: { store: Store; s: State; ad: Ad }) {
+type AdsView = Pick<State, "price" | "ads" | "adsOff" | "situation" | "live" | "openAd">;
+function Card({ store, s, ad }: { store: Store; s: AdsView; ad: Ad }) {
   const off = !!s.adsOff[ad.id];
   const name = adName(s, ad.id);
   const { hook, title } = adShown(s, ad);
@@ -37,7 +38,7 @@ function Card({ store, s, ad }: { store: Store; s: State; ad: Ad }) {
 type Filter = "all" | "on" | "off";
 
 export function Ads({ store }: { store: Store }) {
-  const s = useStoreState(store);
+  const s = useStore(store, (x): AdsView => ({ price: x.price, ads: x.ads, adsOff: x.adsOff, situation: x.situation, live: x.live, openAd: x.openAd }));
   const [filter, setFilter] = useState<Filter>("all");
   const [genModalOpen, setGenModalOpen] = useState(false);
   if (s.openAd === "new") return <AdMaker store={store} />;

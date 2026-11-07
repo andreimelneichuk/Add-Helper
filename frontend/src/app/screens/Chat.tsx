@@ -1,12 +1,12 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { useStoreState } from "../store";
+import { useStore } from "../store";
 import type { State, Store } from "../store";
 import "./Chat.css";
 
 type Chip = { label: string; send?: string; primary?: boolean };
 
-function chipsFor(s: State): Chip[] {
+function chipsFor(s: Pick<State, "pending" | "live" | "msgs" | "paused" | "stage" | "step">): Chip[] {
   if (s.pending) return [{ label: "Применить", primary: true }, { label: "Не надо" }];
   // Подсказки нужны, пока владелец не написал сам; дальше они только дублируют ленту.
   if (s.live && s.msgs.some((m) => m.who === "me")) return [];
@@ -26,7 +26,7 @@ function chipsFor(s: State): Chip[] {
 }
 
 export function Chat({ store }: { store: Store }) {
-  const s = useStoreState(store);
+  const s = useStore(store, (x) => ({ pending: x.pending, live: x.live, msgs: x.msgs, paused: x.paused, stage: x.stage, step: x.step, input: x.input }));
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const lastId = s.msgs[s.msgs.length - 1]?.id;
