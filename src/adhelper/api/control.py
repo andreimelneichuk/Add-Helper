@@ -130,6 +130,13 @@ def _ledger(
 
 
 logger = logging.getLogger(__name__)
+# Директ: приложению не одобрен доступ к API (docs/08-deployment.md §2, шаг 4).
+APP_NOT_APPROVED = 58
+BALANCE_APP_ACCESS = (
+    "Директ не даёт приложению читать ваш кабинет: заявка на доступ к API ещё не одобрена. "
+    "Откройте Директ, «Настройки API», «Мои заявки» и проверьте, что доступ полный. "
+    "Пока он не одобрен, остаток и запуск рекламы недоступны."
+)
 BALANCE_RECONNECT = "Яндекс не пускает: подключите кабинет заново в настройках."
 BALANCE_NO_SHARED = (
     "У этого логина в Директе нет общего счёта, поэтому остаток через API не виден. "
@@ -203,6 +210,8 @@ def control_router() -> APIRouter:
                 type(error.__cause__).__name__,
                 error,
             )
+            if error.code == APP_NOT_APPROVED:
+                return {"balance_micros": None, "problem": BALANCE_APP_ACCESS}
             return {"balance_micros": None, "problem": BALANCE_RECONNECT}
         except DirectError as error:
             logger.warning("Остаток: ошибка Директа, код %s: %s", error.code, error)
