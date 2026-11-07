@@ -57,6 +57,26 @@ _SECURITY_HEADERS = {
 }
 
 
+# Как в deploy/Caddyfile: запросы сервиса — короткий JSON. Фото владельца читается потоком
+# со своим пределом из правил картинок, поэтому ему лимит не ставим.
+_MAX_BODY = 1_000_000
+
+
+def _body_refused(request: Request) -> Response | None:
+    if request.method not in ("POST", "PUT", "PATCH"):
+        return None
+    if request.url.path.endswith("/photos"):
+        return None
+    length = request.headers.get("content-length")
+    if length is None:
+        if "chunked" in request.headers.get("transfer-encoding", "").lower():
+            return JSONResponse({"detail": "Нужна длина запроса"}, status_code=411)
+        return None
+    if not length.isdigit() or int(length) > _MAX_BODY:
+        return JSONResponse({"detail": "Запрос слишком большой"}, status_code=413)
+    return None
+
+
 def _utc_now() -> datetime:
     return datetime.now(UTC)
 
@@ -127,7 +147,8 @@ def create_app(
     async def security_headers(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        response = await call_next(request)
+        refused = _body_refused(request)
+        response = refused if refused is not None else await call_next(request)
         for name, value in _SECURITY_HEADERS.items():
             response.headers.setdefault(name, value)
         return response
