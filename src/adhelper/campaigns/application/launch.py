@@ -5,6 +5,7 @@
 по метке и второй раз не создаётся.
 """
 
+import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -17,25 +18,11 @@ from adhelper.budget.domain.limits import BudgetPeriod
 from adhelper.budget.domain.rules import BudgetRules
 from adhelper.campaigns.domain.keywords import (
     AUTOTARGETING_KEYWORD,
+    KEYWORDS_EXPANSION_SCHEMA,
+    KEYWORDS_EXPANSION_SYSTEM,
     generate_keywords,
+    parse_synonyms_response,
 )
-
-__all__ = [
-    "AUTOTARGETING_KEYWORD",
-    "MOSCOW_TZ",
-    "PLACEMENT_WORDS",
-    "Advertiser",
-    "LaunchInputs",
-    "LaunchPlan",
-    "LaunchProblem",
-    "LaunchResult",
-    "LaunchStatus",
-    "NewAd",
-    "generate_keywords",
-    "launch",
-    "launch_state",
-    "preview",
-]
 from adhelper.campaigns.domain.launch import (
     LAUNCH_PREFIX,
     MICROS_PER_RUB,
@@ -48,6 +35,7 @@ from adhelper.campaigns.domain.launch import (
     plan_launch,
 )
 from adhelper.campaigns.domain.ports import ActivePeriodExists, LaunchStore, StoredLaunch
+from adhelper.creatives.domain.model import TextModel
 from adhelper.ledger.application.service import Ledger
 from adhelper.ledger.domain.model import (
     Change,
@@ -58,6 +46,8 @@ from adhelper.ledger.domain.model import (
 )
 from adhelper.ledger.domain.ports import GatewayUnavailable
 from adhelper.platforms.domain.ports import CLIENT_PREFIX, Advertiser
+
+logger = logging.getLogger(__name__)
 
 # Типы домена нужны HTTP-слою, который сам домен не импортирует.
 __all__ = [
@@ -72,6 +62,7 @@ __all__ = [
     "LaunchStatus",
     "LaunchedCampaign",
     "NewAd",
+    "expand_keywords_with_model",
     "generate_keywords",
     "launch",
     "launch_state",
@@ -227,6 +218,61 @@ def _result(stored: StoredLaunch, changes: Sequence[Change]) -> LaunchResult:
         return LaunchResult(LaunchStatus.PENDING, ends_at=ends_at)
     return LaunchResult(
         LaunchStatus.DONE, created=tuple(_launched(c) for c in changes), ends_at=ends_at
+    )
+
+
+async def expand_keywords_with_model(
+    model: TextModel | None,
+    services: Sequence[Any],
+    niche: str = "",
+    city: str = "",
+    address: str = "",
+    include_autotargeting: bool = True,
+    max_per_service: int = 15,
+) -> tuple[str, ...]:
+    """Формирует расширенное семантическое ядро с привлечением языковой модели.
+
+    Если модель передана, запрашивает у неё разговорные синонимы и сленг для услуг,
+    очищает их детерминированным фильтром и объединяет с прямыми запросами.
+    При сбое модели или её отсутствии безопасно откатывается к детерминированному правилу.
+    """
+    if not services:
+        return generate_keywords(
+            services=services,
+            niche=niche,
+            city=city,
+            address=address,
+            include_autotargeting=include_autotargeting,
+            max_per_service=max_per_service,
+        )
+
+    synonyms: list[str] = []
+    if model is not None:
+        try:
+            service_names = [getattr(s, "name", str(s)) for s in services[:10]]
+            services_text = "\n".join(f"- {name}" for name in service_names if name.strip())
+            user_prompt = f"Ниша: {niche or 'услуги'}\nУслуги бизнеса:\n{services_text}"
+            reply = await model.complete_json(
+                KEYWORDS_EXPANSION_SYSTEM,
+                user_prompt,
+                KEYWORDS_EXPANSION_SCHEMA,
+                max_tokens=300,
+            )
+            synonyms = parse_synonyms_response(reply.text)
+        except Exception as error:
+            logger.warning(
+                "Семантическое расширение ключевых фраз через модель не удалось: %s", error
+            )
+            synonyms = []
+
+    combined_services: list[Any] = list(services) + synonyms
+    return generate_keywords(
+        services=combined_services,
+        niche=niche,
+        city=city,
+        address=address,
+        include_autotargeting=include_autotargeting,
+        max_per_service=max_per_service,
     )
 
 

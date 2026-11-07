@@ -27,6 +27,10 @@ class AccountTaken(Exception):
     """Кабинет уже подключён к другому бизнесу: два стража на один кабинет недопустимы."""
 
 
+class DecryptionFailed(Exception):
+    """Шифртекст повреждён, контекст не совпал или нет подходящего ключа."""
+
+
 class OAuthProvider(Protocol):
     def authorize_url(
         self, state: str, code_challenge: str, redirect_uri: str, scopes: Sequence[str]

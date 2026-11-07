@@ -4,16 +4,16 @@ import os
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+from adhelper.accounts.domain.ports import DecryptionFailed
+
+__all__ = ["AesGcmCipher", "CipherConfigError", "DecryptionFailed"]
+
 KEY_BYTES = 32
 NONCE_BYTES = 12
 
 
 class CipherConfigError(ValueError):
     """Текст ошибки никогда не содержит значение ключа."""
-
-
-class DecryptionFailed(Exception):
-    pass
 
 
 class AesGcmCipher:

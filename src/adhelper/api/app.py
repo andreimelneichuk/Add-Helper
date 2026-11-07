@@ -202,13 +202,14 @@ def create_app(
     app.include_router(notifications_router())
     app.include_router(chat_router())
     app.include_router(images_router())
-    # Разборщик команд: без ключа модели чат понимает только правила.
+    # Разборщик команд и генерация: без ключа модели сервис работает на правилах.
     app.state.command_model = build_text_model(
         settings.text_model_base_url,
         settings.text_model_api_key,
         settings.text_model_name,
         settings.text_model_project,
     )
+    app.state.text_model = app.state.command_model
     from adhelper.commands.application.langchain_agent import build_langchain_agent
 
     app.state.langchain_agent = build_langchain_agent(

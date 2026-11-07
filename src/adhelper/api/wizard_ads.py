@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from adhelper.api.cabinet import Owned, OwnedChecked, _now, _sessions
 from adhelper.api.site import _guest_key, _token_hash
-from adhelper.campaigns.application.launch import generate_keywords
+from adhelper.campaigns.application.launch import expand_keywords_with_model
 from adhelper.creatives.adapters.rules_file import load_wizard_rules
 from adhelper.creatives.adapters.sql import SqlProfiles
 from adhelper.creatives.adapters.wizard import (
@@ -171,8 +171,12 @@ def wizard_ads_router() -> APIRouter:
         profiles = await SqlProfiles(sessions, business_id).get()
         keywords: list[str] = []
         if profiles:
+            model = getattr(request.app.state, "text_model", None) or getattr(
+                request.app.state, "command_model", None
+            )
             keywords = list(
-                generate_keywords(
+                await expand_keywords_with_model(
+                    model,
                     profiles[0].services,
                     niche=profiles[0].niche,
                     address=profiles[0].address,
