@@ -310,3 +310,23 @@ async def test_without_site_counter_is_not_required(anna: Anna) -> None:  # noqa
     counter = next(item for item in view["items"] if item["key"] == "counter")
     assert counter["ok"] is True
     assert "звонк" in counter["text"]
+
+
+async def test_launch_without_advertiser_returns_409_conflict(
+    anna: Anna,  # noqa: F811
+    sessions: Sessions,
+    provider: FakeProvider,
+) -> None:
+    client, csrf, business_id = anna
+    base = f"/api/businesses/{business_id}"
+    headers = {"X-CSRF-Token": csrf}
+    await _make_ready(client, csrf, business_id, sessions, provider)
+    async with sessions() as session:
+        await session.execute(
+            text("DELETE FROM advertiser_marking WHERE business_id = :b"),
+            {"b": business_id},
+        )
+        await session.commit()
+    res = await client.post(f"{base}/launch", headers=headers)
+    assert res.status_code == 409
+    assert "маркировки" in res.json()["detail"].lower()

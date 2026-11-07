@@ -20,7 +20,7 @@ from adhelper.campaigns.application.launch import (
     launch,
     launch_state,
 )
-from adhelper.campaigns.domain.launch import LaunchProblem, NewAd
+from adhelper.campaigns.domain.launch import LaunchProblem, NewAd, UnregisteredAdvertiserError
 from adhelper.ledger.adapters.sql import PostgresAccountLock, SqlChangeRepository
 from adhelper.ledger.application.rollback import RollbackStatus, rollback_change
 from adhelper.ledger.application.service import Ledger
@@ -355,3 +355,23 @@ async def test_marking_changed_after_recording_is_not_sent_and_campaigns_wait(
     )
     assert result.status is LaunchStatus.PENDING
     assert platform.advertisers == {} and platform.created == {}
+
+
+async def test_preflight_blocks_campaign_creation_without_saved_inn(
+    sessions: Sessions, engine: AsyncEngine, business: uuid.UUID
+) -> None:
+    platform = FakePlatform([], NOW)
+    with pytest.raises(UnregisteredAdvertiserError):
+        await launch(
+            SqlLaunches(sessions, business),
+            _ledger(platform, sessions, engine, business),
+            INPUTS,
+            RULES,
+            BUDGET,
+            NOW,
+            advertiser=None,
+            require_advertiser=True,
+        )
+    assert platform.created == {}
+    changes = await _changes(sessions, business)
+    assert not any(c["kind"] == ChangeKind.CREATE_CAMPAIGN.value for c in changes)

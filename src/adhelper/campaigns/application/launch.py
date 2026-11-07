@@ -32,6 +32,7 @@ from adhelper.campaigns.domain.launch import (
     LaunchRules,
     NewAd,
     NewCampaign,
+    UnregisteredAdvertiserError,
     plan_launch,
 )
 from adhelper.campaigns.domain.ports import ActivePeriodExists, LaunchStore, StoredLaunch
@@ -62,6 +63,7 @@ __all__ = [
     "LaunchStatus",
     "LaunchedCampaign",
     "NewAd",
+    "UnregisteredAdvertiserError",
     "expand_keywords_with_model",
     "generate_keywords",
     "launch",
@@ -301,6 +303,7 @@ async def launch(
     budget_rules: BudgetRules,
     now: datetime,
     advertiser: Mapping[str, Any] | None = None,
+    require_advertiser: bool = False,
 ) -> LaunchResult:
     """`advertiser` — карточка маркировки без реквизитов (`Advertiser.card`).
 
@@ -325,6 +328,10 @@ async def launch(
     # План строим заново от сохранённого периода: повтор после сбоя даёт те же метки и лимиты.
     plan = _plan(str(stored.id), inputs, stored.period, rules)
     started = {c.target_ref for c in await _creations(ledger, stored)}
+    if require_advertiser and (advertiser is None or not advertiser.get("inn_tail")):
+        raise UnregisteredAdvertiserError(
+            "Нельзя создать кампанию: рекламодатель не зарегистрирован (нет ИНН для маркировки)"
+        )
     try:
         if advertiser is not None and not await _marked(ledger, stored, advertiser):
             # Без маркировки Яндекс не покажет рекламу: кампании ждут, пока она дойдёт.

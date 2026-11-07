@@ -52,6 +52,10 @@ class LaunchProblem(StrEnum):
     BELOW_PLATFORM_MIN = "below_platform_min"
 
 
+class UnregisteredAdvertiserError(Exception):
+    """Попытка запустить рекламу без подтверждённых реквизитов рекламодателя (ИНН)."""
+
+
 @dataclass(frozen=True)
 class NewAd:
     headline: str

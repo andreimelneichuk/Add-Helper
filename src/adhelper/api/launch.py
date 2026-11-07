@@ -39,6 +39,7 @@ from adhelper.campaigns.application.launch import (
     LaunchResult,
     LaunchStatus,
     NewAd,
+    UnregisteredAdvertiserError,
     expand_keywords_with_model,
     launch,
     launch_state,
@@ -329,15 +330,19 @@ def launch_router() -> APIRouter:
             return Advertiser(found.kind.value, found.inn, found.name, found.phone, found.okved)
 
         current = await advertiser()
-        result = await launch(
-            SqlLaunches(_sessions(request), business_id),
-            _ledger(request, business_id, platform, advertiser),
-            inputs,
-            load_launch_rules(),
-            load_budget_rules("budget-1"),
-            _now(request),
-            advertiser=None if current is None else current.card(),
-        )
+        try:
+            result = await launch(
+                SqlLaunches(_sessions(request), business_id),
+                _ledger(request, business_id, platform, advertiser),
+                inputs,
+                load_launch_rules(),
+                load_budget_rules("budget-1"),
+                _now(request),
+                advertiser=None if current is None else current.card(),
+                require_advertiser=True,
+            )
+        except UnregisteredAdvertiserError as error:
+            raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
         return await _answer(request, business_id, inputs.account, result)
 
     return router

@@ -102,16 +102,9 @@ async def test_manual_token_validates_via_direct_client_and_stores_encrypted(
     """Валидация токена через DirectHttpClient, получение логина и шифрование в базе."""
     app = create_app(api_settings, provider)
     mock_client = _MockDirectClient(owner="verified-salon-owner")
-
-    class _CustomPlatforms(DirectPlatforms):
-        def __init__(self) -> None:
-            pass
-
-        async def owner_login(self, token: str) -> str | None:
-            mock_client.checked_tokens.append(token)
-            return mock_client.owner
-
-    app.state.platform_for = _CustomPlatforms()
+    app.state.platform_for = DirectPlatforms(
+        mock_client, app.state.sessions, provider, app.state.cipher, lambda: NOW
+    )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url=BASE) as client:
         csrf = await _login(client, provider, ANNA)
@@ -155,15 +148,10 @@ async def test_manual_token_rejected_when_direct_auth_fails(
 ) -> None:
     """Отказ при передаче невалидного токена, отклонённого Директом (400 Bad Request)."""
     app = create_app(api_settings, provider)
-
-    class _FailingPlatforms(DirectPlatforms):
-        def __init__(self) -> None:
-            pass
-
-        async def owner_login(self, token: str) -> str | None:
-            raise DirectAuthError(53, "Token invalid")
-
-    app.state.platform_for = _FailingPlatforms()
+    mock_client = _MockDirectClient(should_fail_auth=True)
+    app.state.platform_for = DirectPlatforms(
+        mock_client, app.state.sessions, provider, app.state.cipher, lambda: NOW
+    )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url=BASE) as client:
         csrf = await _login(client, provider, ANNA)

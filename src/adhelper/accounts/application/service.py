@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import UUID
 
+from adhelper.accounts.adapters.crypto import DecryptionFailed
 from adhelper.accounts.domain.model import (
     AccountState,
     AdAccount,
