@@ -96,6 +96,8 @@ async def test_worker_runs_money_tasks_from_real_database(
         "site.read": "succeeded",
         "site.tag_check": "succeeded",
         "experiments.run": "succeeded",
+        "worker.heartbeat": "succeeded",
+        "worker.heartbeat.creatives": "succeeded",
     }
 
 

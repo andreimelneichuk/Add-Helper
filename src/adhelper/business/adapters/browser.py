@@ -50,8 +50,30 @@ LAUNCH_ARGS = [
     "--disable-component-update",
     "--disable-sync",
     "--no-pings",
+    # Экономия памяти для легковесных контейнеров (Render 512MB RAM).
+    "--disable-dev-shm-usage",
+    "--no-sandbox",
+    "--disable-gpu",
 ]
 METHODS = frozenset({"GET", "HEAD", "POST"})
+_RENDER_SEMAPHORES: dict[asyncio.AbstractEventLoop, asyncio.Semaphore] = {}
+
+
+def get_render_semaphore() -> asyncio.Semaphore:
+    """Семафор на уровне процесса и event loop:
+    не более одной активной вкладки парсера сайтов одновременно.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.get_event_loop()
+    sem = _RENDER_SEMAPHORES.get(loop)
+    if sem is None:
+        sem = asyncio.Semaphore(1)
+        _RENDER_SEMAPHORES[loop] = sem
+    return sem
+
+
 _SHADOW_DOM_SCRIPT = """() => {
     const shadowHtmls = [];
     const MAX_SHADOWS = 50;
@@ -155,36 +177,39 @@ class ChromiumRenderer:
 
     async def render(self, url: str) -> FetchedPage:
         target = checked_url(url, self._rules, self._url_check)
-        try:
-            browser = await self._launch()
-        except PlaywrightError as error:
-            logger.error("Браузер не запустился: %s", type(error).__name__)
-            raise SiteUnavailable(FetchProblem.UNREACHABLE) from None
-        except Exception as error:
-            logger.error("Браузер упал при запуске: %s", type(error).__name__)
-            raise SiteUnavailable(FetchProblem.UNREACHABLE) from None
-        context = await browser.new_context(
-            # Представляемся так же, как скачивание: сервис читает сайт по просьбе владельца.
-            user_agent=USER_AGENT,
-            service_workers="block",
-            accept_downloads=False,
-            locale="ru-RU",
-        )
-        try:
-            # Запас сверх ожидания — на снятие текста; дольше страница не держит воркер.
-            async with asyncio.timeout(self._render.timeout_seconds + 2):
-                return await self._read(context, target)
-        except TimeoutError:
-            logger.warning(
-                "Браузер не успел прочитать страницу за %s с", self._render.timeout_seconds + 2
+        async with get_render_semaphore():
+            try:
+                browser = await self._launch()
+            except PlaywrightError as error:
+                logger.error("Браузер не запустился: %s", type(error).__name__)
+                raise SiteUnavailable(FetchProblem.UNREACHABLE) from None
+            except Exception as error:
+                logger.error("Браузер упал при запуске: %s", type(error).__name__)
+                raise SiteUnavailable(FetchProblem.UNREACHABLE) from None
+            context = await browser.new_context(
+                # Представляемся так же, как скачивание: сервис читает сайт по просьбе владельца.
+                user_agent=USER_AGENT,
+                service_workers="block",
+                accept_downloads=False,
+                locale="ru-RU",
             )
-            raise SiteUnavailable(FetchProblem.UNREACHABLE) from None
-        except PlaywrightError as error:
-            logger.warning("Браузер потерял страницу: %s", type(error).__name__)
-            raise SiteUnavailable(FetchProblem.UNREACHABLE) from None
-        finally:
-            await context.unroute_all(behavior="ignoreErrors")
-            await context.close()
+            try:
+                # Запас сверх ожидания — на снятие текста; дольше страница не держит воркер.
+                async with asyncio.timeout(self._render.timeout_seconds + 2):
+                    return await self._read(context, target)
+            except TimeoutError:
+                logger.warning(
+                    "Браузер не успел прочитать страницу за %s с", self._render.timeout_seconds + 2
+                )
+                raise SiteUnavailable(FetchProblem.UNREACHABLE) from None
+            except PlaywrightError as error:
+                logger.warning("Браузер потерял страницу: %s", type(error).__name__)
+                raise SiteUnavailable(FetchProblem.UNREACHABLE) from None
+            finally:
+                with contextlib.suppress(Exception):
+                    await context.unroute_all(behavior="ignoreErrors")
+                with contextlib.suppress(Exception):
+                    await context.close()
 
     async def _read(self, context: BrowserContext, url: str) -> FetchedPage:
         budget = _Budget(self._render)

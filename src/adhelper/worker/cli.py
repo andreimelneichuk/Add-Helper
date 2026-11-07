@@ -91,6 +91,22 @@ async def _database_checks(settings: Settings) -> list[CheckResult]:
         async with engine.connect() as connection:
             version = await connection.scalar(text("SELECT version_num FROM alembic_version"))
             queue = await connection.scalar(text("SELECT to_regclass('procrastinate_jobs')"))
+            has_heartbeats = await connection.scalar(
+                text("SELECT to_regclass('worker_heartbeats')")
+            )
+            stale_workers: list[str] = []
+            if has_heartbeats:
+                stale_workers = [
+                    row[0]
+                    for row in (
+                        await connection.execute(
+                            text(
+                                "SELECT worker_name FROM worker_heartbeats "
+                                "WHERE last_heartbeat < now() - interval '5 minutes'"
+                            )
+                        )
+                    ).fetchall()
+                ]
             stuck = await connection.scalar(STUCK_SETS) if version == _alembic_head() else 0
     except (SQLAlchemyError, OSError) as error:
         # Только тип ошибки: текст может содержать адрес и пароль подключения.
@@ -114,6 +130,16 @@ async def _database_checks(settings: Settings) -> list[CheckResult]:
         results.append(CheckResult("ads_writing", CheckStatus.WARN, detail))
     else:
         results.append(CheckResult("ads_writing", CheckStatus.OK, "Тексты объявлений не застряли"))
+    if stale_workers:
+        results.append(
+            CheckResult(
+                "workers",
+                CheckStatus.WARN,
+                f"Воркер не отвечает дольше 5 минут: {', '.join(stale_workers)}",
+            )
+        )
+    else:
+        results.append(CheckResult("workers", CheckStatus.OK, "Воркеры активны"))
     return results
 
 

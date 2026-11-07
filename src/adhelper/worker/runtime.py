@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from adhelper.accounts.adapters.crypto import AesGcmCipher
@@ -395,6 +396,56 @@ class Runtime:
         if self.telegram is not None:
             await handle_telegram_updates(
                 self.telegram, SqlTelegramLinks(self.sessions), self.clock()
+            )
+
+    async def cleanup_jobs(self, older_than_days: int = 7, batch_size: int = 1000) -> int:
+        """Очистка завершённых и отменённых задач очереди старше older_than_days дней батчами."""
+        async with self.engine.begin() as conn:
+            exists = await conn.scalar(text("SELECT to_regclass('procrastinate_jobs')"))
+            if not exists:
+                return 0
+
+        total_deleted = 0
+        while True:
+            async with self.engine.begin() as conn:
+                result = await conn.execute(
+                    text(
+                        "DELETE FROM procrastinate_jobs "
+                        "WHERE id IN ("
+                        "    SELECT job.id FROM ("
+                        "        SELECT DISTINCT ON (job.id) job.id, job.status, "
+                        "            COALESCE(event.at, job.scheduled_at, NOW()) AS latest_at "
+                        "        FROM procrastinate_jobs job "
+                        "        LEFT JOIN procrastinate_events event ON job.id = event.job_id "
+                        "        ORDER BY job.id, event.at DESC NULLS LAST "
+                        "    ) AS job "
+                        "    WHERE job.status IN ('succeeded', 'cancelled') "
+                        "      AND latest_at < NOW() - (:days || ' DAYS')::INTERVAL "
+                        "    LIMIT :batch_size "
+                        ")"
+                    ),
+                    {"days": older_than_days, "batch_size": batch_size},
+                )
+                deleted = int(result.rowcount or 0)
+                total_deleted += deleted
+                if deleted < batch_size:
+                    break
+        return total_deleted
+
+    async def worker_heartbeat(self, worker_name: str = "default") -> None:
+        """Отметка сердцебиения воркера для проверки здоровья в /healthz."""
+        async with self.engine.begin() as conn:
+            exists = await conn.scalar(text("SELECT to_regclass('worker_heartbeats')"))
+            if not exists:
+                return
+            await conn.execute(
+                text(
+                    "INSERT INTO worker_heartbeats (worker_name, last_heartbeat) "
+                    "VALUES (:name, NOW()) "
+                    "ON CONFLICT (worker_name) "
+                    "DO UPDATE SET last_heartbeat = EXCLUDED.last_heartbeat"
+                ),
+                {"name": worker_name},
             )
 
 

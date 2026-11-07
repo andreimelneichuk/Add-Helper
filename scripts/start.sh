@@ -4,11 +4,13 @@ set -e
 # Применяем миграции базы данных перед стартом
 alembic upgrade head
 
+POLL_INTERVAL="${PROCRASTINATE_POLL_INTERVAL:-15.0}"
+
 # Запускаем фоновые воркеры: страж бюджета в отдельном процессе, чтобы долгие генерации его не задерживали
-procrastinate --app=adhelper.worker.app.app worker --queues=budget &
+procrastinate --app=adhelper.worker.app.app worker --fetch-job-polling-interval="$POLL_INTERVAL" --queues=budget &
 BUDGET_WORKER_PID=$!
 
-procrastinate --app=adhelper.worker.app.app worker --concurrency=2 --queues=creatives,notifications &
+procrastinate --app=adhelper.worker.app.app worker --fetch-job-polling-interval="$POLL_INTERVAL" --concurrency=2 --queues=creatives,notifications &
 WORKER_PID=$!
 
 # Запускаем веб-сервер uvicorn
