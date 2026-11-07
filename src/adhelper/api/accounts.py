@@ -210,7 +210,8 @@ def accounts_router(settings: Settings) -> APIRouter:
     async def manual_token_link(
         business_id: UUID, service: Service, info: CurrentSession
     ) -> dict[str, str]:
-        if not settings.yandex_manual_client_id:
+        app_id = settings.yandex_manual_client_id or settings.yandex_direct_client_id
+        if not app_id:
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE, "Выдача токена вручную не настроена"
             )
@@ -218,7 +219,7 @@ def accounts_router(settings: Settings) -> APIRouter:
             await service.accounts(info.user.id, business_id)
         except BusinessNotFound:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Бизнес не найден") from None
-        query = urlencode({"response_type": "token", "client_id": settings.yandex_manual_client_id})
+        query = urlencode({"response_type": "token", "client_id": app_id})
         return {"url": f"{settings.yandex_oauth_url.rstrip('/')}/authorize?{query}"}
 
     @router.post("/businesses/{business_id}/accounts/manual-token")

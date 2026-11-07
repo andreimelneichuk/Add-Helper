@@ -72,11 +72,13 @@ def evaluate_watch(
     burn: BurnRate,
     now: datetime,
     rules: BudgetRules,
+    opening_spent: int = 0,
 ) -> WatchVerdict:
     horizon = (
         _data_age_seconds(snapshot, now) + rules.check_interval_seconds + rules.stop_latency_seconds
     )
-    projected = snapshot.reported + burn.over(horizon)
+    period_reported = max(snapshot.reported - opening_spent, 0)
+    projected = period_reported + burn.over(horizon)
 
     def reached(threshold_bp: int) -> bool:
         return projected * BASIS_POINTS >= period.hard_limit * threshold_bp

@@ -48,11 +48,13 @@ async def check_change(
     burn: BurnRate,
     now: datetime,
     rules: BudgetRules,
+    opening_spent: int = 0,
 ) -> LimitDecision:
     campaigns = await platform.read_campaigns(account)
     snapshot = await platform.fetch_spend(account)
     spent = corrected_spend(snapshot, burn, now)
-    return check_limit_change(period, campaigns, change, spent, now, rules)
+    period_spent = max(spent - opening_spent, 0)
+    return check_limit_change(period, campaigns, change, period_spent, now, rules)
 
 
 async def _read_limits(platform: BudgetPlatform, account: str) -> dict[str, int]:
@@ -67,12 +69,15 @@ async def apply_limit_change(
     burn: BurnRate,
     now: datetime,
     rules: BudgetRules,
+    opening_spent: int = 0,
 ) -> ChangeOutcome:
     """Повтор безопасен: сначала читаем факт и сравниваем его с целью."""
     try:
         if (await _read_limits(platform, account)).get(change.campaign_id) == change.new_limit:
             return ChangeOutcome(ChangeStatus.ALREADY_APPLIED)
-        decision = await check_change(platform, account, period, change, burn, now, rules)
+        decision = await check_change(
+            platform, account, period, change, burn, now, rules, opening_spent=opening_spent
+        )
         if not decision.allowed:
             await platform.record_rejection(account, change, decision)
             return ChangeOutcome(ChangeStatus.REJECTED, decision)

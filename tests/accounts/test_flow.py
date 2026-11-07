@@ -666,13 +666,18 @@ async def test_manual_token_of_other_users_business_is_not_found(
 
 
 async def test_manual_token_link_needs_configured_app(
-    browser: Browser, provider: FakeProvider
+    api_settings: Settings, provider: FakeProvider
 ) -> None:
-    client = browser()
-    csrf = await _login(client, provider, ANNA)
-    business_id = await _business(client, csrf)
-
-    response = await client.get(f"/api/businesses/{business_id}/accounts/manual-token/link")
+    settings = api_settings.model_copy(
+        update={"yandex_direct_client_id": "", "yandex_manual_client_id": ""}
+    )
+    app = create_app(settings, provider)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url=BASE) as client:
+        csrf = await _login(client, provider, ANNA)
+        business_id = await _business(client, csrf)
+        response = await client.get(f"/api/businesses/{business_id}/accounts/manual-token/link")
+    await app.state.engine.dispose()
 
     assert response.status_code == 503
 
@@ -729,3 +734,18 @@ async def test_manual_token_without_login_takes_it_from_direct(
 
     assert saved.status_code == 200
     assert saved.json()["login"] == "salon-owner"
+
+
+async def test_manual_token_link_falls_back_to_direct_app(
+    api_settings: Settings, provider: FakeProvider
+) -> None:
+    settings = api_settings.model_copy(update={"yandex_direct_client_id": "direct-app"})
+    app = create_app(settings, provider)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url=BASE) as client:
+        csrf = await _login(client, provider, ANNA)
+        business_id = await _business(client, csrf)
+        response = await client.get(f"/api/businesses/{business_id}/accounts/manual-token/link")
+    await app.state.engine.dispose()
+
+    assert _query(response.json()["url"])["client_id"] == "direct-app"

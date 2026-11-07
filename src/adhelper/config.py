@@ -31,8 +31,8 @@ class Settings(BaseSettings):
     # Пусто — всё идёт через первое.
     yandex_direct_client_id: str = ""
     yandex_direct_client_secret: SecretStr | None = None
-    # Приложение с одобренным доступом к API, у которого нельзя задать наш адрес возврата:
-    # через него пользователь сам получает токен и вставляет его в сервис. Пусто — выключено.
+    # Приложение для ручной выдачи токена; пусто — берётся YANDEX_DIRECT_CLIENT_ID. Нужно, если
+    # доступ к API одобрен у приложения, к которому нельзя привязать наш адрес возврата.
     yandex_manual_client_id: str = ""
     # Адреса Яндекс ID меняются только для стенда сквозных тестов.
     yandex_oauth_url: str = "https://oauth.yandex.ru"

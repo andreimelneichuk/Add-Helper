@@ -8,6 +8,7 @@ class BalanceState(StrEnum):
     OK = "ok"
     ZERO = "zero"
     MISMATCH = "mismatch"
+    UNAVAILABLE = "unavailable"
 
 
 @dataclass(frozen=True)

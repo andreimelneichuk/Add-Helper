@@ -13,6 +13,10 @@ class PlatformUnavailable(Exception):
     """Площадка не ответила; применилось ли действие, неизвестно."""
 
 
+class PlatformAuthError(PlatformUnavailable):
+    """Токен отозван или нет доступа: требуется действие владельца по переподключению."""
+
+
 class BudgetPlatform(Protocol):
     async def read_campaigns(self, account: str) -> Sequence[CampaignBudget]: ...
     async def fetch_spend(self, account: str) -> SpendSnapshot: ...

@@ -14,7 +14,7 @@ from typing import Any
 
 import httpx
 
-from adhelper.budget.domain.ports import PlatformUnavailable
+from adhelper.budget.domain.ports import PlatformAuthError, PlatformUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ class DirectError(PlatformUnavailable):
         self.code = code
 
 
-class DirectAuthError(DirectError):
+class DirectAuthError(DirectError, PlatformAuthError):
     """Токен недействителен, нет прав или логин не подключён к Директу: нужен владелец."""
 
 
