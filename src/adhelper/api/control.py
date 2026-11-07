@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 from uuid import UUID
 
@@ -128,6 +129,7 @@ def _ledger(
     )
 
 
+logger = logging.getLogger(__name__)
 BALANCE_RECONNECT = "Яндекс не пускает: подключите кабинет заново в настройках."
 BALANCE_NO_SHARED = (
     "У этого логина в Директе нет общего счёта, поэтому остаток через API не виден. "
@@ -193,9 +195,17 @@ def control_router() -> APIRouter:
             return {"balance_micros": None, "problem": NOT_CONNECTED}
         try:
             micros = await platform.fetch_balance(account)
-        except DirectAuthError:
+        except DirectAuthError as error:
+            # Только тип причины, код и текст площадки: токена в них нет.
+            logger.warning(
+                "Остаток: отказ по доступу, код %s, причина %s: %s",
+                error.code,
+                type(error.__cause__).__name__,
+                error,
+            )
             return {"balance_micros": None, "problem": BALANCE_RECONNECT}
         except DirectError as error:
+            logger.warning("Остаток: ошибка Директа, код %s: %s", error.code, error)
             if "shared account" in str(error):
                 return {"balance_micros": None, "problem": BALANCE_NO_SHARED}
             return {"balance_micros": None, "problem": BALANCE_FAILED}
