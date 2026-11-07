@@ -290,6 +290,52 @@ async def test_balance_comes_from_shared_account(platform: DirectPlatform) -> No
     assert await platform.fetch_balance(ACCOUNT) == 1_500_500_000
 
 
+async def test_balance_returns_zero_when_status_blocked(
+    platform: DirectPlatform, direct: FakeDirect
+) -> None:
+    direct.status_blocked = True
+    assert await platform.fetch_balance(ACCOUNT) == 0
+
+
+async def test_balance_returns_zero_when_negative_amount(
+    platform: DirectPlatform, direct: FakeDirect
+) -> None:
+    direct.amount = "-50.00"
+    assert await platform.fetch_balance(ACCOUNT) == 0
+
+
+async def test_balance_returns_zero_when_status_is_blocked(
+    platform: DirectPlatform, direct: FakeDirect
+) -> None:
+    direct.status = "Blocked"
+    assert await platform.fetch_balance(ACCOUNT) == 0
+
+
+async def test_balance_returns_zero_when_amount_none_or_empty(
+    platform: DirectPlatform, direct: FakeDirect
+) -> None:
+    direct.amount = None
+    assert await platform.fetch_balance(ACCOUNT) == 0
+    direct.amount = ""
+    assert await platform.fetch_balance(ACCOUNT) == 0
+    direct.amount = "   "
+    assert await platform.fetch_balance(ACCOUNT) == 0
+
+
+async def test_balance_raises_when_no_shared_account(
+    platform: DirectPlatform, direct: FakeDirect
+) -> None:
+    direct.no_shared_account = True
+    with pytest.raises(DirectError, match="shared account is not enabled"):
+        await platform.fetch_balance(ACCOUNT)
+
+
+async def test_balance_case_insensitive_login(
+    platform: DirectPlatform, direct: FakeDirect
+) -> None:
+    assert await platform.fetch_balance(ACCOUNT.upper()) == 1_500_500_000
+
+
 @pytest.mark.parametrize("placement", list(Placement))
 async def test_launched_campaign_reads_back_its_limit(
     platform: DirectPlatform, direct: FakeDirect, placement: Placement

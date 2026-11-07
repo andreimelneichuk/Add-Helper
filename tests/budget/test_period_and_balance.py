@@ -263,3 +263,23 @@ def test_spend_before_baseline_never_hides_mismatch(
 
     if without is BalanceState.MISMATCH:
         assert counted is BalanceState.MISMATCH
+
+
+def test_balance_exact_boundary_conditions() -> None:
+    """Проверка ровно 2% допуска (200 bp от hard_limit).
+
+    Ровно 2% допускается, 2% + 1 микрорубль — тревога.
+    """
+    tolerance = HARD * RULES.balance_tolerance_bp // 10_000
+    assert tolerance == 20_000_000  # 2% от 1 000 000 000
+
+    opening = 500_000_000
+    spent = 50_000_000
+
+    # Списалось со счета ровно spent + tolerance (разница = tolerance) -> OK
+    exact_edge = opening - spent - tolerance
+    assert check_balance(opening, exact_edge, spent, HARD, RULES) is BalanceState.OK
+
+    # Списалось со счета spent + tolerance + 1 (разница = tolerance + 1) -> MISMATCH
+    over_by_one = exact_edge - 1
+    assert check_balance(opening, over_by_one, spent, HARD, RULES) is BalanceState.MISMATCH
