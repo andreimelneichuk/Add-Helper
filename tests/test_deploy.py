@@ -9,7 +9,9 @@ def test_app_sees_real_client_address_behind_caddy() -> None:
     # Лимит разборов до входа считается по адресу человека, а не по адресу Caddy.
     compose = (ROOT / "compose.yaml").read_text()
     assert "--proxy-headers" in compose
-    assert "--forwarded-allow-ips=*" in compose
+    # Заголовкам верим только от своей сети (Caddy), а не от любого адреса.
+    assert "--forwarded-allow-ips=127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16" in compose
+    assert "--forwarded-allow-ips=*" not in compose
     # Caddy заменяет чужой X-Forwarded-For своим, пока ему не велели доверять клиенту.
     assert "trusted_proxies" not in (ROOT / "deploy" / "Caddyfile").read_text()
     # Приложение открыто только Caddy, а не всей сети: иначе заголовок мог бы подставить кто угодно.
