@@ -8,14 +8,17 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
+from adhelper.accounts.adapters.crypto import CipherConfigError, DecryptionFailed
 from adhelper.accounts.application.service import (
     AccountsService,
+    AccountState,
     AccountTaken,
     BusinessNotFound,
     FlowInvalid,
     GrantRejected,
     LoginUnknown,
     ProviderUnavailable,
+    TokenInvalid,
 )
 from adhelper.config import Settings
 
@@ -101,13 +104,18 @@ def _state_matches_browser(request: Request, state: str | None) -> bool:
 
 
 def _account_view(account: Any) -> dict[str, Any]:
-    return {
+    state_str = account.state.value if hasattr(account.state, "value") else str(account.state)
+    view = {
         "id": str(account.id),
         "platform": account.platform,
         "login": account.login,
         "scopes": list(account.scopes),
-        "state": account.state.value,
+        "state": state_str,
     }
+    if state_str == AccountState.NEEDS_RECONNECT.value:
+        view["status"] = "needs_reconnect"
+        view["reason"] = getattr(account, "reason", "token_unreadable")
+    return view
 
 
 def accounts_router(settings: Settings) -> APIRouter:
@@ -205,6 +213,15 @@ def accounts_router(settings: Settings) -> APIRouter:
             return [_account_view(a) for a in await service.accounts(info.user.id, business_id)]
         except BusinessNotFound:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Бизнес не найден") from None
+        except (DecryptionFailed, CipherConfigError):
+            logger.warning("Не удалось расшифровать токен кабинета для бизнеса %s", business_id)
+            return [
+                {
+                    "status": "needs_reconnect",
+                    "reason": "token_unreadable",
+                    "state": "needs_reconnect",
+                }
+            ]
 
     @router.get("/businesses/{business_id}/accounts/manual-token/link")
     async def manual_token_link(
@@ -232,6 +249,10 @@ def accounts_router(settings: Settings) -> APIRouter:
             )
         except BusinessNotFound:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Бизнес не найден") from None
+        except TokenInvalid as error:
+            message = str(error)
+            detail = f"Токен не подошёл: {message}" if message else "Токен не подошёл"
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail) from None
         except LoginUnknown:
             raise HTTPException(
                 422,

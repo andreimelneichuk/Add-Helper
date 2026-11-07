@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from adhelper.accounts.adapters.crypto import AesGcmCipher
 from adhelper.accounts.adapters.sql import SqlAccountTokens, SqlIdentityStore, SqlUserScope
 from adhelper.accounts.adapters.unconfigured import UnconfiguredProvider
-from adhelper.accounts.application.service import AccountsService, OAuthProvider
+from adhelper.accounts.application.service import AccountsService, OAuthProvider, TokenInvalid
 from adhelper.api.accounts import accounts_router
 from adhelper.api.cabinet import cabinet_router
 from adhelper.api.chat import chat_router
@@ -40,6 +40,7 @@ from adhelper.platforms.adapters.direct.factory import (
     build_direct_platforms,
     yandex_provider,
 )
+from adhelper.platforms.adapters.direct.transport import DirectAuthError
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +172,10 @@ def create_app(
         # Площадки появляются ниже: берём их в момент вызова.
         platforms = getattr(app.state, "platform_for", None)
         if isinstance(platforms, DirectPlatforms):
-            return await platforms.owner_login(token)
+            try:
+                return await platforms.owner_login(token)
+            except DirectAuthError as error:
+                raise TokenInvalid("Токен отклонён Яндекс Директом") from error
         return None
 
     app.state.accounts = _accounts_service(

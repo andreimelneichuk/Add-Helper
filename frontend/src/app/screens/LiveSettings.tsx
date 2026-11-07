@@ -697,8 +697,9 @@ function ManualToken({ api, onSaved }: { api: Api; onSaved: (account: AdAccount)
   return (
     <div className="set-manual">
       <p className="set-hint">Если вход через Яндекс не даёт доступ к Директу, получите токен вручную: нажмите кнопку, разрешите доступ, скопируйте токен с экрана и вставьте сюда.</p>
-      <div><button type="button" className="ah-btn" onClick={() => window.open(link, "_blank", "noopener")}>Получить токен в Яндексе</button></div>
-      <label className="set-field">Токен<input type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" /></label>
+      <div><button type="button" className="ah-btn" aria-label="Получить код доступа к Директу" onClick={() => window.open(link, "_blank", "noopener")}>Получить код доступа к Директу</button></div>
+      <label className="set-field">Токен<input type="password" value={token} placeholder="Скопируйте строку доступа из адресной строки и вставьте сюда" onChange={(e) => setToken(e.target.value)} autoComplete="off" /></label>
+      <p className="set-hint">Скопируйте строку доступа из адресной строки и вставьте сюда.</p>
       {askLogin && <label className="set-field">Логин в Директе<input value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="off" /></label>}
       <p className="set-hint">Токен хранится в зашифрованном виде, действует около года и сам не обновляется: через год понадобится получить новый.</p>
       <button type="button" className="ah-btn ah-btn-primary" disabled={busy || !token.trim()} onClick={save}>Сохранить токен</button>
@@ -707,13 +708,20 @@ function ManualToken({ api, onSaved }: { api: Api; onSaved: (account: AdAccount)
   );
 }
 
-function Accounts({ api }: { api: Api }) {
+function Accounts({ api, store }: { api: Api; store?: Store }) {
   const [accounts, setAccounts] = useState<AdAccount[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    api.accounts().then(setAccounts, (e: unknown) => setError(message(e)));
-  }, [api]);
+    api.accounts().then(
+      (accs) => {
+        setAccounts(accs);
+        const hasWorking = accs.some((a) => a.state === "connected" && (a as { status?: string }).status !== "needs_reconnect");
+        store?.set({ yandex: hasWorking });
+      },
+      (e: unknown) => setError(message(e)),
+    );
+  }, [api, store]);
   const connect = async () => {
     setBusy(true);
     setError(null);
@@ -725,22 +733,33 @@ function Accounts({ api }: { api: Api }) {
       setBusy(false);
     }
   };
-  const working = accounts?.some((a) => a.state === "connected");
+  const working = accounts?.some((a) => a.state === "connected" && (a as { status?: string }).status !== "needs_reconnect");
+  const reconnectNeeded = accounts?.some(
+    (a) => a.state === "needs_reconnect" || (a as { status?: string }).status === "needs_reconnect"
+  );
   return (
     <div className="set-rows">
       {accounts === null && !error && <p className="ah-muted">Загружаю…</p>}
       {accounts?.length === 0 && <p className="set-hint">Кабинет ещё не подключён: без него реклама не запустится. Деньги списываются с вашего счёта в Яндексе, мы их не держим.</p>}
+      {reconnectNeeded && (
+        <div className="ah-error" role="alert" style={{ marginBottom: 12 }}>
+          Связь с кабинетом Яндекса прервалась. Нажмите «Переподключить», чтобы обновить доступ без потери данных рекламных кампаний.
+        </div>
+      )}
       {accounts?.map((a) => (
         <div key={a.id} className="set-row">
-          <div><strong>{a.login}</strong><p className="set-hint">Яндекс Директ</p>{a.state === "connected" && <Balance api={api} login={a.login} />}</div>
-          <span className={a.state === "connected" ? "ah-tag ah-tag-good" : "ah-tag ah-tag-bad"}>{ACCOUNT_STATE[a.state] ?? a.state}</span>
+          <div><strong>{a.login}</strong><p className="set-hint">Яндекс Директ</p>{a.state === "connected" && (a as { status?: string }).status !== "needs_reconnect" && <Balance api={api} login={a.login} />}</div>
+          <span className={a.state === "connected" && (a as { status?: string }).status !== "needs_reconnect" ? "ah-tag ah-tag-good" : "ah-tag ah-tag-bad"}>{ACCOUNT_STATE[a.state] ?? a.state}</span>
         </div>
       ))}
       {accounts !== null && (
-        <div><button type="button" className={working ? "ah-btn" : "ah-btn ah-btn-primary"} disabled={busy} onClick={connect}>{accounts.length ? "Подключить заново" : "Подключить кабинет"}</button></div>
+        <div><button type="button" className={working ? "ah-btn" : "ah-btn ah-btn-primary"} disabled={busy} onClick={connect}>{reconnectNeeded ? "Переподключить" : (accounts.length ? "Подключить заново" : "Подключить кабинет")}</button></div>
       )}
       {accounts !== null && (
-        <ManualToken api={api} onSaved={(saved) => setAccounts((all) => [...(all ?? []).filter((x) => x.login !== saved.login), saved])} />
+        <ManualToken api={api} onSaved={(saved) => {
+          setAccounts((all) => [...(all ?? []).filter((x) => x.login !== saved.login), saved]);
+          store?.set({ yandex: true });
+        }} />
       )}
       {error && <p className="ah-error" role="alert">{error}</p>}
     </div>
@@ -933,7 +952,7 @@ function SiteSettings({ store, api }: { store: Store; api: Api }) {
       <div className="set-main">
         <section className="ah-panel set-section" aria-labelledby="set-account-title">
           <h2 id="set-account-title" className="ah-panel-title">Кабинет Яндекса</h2>
-          <Accounts api={api} />
+          <Accounts api={api} store={store} />
         </section>
         <section className="ah-panel set-section" aria-labelledby="set-channels-title">
           <h2 id="set-channels-title" className="ah-panel-title">Уведомления</h2>
