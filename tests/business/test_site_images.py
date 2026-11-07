@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 from adhelper.business.adapters.rules_file import load_site_rules
 from adhelper.business.adapters.site_images import image_urls, site_image_urls
 from adhelper.business.domain.ports import FetchedPage, FetchProblem, SiteUnavailable
@@ -42,7 +44,9 @@ class _Fetcher:
     def __init__(self, html: str | None) -> None:
         self.html = html
 
-    async def get_bytes(self, url: str, accept: str, mimes: tuple[str, ...], max_bytes: int):
+    async def get_bytes(
+        self, url: str, accept: str, mimes: tuple[str, ...], max_bytes: int
+    ) -> tuple[str, str, bytes]:
         if self.html is None:
             raise SiteUnavailable(FetchProblem.UNREACHABLE)
         return url, "text/html", self.html.encode()
@@ -55,15 +59,17 @@ class _Renderer:
 
 async def test_uses_browser_when_markup_has_few_images() -> None:
     rules = load_site_rules()
-    found = await site_image_urls(_Fetcher("<p>shell</p>"), "https://salon.ru/", rules, _Renderer())  # type: ignore[arg-type]
+    found = await site_image_urls(
+        cast(Any, _Fetcher("<p>shell</p>")), "https://salon.ru/", rules, _Renderer()
+    )
     assert found == ["https://salon.ru/js1.jpg", "https://salon.ru/js2.jpg"]
 
 
 async def test_skips_browser_when_markup_is_enough() -> None:
     html = "".join(f'<img src="/p{i}.jpg">' for i in range(3))
     found = await site_image_urls(
-        _Fetcher(html), "https://salon.ru/", load_site_rules(), _Renderer()
-    )  # type: ignore[arg-type]
+        cast(Any, _Fetcher(html)), "https://salon.ru/", load_site_rules(), _Renderer()
+    )
     assert found is not None and len(found) == 3 and "js1" not in found[0]
 
 
@@ -73,6 +79,8 @@ async def test_unreachable_site_without_browser_result_is_none() -> None:
             raise SiteUnavailable(FetchProblem.UNREACHABLE)
 
     assert (
-        await site_image_urls(_Fetcher(None), "https://salon.ru/", load_site_rules(), _Broken())
+        await site_image_urls(
+            cast(Any, _Fetcher(None)), "https://salon.ru/", load_site_rules(), _Broken()
+        )
         is None
-    )  # type: ignore[arg-type]
+    )

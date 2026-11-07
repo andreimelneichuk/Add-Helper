@@ -1,6 +1,7 @@
 import logging
 import secrets
 from typing import Annotated, Any
+from urllib.parse import urlencode
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
@@ -30,6 +31,11 @@ SESSION_COOKIE_SECONDS = 30 * 24 * 3600
 
 class NewBusiness(BaseModel):
     name: str = Field(min_length=1, max_length=200)
+
+
+class ManualToken(BaseModel):
+    login: str = Field(pattern=r"^[A-Za-z0-9._-]{1,50}$")
+    token: str = Field(min_length=20, max_length=500, pattern=r"^\S+$")
 
 
 def _service(request: Request) -> AccountsService:
@@ -204,6 +210,37 @@ def accounts_router(settings: Settings) -> APIRouter:
             return [_account_view(a) for a in await service.accounts(info.user.id, business_id)]
         except BusinessNotFound:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Бизнес не найден") from None
+
+    @router.get("/businesses/{business_id}/accounts/manual-token/link")
+    async def manual_token_link(
+        business_id: UUID, service: Service, info: CurrentSession
+    ) -> dict[str, str]:
+        if not settings.yandex_manual_client_id:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE, "Выдача токена вручную не настроена"
+            )
+        try:
+            await service.accounts(info.user.id, business_id)
+        except BusinessNotFound:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Бизнес не найден") from None
+        query = urlencode({"response_type": "token", "client_id": settings.yandex_manual_client_id})
+        return {"url": f"{settings.yandex_oauth_url.rstrip('/')}/authorize?{query}"}
+
+    @router.post("/businesses/{business_id}/accounts/manual-token")
+    async def manual_token(
+        business_id: UUID, body: ManualToken, service: Service, info: CheckedSession
+    ) -> dict[str, Any]:
+        try:
+            account = await service.connect_manual(
+                info.user.id, business_id, body.login, body.token
+            )
+        except BusinessNotFound:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Бизнес не найден") from None
+        except AccountTaken:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "Этот кабинет уже подключён к другому бизнесу"
+            ) from None
+        return _account_view(account)
 
     @router.post("/businesses/{business_id}/accounts/connect")
     async def connect(

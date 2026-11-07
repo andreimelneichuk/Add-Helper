@@ -666,6 +666,46 @@ function Balance({ api, login }: { api: Api; login: string }) {
   return <p className="set-hint">{text}</p>;
 }
 
+/** Запасной путь, пока Яндекс не одобрил наше приложение: токен берётся в Яндексе вручную и вставляется сюда. */
+function ManualToken({ api, onSaved }: { api: Api; onSaved: (account: AdAccount) => void }) {
+  const [link, setLink] = useState<string | null>(null);
+  const [login, setLogin] = useState("");
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    api.manualTokenLink().then((r) => setLink(r.url), () => setLink(null));
+  }, [api]);
+  if (!link) return null;
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      onSaved(await api.saveManualToken(login.trim(), token.trim()));
+      setToken("");
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <details className="set-manual">
+      <summary>Подключить вручную, по токену</summary>
+      <ol className="set-hint">
+        <li><a href={link} target="_blank" rel="noopener noreferrer">Откройте страницу Яндекса</a> под своим аккаунтом Директа и разрешите доступ.</li>
+        <li>Скопируйте токен из адресной строки: он стоит после <code>access_token=</code> и до <code>&amp;</code>.</li>
+        <li>Впишите логин кабинета и вставьте токен. Мы храним его в зашифрованном виде.</li>
+      </ol>
+      <label className="set-field">Логин в Директе<input value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="off" /></label>
+      <label className="set-field">Токен<input type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" /></label>
+      <p className="set-hint">Такой токен действует около года и сам не обновляется: через год понадобится выдать новый.</p>
+      <button type="button" className="ah-btn" disabled={busy || !login.trim() || !token.trim()} onClick={save}>Сохранить токен</button>
+      {error && <p className="ah-error" role="alert">{error}</p>}
+    </details>
+  );
+}
+
 function Accounts({ api }: { api: Api }) {
   const [accounts, setAccounts] = useState<AdAccount[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -697,6 +737,9 @@ function Accounts({ api }: { api: Api }) {
       ))}
       {accounts !== null && (
         <div><button type="button" className={working ? "ah-btn" : "ah-btn ah-btn-primary"} disabled={busy} onClick={connect}>{accounts.length ? "Подключить заново" : "Подключить кабинет"}</button></div>
+      )}
+      {accounts !== null && (
+        <ManualToken api={api} onSaved={(saved) => setAccounts((all) => [...(all ?? []).filter((x) => x.login !== saved.login), saved])} />
       )}
       {error && <p className="ah-error" role="alert">{error}</p>}
     </div>

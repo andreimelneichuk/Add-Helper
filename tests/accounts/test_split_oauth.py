@@ -34,7 +34,13 @@ def test_login_goes_to_login_app_and_cabinet_to_direct_app() -> None:
 
 
 def test_second_app_is_used_only_when_both_settings_are_given() -> None:
-    base = {"yandex_client_id": "login-app", "yandex_client_secret": "s1"}
-    assert isinstance(yandex_provider(Settings(**base), _clock), YandexOAuth)  # type: ignore[arg-type]
-    both = Settings(**base, yandex_direct_client_id="direct-app", yandex_direct_client_secret="s2")  # type: ignore[arg-type]
+    base = Settings(
+        _env_file=None,
+        yandex_client_id="login-app",
+        yandex_client_secret="s1",
+    )
+    assert isinstance(yandex_provider(base, _clock), YandexOAuth)
+    both = base.model_copy(
+        update={"yandex_direct_client_id": "direct-app", "yandex_direct_client_secret": "s2"}
+    )
     assert isinstance(yandex_provider(both, _clock), SplitYandexOAuth)

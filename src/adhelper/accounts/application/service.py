@@ -12,6 +12,7 @@ from adhelper.accounts.domain.model import (
     Business,
     FlowPurpose,
     OAuthFlow,
+    OAuthTokens,
     SessionInfo,
     StoredTokens,
 )
@@ -47,6 +48,9 @@ REFRESH_MARGIN = timedelta(minutes=5)
 LOGIN_SCOPES = ("login:info", "login:email")
 CONNECT_SCOPES = ("direct:api", "login:info")
 DIRECT_PLATFORM = "yandex_direct"
+# Токен, выданный вручную, живёт около года и не обновляется: срок берём с запасом.
+MANUAL_TOKEN_LIFETIME = timedelta(days=330)
+MANUAL_SCOPES = ("direct:api",)
 VERIFIER_CONTEXT = "oauth_verifier"
 
 
@@ -109,10 +113,13 @@ class TokenVault:
         if stored.expires_at - self._clock() > REFRESH_MARGIN:
             return self._access(stored)
         refresh_context = token_context(self._business_id, login, "refresh")
+        refresh = self._cipher.decrypt(stored.encrypted_refresh, refresh_context)
+        if not refresh:
+            # Токен выдан вручную: обновить нечем, нужен новый.
+            await self._tokens.mark_needs_reconnect(login)
+            raise ReconnectRequired
         try:
-            fresh = await self._provider.refresh(
-                self._cipher.decrypt(stored.encrypted_refresh, refresh_context)
-            )
+            fresh = await self._provider.refresh(refresh)
         except GrantRejected:
             await self._tokens.mark_needs_reconnect(login)
             raise ReconnectRequired from None
@@ -251,5 +258,21 @@ class AccountsService:
             DIRECT_PLATFORM,
             self._cipher.encrypt(tokens.access, token_context(flow.business_id, login, "access")),
             self._cipher.encrypt(tokens.refresh, token_context(flow.business_id, login, "refresh")),
+            tokens,
+        )
+
+    async def connect_manual(
+        self, user_id: UUID, business_id: UUID, login: str, token: str
+    ) -> AdAccount:
+        """Кабинет по токену, который пользователь получил сам. Токен не обновляется."""
+        if await self._scope_for(user_id).business(business_id) is None:
+            raise BusinessNotFound
+        login = login.strip().lower()
+        tokens = OAuthTokens(token, "", self._clock() + MANUAL_TOKEN_LIFETIME, MANUAL_SCOPES)
+        return await self._tokens_for(business_id).save_connected(
+            login,
+            DIRECT_PLATFORM,
+            self._cipher.encrypt(token, token_context(business_id, login, "access")),
+            self._cipher.encrypt("", token_context(business_id, login, "refresh")),
             tokens,
         )

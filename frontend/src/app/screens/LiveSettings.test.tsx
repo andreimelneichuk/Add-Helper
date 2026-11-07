@@ -577,3 +577,23 @@ describe("остаток в Директе", () => {
     expect(await screen.findByText("У этого логина нет общего счёта.")).toBeInTheDocument();
   });
 });
+
+describe("ручной токен кабинета", () => {
+  it("сохраняет токен и показывает кабинет в списке", async () => {
+    const api = fakeApi();
+    render(<Settings store={await open(api)} />);
+    await userEvent.click(await screen.findByText("Подключить вручную, по токену"));
+    await userEvent.type(screen.getByLabelText("Логин в Директе"), "salon-login");
+    await userEvent.type(screen.getByLabelText("Токен"), "y0_secret-token-value-123");
+    await userEvent.click(screen.getByRole("button", { name: "Сохранить токен" }));
+    expect(api.saveManualToken).toHaveBeenCalledWith("salon-login", "y0_secret-token-value-123");
+    expect(await screen.findByText("salon-login")).toBeInTheDocument();
+  });
+
+  it("скрыт, когда сервис не настроен", async () => {
+    const api = fakeApi({ manualTokenLink: vi.fn(async () => { throw new Error("503"); }) } as Partial<Api>);
+    render(<Settings store={await open(api)} />);
+    await screen.findByText(/Подключить заново|Подключить кабинет/);
+    expect(screen.queryByText("Подключить вручную, по токену")).not.toBeInTheDocument();
+  });
+});

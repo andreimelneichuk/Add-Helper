@@ -576,3 +576,115 @@ async def test_https_site_never_sets_cookies_without_secure(
         if value.startswith("ah_oauth_state=")
     ).lower()
     assert "secure" in cookie
+
+
+MANUAL_TOKEN = "y0_manual-secret-token"
+
+
+def _manual_settings(api_settings: Settings) -> Settings:
+    return api_settings.model_copy(update={"yandex_manual_client_id": "approved-app"})
+
+
+async def _save_manual(
+    client: httpx.AsyncClient, csrf: str, business_id: str, login: str = "Anna-Direct"
+) -> httpx.Response:
+    return await client.post(
+        f"/api/businesses/{business_id}/accounts/manual-token",
+        json={"login": login, "token": MANUAL_TOKEN},
+        headers={"X-CSRF-Token": csrf},
+    )
+
+
+async def test_manual_token_connects_account_without_refresh(
+    browser: Browser, provider: FakeProvider, sessions: Sessions, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    client = browser()
+    csrf = await _login(client, provider, ANNA)
+    business_id = await _business(client, csrf)
+
+    saved = await _save_manual(client, csrf, business_id)
+
+    assert saved.status_code == 200
+    assert MANUAL_TOKEN not in saved.text
+    assert MANUAL_TOKEN not in caplog.text
+    listed = (await client.get(f"/api/businesses/{business_id}/accounts")).json()
+    assert [(a["login"], a["state"]) for a in listed] == [("anna-direct", "connected")]
+    vault = _vault(sessions, uuid.UUID(business_id), provider, NOW)
+    assert await vault.access_token("anna-direct") == MANUAL_TOKEN
+    assert provider.refresh_calls == 0
+
+
+async def test_manual_token_expiry_asks_to_reconnect_not_refresh(
+    browser: Browser, provider: FakeProvider, sessions: Sessions, engine: AsyncEngine
+) -> None:
+    client = browser()
+    csrf = await _login(client, provider, ANNA)
+    business_id = await _business(client, csrf)
+    await _save_manual(client, csrf, business_id)
+    vault = _vault(sessions, uuid.UUID(business_id), provider, NOW + timedelta(days=400))
+
+    with pytest.raises(ReconnectRequired):
+        await vault.access_token("anna-direct")
+
+    assert provider.refresh_calls == 0
+    async with engine.connect() as connection:
+        assert await connection.scalar(text("SELECT state FROM ad_accounts")) == "needs_reconnect"
+
+
+@pytest.mark.parametrize(
+    ("login", "token"), [("", MANUAL_TOKEN), ("bad login!", MANUAL_TOKEN), ("anna", "short")]
+)
+async def test_manual_token_rejects_bad_input(
+    browser: Browser, provider: FakeProvider, login: str, token: str
+) -> None:
+    client = browser()
+    csrf = await _login(client, provider, ANNA)
+    business_id = await _business(client, csrf)
+
+    response = await client.post(
+        f"/api/businesses/{business_id}/accounts/manual-token",
+        json={"login": login, "token": token},
+        headers={"X-CSRF-Token": csrf},
+    )
+
+    assert response.status_code == 422
+
+
+async def test_manual_token_of_other_users_business_is_not_found(
+    browser: Browser, provider: FakeProvider
+) -> None:
+    anna, boris = browser(), browser()
+    anna_csrf = await _login(anna, provider, ANNA)
+    business_id = await _business(anna, anna_csrf)
+    boris_csrf = await _login(boris, provider, BORIS)
+
+    assert (await _save_manual(boris, boris_csrf, business_id)).status_code == 404
+
+
+async def test_manual_token_link_needs_configured_app(
+    browser: Browser, provider: FakeProvider
+) -> None:
+    client = browser()
+    csrf = await _login(client, provider, ANNA)
+    business_id = await _business(client, csrf)
+
+    response = await client.get(f"/api/businesses/{business_id}/accounts/manual-token/link")
+
+    assert response.status_code == 503
+
+
+async def test_manual_token_link_is_implicit_flow_of_approved_app(
+    api_settings: Settings, provider: FakeProvider
+) -> None:
+    app = create_app(_manual_settings(api_settings), provider)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url=BASE) as client:
+        csrf = await _login(client, provider, ANNA)
+        business_id = await _business(client, csrf)
+        response = await client.get(f"/api/businesses/{business_id}/accounts/manual-token/link")
+    await app.state.engine.dispose()
+
+    assert response.status_code == 200
+    query = _query(response.json()["url"])
+    assert (query["response_type"], query["client_id"]) == ("token", "approved-app")

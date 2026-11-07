@@ -356,6 +356,9 @@ export function createApi(businessId: string, csrf: string) {
     archivePhoto: (id: number) => request<{ archived: boolean }>(`${base}/photos/${id}/archive`, { method: "POST" }, csrf),
     connect: (then?: "start") =>
       request<{ authorize_url: string }>(`${base}/accounts/connect${then ? `?then=${then}` : ""}`, { method: "POST" }, csrf),
+    manualTokenLink: () => request<{ url: string }>(`${base}/accounts/manual-token/link`),
+    saveManualToken: (login: string, token: string) =>
+      request<AdAccount>(`${base}/accounts/manual-token`, { method: "POST", body: JSON.stringify({ login, token }) }, csrf),
     marking: (init?: RequestInit) => request<{ saved: MarkingView | null }>(`${base}/marking`, init),
     saveMarking: (body: MarkingInput) =>
       request<{ saved: MarkingView | null }>(`${base}/marking`, { method: "PUT", body: JSON.stringify(body) }, csrf),
