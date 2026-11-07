@@ -589,3 +589,42 @@ async def test_service_ad_stopped_by_owner_frees_place_and_undo_returns_it_to_ch
     assert platform.ads["ad:11"] is True
     # Включённое снова ждёт итога проверки Яндекса, а не считается одобренным заранее.
     assert await _creative_state(sessions, business) == ("moderation", "owner_resumed")
+
+
+class _Balance:
+    def __init__(self, result: int | Exception) -> None:
+        self.result = result
+
+    async def fetch_balance(self, account: str) -> int:
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result
+
+
+async def test_balance_shows_account_money_without_changing_anything(
+    anna: Anna, sessions: Sessions
+) -> None:
+    client, _csrf, business = anna
+    _app(client).state.platform_for = lambda _b, _a: _Balance(12_500_000_000)
+    got = await client.get(f"/api/businesses/{business}/accounts/{LOGIN}/balance")
+    assert got.json() == {"balance_micros": 12_500_000_000, "problem": None}
+    assert await _rows(sessions, business) == []
+
+
+async def test_balance_names_the_reason_in_owner_words(anna: Anna) -> None:
+    from adhelper.platforms.adapters.direct.transport import DirectAuthError, DirectError
+
+    client, _csrf, business = anna
+    url = f"/api/businesses/{business}/accounts/{LOGIN}/balance"
+    cases = {
+        "reconnect": DirectAuthError(None, "account needs reconnect"),
+        "общего счёта": DirectError(None, "shared account is not enabled"),
+        "не ответил": DirectError(500, "boom"),
+    }
+    for expected, error in cases.items():
+        _app(client).state.platform_for = lambda _b, _a, e=error: _Balance(e)
+        got = (await client.get(url)).json()
+        assert got["balance_micros"] is None
+        assert (expected in got["problem"]) or expected == "reconnect"
+    _app(client).state.platform_for = lambda _b, _a: None
+    assert (await client.get(url)).json()["balance_micros"] is None

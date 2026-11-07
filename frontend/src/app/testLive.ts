@@ -62,6 +62,7 @@ export function fakeApi(over: Partial<Api> = {}) {
     launchCheck: vi.fn(async () => ({ items: [], ready: false, launch_available: false, launch_text: "" })),
     startLaunch: vi.fn(async () => ({ status: "done" as const, campaigns: [], text: "" })),
     saveBudgetPlan: vi.fn(async (rubles: number) => ({ rubles })),
+    balance: vi.fn(async () => ({ balance_micros: 12_500_000_000, problem: null })),
     accounts: vi.fn(async () => [{ id: "a1", platform: "yandex_direct", login: "anna", scopes: [], state: "connected" }]),
     photos: vi.fn(async () => ({ photos: [], max: 5 })),
     photoUrl: (id: number) => `/api/businesses/b1/photos/${id}`,

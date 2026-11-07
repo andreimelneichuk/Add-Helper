@@ -598,6 +598,18 @@ function Channels({ api }: { api: Api }) {
   );
 }
 
+/** Остаток на счёте в Директе: читается из Яндекса при открытии, сохраняется только в плане бюджета. */
+function Balance({ api, login }: { api: Api; login: string }) {
+  const [text, setText] = useState("Смотрю остаток в Директе…");
+  useEffect(() => {
+    api.balance(login).then(
+      (b) => setText(b.balance_micros !== null ? `На счёте в Директе: ${rub(Math.round(b.balance_micros / 1_000_000))}` : (b.problem ?? "Остаток сейчас недоступен.")),
+      (e: unknown) => setText(message(e)),
+    );
+  }, [api, login]);
+  return <p className="set-hint">{text}</p>;
+}
+
 function Accounts({ api }: { api: Api }) {
   const [accounts, setAccounts] = useState<AdAccount[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -623,7 +635,7 @@ function Accounts({ api }: { api: Api }) {
       {accounts?.length === 0 && <p className="set-hint">Кабинет ещё не подключён: без него реклама не запустится. Деньги списываются с вашего счёта в Яндексе, мы их не держим.</p>}
       {accounts?.map((a) => (
         <div key={a.id} className="set-row">
-          <div><strong>{a.login}</strong><p className="set-hint">Яндекс Директ</p></div>
+          <div><strong>{a.login}</strong><p className="set-hint">Яндекс Директ</p>{a.state === "connected" && <Balance api={api} login={a.login} />}</div>
           <span className={a.state === "connected" ? "ah-tag ah-tag-good" : "ah-tag ah-tag-bad"}>{ACCOUNT_STATE[a.state] ?? a.state}</span>
         </div>
       ))}
