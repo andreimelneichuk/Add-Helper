@@ -9,7 +9,7 @@ procrastinate --app=adhelper.worker.app.app worker --queues=budget,creatives,not
 WORKER_PID=$!
 
 # Запускаем веб-сервер uvicorn
-uvicorn --factory adhelper.api.app:create_app --host 0.0.0.0 --port "${PORT:-8000}" --proxy-headers --forwarded-allow-ips=* &
+uvicorn --factory adhelper.api.app:create_app --host 0.0.0.0 --port "${PORT:-8000}" --proxy-headers --forwarded-allow-ips=* --no-server-header &
 UVICORN_PID=$!
 
 # Корректная остановка обоих процессов при остановке или перезапуске контейнера
