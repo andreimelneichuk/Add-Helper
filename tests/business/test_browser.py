@@ -3,6 +3,7 @@
 Настоящий Chromium (make setup ставит его) и стенды на 127.0.0.1 и [::1].
 """
 
+import asyncio
 import socket
 import threading
 import time
@@ -12,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from adhelper.business.adapters.browser import ChromiumRenderer
+from adhelper.business.adapters.browser import ChromiumRenderer, get_render_semaphore
 from adhelper.business.adapters.fetcher import UrlCheck
 from adhelper.business.adapters.html_text import page_from_html
 from adhelper.business.adapters.rules_file import load_site_rules
@@ -219,3 +220,41 @@ async def test_shadow_dom_content_is_extracted(site: tuple[str, list[str]]) -> N
         page = await browser.render(f"{base}/shadow")
     assert "Веганские красители" in page.text
     assert "Маникюр 1 700 ₽" in page.text
+
+
+async def test_concurrent_renders_are_limited_by_semaphore(site: tuple[str, list[str]]) -> None:
+    base, _ = site
+    semaphore = get_render_semaphore()
+    concurrency_peaks: list[int] = []
+    current_active = 0
+
+    orig_acquire = semaphore.acquire
+    orig_release = semaphore.release
+
+    async def tracking_acquire() -> bool:
+        nonlocal current_active
+        res = await orig_acquire()
+        current_active += 1
+        concurrency_peaks.append(current_active)
+        return res
+
+    def tracking_release() -> None:
+        nonlocal current_active
+        current_active -= 1
+        orig_release()
+
+    semaphore.acquire = tracking_acquire  # type: ignore[method-assign]
+    semaphore.release = tracking_release  # type: ignore[method-assign]
+
+    try:
+        async with renderer() as browser1, renderer() as browser2:
+            res1, res2 = await asyncio.gather(
+                browser1.render(f"{base}/"),
+                browser2.render(f"{base}/"),
+            )
+            assert "Маникюр" in res1.text
+            assert "Маникюр" in res2.text
+        assert max(concurrency_peaks) == 1
+    finally:
+        semaphore.acquire = orig_acquire  # type: ignore[method-assign]
+        semaphore.release = orig_release  # type: ignore[method-assign]

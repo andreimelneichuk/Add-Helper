@@ -22,6 +22,9 @@ PERIODIC_TASKS = (
     "experiments.run",
     "experiments.stats",
     "ads.summary",
+    "cleanup.jobs",
+    "worker.heartbeat",
+    "worker.heartbeat.creatives",
 )
 
 
@@ -37,6 +40,7 @@ app = App(connector=connector_for(Settings()))
 @app.task(name="budget.watch", queue=BUDGET_QUEUE, queueing_lock="budget.watch")
 async def budget_watch(timestamp: int) -> None:
     async with open_runtime(Settings()) as runtime:
+        await runtime.worker_heartbeat("budget")
         await runtime.budget_watch()
 
 
@@ -44,6 +48,7 @@ async def budget_watch(timestamp: int) -> None:
 @app.task(name="state.reconcile", queue=BUDGET_QUEUE, queueing_lock="state.reconcile")
 async def state_reconcile(timestamp: int) -> None:
     async with open_runtime(Settings()) as runtime:
+        await runtime.worker_heartbeat("budget")
         await runtime.state_reconcile()
 
 
@@ -138,3 +143,30 @@ async def experiments_stats(timestamp: int) -> None:
 async def ads_summary(timestamp: int) -> None:
     async with open_runtime(Settings()) as runtime:
         await runtime.ads_summary()
+
+
+# Очистка выполненных и отменённых задач старше 7 дней: раз в сутки в 04:00 UTC.
+@app.periodic(cron="0 4 * * *")
+@app.task(name="cleanup.jobs", queue=CREATIVES_QUEUE, queueing_lock="cleanup.jobs")
+async def cleanup_jobs(timestamp: int) -> None:
+    async with open_runtime(Settings()) as runtime:
+        await runtime.cleanup_jobs(older_than_days=7)
+
+
+# Сердцебиение воркеров: раз в минуту для проверки здоровья в /healthz.
+@app.periodic(cron="* * * * *")
+@app.task(name="worker.heartbeat", queue=NOTIFICATIONS_QUEUE, queueing_lock="worker.heartbeat")
+async def worker_heartbeat(timestamp: int) -> None:
+    async with open_runtime(Settings()) as runtime:
+        await runtime.worker_heartbeat("notifications")
+
+
+@app.periodic(cron="* * * * *")
+@app.task(
+    name="worker.heartbeat.creatives",
+    queue=CREATIVES_QUEUE,
+    queueing_lock="worker.heartbeat.creatives",
+)
+async def worker_heartbeat_creatives(timestamp: int) -> None:
+    async with open_runtime(Settings()) as runtime:
+        await runtime.worker_heartbeat("creatives")

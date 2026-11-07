@@ -6,6 +6,7 @@ from alembic.command import check, upgrade
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from fastapi import FastAPI
+from sqlalchemy import text
 from sqlalchemy.engine import make_url
 
 from adhelper.api.app import create_app
@@ -48,6 +49,38 @@ async def test_healthz_unavailable_when_database_is_down(settings: Settings) -> 
 
     assert response.status_code == 503
     assert response.json() == {"status": "unavailable"}
+
+
+async def test_healthz_ok_when_worker_heartbeat_is_recent(migrated: Settings) -> None:
+    app = create_app(migrated)
+    async with app.state.engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO worker_heartbeats (worker_name, last_heartbeat) "
+                "VALUES ('worker_1', now()) "
+                "ON CONFLICT (worker_name) DO UPDATE SET last_heartbeat = now()"
+            )
+        )
+    response = await _get_healthz(app)
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+async def test_healthz_unavailable_when_worker_heartbeat_is_stale(migrated: Settings) -> None:
+    app = create_app(migrated)
+    async with app.state.engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO worker_heartbeats (worker_name, last_heartbeat) "
+                "VALUES ('worker_stale', now() - interval '6 minutes') "
+                "ON CONFLICT (worker_name) "
+                "DO UPDATE SET last_heartbeat = now() - interval '6 minutes'"
+            )
+        )
+    response = await _get_healthz(app)
+    assert response.status_code == 503
+    assert response.json()["status"] == "unavailable"
+    assert "stale worker heartbeat" in response.json()["detail"]
 
 
 def test_models_match_migrations(settings: Settings) -> None:

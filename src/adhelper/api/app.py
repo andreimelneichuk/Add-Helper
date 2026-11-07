@@ -11,7 +11,6 @@ from uuid import UUID
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from adhelper.accounts.adapters.crypto import AesGcmCipher
@@ -24,6 +23,7 @@ from adhelper.api.chat import chat_router
 from adhelper.api.control import control_router
 from adhelper.api.display import display_router
 from adhelper.api.experiments import experiments_router
+from adhelper.api.healthz import router as healthz_router
 from adhelper.api.images import images_router
 from adhelper.api.launch import launch_router
 from adhelper.api.notifications import notifications_router
@@ -34,7 +34,7 @@ from adhelper.api.wizard_ads import guest_ads_router, wizard_ads_router
 from adhelper.commands.application.service import CallBudget
 from adhelper.config import Settings
 from adhelper.creatives.adapters.factory import build_text_model
-from adhelper.db import create_engine, ping
+from adhelper.db import create_engine
 from adhelper.platforms.adapters.direct.factory import (
     DirectPlatforms,
     build_direct_platforms,
@@ -218,16 +218,7 @@ def create_app(
     # Без токена бот не читает сообщения, и ссылка на привязку никуда бы не вела.
     has_bot = token is not None and bool(token.get_secret_value())
     app.state.telegram_bot = settings.telegram_bot_name if has_bot else ""
-
-    @app.get("/healthz")
-    async def healthz(request: Request) -> JSONResponse:
-        try:
-            await ping(request.app.state.engine)
-        except (SQLAlchemyError, OSError) as error:
-            # В логе только тип ошибки: текст может содержать адрес подключения.
-            logger.error("Проверка базы не прошла: %s", type(error).__name__)
-            return JSONResponse({"status": "unavailable"}, status_code=503)
-        return JSONResponse({"status": "ok"})
+    app.include_router(healthz_router)
 
     frontend_dist = Path(__file__).resolve().parents[3] / "frontend" / "dist"
     if frontend_dist.is_dir():
