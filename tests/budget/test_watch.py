@@ -116,3 +116,12 @@ def test_spend_at_or_over_stop_share_always_stops(hard: int, extra: int) -> None
     verdict = evaluate_watch(period, SpendSnapshot(spent, NOW), ZERO, NOW, RULES)
 
     assert verdict.action is WatchAction.STOP
+
+
+def test_historical_spend_does_not_trigger_stop_when_opening_spent_subtracted() -> None:
+    # На аккаунте потрачено 5 000 000 ₽ до начала периода, лимит периода 1 000 000 ₽.
+    # В текущем периоде потрачено только 100 000 ₽.
+    snapshot = fresh(5_100_000)
+    verdict = evaluate_watch(PERIOD, snapshot, ZERO, NOW, RULES, opening_spent=5_000_000)
+    assert verdict.action is WatchAction.OK
+    assert verdict.projected == 100_000

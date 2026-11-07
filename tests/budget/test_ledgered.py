@@ -2,7 +2,7 @@
 
 import uuid
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -22,7 +22,7 @@ from adhelper.budget.application.guard import (
 from adhelper.budget.application.preflight import BudgetPreflight
 from adhelper.budget.domain.limits import BudgetPeriod, CampaignBudget, LimitChange
 from adhelper.budget.domain.transfer import plan_transfer
-from adhelper.budget.domain.watch import BurnRate
+from adhelper.budget.domain.watch import BurnRate, WatchAction
 from adhelper.ledger.adapters.sql import PostgresAccountLock, SqlChangeRepository
 from adhelper.ledger.application.service import Ledger
 from adhelper.ledger.domain.model import ChangeKind, ChangeSource, ChangeStatus, ProposedChange
@@ -177,3 +177,55 @@ async def test_watch_stop_goes_through_journal(sessions: Sessions, engine: Async
     rows = await repository.all()
     assert [(r.kind, r.status) for r in rows] == [(ChangeKind.PAUSE, ChangeStatus.APPLIED)]
     assert rows[0].before["active"] is True
+
+
+async def test_ledgered_platform_enriches_last_increase_at_and_rejects_too_soon(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    rules_with_cooldown = replace(RULES, min_increase_interval_days=7)
+    platform = FakePlatform([campaign("a", 100_000)], NOW)
+    ledgered, _, _ = build(platform, sessions, engine)
+
+    now = datetime.now(UTC)
+    outcome1 = await apply_limit_change(
+        ledgered, "acc", PERIOD, LimitChange("a", 110_000), ZERO, now, rules_with_cooldown
+    )
+    assert outcome1.status is GuardStatus.APPLIED
+
+    campaigns = await ledgered.read_campaigns("acc")
+    assert campaigns[0].last_increase_at is not None
+
+    outcome2 = await apply_limit_change(
+        ledgered,
+        "acc",
+        PERIOD,
+        LimitChange("a", 120_000),
+        ZERO,
+        now + timedelta(days=1),
+        rules_with_cooldown,
+    )
+    assert outcome2.status is GuardStatus.REJECTED
+    assert outcome2.decision is not None
+    assert outcome2.decision.reason.value == "too_soon"
+
+
+async def test_watch_does_not_stop_when_account_has_historical_spend_with_opening_spent(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    platform = FakePlatform([campaign("a", 500_000)], NOW, enforces_limits=False)
+    platform.run(minutes=1, per_minute=5_000_000)
+    ledgered, _, _ = build(platform, sessions, engine)
+
+    result = await watch_once(
+        ledgered,
+        "acc",
+        PERIOD,
+        WatchState.initial(),
+        platform.now,
+        RULES,
+        opening_spent=5_000_000,
+        opening_balance=100_000,
+    )
+    assert not result.stopped
+    assert result.verdict is not None
+    assert result.verdict.action is WatchAction.OK

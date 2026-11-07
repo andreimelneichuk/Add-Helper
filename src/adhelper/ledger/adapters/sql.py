@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -181,6 +182,33 @@ class SqlChangeRepository:
         )
         async with self._sessions() as session:
             return [_to_change(row) for row in await session.scalars(statement)]
+
+    async def last_limit_increases(self, account: str) -> dict[str, datetime]:
+        statement = (
+            select(ChangeRow)
+            .where(
+                ChangeRow.business_id == self._business_id,
+                ChangeRow.account == account,
+                ChangeRow.kind == ChangeKind.SET_LIMIT.value,
+                ChangeRow.status == ChangeStatus.APPLIED.value,
+            )
+            .order_by(ChangeRow.id.desc())
+        )
+        increases: dict[str, datetime] = {}
+        async with self._sessions() as session:
+            rows = await session.scalars(statement)
+            for row in rows:
+                if row.target_ref in increases:
+                    continue
+                planned_limit = (row.planned or {}).get("limit")
+                before_limit = (row.before or {}).get("limit")
+                if (
+                    planned_limit is not None
+                    and before_limit is not None
+                    and int(planned_limit) > int(before_limit)
+                ):
+                    increases[row.target_ref] = row.updated_at or row.created_at
+        return increases
 
     async def all(self) -> Sequence[Change]:
         statement = (

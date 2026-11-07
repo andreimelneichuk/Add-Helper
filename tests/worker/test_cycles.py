@@ -296,3 +296,21 @@ async def test_confirmation_without_reading_is_refused(sessions: Sessions) -> No
     await add_period(store)
 
     assert not await confirm_balance(store, SqlAlerts(sessions, BUSINESS), BUSINESS, "acc", NOW)
+
+
+async def test_balance_unavailable_raises_alert(sessions: Sessions, engine: AsyncEngine) -> None:
+    platform = FakePlatform([campaign()], NOW, balance=900_000_000)
+    platform.faults_for_balance = True
+    store = SqlPeriodStore(sessions)
+    await add_period(store)
+    rt = runtime(sessions, engine, {(BUSINESS, "acc"): platform})
+    await rt.budget_watch()
+
+    alerts = SqlAlerts(sessions, BUSINESS)
+    assert "balance_unavailable" in await alerts.open_kinds()
+
+    # Когда баланс восстанавливается, тревога снимается
+    platform.faults_for_balance = False
+    platform.now += timedelta(minutes=15)
+    await rt.budget_watch()
+    assert "balance_unavailable" not in await alerts.open_kinds()

@@ -37,6 +37,15 @@ async def _publish(alerts: AlertSink, result: WatchResult, rules: BudgetRules) -
         await toggle("zero_balance", result.balance_state is BalanceState.ZERO)
         if result.balance_state is BalanceState.MISMATCH:
             await toggle("balance_mismatch", True)
+        if result.balance_state is BalanceState.UNAVAILABLE:
+            if result.balance_auth_error:
+                await toggle("platform_not_connected", True)
+            else:
+                await toggle("balance_unavailable", True)
+        else:
+            await toggle("balance_unavailable", False)
+            if not result.balance_auth_error:
+                await toggle("platform_not_connected", False)
 
 
 async def _watch_period(

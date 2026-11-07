@@ -129,11 +129,13 @@ async def change_budget(
         snapshot = await platform.fetch_spend(account)
     except PlatformUnavailable:
         return BudgetResult(BudgetStatus.UNCONFIRMED)
+    spent = corrected_spend(freshest(snapshot, history), burn, now)
+    period_spent = max(spent - (record.opening_spent or 0), 0)
     plan = plan_budget_change(
         record.period,
         campaigns,
         new_hard_limit,
-        corrected_spend(freshest(snapshot, history), burn, now),
+        period_spent,
     )
     if plan.refused:
         return BudgetResult(BudgetStatus.BELOW_SPENT, minimum=plan.minimum)

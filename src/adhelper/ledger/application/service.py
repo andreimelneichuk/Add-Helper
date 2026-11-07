@@ -1,5 +1,6 @@
 import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -62,6 +63,9 @@ class Ledger:
 
     async def changes_with_key_prefix(self, account: str, prefix: str) -> Sequence[Change]:
         return await self._repository.with_key_prefix(account, prefix)
+
+    async def last_limit_increases(self, account: str) -> dict[str, datetime]:
+        return await self._repository.last_limit_increases(account)
 
     async def read_target(self, account: str, target_ref: str) -> Mapping[str, Any]:
         return await self._gateway.read(account, target_ref)

@@ -108,5 +108,6 @@ class StoredPeriodPreflight:
         except PlatformUnavailable as error:
             raise GatewayUnavailable(str(error)) from error
         spent = corrected_spend(freshest(snapshot, history), burn, now)
-        reason = check_resume(record.period, campaigns, change.target_ref, spent, now)
+        period_spent = max(spent - (record.opening_spent or 0), 0)
+        reason = check_resume(record.period, campaigns, change.target_ref, period_spent, now)
         return reason.value if reason else None

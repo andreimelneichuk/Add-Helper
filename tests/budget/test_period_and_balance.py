@@ -166,7 +166,7 @@ async def test_balance_unavailable_does_not_block_spend_check() -> None:
         platform, "acc", PERIOD, WatchState.initial(), platform.now, RULES, opening_balance=1
     )
 
-    assert result.balance_state is None
+    assert result.balance_state is BalanceState.UNAVAILABLE
     assert result.stopped
 
 

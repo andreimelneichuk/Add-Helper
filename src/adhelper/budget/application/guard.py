@@ -11,7 +11,7 @@ from adhelper.budget.domain.limits import (
     LimitDecision,
     check_limit_change,
 )
-from adhelper.budget.domain.ports import BudgetPlatform, PlatformUnavailable
+from adhelper.budget.domain.ports import BudgetPlatform, PlatformAuthError, PlatformUnavailable
 from adhelper.budget.domain.rules import BudgetRules
 from adhelper.budget.domain.transfer import TransferPlan, next_step
 from adhelper.budget.domain.watch import (
@@ -145,6 +145,7 @@ class WatchResult:
     balance: int | None = None
     # Новая точка отсчёта сверки, если её ещё не было.
     baseline: BalanceBaseline | None = None
+    balance_auth_error: bool = False
 
 
 async def _stop_all(platform: BudgetPlatform, account: str) -> bool:
@@ -163,6 +164,7 @@ class _BalanceReading:
     balance: int | None = None
     state: BalanceState | None = None
     baseline: BalanceBaseline | None = None
+    auth_error: bool = False
 
 
 async def _read_balance(
@@ -176,8 +178,10 @@ async def _read_balance(
 ) -> _BalanceReading:
     try:
         current = await platform.fetch_balance(account)
+    except PlatformAuthError:
+        return _BalanceReading(state=BalanceState.UNAVAILABLE, auth_error=True)
     except PlatformUnavailable:
-        return _BalanceReading()
+        return _BalanceReading(state=BalanceState.UNAVAILABLE)
     if opening is None:
         # Без точки отсчёта сверять не с чем: ставим её сейчас, а не пропускаем сверку молча.
         baseline = BalanceBaseline(current, snapshot.reported)
@@ -215,7 +219,7 @@ async def watch_once(
     if state.snapshot is not None and snapshot.data_as_of < state.snapshot.data_as_of:
         snapshot = state.snapshot
     burn = BurnRate.between(state.snapshot, snapshot, state.burn) if state.snapshot else state.burn
-    verdict = evaluate_watch(period, snapshot, burn, now, rules)
+    verdict = evaluate_watch(period, snapshot, burn, now, rules, opening_spent=opening_spent)
     opening = (
         BalanceBaseline(opening_balance, opening_spent) if opening_balance is not None else None
     )
@@ -238,4 +242,5 @@ async def watch_once(
         balance_state=balance_state,
         balance=reading.balance,
         baseline=reading.baseline,
+        balance_auth_error=reading.auth_error,
     )

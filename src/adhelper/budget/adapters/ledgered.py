@@ -70,7 +70,20 @@ class LedgeredBudgetPlatform:
         self._source = source
 
     async def read_campaigns(self, account: str) -> Sequence[CampaignBudget]:
-        return await self._platform.read_campaigns(account)
+        campaigns = await self._platform.read_campaigns(account)
+        increases = await self._ledger.last_limit_increases(account)
+        if not increases:
+            return campaigns
+        return [
+            CampaignBudget(
+                campaign_id=c.campaign_id,
+                limit=c.limit,
+                spent=c.spent,
+                active=c.active,
+                last_increase_at=increases.get(c.campaign_id, c.last_increase_at),
+            )
+            for c in campaigns
+        ]
 
     async def fetch_spend(self, account: str) -> SpendSnapshot:
         return await self._platform.fetch_spend(account)

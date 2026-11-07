@@ -1,5 +1,6 @@
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
+from datetime import datetime
 from typing import Any, Protocol
 
 from adhelper.ledger.domain.model import Change, ChangeKind, ChangeStatus, ProposedChange
@@ -21,6 +22,7 @@ class ChangeRepository(Protocol):
     async def get(self, change_id: int) -> Change | None: ...
     async def on_target(self, account: str, target_ref: str) -> Sequence[Change]: ...
     async def with_key_prefix(self, account: str, prefix: str) -> Sequence[Change]: ...
+    async def last_limit_increases(self, account: str) -> dict[str, datetime]: ...
     async def add(
         self,
         proposed: ProposedChange,
