@@ -243,7 +243,7 @@ async def test_concurrent_renders_are_limited_by_semaphore(site: tuple[str, list
         current_active -= 1
         orig_release()
 
-    semaphore.acquire = tracking_acquire  # type: ignore[method-assign]
+    semaphore.acquire = tracking_acquire  # type: ignore[method-assign,assignment]
     semaphore.release = tracking_release  # type: ignore[method-assign]
 
     try:
