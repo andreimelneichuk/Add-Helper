@@ -19,6 +19,7 @@ class FakeDirect:
     campaigns: dict[int, dict[str, Any]] = field(default_factory=dict)
     groups: dict[int, dict[str, Any]] = field(default_factory=dict)
     ads: dict[int, dict[str, Any]] = field(default_factory=dict)
+    keywords: dict[int, dict[str, Any]] = field(default_factory=dict)
     report_rows: list[tuple[str, str, int]] = field(default_factory=list)
     amount: str = "1500.5"
     calls: list[str] = field(default_factory=list)
@@ -197,6 +198,32 @@ class FakeDirect:
         for ad_id in params["SelectionCriteria"]["Ids"]:
             self.ads[ad_id]["State"] = "ON"
         return {"ResumeResults": [{"Id": i} for i in params["SelectionCriteria"]["Ids"]]}
+
+    # --- Ключевые фразы ---
+
+    def _keywords_get(self, params: dict[str, Any]) -> dict[str, Any]:
+        criteria = params.get("SelectionCriteria", {})
+        group_ids = criteria.get("AdGroupIds", [])
+        found = [
+            kw for kw in self.keywords.values() if not group_ids or kw["AdGroupId"] in group_ids
+        ]
+        return {"Keywords": found} if found else {}
+
+    def _keywords_add(self, params: dict[str, Any]) -> dict[str, Any]:
+        results: list[dict[str, Any]] = []
+        for item in params.get("Keywords", []):
+            kw_id = self._id()
+            self.keywords[kw_id] = {
+                "Id": kw_id,
+                "AdGroupId": item["AdGroupId"],
+                "Keyword": item["Keyword"],
+                "State": "ON",
+                "Status": "ACCEPTED",
+            }
+            if "AutotargetingCategories" in item:
+                self.keywords[kw_id]["AutotargetingCategories"] = item["AutotargetingCategories"]
+            results.append({"Id": kw_id})
+        return {"AddResults": results}
 
     # --- Отчёты и счёт ---
 

@@ -39,6 +39,7 @@ from adhelper.campaigns.application.launch import (
     LaunchResult,
     LaunchStatus,
     NewAd,
+    generate_keywords,
     launch,
     launch_state,
     preview,
@@ -255,6 +256,11 @@ def launch_router() -> APIRouter:
         if not all(item["ok"] for item in items) or found is None or plan is None or not login:
             return items, None, login
         counters = tag.counters if tag is not None and tag.status is TagStatus.FOUND else ()
+        keywords = generate_keywords(
+            services=found[0].services,
+            niche=found[0].niche,
+            address=found[0].address,
+        )
         inputs = LaunchInputs(
             title=found[0].name,
             account=login,
@@ -263,6 +269,7 @@ def launch_router() -> APIRouter:
             href=site,
             address=found[0].address,
             counters=tuple(counters),
+            keywords=keywords,
         )
         planned = preview(inputs, load_launch_rules(), load_budget_rules("budget-1"), _now(request))
         items.append(_plan_item(planned))

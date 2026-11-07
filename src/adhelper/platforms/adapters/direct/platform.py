@@ -518,6 +518,59 @@ class DirectPlatform:
         )
         return check_results(result.get("AddResults") or [])
 
+    async def _keywords(self, account: str, group_id: int) -> list[str]:
+        """Существующие фразы группы объявлений."""
+        result = await self._call(
+            account,
+            "keywords",
+            "get",
+            {
+                "SelectionCriteria": {"AdGroupIds": [group_id]},
+                "FieldNames": ["Id", "Keyword"],
+            },
+        )
+        return [str(kw["Keyword"]) for kw in (result.get("Keywords") or []) if "Keyword" in kw]
+
+    async def _add_keywords(
+        self,
+        account: str,
+        group_id: int,
+        keywords: Sequence[str],
+    ) -> list[int]:
+        """Добавляет недостающие ключевые фразы и условие автотаргетинга в группу."""
+        if not keywords:
+            return []
+        present = {kw.lower().strip() for kw in await self._keywords(account, group_id)}
+        missing = [kw for kw in keywords if kw.lower().strip() not in present]
+        if not missing:
+            return []
+
+        added_ids: list[int] = []
+        # Директ принимает до 1000 фраз в одном вызове
+        for i in range(0, len(missing), 1000):
+            batch = missing[i : i + 1000]
+            items: list[dict[str, Any]] = []
+            for kw in batch:
+                item: dict[str, Any] = {
+                    "AdGroupId": group_id,
+                    "Keyword": kw,
+                }
+                if kw == "---autotargeting":
+                    item["AutotargetingCategories"] = [
+                        {"Category": "EXACT", "Value": "YES"},
+                        {"Category": "ALTERNATIVE", "Value": "YES"},
+                        {"Category": "ACCESSORY", "Value": "YES"},
+                    ]
+                items.append(item)
+            result = await self._call(
+                account,
+                "keywords",
+                "add",
+                {"Keywords": items},
+            )
+            added_ids.extend(check_results(result.get("AddResults") or []))
+        return added_ids
+
     async def find_ad(self, account: str, marker: str) -> PublishedAd | None:
         campaign_ids = [int(c["Id"]) for c in await self._campaigns(account)]
         for ad in await self._ads_of_campaigns(account, campaign_ids):
@@ -763,6 +816,8 @@ class DirectPlatform:
             group_id = check_results(result.get("AddResults") or [])[0]
         else:
             group_id = int(groups[0]["Id"])
+        if campaign.keywords:
+            await self._add_keywords(account, group_id, campaign.keywords)
         present = [
             (str((ad.get("TextAd") or {}).get("Title")), str((ad.get("TextAd") or {}).get("Text")))
             for ad in await self._ads_of_campaigns(account, [campaign_id])

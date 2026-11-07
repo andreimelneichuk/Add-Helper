@@ -15,6 +15,27 @@ from adhelper.budget.domain.calendar import MOSCOW as MOSCOW_TZ
 from adhelper.budget.domain.calendar import moscow_period, platform_date
 from adhelper.budget.domain.limits import BudgetPeriod
 from adhelper.budget.domain.rules import BudgetRules
+from adhelper.campaigns.domain.keywords import (
+    AUTOTARGETING_KEYWORD,
+    generate_keywords,
+)
+
+__all__ = [
+    "AUTOTARGETING_KEYWORD",
+    "MOSCOW_TZ",
+    "PLACEMENT_WORDS",
+    "Advertiser",
+    "LaunchInputs",
+    "LaunchPlan",
+    "LaunchProblem",
+    "LaunchResult",
+    "LaunchStatus",
+    "NewAd",
+    "generate_keywords",
+    "launch",
+    "launch_state",
+    "preview",
+]
 from adhelper.campaigns.domain.launch import (
     LAUNCH_PREFIX,
     MICROS_PER_RUB,
@@ -40,6 +61,7 @@ from adhelper.platforms.domain.ports import CLIENT_PREFIX, Advertiser
 
 # Типы домена нужны HTTP-слою, который сам домен не импортирует.
 __all__ = [
+    "AUTOTARGETING_KEYWORD",
     "MOSCOW_TZ",
     "PLACEMENT_WORDS",
     "Advertiser",
@@ -50,6 +72,7 @@ __all__ = [
     "LaunchStatus",
     "LaunchedCampaign",
     "NewAd",
+    "generate_keywords",
     "launch",
     "launch_state",
     "preview",
@@ -72,6 +95,7 @@ class LaunchInputs:
     href: str
     address: str
     counters: tuple[int, ...]
+    keywords: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -121,6 +145,7 @@ def _plan(key: str, inputs: LaunchInputs, period: BudgetPeriod, rules: LaunchRul
         inputs.address,
         inputs.counters,
         rules,
+        keywords=inputs.keywords,
     )
 
 

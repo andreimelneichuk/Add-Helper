@@ -69,6 +69,7 @@ class NewCampaign:
     href: str
     counters: tuple[int, ...]
     ads: tuple[NewAd, ...]
+    keywords: tuple[str, ...] = ()
 
     @property
     def target_ref(self) -> str:
@@ -76,7 +77,7 @@ class NewCampaign:
 
     def planned(self) -> dict[str, Any]:
         """Что должно оказаться на площадке. Чтение обратно возвращает те же поля."""
-        return {
+        data: dict[str, Any] = {
             "name": self.name,
             "placement": self.placement.value,
             "limit": self.limit,
@@ -86,6 +87,9 @@ class NewCampaign:
             "counters": list(self.counters),
             "ads": [{"headline": ad.headline, "text": ad.text} for ad in self.ads],
         }
+        if self.keywords:
+            data["keywords"] = list(self.keywords)
+        return data
 
     @staticmethod
     def from_planned(marker: str, planned: Mapping[str, Any]) -> "NewCampaign":
@@ -99,6 +103,7 @@ class NewCampaign:
             href=str(planned["href"]),
             counters=tuple(int(c) for c in planned["counters"]),
             ads=tuple(NewAd(str(a["headline"]), str(a["text"])) for a in planned["ads"]),
+            keywords=tuple(str(k) for k in planned.get("keywords", ())),
         )
 
 
@@ -143,6 +148,7 @@ def plan_launch(
     address: str,
     counters: Sequence[int],
     rules: LaunchRules,
+    keywords: Sequence[str] = (),
 ) -> LaunchPlan:
     if not ads:
         return LaunchPlan((), LaunchProblem.NO_ADS)
@@ -180,6 +186,7 @@ def plan_launch(
             href=href,
             counters=tuple(counters),
             ads=chosen,
+            keywords=tuple(keywords),
         )
         for index, placement in enumerate(placements)
     )
