@@ -64,9 +64,9 @@ async def ads_keep(timestamp: int) -> None:
 
 
 # Отправка занявших место объявлений через журнал и итог проверки Яндекса (docs/05 §8).
-# Очередь бюджета: здесь нет вызовов модели, а журнал кабинета общий с задачами бюджета.
+# Очередь креативов: может генерировать картинки через модель.
 @app.periodic(cron="*/5 * * * *")
-@app.task(name="ads.moderate", queue=BUDGET_QUEUE, queueing_lock="ads.moderate")
+@app.task(name="ads.moderate", queue=CREATIVES_QUEUE, queueing_lock="ads.moderate")
 async def ads_moderate(timestamp: int) -> None:
     async with open_runtime(Settings()) as runtime:
         await runtime.ads_moderate()
@@ -107,7 +107,7 @@ async def site_tag_check(timestamp: int) -> None:
 
 # Раз в сутки после ночной сверки отчётов: 06:20 по Москве, отчёты за вчера уже есть.
 @app.periodic(cron="20 3 * * *")
-@app.task(name="autopilot.run", queue=BUDGET_QUEUE, queueing_lock="autopilot.run")
+@app.task(name="autopilot.run", queue=CREATIVES_QUEUE, queueing_lock="autopilot.run")
 async def autopilot_run(timestamp: int) -> None:
     async with open_runtime(Settings()) as runtime:
         await runtime.autopilot_run()
@@ -116,7 +116,7 @@ async def autopilot_run(timestamp: int) -> None:
 # Ход A/B-тестов: вариант через журнал, проверка Яндекса, одновременный показ и итог.
 # Раз в час: повтор ничего не меняет, переключение начинается с чтения.
 @app.periodic(cron="7 * * * *")
-@app.task(name="experiments.run", queue=BUDGET_QUEUE, queueing_lock="experiments.run")
+@app.task(name="experiments.run", queue=CREATIVES_QUEUE, queueing_lock="experiments.run")
 async def experiments_run(timestamp: int) -> None:
     async with open_runtime(Settings()) as runtime:
         await runtime.experiments_run()
@@ -125,7 +125,7 @@ async def experiments_run(timestamp: int) -> None:
 # Отчёт по объявлениям идущих тестов за вчера: 06:05 по Москве (03:05 UTC), до суточного
 # цикла автопилота. Повтор заменяет строки за те же сутки.
 @app.periodic(cron="5 3 * * *")
-@app.task(name="experiments.stats", queue=BUDGET_QUEUE, queueing_lock="experiments.stats")
+@app.task(name="experiments.stats", queue=CREATIVES_QUEUE, queueing_lock="experiments.stats")
 async def experiments_stats(timestamp: int) -> None:
     async with open_runtime(Settings()) as runtime:
         await runtime.experiments_stats()

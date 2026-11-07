@@ -20,10 +20,18 @@ function kpisOf(s: State): Kpi[] {
   const cpa = w.cost / Math.max(1, w.leads);
   const prevCpa = w.prevCost / Math.max(1, w.prevLeads);
   const last14 = s.live?.trail ?? days.slice(-14);
+  const hasCampaigns = s.live ? s.live.hasCampaigns : true;
+  const planBudget = s.live?.planBudget ?? null;
+  const budgetSub = budget > 0
+    ? `из ${rub(budget)}, осталось ${rub(Math.max(0, budget - spent))}`
+    : (!hasCampaigns && planBudget)
+      ? `План ${rub(planBudget)}, реклама не запущена`
+      : "Бюджет на месяц ещё не задан";
+
   const money: Kpi = {
     label: `Потрачено в ${s.live ? MONTH_IN[s.live.monthOf] ?? "этом месяце" : "ноябре"}`,
     value: s.live && s.live.spent === null ? "нет данных" : rub(spent),
-    sub: budget > 0 ? `из ${rub(budget)}, осталось ${rub(Math.max(0, budget - spent))}` : "Бюджет на месяц ещё не задан",
+    sub: budgetSub,
     ink: "muted",
     meter: { pct: budget > 0 ? Math.min(100, Math.round((spent * 100) / budget)) : 0, time: Math.round((days.length * 100) / (s.live?.monthDays ?? 30)) },
   };

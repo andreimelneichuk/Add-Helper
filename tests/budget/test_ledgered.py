@@ -206,6 +206,7 @@ async def test_ledgered_platform_enriches_last_increase_at_and_rejects_too_soon(
     )
     assert outcome2.status is GuardStatus.REJECTED
     assert outcome2.decision is not None
+    assert outcome2.decision.reason is not None
     assert outcome2.decision.reason.value == "too_soon"
 
 

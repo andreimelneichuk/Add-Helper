@@ -52,6 +52,11 @@ def test_compose_worker_listens_to_every_queue() -> None:
     assert "--queues=budget,creatives,notifications" in compose
 
 
+def test_budget_queue_only_has_critical_budget_tasks() -> None:
+    budget_tasks = {name for name, task in app.tasks.items() if task.queue == "budget"}
+    assert budget_tasks == {"budget.watch", "state.reconcile"}
+
+
 async def test_worker_runs_money_tasks_from_real_database(
     migrated: Settings, engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:

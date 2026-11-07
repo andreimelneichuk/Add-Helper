@@ -54,6 +54,13 @@ describe("черновик запуска", () => {
   it("имя бизнеса берётся с адреса сайта, без сайта из вида деятельности", () => {
     expect(businessName(draft)).toBe("nogti.ru");
     expect(businessName({ ...draft, site: "" })).toBe("Маникюр");
+    expect(
+      businessName({
+        ...draft,
+        site: "",
+        facts: [{ id: "f1", value: "Педикюр, 1 800 ₽", field: "service", label: "Услуга", source: "от вас" }],
+      }),
+    ).toBe("Педикюр");
     expect(businessName({ ...draft, site: "", facts: [] })).toBe("Мой бизнес");
   });
 

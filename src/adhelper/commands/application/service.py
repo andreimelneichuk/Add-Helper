@@ -124,10 +124,13 @@ async def interpret(
         and (first.command.kind is Kind.UNKNOWN or first.command.kind in (Kind.STATS, Kind.HISTORY))
     ):
         res = await langchain_agent.invoke(message, known, analytics_context)
-        if res.command.kind in CHANGING:
-            confirm = f"Понял так: {meaning(res.command)} Применить?"
-            return Answer(res.command, res.source, rules.version, confirm=confirm, reply=res.reply)
-        return Answer(res.command, res.source, rules.version, confirm="", reply=res.reply)
+        if res is not None:
+            if res.command.kind in CHANGING:
+                confirm = f"Понял так: {meaning(res.command)} Применить?"
+                return Answer(
+                    res.command, res.source, rules.version, confirm=confirm, reply=res.reply
+                )
+            return Answer(res.command, res.source, rules.version, confirm="", reply=res.reply)
 
     specific_refusal = refusal(message)
     if first.command.kind is Kind.UNKNOWN and not first.question and specific_refusal != REFUSAL:

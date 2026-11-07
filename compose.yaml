@@ -92,6 +92,7 @@ services:
       - procrastinate
       - --app=adhelper.worker.app.app
       - worker
+      - --concurrency=2
       - --queues=budget,creatives,notifications
     depends_on:
       migrate:

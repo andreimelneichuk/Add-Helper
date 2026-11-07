@@ -142,7 +142,10 @@ export function businessName(draft: StartDraft): string {
     if (draft.site.trim()) return new URL(draft.site.includes("://") ? draft.site : `https://${draft.site}`).hostname.replace(/^www\./u, "");
   } catch { /* не адрес: берём вид деятельности */ }
   const niche = draftProfile(draft).niche;
-  return niche ? niche[0]!.toUpperCase() + niche.slice(1) : "Мой бизнес";
+  if (niche) return niche[0]!.toUpperCase() + niche.slice(1);
+  const firstService = draftProfile(draft).services[0]?.name;
+  if (firstService) return firstService[0]!.toUpperCase() + firstService.slice(1);
+  return "Мой бизнес";
 }
 
 /** Перенести черновик после входа. Профиль чужого бизнеса не трогаем: у владельца он уже есть. */

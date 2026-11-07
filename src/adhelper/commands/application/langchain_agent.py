@@ -17,9 +17,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field, SecretStr, field_validator
 
-from adhelper.commands.application.analytics import AnalyticsContext
+from adhelper.commands.application.analytics import AnalyticsAgent, AnalyticsContext
 from adhelper.commands.domain.model import Command, Kind, Known, KnownAd, Source
-from adhelper.stats.domain.today import rub
+from adhelper.commands.domain.parse import WEEK, amounts, days_in, normalize
 
 logger = logging.getLogger(__name__)
 
@@ -128,15 +128,12 @@ SYSTEM_TEMPLATE = (
     "- stats: показать подробную статистику показов и расходов\n"
     "- history: показать историю изменений\n"
     "- null: для обычного разговора, приветствия, совета или консультации.\n\n"
-    "КОНТЕКСТ ТЕКУЩЕГО БИЗНЕСА:\n"
-    "{business_context}\n\n"
-    "СТАТИСТИКА ЗА 7 ДНЕЙ:\n"
-    "{analytics_context}\n\n"
     "ВАЖНЫЕ ПРАВИЛА:\n"
     "- На приветствия ('привет', 'здравствуйте') и обычные вопросы action ВСЕГДА null.\n"
     "- Никогда не говори 'этого я пока не умею' на обычные человеческие фразы и приветствия.\n"
     "- Будь лаконичен, доброжелателен и полезен (2-4 емких предложения).\n"
-    "- Если пользователь называет число без команды, уточни, это бюджет или новая цена услуги."
+    "- Если пользователь называет число без команды, уточни, это бюджет или новая цена услуги.\n"
+    "- Все суммы и параметры бери только из сообщения пользователя. Не придумывай новые числа."
 )
 
 
@@ -151,33 +148,30 @@ class LangChainChatAgent:
         message: str,
         known: Known,
         analytics_context: AnalyticsContext | None = None,
-    ) -> AgentResult:
-        ads_text = (
-            "\n".join(f"- ID: {ad.id}, Заголовок: «{ad.name}»" for ad in known.ads)
-            if known.ads
-            else "Нет активных объявлений."
-        )
-        services_text = (
-            ", ".join(known.services) if known.services else "Услуги в профиле не указаны."
-        )
-        business_context = f"Объявления:\n{ads_text}\nУслуги бизнеса: {services_text}"
-
+    ) -> AgentResult | None:
+        context_payload: dict[str, object] = {
+            "ads": [{"id": ad.id, "title": ad.name} for ad in known.ads],
+            "services": list(known.services),
+        }
         if analytics_context:
-            stats_text = (
-                f"Период: {analytics_context.period_label}\n"
-                f"Показы: {analytics_context.impressions}, Клики: {analytics_context.clicks}, "
-                f"Заявки: {analytics_context.conversions}, "
-                f"Потрачено: {rub(analytics_context.cost_micros // 1_000_000)}"
-            )
-        else:
-            stats_text = "Данные о показах отсутствуют."
+            context_payload["analytics"] = {
+                "period": analytics_context.period_label,
+                "impressions": analytics_context.impressions,
+                "clicks": analytics_context.clicks,
+                "leads": analytics_context.conversions,
+                "cost_rub": analytics_context.cost_micros // 1_000_000,
+            }
+
+        user_content = json.dumps(
+            {
+                "user_message": message,
+                "business_data": context_payload,
+            },
+            ensure_ascii=False,
+        )
 
         system_prompt = (
-            SYSTEM_TEMPLATE.format(
-                business_context=business_context,
-                analytics_context=stats_text,
-            )
-            + "\nОтвечай строго в формате JSON по схеме: "
+            SYSTEM_TEMPLATE + "\nОтвечай строго в формате JSON по схеме: "
             '{"reply": "...", "action": null, "rubles": null, '
             '"service": null, "ad_id": null, "days": [], "wish": null}'
         )
@@ -186,7 +180,7 @@ class LangChainChatAgent:
             response = await self._llm.ainvoke(
                 [
                     SystemMessage(content=system_prompt),
-                    HumanMessage(content=message),
+                    HumanMessage(content=user_content),
                 ]
             )
             raw = str(response.content).strip()
@@ -196,27 +190,26 @@ class LangChainChatAgent:
             data = json.loads(raw)
             if isinstance(data, dict):
                 output = AgentOutput.model_validate(data)
-                return self._to_result(output, known)
+                return self._to_result(output, message, known, analytics_context)
         except Exception as error:
             logger.warning(
-                "Ошибка вызова LangChain агента: %s (ответ: %s)",
+                "Ошибка вызова LangChain агента: %s",
                 type(error).__name__,
-                raw if "raw" in locals() else "no raw",
             )
+            return None
 
-        # Fallback при сбое вызова LLM
-        return AgentResult(
-            command=Command(Kind.UNKNOWN),
-            reply=(
-                "Здравствуйте! Я ваш ассистент по рекламе. Сейчас на линии небольшая задержка, "
-                "но я готов помочь с настройкой объявлений или ответить на вопросы."
-            ),
-            source=Source.MODEL,
-        )
+        return None
 
-    def _to_result(self, output: AgentOutput, known: Known) -> AgentResult:
+    def _to_result(
+        self,
+        output: AgentOutput,
+        message: str,
+        known: Known,
+        analytics_context: AnalyticsContext | None = None,
+    ) -> AgentResult:
         reply = output.reply.strip()
         action = output.action
+        text = normalize(message)
 
         if not action:
             return AgentResult(command=Command(Kind.UNKNOWN), reply=reply)
@@ -235,27 +228,52 @@ class LangChainChatAgent:
             "history": Kind.HISTORY,
         }
         kind = kind_map.get(action, Kind.UNKNOWN)
+        if kind is Kind.UNKNOWN:
+            return AgentResult(command=Command(Kind.UNKNOWN), reply=reply)
 
+        # Проверка сумм: число должно присутствовать в сообщении
+        valid_amounts = amounts(text)
+        if kind in (Kind.SET_BUDGET, Kind.SET_PRICE) and (
+            output.rubles is None or output.rubles not in valid_amounts
+        ):
+            return AgentResult(command=Command(Kind.UNKNOWN), reply=reply)
+
+        # Проверка объявления: только точное равенство id
         target_ad: KnownAd | None = None
         if output.ad_id:
             for ad in known.ads:
-                if ad.id == output.ad_id or output.ad_id in ad.id:
+                if ad.id == output.ad_id:
                     target_ad = ad
                     break
+        if kind in (Kind.AD_OFF, Kind.AD_ON, Kind.REWORK_AD) and target_ad is None:
+            return AgentResult(command=Command(Kind.UNKNOWN), reply=reply)
 
+        # Проверка услуги
         target_service = output.service
         if target_service and target_service not in known.services:
             for s in known.services:
                 if s.lower() == target_service.lower():
                     target_service = s
                     break
+        if kind is Kind.SET_PRICE and (not target_service or target_service not in known.services):
+            return AgentResult(command=Command(Kind.UNKNOWN), reply=reply)
+
+        # Проверка дней
+        days = tuple(sorted({d for d in output.days if isinstance(d, int) and d in WEEK}))
+        if kind is Kind.SKIP_DAYS and (not days or not days_in(text)):
+            return AgentResult(command=Command(Kind.UNKNOWN), reply=reply)
+
+        # Для статистики и истории: числа подставляются проверенным кодом
+        if kind in (Kind.STATS, Kind.HISTORY) and analytics_context:
+            code_reply = AnalyticsAgent(None)._fallback(message, analytics_context, kind).reply
+            reply = code_reply
 
         command = Command(
             kind=kind,
             rubles=output.rubles,
             ad=target_ad,
             service=target_service,
-            days=tuple(output.days),
+            days=days,
             wish=output.wish or "",
         )
         return AgentResult(command=command, reply=reply)

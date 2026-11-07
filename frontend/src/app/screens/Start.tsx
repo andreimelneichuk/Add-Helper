@@ -79,9 +79,11 @@ export function Start({ store }: { store: Store }) {
           <p className="st-lead">{step.lead}</p>
           <Body store={store} s={s} />
           <div className="st-actions">
-            <button type="submit" className="ah-btn ah-btn-primary st-next" disabled={isBusy}>{store.reader && s.step === STEPS.length - 1 ? "Открыть кабинет" : step.cta}</button>
+            {!(s.step === 3 && s.ads.length === 0 && !s.writing) && (
+              <button type="submit" className="ah-btn ah-btn-primary st-next" disabled={isBusy}>{store.reader && s.step === STEPS.length - 1 ? "Открыть кабинет" : step.cta}</button>
+            )}
             {s.step > 0 && <button type="button" className="ah-btn" onClick={() => store.set({ step: s.step - 1, block: "" })}>Назад</button>}
-            {s.block && (
+            {s.block && !(store.writer && s.step === 3 && s.ads.length === 0 && !s.writing) && (
               <span className="st-block-wrap">
                 <span role="alert" className="st-block">{s.block}</span>
                 {s.step === 3 && (

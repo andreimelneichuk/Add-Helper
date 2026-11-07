@@ -262,7 +262,7 @@ export function RealAds({ store, s }: Props) {
         <div className="st-link" style={{ marginBottom: 16 }}>
           <div className="st-link-text">
             <div className="st-link-title">Нет готовых объявлений</div>
-            <div className="ah-muted">
+            <div className="ah-muted" role="alert">
               {s.facts.some((f) => f.field === "service" || f.id === "prices")
                 ? s.block || "Лимит генераций на сегодня исчерпан. Вы можете продолжить к кабинету и настроить объявления там."
                 : "Объявления составляются по услугам из вашего профиля. Вернитесь на шаг «Профиль» и добавьте хотя бы одну услугу."}
