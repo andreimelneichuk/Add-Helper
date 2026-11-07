@@ -398,30 +398,39 @@ class Runtime:
                 self.telegram, SqlTelegramLinks(self.sessions), self.clock()
             )
 
-    async def cleanup_jobs(self, older_than_days: int = 7) -> int:
-        """Очистка завершённых и отменённых задач очереди старше older_than_days дней."""
+    async def cleanup_jobs(self, older_than_days: int = 7, batch_size: int = 1000) -> int:
+        """Очистка завершённых и отменённых задач очереди старше older_than_days дней батчами."""
         async with self.engine.begin() as conn:
             exists = await conn.scalar(text("SELECT to_regclass('procrastinate_jobs')"))
             if not exists:
                 return 0
-            result = await conn.execute(
-                text(
-                    "DELETE FROM procrastinate_jobs "
-                    "WHERE id IN ("
-                    "    SELECT job.id FROM ("
-                    "        SELECT DISTINCT ON (job.id) job.id, job.status, "
-                    "            COALESCE(event.at, job.scheduled_at, NOW()) AS latest_at "
-                    "        FROM procrastinate_jobs job "
-                    "        LEFT JOIN procrastinate_events event ON job.id = event.job_id "
-                    "        ORDER BY job.id, event.at DESC NULLS LAST "
-                    "    ) AS job "
-                    "    WHERE job.status IN ('succeeded', 'cancelled') "
-                    "      AND latest_at < NOW() - (:days || ' DAYS')::INTERVAL"
-                    ")"
-                ),
-                {"days": older_than_days},
-            )
-            return int(result.rowcount or 0)
+
+        total_deleted = 0
+        while True:
+            async with self.engine.begin() as conn:
+                result = await conn.execute(
+                    text(
+                        "DELETE FROM procrastinate_jobs "
+                        "WHERE id IN ("
+                        "    SELECT job.id FROM ("
+                        "        SELECT DISTINCT ON (job.id) job.id, job.status, "
+                        "            COALESCE(event.at, job.scheduled_at, NOW()) AS latest_at "
+                        "        FROM procrastinate_jobs job "
+                        "        LEFT JOIN procrastinate_events event ON job.id = event.job_id "
+                        "        ORDER BY job.id, event.at DESC NULLS LAST "
+                        "    ) AS job "
+                        "    WHERE job.status IN ('succeeded', 'cancelled') "
+                        "      AND latest_at < NOW() - (:days || ' DAYS')::INTERVAL "
+                        "    LIMIT :batch_size "
+                        ")"
+                    ),
+                    {"days": older_than_days, "batch_size": batch_size},
+                )
+                deleted = int(result.rowcount or 0)
+                total_deleted += deleted
+                if deleted < batch_size:
+                    break
+        return total_deleted
 
     async def worker_heartbeat(self, worker_name: str = "default") -> None:
         """Отметка сердцебиения воркера для проверки здоровья в /healthz."""

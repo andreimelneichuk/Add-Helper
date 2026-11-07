@@ -56,15 +56,22 @@ LAUNCH_ARGS = [
     "--disable-gpu",
 ]
 METHODS = frozenset({"GET", "HEAD", "POST"})
-_RENDER_SEMAPHORE: asyncio.Semaphore | None = None
+_RENDER_SEMAPHORES: dict[asyncio.AbstractEventLoop, asyncio.Semaphore] = {}
 
 
 def get_render_semaphore() -> asyncio.Semaphore:
-    """Семафор на уровне процесса: не более одной активной вкладки парсера сайтов одновременно."""
-    global _RENDER_SEMAPHORE
-    if _RENDER_SEMAPHORE is None:
-        _RENDER_SEMAPHORE = asyncio.Semaphore(1)
-    return _RENDER_SEMAPHORE
+    """Семафор на уровне процесса и event loop:
+    не более одной активной вкладки парсера сайтов одновременно.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.get_event_loop()
+    sem = _RENDER_SEMAPHORES.get(loop)
+    if sem is None:
+        sem = asyncio.Semaphore(1)
+        _RENDER_SEMAPHORES[loop] = sem
+    return sem
 
 
 _SHADOW_DOM_SCRIPT = """() => {
@@ -199,14 +206,10 @@ class ChromiumRenderer:
                 logger.warning("Браузер потерял страницу: %s", type(error).__name__)
                 raise SiteUnavailable(FetchProblem.UNREACHABLE) from None
             finally:
-                try:
+                with contextlib.suppress(Exception):
                     await context.unroute_all(behavior="ignoreErrors")
-                except Exception:
-                    pass
-                try:
+                with contextlib.suppress(Exception):
                     await context.close()
-                except Exception:
-                    pass
 
     async def _read(self, context: BrowserContext, url: str) -> FetchedPage:
         budget = _Budget(self._render)
