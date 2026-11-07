@@ -618,7 +618,7 @@ async def test_balance_names_the_reason_in_owner_words(anna: Anna) -> None:
     url = f"/api/businesses/{business}/accounts/{LOGIN}/balance"
     cases = {
         "reconnect": DirectAuthError(None, "account needs reconnect"),
-        "заявка на доступ": DirectAuthError(58, "app access request needed"),
+        "мы уже разбираемся": DirectAuthError(58, "app access request needed"),
         "общего счёта": DirectError(None, "shared account is not enabled"),
         "не ответил": DirectError(500, "boom"),
     }
