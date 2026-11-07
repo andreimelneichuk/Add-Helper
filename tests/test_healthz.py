@@ -55,3 +55,34 @@ def test_models_match_migrations(settings: Settings) -> None:
     upgrade(config, "head")
 
     check(config)
+
+
+async def test_responses_carry_security_headers_and_hide_docs(settings: Settings) -> None:
+    app = create_app(settings)
+    transport = httpx.ASGITransport(app=app)
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            health = await client.get("/healthz")
+            docs = await client.get("/docs")
+            schema = await client.get("/openapi.json")
+    finally:
+        await app.state.engine.dispose()
+
+    assert health.headers["x-content-type-options"] == "nosniff"
+    assert "frame-ancestors 'none'" in health.headers["content-security-policy"]
+    assert "strict-transport-security" in health.headers
+    assert docs.status_code != 200 or "swagger" not in docs.text.lower()
+    assert schema.status_code != 200 or "openapi" not in schema.text[:50].lower()
+
+
+async def test_big_body_is_refused_before_the_handler(settings: Settings) -> None:
+    app = create_app(settings)
+    transport = httpx.ASGITransport(app=app)
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            big = await client.post("/api/site-reads", content=b"a" * 1_100_000)
+            small = await client.post("/api/site-reads", json={"url": ""})
+    finally:
+        await app.state.engine.dispose()
+    assert big.status_code == 413
+    assert small.status_code != 413

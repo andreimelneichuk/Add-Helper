@@ -40,6 +40,8 @@ class FetchedPage:
     counters: tuple[int, ...] = ()
     # Следы конструкторов и виджетов записи из правил, найденные в разметке.
     builders: tuple[str, ...] = ()
+    # Адреса картинок из разметки после скриптов: кандидаты в фото для объявлений.
+    images: tuple[str, ...] = ()
 
 
 class SiteFetcher(Protocol):

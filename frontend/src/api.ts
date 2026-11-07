@@ -193,6 +193,7 @@ export type AdsChoice = { id: number; token: string; kept: number[] };
 
 export type Business = { id: string; name: string };
 export type AdAccount = { id: string; platform: string; login: string; scopes: string[]; state: string };
+export type AccountBalance = { balance_micros: number | null; problem: string | null };
 export type Me = { email: string | null; csrf_token: string };
 
 export class ApiError extends Error {
@@ -246,6 +247,7 @@ export type PortfolioSaved = { mode: "separate" | "shared"; rubles: number | nul
 /** Своё фото владельца: уже приведено к требованиям Яндекса, без метаданных. */
 export type Photo = { id: number; width: number; height: number; url: string };
 export type Photos = { photos: Photo[]; max: number };
+export type SiteImage = { url: string; preview: string };
 
 /** Где и когда показывать и желаемая цена обращения; null — значение неизвестно или разное. */
 export type Display = {
@@ -337,6 +339,7 @@ export function createApi(businessId: string, csrf: string) {
       request<ReworkView>(`${base}/reworks/${id}/choose`, { method: "POST", body: JSON.stringify({ creative_id: creativeId }) }, csrf),
     withdraw: (id: number) => request<CreativeReport>(`${base}/creatives/${id}/withdraw`, { method: "POST" }, csrf),
     accounts: (init?: RequestInit) => request<AdAccount[]>(`${base}/accounts`, init),
+    balance: (login: string) => request<AccountBalance>(`${base}/accounts/${part(login)}/balance`),
     photos: (init?: RequestInit) => request<Photos>(`${base}/photos`, init),
     photoUrl: (id: number) => `${base}/photos/${id}`,
     // Файл уходит телом запроса как есть: сервер сам проверит и обработает его.
@@ -346,6 +349,10 @@ export function createApi(businessId: string, csrf: string) {
         { method: "POST", body: file, headers: { "Content-Type": file.type || "application/octet-stream" } },
         csrf,
       ),
+    siteImages: (url: string) =>
+      request<{ images: SiteImage[] }>(`${base}/photos/site-candidates`, { method: "POST", body: JSON.stringify({ url }) }, csrf),
+    importSiteImages: (urls: string[], consent: boolean) =>
+      request<{ added: number; skipped: number }>(`${base}/photos/from-site`, { method: "POST", body: JSON.stringify({ urls, consent }) }, csrf),
     archivePhoto: (id: number) => request<{ archived: boolean }>(`${base}/photos/${id}/archive`, { method: "POST" }, csrf),
     connect: (then?: "start") =>
       request<{ authorize_url: string }>(`${base}/accounts/connect${then ? `?then=${then}` : ""}`, { method: "POST" }, csrf),

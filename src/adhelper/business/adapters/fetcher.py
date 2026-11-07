@@ -239,6 +239,54 @@ class SafeFetcher:
                     raise SiteUnavailable(FetchProblem.UNREACHABLE) from None
             raise SiteUnavailable(FetchProblem.TOO_MANY_REDIRECTS)
 
+    async def get_bytes(
+        self, url: str, accept: str, mimes: tuple[str, ...], max_bytes: int
+    ) -> tuple[str, str, bytes]:
+        """Файл с сайта тем же защищённым путём: адрес, тип и тело не больше max_bytes."""
+        try:
+            async with asyncio.timeout(self._rules.timeout_seconds * 2):
+                return await self._get_bytes(url, accept, mimes, max_bytes)
+        except TimeoutError:
+            raise SiteUnavailable(FetchProblem.UNREACHABLE) from None
+
+    async def _get_bytes(
+        self, url: str, accept: str, mimes: tuple[str, ...], max_bytes: int
+    ) -> tuple[str, str, bytes]:
+        headers = {"User-Agent": USER_AGENT, "Accept": accept, "Accept-Encoding": "identity"}
+        async with httpx.AsyncClient(
+            transport=_GuardedTransport(self._backend),
+            timeout=self._rules.timeout_seconds,
+            follow_redirects=False,
+            trust_env=False,
+            headers=headers,
+        ) as client:
+            current = self._checked(url)
+            for _ in range(self._rules.max_redirects + 1):
+                try:
+                    async with client.stream("GET", current) as response:
+                        if response.status_code in REDIRECTS:
+                            location = response.headers.get("location", "")
+                            current = self._checked(str(response.url.join(location)))
+                            continue
+                        if response.status_code != 200:
+                            raise SiteUnavailable(FetchProblem.HTTP_ERROR)
+                        mime = (
+                            response.headers.get("content-type", "").split(";")[0].strip().lower()
+                        )
+                        if mime not in mimes:
+                            raise SiteUnavailable(FetchProblem.NOT_HTML)
+                        body = bytearray()
+                        async for chunk in response.aiter_bytes():
+                            body += chunk
+                            if len(body) > max_bytes:
+                                raise SiteUnavailable(FetchProblem.NOT_HTML)
+                        return current, mime, bytes(body)
+                except BlockedAddress:
+                    raise SiteUnavailable(FetchProblem.PRIVATE) from None
+                except httpx.HTTPError:
+                    raise SiteUnavailable(FetchProblem.UNREACHABLE) from None
+            raise SiteUnavailable(FetchProblem.TOO_MANY_REDIRECTS)
+
     async def _read(self, url: str, response: httpx.Response) -> FetchedPage:
         if response.status_code != 200:
             raise SiteUnavailable(FetchProblem.HTTP_ERROR)

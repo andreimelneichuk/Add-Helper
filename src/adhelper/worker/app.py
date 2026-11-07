@@ -48,7 +48,7 @@ async def state_reconcile(timestamp: int) -> None:
 
 
 # Очередь наборов — строки creative_sets; задача разбирает их каждые 5 секунд.
-@app.periodic(cron="*/5 * * * * *")
+@app.periodic(cron="* * * * * */5")
 @app.task(name="creatives.generate", queue=CREATIVES_QUEUE, queueing_lock="creatives.generate")
 async def creatives_generate(timestamp: int) -> None:
     async with open_runtime(Settings()) as runtime:
@@ -88,7 +88,9 @@ async def telegram_poll(timestamp: int) -> None:
 
 
 # Разборы сайта — строки site_reads, их ставит владелец; задача разбирает их каждые 5 секунд.
-@app.periodic(cron="*/5 * * * * *")
+# Секунды в cron у croniter идут последним полем: `*/5 * * * * *` значило бы «каждую секунду
+# каждой пятой минуты», и разбор ждал бы до пяти минут.
+@app.periodic(cron="* * * * * */5")
 @app.task(name="site.read", queue=CREATIVES_QUEUE, queueing_lock="site.read")
 async def site_read(timestamp: int) -> None:
     async with open_runtime(Settings()) as runtime:

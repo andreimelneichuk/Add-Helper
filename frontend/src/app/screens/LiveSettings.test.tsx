@@ -566,3 +566,14 @@ describe("план бюджета до запуска", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Сайт не открылся");
   });
 });
+
+describe("остаток в Директе", () => {
+  it("показывает деньги на счёте или причину словами владельца", async () => {
+    const ok = render(<Settings store={await open(fakeApi())} />);
+    expect(await ok.findByText(/На счёте в Директе: 12\s?500/)).toBeInTheDocument();
+    ok.unmount();
+    const no = fakeApi({ balance: vi.fn(async () => ({ balance_micros: null, problem: "У этого логина нет общего счёта." })) } as Partial<Api>);
+    render(<Settings store={await open(no)} />);
+    expect(await screen.findByText("У этого логина нет общего счёта.")).toBeInTheDocument();
+  });
+});

@@ -70,3 +70,18 @@ async def test_token_comes_from_own_business_only(sessions: Sessions) -> None:
 async def test_disabled_runtime_has_no_platform(settings: Settings) -> None:
     async with open_runtime(settings) as runtime:
         assert runtime.platform_for(uuid.uuid4(), LOGIN) is None
+
+
+async def test_token_written_with_another_key_asks_owner_to_reconnect(sessions: Sessions) -> None:
+    business_id = uuid.uuid4()
+    await seed_account(sessions, business_id)
+    await _connect(sessions, business_id, "secret-access")
+    other_key = AesGcmCipher([("k2", b"x" * 32)])
+    direct = FakeDirect()
+    client = DirectHttpClient(transport=direct.transport())
+    platforms = DirectPlatforms(client, sessions, UnconfiguredProvider(), other_key, lambda: NOW)
+
+    with pytest.raises(DirectAuthError):
+        await platforms(business_id, LOGIN).read_campaigns(LOGIN)
+    assert direct.requests == []
+    await platforms.aclose()

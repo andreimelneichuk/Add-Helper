@@ -77,8 +77,8 @@
 .ov-now .ah-panel-title + .ov-check { margin-top: 0; padding-top: 0; border-top: 0; }
 
 /* Объявления */
-.ov-ads-title { margin-bottom: 8px; }
-.ov-ad-name { font-weight: 500; }
+.ov-ann-title { margin-bottom: 8px; }
+.ov-anno-name { font-weight: 500; }
 .ov-row-off { color: var(--muted); }
 
 /* Последние действия */

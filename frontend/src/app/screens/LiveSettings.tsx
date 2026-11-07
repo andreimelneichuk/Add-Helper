@@ -1,7 +1,7 @@
 // Настройки на настоящих данных: профиль, уведомления, кабинет Яндекса и выход.
 // Правка профиля не трогает площадку, поэтому идёт прямо в API, а не через журнал.
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AdAccount, Api, Business, Channels as ChannelsData, Display, Photos as PhotosData, Profile, SiteFact, SiteRead } from "../../api";
+import type { AdAccount, Api, Business, Channels as ChannelsData, Display, Photos as PhotosData, Profile, SiteImage, SiteFact, SiteRead } from "../../api";
 import { rub } from "../data";
 import * as v from "valibot";
 import { PriceSchema, planProblem } from "../schemas";
@@ -654,6 +654,18 @@ function Channels({ api }: { api: Api }) {
   );
 }
 
+/** Остаток на счёте в Директе: читается из Яндекса при открытии, сохраняется только в плане бюджета. */
+function Balance({ api, login }: { api: Api; login: string }) {
+  const [text, setText] = useState("Смотрю остаток в Директе…");
+  useEffect(() => {
+    api.balance(login).then(
+      (b) => setText(b.balance_micros !== null ? `На счёте в Директе: ${rub(Math.round(b.balance_micros / 1_000_000))}` : (b.problem ?? "Остаток сейчас недоступен.")),
+      (e: unknown) => setText(message(e)),
+    );
+  }, [api, login]);
+  return <p className="set-hint">{text}</p>;
+}
+
 function Accounts({ api }: { api: Api }) {
   const [accounts, setAccounts] = useState<AdAccount[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -679,7 +691,7 @@ function Accounts({ api }: { api: Api }) {
       {accounts?.length === 0 && <p className="set-hint">Кабинет ещё не подключён: без него реклама не запустится. Деньги списываются с вашего счёта в Яндексе, мы их не держим.</p>}
       {accounts?.map((a) => (
         <div key={a.id} className="set-row">
-          <div><strong>{a.login}</strong><p className="set-hint">Яндекс Директ</p></div>
+          <div><strong>{a.login}</strong><p className="set-hint">Яндекс Директ</p>{a.state === "connected" && <Balance api={api} login={a.login} />}</div>
           <span className={a.state === "connected" ? "ah-tag ah-tag-good" : "ah-tag ah-tag-bad"}>{ACCOUNT_STATE[a.state] ?? a.state}</span>
         </div>
       ))}
@@ -736,6 +748,29 @@ function Photos({ api }: { api: Api }) {
     setStatus(null);
     setError(text);
   };
+  const [siteUrl, setSiteUrl] = useState("");
+  const [found, setFound] = useState<SiteImage[] | null>(null);
+  const [chosen, setChosen] = useState<string[]>([]);
+  const lookUp = () => {
+    if (!siteUrl.trim()) return refuse("Впишите адрес сайта.");
+    void act(async () => {
+      const res = await api.siteImages(siteUrl.trim());
+      setFound(res.images);
+      setChosen([]);
+      return `Нашёл ${res.images.length} картинок. Отметьте те, что подходят для рекламы.`;
+    });
+  };
+  const importChosen = () => {
+    if (!consent) return refuse(NO_CONSENT);
+    if (chosen.length === 0) return refuse("Отметьте хотя бы одну картинку.");
+    void act(async () => {
+      const res = await api.importSiteImages(chosen, true);
+      setFound(null);
+      setChosen([]);
+      setConsent(false);
+      return `Добавил фото: ${res.added}${res.skipped ? `, не подошло: ${res.skipped}` : ""}.`;
+    });
+  };
   const upload = async (files: FileList | null) => {
     const file = files?.[0];
     if (!file) return;
@@ -773,10 +808,31 @@ function Photos({ api }: { api: Api }) {
             <input type="checkbox" checked={consent} onChange={(e) => { setConsent(e.target.checked); setError(null); }} />
             <span>Люди на фото согласны на рекламу, или людей на фото нет</span>
           </label>
+          <label className="set-field">
+            <span>Адрес сайта, откуда взять фото</span>
+            <input type="url" value={siteUrl} placeholder="https://" onChange={(e) => setSiteUrl(e.target.value)} />
+          </label>
           <div className="set-actions">
             <button type="button" className="ah-btn" disabled={busy} onClick={() => (consent ? picker.current?.click() : refuse(NO_CONSENT))}>{busy ? "Загружаю…" : "Добавить фото"}</button>
+            <button type="button" className="ah-btn" disabled={busy} onClick={lookUp}>Взять фото с сайта</button>
             <input ref={picker} type="file" aria-label="Файл фото" accept={PHOTO_TYPES.join(",")} className="set-file" tabIndex={-1} onChange={(e) => { void upload(e.target.files); e.target.value = ""; }} />
           </div>
+        </>
+      )}
+      {found && (
+        <>
+          <ul className="set-photos" aria-label="Картинки сайта">
+            {found.map((img, i) => (
+              <li key={img.url} className="set-photo">
+                <img src={img.preview} alt={`Картинка сайта ${i + 1}`} loading="lazy" />
+                <label className="set-check">
+                  <input type="checkbox" checked={chosen.includes(img.url)} onChange={(e) => setChosen(e.target.checked ? [...chosen, img.url] : chosen.filter((u) => u !== img.url))} />
+                  <span>Взять картинку {i + 1}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          <button type="button" className="ah-btn" disabled={busy} onClick={importChosen}>Добавить отмеченные</button>
         </>
       )}
       {status && <p className="set-hint" role="status">{status}</p>}

@@ -138,9 +138,23 @@ async def _page(
     try:
         async with asyncio.timeout_at(deadline):
             rendered = await renderer.render(page.url)
-    except (SiteUnavailable, TimeoutError):
+    except (SiteUnavailable, TimeoutError) as error:
+        logger.warning(
+            "Браузер не помог для %s: %s; остаётся скачанный текст (%s зн.)",
+            urlsplit(page.url).netloc,
+            type(error).__name__,
+            len(page.text),
+        )
         return page
-    return rendered if len(rendered.text) > len(page.text) else page
+    chosen = rendered if len(rendered.text) > len(page.text) else page
+    logger.info(
+        "Страница %s: скачано %s зн., браузер %s зн., взято %s",
+        urlsplit(page.url).netloc,
+        len(page.text),
+        len(rendered.text),
+        "браузер" if chosen is rendered else "скачанное",
+    )
+    return chosen
 
 
 async def read_site(
@@ -170,6 +184,9 @@ async def read_site(
         elif not isinstance(page, SiteUnavailable):
             raise page
     urls = [page.url for page in fetched]
+    logger.info(
+        "Главная %s: %s зн., страниц всего %s", urlsplit(url).netloc, len(home.text), len(fetched)
+    )
     if len(home.text) < rules.min_text_chars:
         return _failed(ReadProblem.EMPTY_PAGE, urls)
     if model is None:
@@ -185,6 +202,15 @@ async def read_site(
     except (ModelUnavailable, ValueError, KeyError, TypeError):
         return _failed(ReadProblem.MODEL_UNAVAILABLE, urls)
     facts, problems = check_facts(raw, pages, rules)
+    logger.info(
+        "Разбор %s: страниц %s, текста %s зн., модель вернула %s фактов, принято %s, отсеяно %s",
+        urlsplit(url).netloc,
+        len(pages),
+        sum(len(page.text) for page in pages),
+        len(raw),
+        len(facts),
+        dict(problems),
+    )
     return SiteRead(
         ReadStatus.READY,
         facts=tuple(facts),

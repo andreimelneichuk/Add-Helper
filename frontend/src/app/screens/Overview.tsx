@@ -11,8 +11,8 @@ import "./Overview.css";
 function AdsTable({ s, store }: { s: State; store: Store }) {
   const first = s.situation === "first";
   return (
-    <section aria-labelledby="ov-ads-title" className="ah-panel">
-      <h2 id="ov-ads-title" className="ah-panel-title ov-ads-title">Объявления за 7 дней</h2>
+    <section aria-labelledby="ov-ann-title" className="ah-panel">
+      <h2 id="ov-ann-title" className="ah-panel-title ov-ann-title">Объявления за 7 дней</h2>
       {s.ads.length === 0 ? (
         <p className="ah-muted" style={{ padding: "16px 0", margin: 0 }}>
           Объявлений пока нет. Заполните услуги в профиле на вкладке «Настройки», чтобы сервис составил объявления.
@@ -30,9 +30,9 @@ function AdsTable({ s, store }: { s: State; store: Store }) {
                 const empty = first || a.leads <= 0;
                 return (
                   <tr key={a.id} className={off ? "ov-row-off" : undefined}>
-                    <td className="ov-ad-cell">
+                    <td className="ov-anno-cell">
                       <span className="ov-thumb" aria-hidden="true" style={a.photo ? { backgroundImage: `url(${a.photo})` } : undefined} />
-                      <button type="button" className="ah-link ov-ad-name" aria-label={`Открыть «${adName(s, a.id)}»`} onClick={() => store.openAdScreen(a.id)}>{adName(s, a.id)}</button>{" "}
+                      <button type="button" className="ah-link ov-anno-name" aria-label={`Открыть «${adName(s, a.id)}»`} onClick={() => store.openAdScreen(a.id)}>{adName(s, a.id)}</button>{" "}
                       <span className={`ah-tag ah-tag-${neutral ? "neutral" : a.tagTone}`}>{first ? "собираю данные" : off ? "отключено" : a.tag}</span>
                     </td>
                     <td>{empty ? "—" : a.leads}</td>

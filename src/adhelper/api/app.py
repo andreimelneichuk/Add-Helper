@@ -2,7 +2,7 @@ import hashlib
 import hmac
 import logging
 import secrets
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -42,6 +42,39 @@ from adhelper.platforms.adapters.direct.factory import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Те же заголовки, что ставит deploy/Caddyfile: приложение защищено и без Caddy.
+_SECURITY_HEADERS = {
+    "Strict-Transport-Security": "max-age=31536000",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "same-origin",
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; "
+        "base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    ),
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+}
+
+
+# Как в deploy/Caddyfile: запросы сервиса — короткий JSON. Фото владельца читается потоком
+# со своим пределом из правил картинок, поэтому ему лимит не ставим.
+_MAX_BODY = 1_000_000
+
+
+def _body_refused(request: Request) -> Response | None:
+    if request.method not in ("POST", "PUT", "PATCH"):
+        return None
+    if request.url.path.endswith("/photos"):
+        return None
+    length = request.headers.get("content-length")
+    if length is None:
+        if "chunked" in request.headers.get("transfer-encoding", "").lower():
+            return JSONResponse({"detail": "Нужна длина запроса"}, status_code=411)
+        return None
+    if not length.isdigit() or int(length) > _MAX_BODY:
+        return JSONResponse({"detail": "Запрос слишком большой"}, status_code=413)
+    return None
 
 
 def _utc_now() -> datetime:
@@ -101,7 +134,25 @@ def create_app(
             await platforms.aclose()
         await engine.dispose()
 
-    app = FastAPI(title="Ad Helper", lifespan=lifespan)
+    # Служебные страницы наружу не отдаём: сервис может стоять без Caddy (например, на Render).
+    app = FastAPI(
+        title="Ad Helper",
+        lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
+
+    @app.middleware("http")
+    async def security_headers(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        refused = _body_refused(request)
+        response = refused if refused is not None else await call_next(request)
+        for name, value in _SECURITY_HEADERS.items():
+            response.headers.setdefault(name, value)
+        return response
+
     app.state.engine = engine
     # Без приложения Яндекс ID в настройках вход честно отвечает 503.
     oauth_provider = oauth_provider or yandex_provider(settings, _utc_now)
@@ -173,6 +224,9 @@ def create_app(
 
         @app.get("/{full_path:path}")
         async def serve_spa(full_path: str) -> Response:
+            # Служебные адреса не отдаём и как интерфейс: как в Caddyfile, это 404.
+            if full_path in ("docs", "redoc", "openapi.json"):
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Not Found")
             if full_path.startswith(("api/", "stand-yandex/")):
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "Not Found")
             file_path = frontend_dist / full_path

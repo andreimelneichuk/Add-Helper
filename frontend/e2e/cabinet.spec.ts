@@ -61,13 +61,13 @@ test.describe("Задача 15. Кабинет и управление рекл�
     }
 
     // 4. Переход к объявлению из таблицы обзора
-    const firstAdLink = page.locator(".ov-ad-name").first();
+    const firstAdLink = page.locator(".ov-anno-name").first();
     await expect(firstAdLink).toBeVisible();
     const adTitle = await firstAdLink.innerText();
     await firstAdLink.click();
 
     // Открылся детальный экран объявления
-    await expect(page.locator(".ad-screen")).toBeVisible();
+    await expect(page.locator(".anno-screen")).toBeVisible();
     await expect(page.getByRole("heading", { level: 2, name: adTitle })).toBeVisible();
 
     // Возврат в обзор
@@ -186,12 +186,12 @@ test.describe("Задача 15. Кабинет и управление рекл�
   test("4. Управление рекламой: отключение и включение объявлений", async ({ page }) => {
     await page.goto("/");
     await nav(page, "Реклама").click();
-    await expect(page.locator(".ads")).toBeVisible();
+    await expect(page.locator(".ann")).toBeVisible();
 
     // Находим активное объявление с кнопкой «Отключить»
-    const card = page.locator(".ads-card").filter({ has: page.getByRole("button", { name: /^Отключить/ }) }).first();
+    const card = page.locator(".ann-card").filter({ has: page.getByRole("button", { name: /^Отключить/ }) }).first();
     await expect(card).toBeVisible();
-    const adTitle = await card.locator(".ads-title").innerText();
+    const adTitle = await card.locator(".ann-title").innerText();
 
     // 1. Клик «Отключить» открывает диалог подтверждения
     await card.getByRole("button", { name: /^Отключить/ }).click();
@@ -210,16 +210,16 @@ test.describe("Задача 15. Кабинет и управление рекл�
 
     // 4. Проверка фильтра «Отключены»
     await page.getByRole("button", { name: /^Отключены/ }).click();
-    await expect(page.locator(".ads-card-off .ads-title", { hasText: adTitle }).first()).toBeVisible();
+    await expect(page.locator(".ann-card-off .ann-title", { hasText: adTitle }).first()).toBeVisible();
 
     // 5. Включение объявления обратно
-    const offCard = page.locator(".ads-card-off").filter({ hasText: adTitle }).first();
+    const offCard = page.locator(".ann-card-off").filter({ hasText: adTitle }).first();
     await offCard.getByRole("button", { name: /^Включить/ }).click();
     await expect(notice(page)).toContainText(`Включил «${adTitle}»`);
 
     // Возврат в фильтр «Все»
     await page.getByRole("button", { name: /^Все/ }).click();
-    await expect(page.locator(".ads-card", { hasText: adTitle }).first()).not.toHaveClass(/ads-card-off/);
+    await expect(page.locator(".ann-card", { hasText: adTitle }).first()).not.toHaveClass(/ann-card-off/);
   });
 
   test("5. Настройки: изменение месячного/суточного бюджета с валидацией лимитов", async ({ page }) => {

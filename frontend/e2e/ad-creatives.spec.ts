@@ -15,32 +15,32 @@ test.describe("Интерактивная переделка объявлени�
 
     // 1. Переход в раздел «Реклама»
     await nav(page, "Реклама").click();
-    await expect(page.locator(".ads-card").first()).toBeVisible();
+    await expect(page.locator(".ann-card").first()).toBeVisible();
 
     // 2. Открытие карточки первого объявления
-    const firstCard = page.locator(".ads-card").first();
-    const adTitle = await firstCard.locator(".ads-title").innerText();
+    const firstCard = page.locator(".ann-card").first();
+    const adTitle = await firstCard.locator(".ann-title").innerText();
     await firstCard.getByRole("button", { name: /^Открыть/ }).click();
 
-    // 3. Детальный экран объявления .ad-screen
-    const screen = page.locator(".ad-screen");
+    // 3. Детальный экран объявления .anno-screen
+    const screen = page.locator(".anno-screen");
     await expect(screen).toBeVisible();
-    await expect(screen.locator(".ad-name")).toBeVisible();
-    await expect(screen.locator(".ad-preview .ads-title")).toContainText(adTitle);
-    await expect(screen.locator(".ad-back")).toBeVisible();
-    await expect(screen.locator(".ad-preview")).toBeVisible();
-    await expect(screen.locator(".ad-facts")).toBeVisible();
+    await expect(screen.locator(".anno-name")).toBeVisible();
+    await expect(screen.locator(".anno-preview .ann-title")).toContainText(adTitle);
+    await expect(screen.locator(".anno-back")).toBeVisible();
+    await expect(screen.locator(".anno-preview")).toBeVisible();
+    await expect(screen.locator(".anno-facts")).toBeVisible();
 
     // 4. Открытие формы переделки
     await screen.getByRole("button", { name: "Переделать" }).click();
-    const compose = screen.locator(".ad-compose");
+    const compose = screen.locator(".anno-compose");
     await expect(compose).toBeVisible();
 
     // 5. Проверка чипов вариантов
     const chipShorter = compose.getByRole("button", { name: "Короче" });
     await expect(chipShorter).toBeVisible();
     await chipShorter.click();
-    await expect(compose.locator(".ad-compare")).toBeVisible();
+    await expect(compose.locator(".anno-compare")).toBeVisible();
     await expect(compose.getByText("Новый вариант")).toBeVisible();
 
     const chipAccent = compose.getByRole("button", { name: "Другой акцент" });
@@ -51,15 +51,15 @@ test.describe("Интерактивная переделка объявлени�
     const customInput = compose.getByPlaceholder("Сделайте упор на запись сегодня");
     await customInput.fill("Сделайте акцент на онлайн-запись");
     await compose.getByRole("button", { name: "Сделать" }).click();
-    await expect(compose.locator(".ad-compare")).toBeVisible();
+    await expect(compose.locator(".anno-compare")).toBeVisible();
 
     // 7. Загрузка фото и валидация обязательного согласия
-    const fileInput = compose.locator("#ad-photo");
+    const fileInput = compose.locator("#anno-photo");
     await fileInput.setInputFiles(TEST_IMAGE_PATH);
 
     // Появилось имя файла и чекбокс согласия
-    await expect(compose.locator(".ad-compose-name")).toBeVisible();
-    const consentLabel = compose.locator(".ad-compose-consent");
+    await expect(compose.locator(".anno-compose-name")).toBeVisible();
+    const consentLabel = compose.locator(".anno-compose-consent");
     await expect(consentLabel).toBeVisible();
     const consentCheckbox = consentLabel.locator("input[type='checkbox']");
     await expect(consentCheckbox).not.toBeChecked();
@@ -75,12 +75,12 @@ test.describe("Интерактивная переделка объявлени�
     // 8. Клик «Отмена» закрывает форму и возвращает к объявлению
     await compose.getByRole("button", { name: "Отмена" }).click();
     await expect(compose).toHaveCount(0);
-    await expect(screen.locator(".ad-preview")).toBeVisible();
+    await expect(screen.locator(".anno-preview")).toBeVisible();
 
     // 9. Кнопка «Все объявления» возвращает в общий список
-    await screen.locator(".ad-back").click();
-    await expect(page.locator(".ad-screen")).toHaveCount(0);
-    await expect(page.locator(".ads-card").first()).toBeVisible();
+    await screen.locator(".anno-back").click();
+    await expect(page.locator(".anno-screen")).toHaveCount(0);
+    await expect(page.locator(".ann-card").first()).toBeVisible();
   });
 
   test("2. Живой кабинет: переделка объявления через сервис, валидация фактов и постановка в очередь", async ({ page }) => {
@@ -90,15 +90,15 @@ test.describe("Интерактивная переделка объявлени�
     await nav(page, "Реклама").click();
 
     // Находим карточку живого объявления и открываем детальный экран
-    const adCard = page.locator(".ads-card").filter({ has: page.getByRole("button", { name: /^Открыть/ }) }).first();
+    const adCard = page.locator(".ann-card").filter({ has: page.getByRole("button", { name: /^Открыть/ }) }).first();
     await adCard.getByRole("button", { name: /^Открыть/ }).click();
 
-    const screen = page.locator(".ad-screen");
+    const screen = page.locator(".anno-screen");
     await expect(screen).toBeVisible();
 
     // Нажимаем «Переделать»
     await screen.getByRole("button", { name: "Переделать" }).click();
-    const compose = screen.locator(".ad-compose");
+    const compose = screen.locator(".anno-compose");
     await expect(compose).toBeVisible();
 
     // Валидация фактов: выдуманные факты блокируются сервисом без обращения к ИИ
@@ -123,7 +123,7 @@ test.describe("Интерактивная переделка объявлени�
 
     // Проверяем нотис об очереди и закрытие формы
     await expect(notice(page)).toContainText(/старое объявление работает|поставлен в очередь/);
-    await expect(screen.locator(".ad-compose")).toHaveCount(0);
+    await expect(screen.locator(".anno-compose")).toHaveCount(0);
   });
 
   test("3. Живой кабинет (Настройки): фото для объявлений — чекбокс согласия, загрузка и удаление", async ({ page }) => {

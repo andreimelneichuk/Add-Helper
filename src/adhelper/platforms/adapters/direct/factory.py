@@ -10,6 +10,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from adhelper.accounts.adapters.crypto import DecryptionFailed
 from adhelper.accounts.adapters.sql import SqlAccountTokens
 from adhelper.accounts.adapters.yandex_oauth import YandexOAuth
 from adhelper.accounts.application.service import OAuthProvider, ReconnectRequired, TokenVault
@@ -67,6 +68,9 @@ class DirectPlatforms:
                 return await vault.access_token(login)
             except ReconnectRequired as error:
                 raise DirectAuthError(None, "account needs reconnect") from error
+            except DecryptionFailed as error:
+                # Токен записан другим ключом: для владельца это то же, что просьба переподключить.
+                raise DirectAuthError(None, "stored token is unreadable") from error
 
         return token_for
 

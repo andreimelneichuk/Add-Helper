@@ -199,11 +199,11 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
   };
 
   return (
-    <div className="ah-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="gen-ads-title">
+    <div className="ah-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="gen-ann-title">
       <div className="ah-modal">
         <div className="ah-modal-head">
           <div>
-            <h2 id="gen-ads-title" className="ah-modal-title">Сгенерировать новые объявления</h2>
+            <h2 id="gen-ann-title" className="ah-modal-title">Сгенерировать новые объявления</h2>
             <p className="ah-muted" style={{ marginTop: 4 }}>
               ИИ составит рекламные тексты по фактам из профиля бизнеса.
             </p>

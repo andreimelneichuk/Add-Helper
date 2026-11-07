@@ -33,6 +33,7 @@ from adhelper.ledger.application.rollback import (
     rollback_change,
 )
 from adhelper.ledger.application.service import Ledger
+from adhelper.platforms.adapters.direct.transport import DirectAuthError, DirectError
 from adhelper.platforms.adapters.gateway import AdvertiserSource, RoutingGateway
 from adhelper.stats.adapters.sql import SqlDashboard
 from adhelper.stats.application.overview import ad_detail
@@ -127,6 +128,14 @@ def _ledger(
     )
 
 
+BALANCE_RECONNECT = "Яндекс не пускает: подключите кабинет заново в настройках."
+BALANCE_NO_SHARED = (
+    "У этого логина в Директе нет общего счёта, поэтому остаток через API не виден. "
+    "Включите общий счёт в кабинете Директа или смотрите остаток там."
+)
+BALANCE_FAILED = "Директ сейчас не ответил. Остаток покажу, когда он снова будет доступен."
+
+
 def _platform(request: Request, business_id: UUID, account: str) -> Any:
     platform = request.app.state.platform_for(business_id, account)
     if platform is None:
@@ -174,6 +183,23 @@ async def _note_restored(
 def control_router() -> APIRouter:
     """Действия владельца. Площадку меняет только журнал, здесь нет прямых вызовов."""
     router = APIRouter(prefix="/api/businesses/{business_id}")
+
+    @router.get("/accounts/{account}/balance")
+    async def get_balance(request: Request, business_id: Owned, account: str) -> dict[str, Any]:
+        """Остаток на счёте в Директе: чтение, площадку оно не меняет. Причина без остатка
+        называется словами владельца, а не кодом ошибки."""
+        platform = request.app.state.platform_for(business_id, account)
+        if platform is None:
+            return {"balance_micros": None, "problem": NOT_CONNECTED}
+        try:
+            micros = await platform.fetch_balance(account)
+        except DirectAuthError:
+            return {"balance_micros": None, "problem": BALANCE_RECONNECT}
+        except DirectError as error:
+            if "shared account" in str(error):
+                return {"balance_micros": None, "problem": BALANCE_NO_SHARED}
+            return {"balance_micros": None, "problem": BALANCE_FAILED}
+        return {"balance_micros": micros, "problem": None}
 
     @router.post("/ads/{account}/{ad_id}/state")
     async def post_ad_state(

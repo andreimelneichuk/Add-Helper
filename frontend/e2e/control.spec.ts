@@ -20,8 +20,8 @@ test("отключение объявления доходит до журнал
   await page.goto("/");
   await nav(page, "Реклама").click();
   // Карточки решений по новым объявлениям стоят выше и кнопки «Отключить» не имеют.
-  const card = page.locator(".ads-card").filter({ has: page.getByRole("button", { name: /^Отключить/ }) }).first();
-  const name = await card.locator(".ads-title").innerText();
+  const card = page.locator(".ann-card").filter({ has: page.getByRole("button", { name: /^Отключить/ }) }).first();
+  const name = await card.locator(".ann-title").innerText();
   await card.getByRole("button", { name: /^Отключить/ }).click();
   await page.getByRole("button", { name: "Применить" }).click();
   await expect(notice(page)).toContainText(`Отключил «${name}»`);
@@ -29,7 +29,7 @@ test("отключение объявления доходит до журнал
   await page.reload();
   await nav(page, "Реклама").click();
   await page.getByRole("button", { name: /^Отключены/ }).click();
-  await expect(page.locator(".ads-card-off .ads-title", { hasText: name }).first()).toBeVisible();
+  await expect(page.locator(".ann-card-off .ann-title", { hasText: name }).first()).toBeVisible();
 
   await nav(page, "История").click();
   await expect(page.getByRole("heading", { name: `Отключил объявление: «${name}»` }).first()).toBeVisible();

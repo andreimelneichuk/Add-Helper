@@ -106,12 +106,12 @@ test.describe("Граничные и аварийные ситуации каб�
     await expect(attention.getByRole("heading", { level: 2 })).toContainText(/День .* из примерно 14: выводы делать рано/);
 
     // 3. В таблице объявлений бейджи «собираю данные»
-    const badge = page.locator(".ov-ad-cell .ah-tag").first();
+    const badge = page.locator(".ov-anno-cell .ah-tag").first();
     await expect(badge).toHaveText("собираю данные");
 
     // 4. В разделе «Реклама» нет ложных выводов об эффективности
     await nav(page, "Реклама").click();
-    await expect(page.locator(".ads-badge")).toHaveCount(0);
+    await expect(page.locator(".ann-badge")).toHaveCount(0);
   });
 
   test("6. Ситуация «вывод проверки»: победа A/B варианта креатива и отмена решения", async ({ page }) => {
