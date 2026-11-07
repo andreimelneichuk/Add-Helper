@@ -8,6 +8,7 @@
 import base64
 import hashlib
 import json
+import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
@@ -57,6 +58,7 @@ MODERATION_STATES = {
     "ACCEPTED": ModerationState.ACCEPTED,
     "REJECTED": ModerationState.REJECTED,
 }
+logger = logging.getLogger(__name__)
 
 
 def _today(now: datetime) -> date:
@@ -324,7 +326,15 @@ class DirectPlatform:
             },
         )
         reported = sum(_cost(row["Cost"]) for row in rows)
-        return SpendSnapshot(reported=reported, data_as_of=now - REPORT_LAG)
+        data_as_of = now - REPORT_LAG
+        logger.info(
+            "fetch_spend: account=%s, reported_micros=%d, data_as_of=%s, report_lag=%s",
+            account,
+            reported,
+            data_as_of.isoformat(),
+            REPORT_LAG,
+        )
+        return SpendSnapshot(reported=reported, data_as_of=data_as_of)
 
     async def ad_days(
         self, account: str, campaign_ids: Sequence[str], since: date, until: date
@@ -377,10 +387,22 @@ class DirectPlatform:
             {"Action": "Get", "SelectionCriteria": {"Logins": [account]}},
         )
         accounts = (data or {}).get("Accounts") or []
-        mine = [item for item in accounts if item.get("Login") == account]
+        mine = [item for item in accounts if str(item.get("Login", "")).lower() == account.lower()]
         if not mine:
             raise DirectError(None, "shared account is not enabled")
-        return rubles_to_micros(str(mine[0]["Amount"]))
+        info = mine[0]
+        blocked_flag = str(info.get("StatusBlocked", "")).strip().lower() in ("yes", "true")
+        blocked_status = str(info.get("Status", "")).strip().lower() == "blocked"
+        status_blocked = blocked_flag or blocked_status
+        raw_amount = info.get("Amount")
+        amount_str = str(raw_amount).strip() if raw_amount is not None else ""
+        if status_blocked or not amount_str:
+            logger.info("fetch_balance: account=%s заблокирован или остаток отсутствует", account)
+            return 0
+        micros = rubles_to_micros(amount_str)
+        balance = max(0, micros)
+        logger.debug("fetch_balance: account=%s, balance_micros=%d", account, balance)
+        return balance
 
     async def set_limit(self, account: str, change: LimitChange) -> None:
         found = await self._campaigns(account, [int(change.campaign_id)])

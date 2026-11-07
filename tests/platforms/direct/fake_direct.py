@@ -21,7 +21,10 @@ class FakeDirect:
     ads: dict[int, dict[str, Any]] = field(default_factory=dict)
     keywords: dict[int, dict[str, Any]] = field(default_factory=dict)
     report_rows: list[tuple[str, str, int]] = field(default_factory=list)
-    amount: str = "1500.5"
+    amount: str | None = "1500.5"
+    status_blocked: bool = False
+    status: str | None = None
+    no_shared_account: bool = False
     calls: list[str] = field(default_factory=list)
     requests: list[dict[str, Any]] = field(default_factory=list)
     # «сервис.метод» → сколько раз ответить 503; «сервис.метод!» — сбой после применения.
@@ -250,8 +253,15 @@ class FakeDirect:
 
     def _live(self, body: dict[str, Any]) -> httpx.Response:
         self.calls.append("live." + body["method"])
+        if self.no_shared_account:
+            return _json({"data": {"Accounts": []}})
         login = body["param"]["SelectionCriteria"]["Logins"][0]
-        return _json({"data": {"Accounts": [{"Login": login, "Amount": self.amount}]}})
+        account_data: dict[str, Any] = {"Login": login, "Amount": self.amount}
+        if self.status_blocked:
+            account_data["StatusBlocked"] = "Yes"
+        if self.status:
+            account_data["Status"] = self.status
+        return _json({"data": {"Accounts": [account_data]}})
 
 
 def _json(payload: dict[str, Any], units: str | None = None) -> httpx.Response:

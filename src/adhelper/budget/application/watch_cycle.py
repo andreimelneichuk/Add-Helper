@@ -78,6 +78,14 @@ async def _watch_period(
     )
     if result.balance is not None:
         await store.save_balance(record.id, result.balance, now, result.baseline)
+        logger.info(
+            "Страж бюджета: период %s, баланс=%s, baseline=%s, balance_state=%s, spent=%s",
+            record.id,
+            result.balance,
+            result.baseline,
+            result.balance_state,
+            snapshot.reported if snapshot else None,
+        )
     await _publish(alerts, result, rules)
 
 
