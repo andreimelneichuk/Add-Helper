@@ -6,11 +6,12 @@ import type { AdSet, SiteRead } from "../../api";
 import { clearDraft, clearWizard, loadDraft, loadWizard } from "../draft";
 import type { TransferDeps } from "../draft";
 import { initialState, Store } from "../store";
+import { MockStore } from "../../mock/MockStore";
 import type { GuestReader, GuestWriter, WizardApi } from "../store";
 import { formatSite, Start } from "./Start";
 
 function setup(patch: Parameters<Store["set"]>[0] = {}) {
-  const store = new Store({ ...initialState("start"), ...patch });
+  const store = new MockStore({ ...initialState("start"), ...patch });
   render(<Start store={store} />);
   return { store, user: userEvent.setup() };
 }
@@ -214,7 +215,7 @@ describe("разбор сайта до входа", () => {
       siteRead: vi.fn(async () => ready),
       ...reader,
     };
-    const store = new Store(initialState("start"));
+    const store = new MockStore(initialState("start"));
     store.reader = full;
     store.waitMs = 0;
     render(<Start store={store} />);
@@ -306,7 +307,7 @@ describe("бюджет и вход в настоящем запуске", () => 
 
   function real(patch: Parameters<Store["set"]>[0] = {}) {
     clearDraft();
-    const store = new Store({ ...initialState("start"), facts, site: "https://nogti.ru/", budgetOptions: options, ...patch });
+    const store = new MockStore({ ...initialState("start"), facts, site: "https://nogti.ru/", budgetOptions: options, ...patch });
     store.reader = { readSite: vi.fn(), siteRead: vi.fn() };
     store.navigate = vi.fn();
     render(<Start store={store} />);
@@ -390,7 +391,7 @@ describe("повторный перенос", () => {
   it("второй вызов не создаёт второй бизнес", async () => {
     const { saveDraft } = await import("../draft");
     saveDraft({ site: "https://nogti.ru/", facts: [], budget: 20000 });
-    const store = new Store(initialState("start"));
+    const store = new MockStore(initialState("start"));
     const createBusiness = vi.fn(async (name: string) => ({ id: "b1", name }));
     const deps: TransferDeps = {
       session: vi.fn(async () => ({ me: { email: null, csrf_token: "c" }, businesses: [] })),
@@ -421,7 +422,7 @@ describe("шаги после входа на сервисе", () => {
 
   function wizard(step: number, api: WizardApi, patch: Parameters<Store["set"]>[0] = {}) {
     clearDraft();
-    const store = new Store({ ...initialState("start"), facts, site: "https://nogti.ru/", step, account: { email: "anna@example.ru" }, ...patch });
+    const store = new MockStore({ ...initialState("start"), facts, site: "https://nogti.ru/", step, account: { email: "anna@example.ru" }, ...patch });
     store.reader = { readSite: vi.fn(), siteRead: vi.fn() };
     store.navigate = vi.fn();
     store.wizard = api;
@@ -434,7 +435,7 @@ describe("шаги после входа на сервисе", () => {
     const { saveDraft } = await import("../draft");
     clearDraft();
     saveDraft({ site: "https://nogti.ru/", facts, budget: 30000 });
-    const store = new Store({ ...initialState("start") });
+    const store = new MockStore({ ...initialState("start") });
     store.reader = { readSite: vi.fn(), siteRead: vi.fn() };
     store.navigate = vi.fn();
     const api = wizardApi();
@@ -584,7 +585,7 @@ describe("шаги после входа на сервисе", () => {
   it("возврат с подключения кабинета продолжает тот же бизнес", async () => {
     const { saveWizard } = await import("../draft");
     saveWizard("b1");
-    const store = new Store(initialState("start"));
+    const store = new MockStore(initialState("start"));
     store.reader = { readSite: vi.fn(), siteRead: vi.fn() };
     store.navigate = vi.fn();
     const open = vi.fn(() => wizardApi());
@@ -598,7 +599,7 @@ describe("шаги после входа на сервисе", () => {
 
   it("возврат без запуска в этом браузере ведёт в кабинет", async () => {
     clearWizard();
-    const store = new Store(initialState("start"));
+    const store = new MockStore(initialState("start"));
     store.navigate = vi.fn();
     const session = vi.fn(async () => ({ me: { email: null, csrf_token: "c" }, businesses: [{ id: "b1", name: "x" }] }));
     await store.resumeConnect({ session, open: vi.fn() }, null);
@@ -626,7 +627,7 @@ describe("объявления мастера на сервисе", () => {
       adSet: vi.fn(async () => written),
       ...over,
     };
-    const store = new Store({ ...initialState("start"), facts, site: "https://nogti.ru/", step: 2, ...patch });
+    const store = new MockStore({ ...initialState("start"), facts, site: "https://nogti.ru/", step: 2, ...patch });
     store.reader = { readSite: vi.fn(), siteRead: vi.fn() };
     store.writer = writer;
     store.navigate = vi.fn();

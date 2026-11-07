@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { initialState, Store } from "../store";
+import { initialState} from "../store";
+import { MockStore } from "../../mock/MockStore";
 import { History } from "./History";
 
 const row = (title: RegExp) => screen.getByRole("article", { name: title });
@@ -8,7 +9,7 @@ const OFF = /^Отключил «Маникюр с покрытием/;
 
 describe("история", () => {
   it("отмена требует подтверждения и сохраняет исходную запись", () => {
-    const store = new Store();
+    const store = new MockStore();
     render(<History store={store} />);
     const before = store.state.hist.length;
 
@@ -27,7 +28,7 @@ describe("история", () => {
   });
 
   it("«Оставить» ничего не отменяет и прячет описание", () => {
-    const store = new Store();
+    const store = new MockStore();
     render(<History store={store} />);
     const before = store.state.hist.length;
 
@@ -41,20 +42,20 @@ describe("история", () => {
   });
 
   it("для неотменяемой записи показывает причину вместо кнопки", () => {
-    render(<History store={new Store()} />);
+    render(<History store={new MockStore()} />);
     const test = within(row(/^Проверка закончена/));
     expect(test.getByText("Можно проверить заново")).toBeInTheDocument();
     expect(test.queryByRole("button")).toBeNull();
   });
 
   it("запись содержит что сделано, почему и что дальше", () => {
-    render(<History store={new Store()} />);
+    render(<History store={new MockStore()} />);
     const line = within(row(/^Передал 3\s000/));
     expect(line.getByText(/Обращения по нему стоят 329 ₽.*Общий бюджет тот же\./)).toBeInTheDocument();
   });
 
   it("фильтр оставляет только записи своего типа", () => {
-    const store = new Store();
+    const store = new MockStore();
     render(<History store={store} />);
     expect(screen.getAllByRole("article")).toHaveLength(4);
 
@@ -68,14 +69,14 @@ describe("история", () => {
   });
 
   it("говорит, когда по фильтру записей нет", () => {
-    render(<History store={new Store(initialState("work", "first"))} />);
+    render(<History store={new MockStore(initialState("work", "first"))} />);
     fireEvent.click(screen.getByRole("button", { name: "Деньги" }));
     expect(screen.queryByRole("article")).toBeNull();
     expect(screen.getByText("Таких записей пока нет.")).toBeInTheDocument();
   });
 
   it("обновляется при отмене из другого места", () => {
-    const store = new Store();
+    const store = new MockStore();
     render(<History store={store} />);
     act(() => store.run({ action: "undo", value: "move" }));
     expect(within(row(/^Передал 3\s000/)).getByText("Отменено вами")).toBeInTheDocument();

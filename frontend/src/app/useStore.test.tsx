@@ -1,6 +1,7 @@
 import { act, render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { initialState, shallowEqual, Store, useStore } from "./store";
+import { initialState, shallowEqual, useStore} from "./store";
+import { MockStore } from "../mock/MockStore";
 
 describe("useStore", () => {
   it("сравнивает поверхностно", () => {
@@ -13,7 +14,7 @@ describe("useStore", () => {
   });
 
   it("не перерисовывает экран, если выбранное не изменилось", () => {
-    const store = new Store(initialState());
+    const store = new MockStore(initialState());
     let renders = 0;
     function Probe() {
       const { notice } = useStore(store, (s) => ({ notice: s.notice }));

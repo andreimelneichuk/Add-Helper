@@ -2,18 +2,19 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import * as apiModule from "../../../api";
-import { initialState, Store } from "../../store";
+import { initialState} from "../../store";
+import { MockStore } from "../../../mock/MockStore";
 import { GenerateAdsModal } from "./GenerateAdsModal";
 
 describe("GenerateAdsModal", () => {
   it("не рендерится, если isOpen false", () => {
-    const store = new Store(initialState("work"));
+    const store = new MockStore(initialState("work"));
     render(<GenerateAdsModal isOpen={false} onClose={vi.fn()} store={store} />);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("рендерится с заголовком и выбором услуг", () => {
-    const store = new Store(initialState("work"));
+    const store = new MockStore(initialState("work"));
     render(<GenerateAdsModal isOpen={true} onClose={vi.fn()} store={store} />);
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByText("Сгенерировать новые объявления")).toBeInTheDocument();
@@ -21,7 +22,7 @@ describe("GenerateAdsModal", () => {
   });
 
   it("позволяет выбрать свою услугу и ввести текст пожеланий", async () => {
-    const store = new Store(initialState("work"));
+    const store = new MockStore(initialState("work"));
     render(<GenerateAdsModal isOpen={true} onClose={vi.fn()} store={store} />);
 
     await userEvent.click(screen.getByText("+ Своя услуга"));
@@ -38,7 +39,7 @@ describe("GenerateAdsModal", () => {
       writeAds: vi.fn(async () => ({ id: 1, token: "t", status: "queued" })),
       adSet: vi.fn(async () => ({ id: 1, status: "ready", ads: [{ headline: "Маникюр", text: "Запишитесь онлайн.", facts: ["из профиля"] }] })),
     } as unknown as ReturnType<typeof apiModule.createGuestApi>);
-    const store = new Store(initialState("work"));
+    const store = new MockStore(initialState("work"));
     const onClose = vi.fn();
     render(<GenerateAdsModal isOpen={true} onClose={onClose} store={store} />);
 
@@ -61,7 +62,7 @@ describe("GenerateAdsModal", () => {
     vi.spyOn(apiModule, "createGuestApi").mockReturnValue({
       writeAds: vi.fn(async () => { throw new Error("Писатель не отвечает"); }),
     } as unknown as ReturnType<typeof apiModule.createGuestApi>);
-    render(<GenerateAdsModal isOpen={true} onClose={vi.fn()} store={new Store(initialState("work"))} />);
+    render(<GenerateAdsModal isOpen={true} onClose={vi.fn()} store={new MockStore(initialState("work"))} />);
     await userEvent.click(screen.getByRole("button", { name: "Сгенерировать через ИИ" }));
     expect(await screen.findByText("Писатель не отвечает")).toBeInTheDocument();
     expect(screen.queryByText(/Вот варианты/)).toBeNull();

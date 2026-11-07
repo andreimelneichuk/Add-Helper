@@ -3,7 +3,8 @@ import { ApiError } from "../api";
 import type { Api, Profile } from "../api";
 import { fakeApi, line, open, overview, said, settled } from "./testLive";
 import { rub } from "./data";
-import { statusText, Store, week } from "./store";
+import { statusText, week} from "./store";
+import { MockStore } from "../mock/MockStore";
 import { liveApi, savedText } from "./live";
 
 describe("живые данные", () => {
@@ -621,7 +622,7 @@ describe("сетевые ошибки и граничные сценарии (50
 
     // liveApi
     expect(liveApi(store)).toBe(api);
-    expect(liveApi(new Store())).toBeNull();
+    expect(liveApi(new MockStore())).toBeNull();
 
     // skipDays с ровно 1 unknown направлением
     vi.mocked(api.skipDays).mockResolvedValueOnce({ applied: ["anna:1"], unknown: ["anna:2"], unchanged: [] });

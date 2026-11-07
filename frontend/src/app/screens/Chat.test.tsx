@@ -1,10 +1,11 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { initialState, Store } from "../store";
+import { initialState} from "../store";
+import { MockStore } from "../../mock/MockStore";
 import { Chat } from "./Chat";
 
 function open(stage: "work" | "start" = "work") {
-  const store = new Store(initialState(stage));
+  const store = new MockStore(initialState(stage));
   store.openChat();
   render(<Chat store={store} />);
   return store;
@@ -102,7 +103,7 @@ describe("чат", () => {
   });
 
   it("показывает подсказки живого кабинета при наличии live", () => {
-    const store = new Store(initialState());
+    const store = new MockStore(initialState());
     store.set({ live: { budget: 20000, spent: 5000 } as any });
     store.openChat();
     render(<Chat store={store} />);

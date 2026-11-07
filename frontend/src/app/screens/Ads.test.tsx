@@ -2,13 +2,14 @@ import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { rub } from "../data";
-import { initialState, Store } from "../store";
+import { initialState} from "../store";
+import { MockStore } from "../../mock/MockStore";
 import { Ads } from "./Ads";
 import { Settings } from "./Settings";
 
 describe("экран рекламы", () => {
   it("свой бюджет применяется кнопкой, пишется в историю, меньше минимума нельзя", async () => {
-    const store = new Store();
+    const store = new MockStore();
     const before = store.state.hist.length;
     render(<Settings store={store} />);
     const user = userEvent.setup();
@@ -28,7 +29,7 @@ describe("экран рекламы", () => {
   });
 
   it("смена настройки пишет в историю и не срабатывает повторно на выбранном варианте", async () => {
-    const store = new Store();
+    const store = new MockStore();
     const before = store.state.hist.length;
     render(<Settings store={store} />);
     const budget = within(screen.getByRole("group", { name: "Бюджет в месяц" }));
@@ -50,7 +51,7 @@ describe("экран рекламы", () => {
   });
 
   it("отключение и включение объявления пишет в историю", async () => {
-    const store = new Store();
+    const store = new MockStore();
     const before = store.state.hist.length;
     render(<Ads store={store} />);
 
@@ -71,19 +72,19 @@ describe("экран рекламы", () => {
   });
 
   it("показывает показатели объявления с верным окончанием", () => {
-    render(<Ads store={new Store()} />);
+    render(<Ads store={new MockStore()} />);
     expect(screen.getByText(`7 обращений, по ${rub(2300 / 7)}`)).toBeInTheDocument();
     expect(screen.getByText(`2 обращения, по ${rub(590)}`)).toBeInTheDocument();
   });
 
   it("в первые дни не приписывает объявлениям накопленные обращения", () => {
-    render(<Ads store={new Store(initialState("work", "first"))} />);
+    render(<Ads store={new MockStore(initialState("work", "first"))} />);
     expect(screen.getAllByText("Собираю данные")).toHaveLength(3);
     expect(screen.queryByText(/7 обращений/)).toBeNull();
   });
 
   it("новая цена видна в объявлении и в профиле", () => {
-    const store = new Store();
+    const store = new MockStore();
     store.run({ action: "price", value: 1400 });
     render(<Ads store={store} />);
     const name = `Маникюр от ${rub(1400)}`;
@@ -96,7 +97,7 @@ describe("экран рекламы", () => {
   });
 
   it("кнопка «Что-то изменилось» открывает чат с готовой фразой", async () => {
-    const store = new Store();
+    const store = new MockStore();
     render(<Settings store={store} />);
     await userEvent.click(screen.getByRole("button", { name: "Что-то изменилось" }));
     expect(store.state.mode).toBe("chat");
@@ -104,14 +105,14 @@ describe("экран рекламы", () => {
   });
 
   it("настроек на экране рекламы нет, а обводка есть у кнопки «Открыть»", () => {
-    render(<Ads store={new Store()} />);
+    render(<Ads store={new MockStore()} />);
     expect(screen.queryByRole("group", { name: "Бюджет в месяц" })).toBeNull();
     expect(screen.getByRole("button", { name: "Открыть «Первый визит со скидкой»" })).toHaveClass("ah-btn");
     expect(screen.getByRole("button", { name: "Открыть «Первый визит со скидкой»" })).not.toHaveClass("ah-btn-text");
   });
 
   it("список можно сузить до отключённых, счётчик совпадает", async () => {
-    const store = new Store({ ...initialState(), adsOff: { a3: true } });
+    const store = new MockStore({ ...initialState(), adsOff: { a3: true } });
     render(<Ads store={store} />);
     await userEvent.click(screen.getByRole("button", { name: "Отключены 1" }));
     expect(screen.getByRole("button", { name: "Включить «Педикюр рядом с домом»" })).toBeInTheDocument();
@@ -120,14 +121,14 @@ describe("экран рекламы", () => {
 
   it("показывает сообщения при пустых списках фильтров и открывает AdMaker", async () => {
     // filter "off" когда нет отключённых
-    const store = new Store();
+    const store = new MockStore();
     render(<Ads store={store} />);
     await userEvent.click(screen.getByRole("button", { name: "Отключены 0" }));
     expect(screen.getByText("Отключённых объявлений нет.")).toBeInTheDocument();
 
     // filter "on" когда все отключены
     cleanup();
-    const storeAllOff = new Store({ ...initialState(), adsOff: { a1: true, a2: true, a3: true } });
+    const storeAllOff = new MockStore({ ...initialState(), adsOff: { a1: true, a2: true, a3: true } });
     render(<Ads store={storeAllOff} />);
     await userEvent.click(screen.getByRole("button", { name: "Работают 0" }));
     expect(screen.getByText("Сейчас ни одно объявление не показывается.")).toBeInTheDocument();

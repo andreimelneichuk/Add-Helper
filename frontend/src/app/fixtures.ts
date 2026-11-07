@@ -1,5 +1,11 @@
 import type { Ad, Day, Fact, HistoryEntry, Period, PeriodStats, SettingKey, Situation } from "./data";
-import type { State } from "./store";
+import type { ReactNode } from "react";
+import type { State, Store } from "./store";
+
+export type AttentionTone = "info" | "bad" | "warn" | "good";
+export type AttentionDecision = { label: string; pick: () => void; quiet?: boolean };
+/** calm: спокойный итог, экранному чтению о нём объявлять незачем. */
+export type AttentionMessage = { tone: AttentionTone; title: string; text: string; actions: AttentionDecision[]; calm?: boolean };
 
 /**
  * Подставные данные прототипа. В боевой сборке пусты: их ставит `installFixtures` из `src/mock`
@@ -16,6 +22,10 @@ export type Fixtures = {
   /** Тексты и значения прототипа, которых нет в настоящих экранах. */
   TEXT: { area: string; audience: string; rewind: string; rejected: string; profile: (price: number | null) => [string, string][] };
   histFor: (id: Situation) => HistoryEntry[];
+  /** Сообщение «внимания» прототипа по ситуации; calm — вывод «всё в порядке». */
+  attention: (s: State, store: Store, calm: (s: State) => AttentionMessage) => AttentionMessage;
+  /** Блок «ИИ сейчас» прототипа. */
+  aiNow: (s: State) => ReactNode;
   draftAd: (s: State, base: Ad | null, ask: string, attempt?: number) => { ad: Ad } | { refusal: string };
 };
 
@@ -32,6 +42,8 @@ export const fixtures: Fixtures = {
   OPTIONS: byKey(["services", "area", "hours", "goal", "budget"], () => ({ label: "", values: [] })) as Fixtures["OPTIONS"],
   FACTS: [],
   histFor: () => [],
+  attention: () => ({ tone: "info", title: "", text: "", actions: [] }),
+  aiNow: () => null,
   TEXT: { area: "", audience: "", rewind: "", rejected: "", profile: () => [] },
   draftAd: () => ({ refusal: "Автор объявлений недоступен." }),
 };

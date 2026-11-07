@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import "@fontsource-variable/onest";
 import "./tokens.css";
 import type { Situation, View } from "./data";
@@ -12,7 +12,7 @@ import { Overview } from "./screens/Overview";
 import { Settings } from "./screens/Settings";
 import { Start } from "./screens/Start";
 import { Stats } from "./screens/Stats";
-import { confirmText, initialState, statusText, stopped, Store, useStoreState, warned } from "./store";
+import { confirmText, statusText, stopped, Store, useStoreState, warned } from "./store";
 import type { State } from "./store";
 
 const VIEWS: [View, string][] = [
@@ -105,12 +105,7 @@ function BusinessSelector({ store, s }: { store: Store; s: State }) {
   );
 }
 
-export function AppShell({ store: given }: { store?: Store }) {
-  const store = useMemo(() => {
-    if (given) return given;
-    const start = new URLSearchParams(window.location.search).has("start");
-    return new Store(initialState(start ? "start" : "work"));
-  }, [given]);
+export function AppShell({ store }: { store: Store }) {
   const s = useStoreState(store);
   const starting = s.stage === "start";
   const chat = s.mode === "chat";

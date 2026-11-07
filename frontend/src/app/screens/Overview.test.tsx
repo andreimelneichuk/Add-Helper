@@ -4,12 +4,13 @@ import {  rub } from "../data";
 import { mockFixtures } from "../../mock/fixtures";
 const { DAYS } = mockFixtures;
 import type { Situation } from "../data";
-import { initialState, Store, week } from "../store";
+import { initialState, week} from "../store";
+import { MockStore } from "../../mock/MockStore";
 import { fakeApi, open } from "../testLive";
 import { Overview } from "./Overview";
 
 function show(situation: Situation = "running") {
-  const store = new Store(initialState("work", situation));
+  const store = new MockStore(initialState("work", situation));
   render(<Overview store={store} />);
   return store;
 }
@@ -120,7 +121,7 @@ describe("столбики за месяц", () => {
   });
 
   it("переключатель меняет шкалу на обращения", () => {
-    const { container } = render(<Overview store={new Store()} />);
+    const { container } = render(<Overview store={new MockStore()} />);
     expect(container.querySelector(".ov-chart-top")).toHaveTextContent(rub(1000));
     expect(container.querySelector(".ov-chart-limit")).toBeInTheDocument();
     click("Обращения");

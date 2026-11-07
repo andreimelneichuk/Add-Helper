@@ -4,14 +4,15 @@ import { describe, expect, it } from "vitest";
 import { rub } from "../data";
 import { mockFixtures } from "../../mock/fixtures";
 const { STATS } = mockFixtures;
-import { initialState, Store } from "../store";
+import { initialState} from "../store";
+import { MockStore } from "../../mock/MockStore";
 import { Stats } from "./Stats";
 
 const num = (label: string) => screen.getByText(label, { selector: "dt" }).nextElementSibling?.textContent;
 
 describe("экран статистики", () => {
   it("смена периода меняет сводные числа и разбивку", async () => {
-    render(<Stats store={new Store()} />);
+    render(<Stats store={new MockStore()} />);
     expect(screen.getByRole("button", { name: "7 дней" })).toHaveAttribute("aria-pressed", "true");
     expect(num("Обращения")).toBe(String(STATS.week.leads));
     expect(num("Цена обращения")).toBe(rub(STATS.week.cost / STATS.week.leads));
@@ -26,13 +27,13 @@ describe("экран статистики", () => {
   });
 
   it("считает долю нажавших и цену клика", () => {
-    render(<Stats store={new Store()} />);
+    render(<Stats store={new MockStore()} />);
     expect(num("CTR, доля нажавших")).toBe("3,7%");
     expect(num("Цена клика")).toBe(rub(5040 / 312));
   });
 
   it("в первые дни честно говорит, что данных мало, и не показывает пустую таблицу", () => {
-    const { container } = render(<Stats store={new Store(initialState("work", "first"))} />);
+    const { container } = render(<Stats store={new MockStore(initialState("work", "first"))} />);
     expect(screen.getByText(/Пока мало данных/)).toBeInTheDocument();
     expect(screen.queryByRole("table")).toBeNull();
     expect(num("Обращения")).toBe("1");
@@ -41,7 +42,7 @@ describe("экран статистики", () => {
   });
 
   it("называет объявление с новой ценой", () => {
-    const store = new Store();
+    const store = new MockStore();
     store.run({ action: "price", value: 1400 });
     render(<Stats store={store} />);
     expect(screen.getByRole("row", { name: new RegExp(`Маникюр от ${rub(1400)}`) })).toBeInTheDocument();

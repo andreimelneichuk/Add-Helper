@@ -2,12 +2,13 @@ import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { AppShell } from "../AppShell";
-import { draftAd, initialState, Store } from "../store";
+import { draftAd, initialState} from "../store";
+import { MockStore } from "../../mock/MockStore";
 
 const button = (name: string | RegExp) => screen.getByRole("button", { name });
 
 function openFirst() {
-  const store = new Store();
+  const store = new MockStore();
   store.goView("ads");
   render(<AppShell store={store} />);
   return store;
@@ -24,7 +25,7 @@ describe("экран объявления", () => {
   });
 
   it("открывается из статистики", async () => {
-    const store = new Store();
+    const store = new MockStore();
     store.goView("stats");
     render(<AppShell store={store} />);
     await userEvent.click(button("Открыть «Педикюр рядом с домом»"));
@@ -33,7 +34,7 @@ describe("экран объявления", () => {
   });
 
   it("открывается из обзора, а новое объявление без обращений не ломает таблицу", async () => {
-    const store = new Store();
+    const store = new MockStore();
     const made = draftAd(store.state, null, "Педикюр");
     if (!("ad" in made)) throw new Error(made.refusal);
     store.run({ action: "adSave", value: made.ad });
@@ -44,7 +45,7 @@ describe("экран объявления", () => {
   });
 
   it("при смене раздела экран объявления закрывается", () => {
-    const store = new Store();
+    const store = new MockStore();
     store.openAdScreen("a1");
     store.goView("stats");
     expect(store.state.openAd).toBeNull();
@@ -76,7 +77,7 @@ describe("переделка объявления", () => {
   });
 
   it("предупреждает, что переделка останавливает идущую проверку вариантов", () => {
-    const store = new Store();
+    const store = new MockStore();
     const ad = draftAd(store.state, store.state.ads[0]!, "Короче");
     store.ask({ action: "adSave", value: "ad" in ad ? ad.ad : store.state.ads[0]! });
     render(<AppShell store={store} />);
@@ -84,7 +85,7 @@ describe("переделка объявления", () => {
   });
 
   it("отмена из истории возвращает прежний текст и пишет новую запись", () => {
-    const store = new Store();
+    const store = new MockStore();
     const old = store.state.ads[0]!.text;
     const made = draftAd(store.state, store.state.ads[0]!, "Короче");
     if (!("ad" in made)) throw new Error(made.refusal);
@@ -114,7 +115,7 @@ describe("новое объявление", () => {
   });
 
   it("отмена отключает новое объявление, а не удаляет его", () => {
-    const store = new Store();
+    const store = new MockStore();
     const made = draftAd(store.state, null, "Педикюр");
     if (!("ad" in made)) throw new Error(made.refusal);
     store.run({ action: "adSave", value: made.ad });
@@ -124,7 +125,7 @@ describe("новое объявление", () => {
   });
 
   it("создаётся и словами в чате, тоже через подтверждение", () => {
-    const store = new Store();
+    const store = new MockStore();
     const before = store.state.ads.length;
     store.send("сделай новое объявление про педикюр");
     expect(store.state.ads).toHaveLength(before);
@@ -151,7 +152,7 @@ describe("факты только из профиля", () => {
   });
 
   it("чат тоже отказывает и ничего не предлагает применить", () => {
-    const store = new Store();
+    const store = new MockStore();
     store.send("сделай новое объявление со скидкой 30%");
     expect(store.state.pending).toBeNull();
     expect(store.state.msgs.at(-1)?.text).toContain("профил");
@@ -196,7 +197,7 @@ describe("факты только из профиля", () => {
 
 describe("запуск", () => {
   it("объявление можно переделать до запуска, без подтверждения и записи в историю", async () => {
-    const store = new Store(initialState("start"));
+    const store = new MockStore(initialState("start"));
     act(() => store.set({ step: 3 }));
     const before = store.state.hist.length;
     render(<AppShell store={store} />);
@@ -209,7 +210,7 @@ describe("запуск", () => {
 
   it("AdMaker кнопка назад возвращает в список", async () => {
     cleanup();
-    const store = new Store();
+    const store = new MockStore();
     store.openAdScreen("new");
     render(<AppShell store={store} />);
     expect(screen.getByRole("heading", { level: 2, name: "Новое объявление" })).toBeInTheDocument();
@@ -219,7 +220,7 @@ describe("запуск", () => {
 
   it("кнопка «Вся история и отмена» и включение отключённого объявления", async () => {
     cleanup();
-    const store = new Store();
+    const store = new MockStore();
     store.goView("ads");
     store.set({ adsOff: { a1: true } });
     render(<AppShell store={store} />);
@@ -248,7 +249,7 @@ describe("запуск", () => {
 
   it("при s.live и store.rework открывает LiveRework и обрабатывает ошибку выбора варианта", async () => {
     cleanup();
-    const store = new Store();
+    const store = new MockStore();
     store.goView("ads");
     store.openAdScreen("a1");
     const reworkApi = {
@@ -292,7 +293,7 @@ describe("запуск", () => {
 
   it("проверяет скрытие кнопки «Переделать» без rework, пустые факты и сбой LiveRework", async () => {
     cleanup();
-    const store = new Store();
+    const store = new MockStore();
     store.goView("ads");
     store.openAdScreen("a1");
 
@@ -309,7 +310,7 @@ describe("запуск", () => {
 
     // LiveRework: отправка текста через форму и статус failed
     cleanup();
-    const storeRework = new Store();
+    const storeRework = new MockStore();
     storeRework.goView("ads");
     storeRework.openAdScreen("a1");
     storeRework.waitMs = 1;

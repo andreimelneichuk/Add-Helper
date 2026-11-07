@@ -6,7 +6,8 @@ import type { Api, Display } from "../api";
 import { History } from "./screens/History";
 import { LiveSettings } from "./screens/LiveSettings";
 import { AdDetail } from "./screens/AdDetail";
-import { initialState, Store } from "./store";
+import { initialState} from "./store";
+import { MockStore } from "../mock/MockStore";
 import { fakeApi, open } from "./testLive";
 
 describe("Review 2 Reproduction & Fix Verification Tests (BUG-032 – BUG-036)", () => {
@@ -75,7 +76,7 @@ describe("Review 2 Reproduction & Fix Verification Tests (BUG-032 – BUG-036)",
   describe("BUG-034: Step 5 marking validation in real onboarding mode", () => {
     it("34.1: rejects invalid/empty INN and empty name without calling wizard.saveMarking", async () => {
       const saveMarking = vi.fn();
-      const store = new Store(initialState("start"));
+      const store = new MockStore(initialState("start"));
       // Simulate real onboarding mode
       store.reader = { readSite: vi.fn(), siteRead: vi.fn() } as any;
       store.wizard = { saveMarking } as any;

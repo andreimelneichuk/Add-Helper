@@ -5,13 +5,14 @@ import { AppShell } from "./AppShell";
 import { rub } from "./data";
 import { Ads } from "./screens/Ads";
 import { Overview } from "./screens/Overview";
-import { initialState, Store } from "./store";
+import { initialState} from "./store";
+import { MockStore } from "../mock/MockStore";
 
 const button = (name: string | RegExp) => screen.getByRole("button", { name });
 
 describe("изменения с панели", () => {
   it("настройка применяется только после подтверждения", async () => {
-    const store = new Store();
+    const store = new MockStore();
     render(<AppShell store={store} />);
     await userEvent.click(screen.getAllByRole("button", { name: "Настройки" })[0]!);
     await userEvent.click(button("вся Москва"));
@@ -25,7 +26,7 @@ describe("изменения с панели", () => {
   });
 
   it("свою настройку можно отменить из истории, значение возвращается", () => {
-    const store = new Store();
+    const store = new MockStore();
     store.run({ action: "setting", value: ["area", "вся Москва"] });
     const entry = store.state.hist[0]!;
     expect(entry.canUndo).toBe(true);
@@ -34,7 +35,7 @@ describe("изменения с панели", () => {
   });
 
   it("после новой правки той же настройки старую запись не отменить", () => {
-    const store = new Store();
+    const store = new MockStore();
     store.run({ action: "setting", value: ["area", "вся Москва"] });
     const old = store.state.hist[0]!.id;
     store.run({ action: "setting", value: ["area", "Сокольники и Преображенка"] });
@@ -42,7 +43,7 @@ describe("изменения с панели", () => {
   });
 
   it("бюджет ниже потраченного не принимается ни с панели, ни из чата", () => {
-    const store = new Store();
+    const store = new MockStore();
     store.ask({ action: "setting", value: ["budget", 1000] });
     expect(store.state.pending).toBeNull();
     expect(store.state.notice).toContain(rub(8400));
@@ -53,7 +54,7 @@ describe("изменения с панели", () => {
   });
 
   it("последнее объявление не отключается, вместо этого предлагается пауза", () => {
-    const store = new Store(initialState());
+    const store = new MockStore(initialState());
     store.set({ adsOff: { a1: true, a2: true } });
     store.ask({ action: "ad", value: "a3" });
     expect(store.state.pending).toBeNull();
@@ -62,7 +63,7 @@ describe("изменения с панели", () => {
   });
 
   it("отключение объявления в проверке предупреждает о её остановке и отменяется", async () => {
-    const store = new Store();
+    const store = new MockStore();
     render(<AppShell store={store} />);
     act(() => store.goView("ads"));
     await userEvent.click(button("Отключить «Первый визит со скидкой»"));
@@ -75,7 +76,7 @@ describe("изменения с панели", () => {
   });
 
   it("включение объявления подтверждения не требует", async () => {
-    const store = new Store({ ...initialState(), adsOff: { a3: true } });
+    const store = new MockStore({ ...initialState(), adsOff: { a3: true } });
     render(<Ads store={store} />);
     await userEvent.click(button("Включить «Педикюр рядом с домом»"));
     expect(store.state.adsOff.a3).toBe(false);
@@ -84,12 +85,12 @@ describe("изменения с панели", () => {
 
 describe("обзор отвечает на вопрос «всё ли в порядке»", () => {
   it("в обычной ситуации первым идёт вывод с цифрами", () => {
-    render(<Overview store={new Store()} />);
+    render(<Overview store={new MockStore()} />);
     expect(screen.getByRole("heading", { level: 2, name: `Всё в порядке: 12 обращений за 7 дней, по ${rub(420)}` })).toBeInTheDocument();
   });
 
   it("на паузе вывод не говорит, что всё в порядке", () => {
-    const store = new Store();
+    const store = new MockStore();
     store.run({ action: "pause" });
     render(<Overview store={store} />);
     expect(within(screen.getByRole("status")).getByRole("heading", { name: "Реклама на паузе" })).toBeInTheDocument();
@@ -97,12 +98,12 @@ describe("обзор отвечает на вопрос «всё ли в пор�
   });
 
   it("цена выше цели не подсвечена как хорошая", () => {
-    render(<Overview store={new Store()} />);
+    render(<Overview store={new MockStore()} />);
     expect(screen.getByText("было 560 ₽, цель 400 ₽")).not.toHaveClass("ov-ink-good");
   });
 
   it("вопрос о клиентах стоит раньше показателей и подсказывает, где взять ответ", () => {
-    const { container } = render(<Overview store={new Store()} />);
+    const { container } = render(<Overview store={new MockStore()} />);
     const question = screen.getByLabelText(/стали клиентами/);
     const kpis = container.querySelector(".ov-kpis")!;
     expect(question.compareDocumentPosition(kpis) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -110,7 +111,7 @@ describe("обзор отвечает на вопрос «всё ли в пор�
   });
 
   it("слишком большое число объясняет ошибку", async () => {
-    render(<Overview store={new Store()} />);
+    render(<Overview store={new MockStore()} />);
     await userEvent.type(screen.getByLabelText(/стали клиентами/), "13");
     await userEvent.click(button("Записать"));
     expect(screen.getByRole("alert")).toHaveTextContent("не больше 12");
@@ -124,7 +125,7 @@ describe("оболочка", () => {
   });
 
   it("смена раздела открывает его с начала", () => {
-    const store = new Store();
+    const store = new MockStore();
     const { container } = render(<AppShell store={store} />);
     const main = container.querySelector(".ah-main")!;
     main.scrollTop = 600;
@@ -133,7 +134,7 @@ describe("оболочка", () => {
   });
 
   it("раздел называется одинаково на компьютере и телефоне", () => {
-    render(<AppShell store={new Store()} />);
+    render(<AppShell store={new MockStore()} />);
     expect(screen.queryByRole("button", { name: "Цифры" })).toBeNull();
     expect(screen.getAllByRole("button", { name: "Статистика" })).toHaveLength(2);
   });

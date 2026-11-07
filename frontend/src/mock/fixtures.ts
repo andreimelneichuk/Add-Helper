@@ -3,6 +3,8 @@ import { rub } from "../app/data";
 import type { Ad, Day, Fact, HistoryEntry, Period, PeriodStats, SettingKey, Situation } from "../app/data";
 import type { Fixtures } from "../app/fixtures";
 import type { State } from "../app/store";
+import { prototypeAttention } from "./attention";
+import { prototypeAiNow } from "./aiNow";
 
 const BASE: Day[] = [[420, 1], [480, 0], [510, 1], [450, 1], [490, 1], [520, 1], [490, 1], [640, 1], [720, 2], [680, 1], [810, 2], [640, 1], [790, 3], [760, 2]];
 const LATER: Day[] = [800, 830, 860, 820, 840, 850, 870, 830, 860, 840, 850, 800, 850].map((c): Day => [c, 2]);
@@ -115,4 +117,4 @@ const TEXT: Fixtures["TEXT"] = {
   ],
 };
 
-export const mockFixtures: Fixtures = { TEXT, DAYS, ACCOUNT, OPENING, ADS, STATS, OPTIONS, FACTS, histFor, draftAd };
+export const mockFixtures: Fixtures = { attention: prototypeAttention, aiNow: prototypeAiNow, TEXT, DAYS, ACCOUNT, OPENING, ADS, STATS, OPTIONS, FACTS, histFor, draftAd };

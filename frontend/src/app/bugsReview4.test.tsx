@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { clearDraft } from "./draft";
 import { initialState, Store } from "./store";
+import { MockStore } from "../mock/MockStore";
 import type { WizardApi } from "./store";
 import { display, fakeApi, open, overview, said, settled } from "./testLive";
 import { LiveStore, loadLive } from "./live";
@@ -39,7 +40,7 @@ const wizardApi = () => ({
 /** Мастер нового сайта у владельца, который уже вошёл и у которого есть другой бизнес. */
 function signedWizard(step: number) {
   clearDraft();
-  const store = new Store({ ...initialState("start"), ads: [], facts, site: "", step, account: { email: "anna@example.ru" }, businesses: [{ id: "old", name: "Бигуди Пермь" }] });
+  const store = new MockStore({ ...initialState("start"), ads: [], facts, site: "", step, account: { email: "anna@example.ru" }, businesses: [{ id: "old", name: "Бигуди Пермь" }] });
   store.reader = { readSite: vi.fn(), siteRead: vi.fn() };
   store.writer = { writeAds: vi.fn(), adSet: vi.fn() };
   store.navigate = vi.fn();
@@ -151,7 +152,7 @@ describe("Review 4 Reproduction & Fix Verification Tests (BUG-041 – BUG-051)",
     it("44.2: из мастера есть выход в кабинет, если сайты уже есть", async () => {
       clearDraft();
       const { AppShell } = await import("./AppShell");
-      const store = new Store({ ...initialState("start"), ads: [], account: { email: "anna@example.ru" }, businesses: [{ id: "old", name: "Бигуди Пермь" }] });
+      const store = new MockStore({ ...initialState("start"), ads: [], account: { email: "anna@example.ru" }, businesses: [{ id: "old", name: "Бигуди Пермь" }] });
       store.navigate = vi.fn();
       render(<AppShell store={store} />);
       await userEvent.click(screen.getByRole("button", { name: "В кабинет" }));

@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { STEPS } from "./data";
 import { draftProfile, loadDraft, saveDraft } from "./draft";
-import { initialState, Store } from "./store";
+import { initialState} from "./store";
+import { MockStore } from "../mock/MockStore";
 import { Start } from "./screens/Start";
 import { Overview } from "./screens/Overview";
 import { AppShell } from "./AppShell";
@@ -28,7 +29,7 @@ describe("Review 3 Reproduction & Fix Verification Tests (BUG-019 – BUG-031, B
 
   describe("BUG-020: Chat budget command in start stage", () => {
     it("20.1: updates budget and provides informative refusal for unsupported schedule/pause commands", () => {
-      const store = new Store(initialState("start"));
+      const store = new MockStore(initialState("start"));
       store.set({ step: 4 });
       store.send("Поменяй бюджет на 30 000 и поставь паузу на выходные");
       expect(store.state.f.budget).toBe(30000);
@@ -47,7 +48,7 @@ describe("Review 3 Reproduction & Fix Verification Tests (BUG-019 – BUG-031, B
 
   describe("BUG-022: Sidebar ads count retained after navigating back", () => {
     it("22.1: sidebar shows ads count when ads exist even after stepping back", () => {
-      const store = new Store(initialState("start"));
+      const store = new MockStore(initialState("start"));
       store.set({
         site: "salon.ru",
         step: 3,
@@ -64,7 +65,7 @@ describe("Review 3 Reproduction & Fix Verification Tests (BUG-019 – BUG-031, B
 
   describe("BUG-024: Site input placeholder", () => {
     it("24.1: placeholder indicates an example rather than looking like an entered value", () => {
-      const store = new Store(initialState("start"));
+      const store = new MockStore(initialState("start"));
       render(<Start store={store} />);
       const input = screen.getByLabelText(/Ссылка на сайт или страницу/i);
       expect(input).toHaveAttribute("placeholder", "Например: ваш-салон.рф");
@@ -73,7 +74,7 @@ describe("Review 3 Reproduction & Fix Verification Tests (BUG-019 – BUG-031, B
 
   describe("BUG-025: Profile validation requires services and facts", () => {
     it("25.1: blocks proceeding when profile has no services", () => {
-      const store = new Store(initialState("start"));
+      const store = new MockStore(initialState("start"));
       store.set({
         step: 1,
         facts: [{ id: "f1", field: "address", label: "Адрес", value: "г. Москва", source: "от вас" }],
@@ -86,7 +87,7 @@ describe("Review 3 Reproduction & Fix Verification Tests (BUG-019 – BUG-031, B
 
   describe("BUG-026: Ad cards visual distinction", () => {
     it("26.1: renders explicit status badges for kept and dropped ads", () => {
-      const store = new Store(initialState("start"));
+      const store = new MockStore(initialState("start"));
       store.set({
         step: 3,
         ads: [
@@ -103,7 +104,7 @@ describe("Review 3 Reproduction & Fix Verification Tests (BUG-019 – BUG-031, B
 
   describe("BUG-027: Minimum budget explanation", () => {
     it("27.1: explains the 50 ₽/day + 10% reserve rule when below minimum", () => {
-      const store = new Store(initialState("start"));
+      const store = new MockStore(initialState("start"));
       store.set({ step: 2, budgetDraft: "500" });
       store.next();
       expect(store.state.block).toContain("от 50 ₽ в день по правилам Яндекса плюс 10% резерва");
@@ -112,7 +113,7 @@ describe("Review 3 Reproduction & Fix Verification Tests (BUG-019 – BUG-031, B
 
   describe("BUG-028: Ads limit recovery", () => {
     it("28.1: allows proceeding to cabinet step when ad generation limit is reached", () => {
-      const store = new Store(initialState("start"));
+      const store = new MockStore(initialState("start"));
       store.writer = {} as any;
       store.set({
         step: 3,
@@ -126,7 +127,7 @@ describe("Review 3 Reproduction & Fix Verification Tests (BUG-019 – BUG-031, B
 
   describe("BUG-029: DayChart with zero budget", () => {
     it("29.1: does not show fake 1000 ₽ scale and explains budget is not set", () => {
-      const store = new Store(initialState());
+      const store = new MockStore(initialState());
       const s = {
         ...initialState(),
         f: { ...initialState().f, budget: 0 },
@@ -159,7 +160,7 @@ describe("Review 3 Reproduction & Fix Verification Tests (BUG-019 – BUG-031, B
 
   describe("BUG-038: Chat handles question about budget without mistaking for command", () => {
     it("38.1: answers question with current budget facts rather than proposing modification", () => {
-      const store = new Store(initialState());
+      const store = new MockStore(initialState());
       store.set({ f: { ...store.state.f, budget: 15000 } });
       store.send("Какой у меня бюджет?");
       expect(store.state.pending).toBeNull();
@@ -171,7 +172,7 @@ describe("Review 3 Reproduction & Fix Verification Tests (BUG-019 – BUG-031, B
 
   describe("BUG-037: Overview shows empty state when ads/profile are empty", () => {
     it("37.1: renders helpful message when no ads or profile facts exist", () => {
-      const store = new Store(initialState());
+      const store = new MockStore(initialState());
       store.set({ ads: [] });
       render(<Overview store={store} />);
       expect(screen.getByText(/Объявлений пока нет\. Заполните услуги в профиле/i)).toBeInTheDocument();
@@ -180,7 +181,7 @@ describe("Review 3 Reproduction & Fix Verification Tests (BUG-019 – BUG-031, B
 
   describe("BUG-040: 'Написать другие варианты' requests fresh set with force=true", () => {
     it("40.1: passes force: true when requesting other variants", async () => {
-      const store = new Store(initialState("start"));
+      const store = new MockStore(initialState("start"));
       let capturedProfile: any = null;
       store.writer = {
         writeAds: async (p: unknown) => { capturedProfile = p; return { id: 10, token: "tok", status: "ready" }; },
@@ -194,7 +195,7 @@ describe("Review 3 Reproduction & Fix Verification Tests (BUG-019 – BUG-031, B
 
   describe("UX: Main panel site creation", () => {
     it("renders '+ Новый сайт' button in header and opens CreateSiteModal", async () => {
-      const store = new Store(initialState("work"));
+      const store = new MockStore(initialState("work"));
       store.set({ live: { name: "Салон Пермь", budget: 20000, spent: 5000, hasCampaigns: true, alerts: [] } as any });
       render(<AppShell store={store} />);
       const btn = screen.getByRole("button", { name: "Создать новый сайт" });

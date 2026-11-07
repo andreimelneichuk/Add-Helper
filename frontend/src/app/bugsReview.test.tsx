@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Api } from "../api";
 import { fakeApi, open, overview, settled } from "./testLive";
 import { initialState, Store, useStoreState, draftAd } from "./store";
+import { MockStore } from "../mock/MockStore";
 import { Clients } from "./screens/overview/Clients";
 import { DayChart } from "./screens/overview/DayChart";
 import { LiveSettings } from "./screens/LiveSettings";
@@ -75,7 +76,7 @@ describe("Code Review Reproduction & Fix Verification Tests", () => {
     });
 
     it("14.4: action clients with value 0 handles division by zero safely", () => {
-      const store = new Store(initialState());
+      const store = new MockStore(initialState());
       store.run({ action: "clients", value: 0 });
       // Fixed: notice says "Клиентов пока нет." without Infinity / ∞
       expect(store.state.notice).toContain("Клиентов пока нет.");
@@ -85,7 +86,7 @@ describe("Code Review Reproduction & Fix Verification Tests", () => {
 
   describe("BUG-015: DayChart.tsx renders correctly when days array is empty", () => {
     it("15.1: does not render '0 ноября' when days is empty", () => {
-      const store = new Store(initialState());
+      const store = new MockStore(initialState());
       // Empty days
       store.set({
         live: {

@@ -1,3 +1,4 @@
+import { MockStore } from "../mock/MockStore";
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api";
 import { saveDraft } from "./draft";
@@ -15,15 +16,13 @@ import {
   statsOf,
   statusText,
   stopped,
-  Store,
   warned,
   week,
-  writtenAds,
-} from "./store";
+  writtenAds} from "./store";
 
 describe("хранилище прототипа", () => {
   it("чат меняет только после подтверждения и пишет в историю", () => {
-    const store = new Store();
+    const store = new MockStore();
     const before = store.state.hist.length;
     store.send("Не показывай по воскресеньям");
     expect(store.state.f.hours).toBe("в часы работы");
@@ -33,7 +32,7 @@ describe("хранилище прототипа", () => {
   });
 
   it("отмена не стирает исходную запись", () => {
-    const store = new Store();
+    const store = new MockStore();
     const before = store.state.hist.length;
     store.run({ action: "undo", value: "off" });
     expect(store.state.undone.off).toBe(true);
@@ -42,7 +41,7 @@ describe("хранилище прототипа", () => {
   });
 
   it("итог на панели показывается полосой, в чате не показывается", () => {
-    const store = new Store();
+    const store = new MockStore();
     store.run({ action: "pause" });
     expect(store.state.notice).toContain("паузу");
     store.openChat();
@@ -51,7 +50,7 @@ describe("хранилище прототипа", () => {
   });
 
   it("запуск не идёт дальше без кабинета, ИНН и кода", () => {
-    const store = new Store(initialState("start"));
+    const store = new MockStore(initialState("start"));
     store.set({ site: "salon-primer.ru", step: 4 });
     store.next();
     expect(store.state.step).toBe(4);
@@ -66,7 +65,7 @@ describe("хранилище прототипа", () => {
   });
 
   it("запуск из чата не проходит, если сняты все объявления", () => {
-    const store = new Store(initialState("start"));
+    const store = new MockStore(initialState("start"));
     store.set({ step: 3, draftOff: { a1: true, a2: true, a3: true } });
     store.send("нравится");
     expect(store.state.step).toBe(3);
@@ -74,7 +73,7 @@ describe("хранилище прототипа", () => {
   });
 
   it.each(["не применяй", "не давай", "когда начнётся"])("фраза «%s» не подтверждает действие", (phrase) => {
-    const store = new Store();
+    const store = new MockStore();
     store.send("Бюджет 30000");
     store.send(phrase);
     expect(store.state.f.budget).toBe(20000);
@@ -85,7 +84,7 @@ describe("хранилище прототипа", () => {
   });
 
   it("валидация шагов мастера next() и блокировки", () => {
-    const store = new Store(initialState("start"));
+    const store = new MockStore(initialState("start"));
 
     // Блокировка при незавершённой правке факта
     store.set({ factEdit: { id: null, value: "Новый факт" } });
@@ -141,7 +140,7 @@ describe("хранилище прототипа", () => {
   });
 
   it("шаги после входа nextReal: сохранение маркировки и финализация", async () => {
-    const store = new Store(initialState("start"));
+    const store = new MockStore(initialState("start"));
     const saveMarking = vi.fn().mockResolvedValue({});
     store.reader = { readSite: vi.fn(), siteRead: vi.fn() };
     store.wizard = { accounts: vi.fn(), connect: vi.fn(), marking: vi.fn(), saveMarking, tagCheck: vi.fn(), requestTagCheck: vi.fn(), launchCheck: vi.fn(), startLaunch: vi.fn(), wizardAds: vi.fn() };
@@ -177,7 +176,7 @@ describe("хранилище прототипа", () => {
   });
 
   it("resume и resumeConnect обрабатывают ошибки и статусы", async () => {
-    const store = new Store(initialState("start"));
+    const store = new MockStore(initialState("start"));
     store.navigate = vi.fn();
 
     // resume с ошибкой входа loginResult (известной и неизвестной)
@@ -185,19 +184,19 @@ describe("хранилище прототипа", () => {
     await store.resume({ session: vi.fn(), createBusiness: vi.fn(), business: vi.fn() } as any, "denied");
     expect(store.state.block).toContain("доступ в Яндексе не дан");
 
-    const storeUnknownLogin = new Store(initialState("start"));
+    const storeUnknownLogin = new MockStore(initialState("start"));
     await storeUnknownLogin.resume({ session: vi.fn(), createBusiness: vi.fn(), business: vi.fn() } as any, "unknown_reason");
     expect(storeUnknownLogin.state.block).toContain("Вход не состоялся");
 
     // resume когда draft отсутствует
     window.localStorage.removeItem("adhelper.startDraft");
-    const noDraftStore = new Store(initialState("start"));
+    const noDraftStore = new MockStore(initialState("start"));
     await noDraftStore.resume({ session: vi.fn() } as any, null);
     expect(noDraftStore.state.step).toBe(0);
 
     // resume с существующим бизнесом
     saveDraft({ site: "test.ru", facts: [], budget: 10000 });
-    const existsStore = new Store(initialState("start"));
+    const existsStore = new MockStore(initialState("start"));
     await existsStore.resume({
       session: vi.fn(async () => ({ me: { email: "u@ya.ru", csrf_token: "c" } as any, businesses: [{ id: "b1", name: "Мой салон" }] })),
       createBusiness: vi.fn(),
@@ -207,7 +206,7 @@ describe("хранилище прототипа", () => {
 
     // resume с Error ошибкой (e instanceof Error)
     saveDraft({ site: "test.ru", facts: [], budget: 10000 });
-    const errObjStore = new Store(initialState("start"));
+    const errObjStore = new MockStore(initialState("start"));
     await errObjStore.resume({
       session: vi.fn(async () => ({ me: { email: "u@ya.ru", csrf_token: "c" } as any, businesses: [] })),
       createBusiness: vi.fn().mockRejectedValue(new Error("Сбой создания")),
@@ -216,13 +215,13 @@ describe("хранилище прототипа", () => {
     expect(errObjStore.state.block).toContain("Сбой создания");
 
     // resume когда сессия отсутствует
-    const store2 = new Store(initialState("start"));
+    const store2 = new MockStore(initialState("start"));
     window.localStorage.setItem("adhelper.startDraft", JSON.stringify({ site: "test.ru", facts: [], budget: 10000 }));
     await store2.resume({ session: vi.fn(async () => null), createBusiness: vi.fn(), business: vi.fn() } as any, null);
     expect(store2.state.step).toBe(4);
 
     // resumeConnect когда бизнес не найден
-    const store3 = new Store(initialState("start"));
+    const store3 = new MockStore(initialState("start"));
     store3.navigate = vi.fn();
     window.localStorage.setItem("adhelper.startBusiness", "b-unknown");
     await store3.resumeConnect({ session: vi.fn(async () => ({ me: { email: "a@b.c", csrf_token: "c" } as any, businesses: [] })), open: vi.fn() }, null);
@@ -230,7 +229,7 @@ describe("хранилище прототипа", () => {
   });
 
   it("saveFact и removeFact изменяют список фактов", () => {
-    const store = new Store(initialState("start"));
+    const store = new MockStore(initialState("start"));
     store.set({ facts: [{ id: "f1", field: "service", label: "Услуга", value: "Маникюр", source: "от вас" }] });
 
     // добавление нового факта
@@ -258,7 +257,7 @@ describe("хранилище прототипа", () => {
   });
 
   it("study и awaitRead опрашивают разбор сайта до готовности", async () => {
-    const store = new Store(initialState("start"));
+    const store = new MockStore(initialState("start"));
     store.waitMs = 5;
     store.set({ site: "https://mysalon.ru" });
     const reader = {
@@ -310,7 +309,7 @@ describe("хранилище прототипа", () => {
     expect(store.state.facts).toEqual([]);
 
     // таймаут при долгом разборе
-    const timeoutStore = new Store(initialState("start"));
+    const timeoutStore = new MockStore(initialState("start"));
     timeoutStore.waitMs = 5;
     timeoutStore.readTimeoutMs = 15;
     timeoutStore.set({ site: "https://hangingsite.ru" });
@@ -324,7 +323,7 @@ describe("хранилище прототипа", () => {
     expect(timeoutStore.state.block).toContain("дольше обычного");
 
     // resumeReading восстанавливает опрос и обрабатывает готовность
-    const resumeStore = new Store(initialState("start"));
+    const resumeStore = new MockStore(initialState("start"));
     resumeStore.waitMs = 5;
     resumeStore.reader = {
       readSite: vi.fn(),
@@ -337,7 +336,7 @@ describe("хранилище прототипа", () => {
   });
 
   it("writeAds опрашивает генерацию объявлений", async () => {
-    const store = new Store(initialState("start"));
+    const store = new MockStore(initialState("start"));
     store.waitMs = 5;
     const writer = {
       writeAds: vi.fn().mockResolvedValue({ id: 2, token: "tok2", status: "pending" }),
@@ -373,7 +372,7 @@ describe("хранилище прототипа", () => {
   });
 
   it("баннер решений и вспомогательные функции состояния", () => {
-    const store = new Store();
+    const store = new MockStore();
     store.reportTopUp();
     expect(store.state.topped).toBe(true);
 
@@ -408,7 +407,7 @@ describe("хранилище прототипа", () => {
   });
 
   it("разбор различных фраз в чате send()", () => {
-    const store = new Store();
+    const store = new MockStore();
 
     store.send("новое объявление про педикюр");
     expect(store.state.pending?.action).toBe("adSave");
@@ -433,7 +432,7 @@ describe("хранилище прототипа", () => {
     expect(store.state.msgs.at(-1)?.text).toContain("Этого я пока не умею");
 
     // sendStart: добавление факта на шаге 1 и бюджет на шаге 2
-    const startStore = new Store(initialState("start"));
+    const startStore = new MockStore(initialState("start"));
     startStore.set({ step: 1 });
     startStore.send("Работаем круглосуточно");
     expect(startStore.state.facts.some((f) => f.value === "Работаем круглосуточно")).toBe(true);
@@ -475,7 +474,7 @@ describe("хранилище прототипа", () => {
   });
 
   it("проверяет ветки refusalOf, confirmText, apply adSave/undo и loadChosen", async () => {
-    const store = new Store();
+    const store = new MockStore();
 
     // refusalOf: попытка отключить последнее активное объявление
     store.set({ adsOff: { a2: true, a3: true } });
@@ -530,12 +529,12 @@ describe("хранилище прототипа", () => {
     expect(confirmText(sRunning, { action: "adSave", value: s.ads[0]! })).toContain("Идёт проверка вариантов");
 
     // sendStart на шаге 0 с reader и без reader
-    const storeStep0WithReader = new Store(initialState("start"));
+    const storeStep0WithReader = new MockStore(initialState("start"));
     storeStep0WithReader.reader = { readSite: vi.fn().mockResolvedValue({ id: 1, token: "t", status: "ready", url: "https://site.ru" }), siteRead: vi.fn() };
     storeStep0WithReader.send("https://site.ru");
     expect(storeStep0WithReader.state.site).toBe("https://site.ru");
 
-    const storeStep0NoReader = new Store(initialState("start"));
+    const storeStep0NoReader = new MockStore(initialState("start"));
     storeStep0NoReader.send("https://site-no-reader.ru");
     expect(storeStep0NoReader.state.step).toBe(1);
 
@@ -558,7 +557,7 @@ describe("хранилище прототипа", () => {
     expect(store.state.msgs.at(-1)?.text).toContain("Этого я пока не умею");
 
     // resume с не-Error ошибкой
-    const storeResumeErr = new Store(initialState("start"));
+    const storeResumeErr = new MockStore(initialState("start"));
     saveDraft({ site: "s", facts: [], budget: 1000 });
     await storeResumeErr.resume({
       session: vi.fn().mockResolvedValue({ me: { email: "a@b.c", csrf_token: "c" } as any, businesses: [] }),
@@ -568,7 +567,7 @@ describe("хранилище прототипа", () => {
     expect(storeResumeErr.state.block).toContain("Сервис не ответил");
 
     // navigate по умолчанию
-    const defaultNavStore = new Store();
+    const defaultNavStore = new MockStore();
     const assignSpy = vi.fn();
     vi.stubGlobal("location", { assign: assignSpy });
     defaultNavStore.navigate("/test-path");
@@ -576,7 +575,7 @@ describe("хранилище прототипа", () => {
 
     // loadChosen через resumeConnect
     window.localStorage.setItem("adhelper.startBusiness", "b1");
-    const storeConnect = new Store(initialState("start"));
+    const storeConnect = new MockStore(initialState("start"));
     storeConnect.writer = { writeAds: vi.fn(), adSet: vi.fn() };
     const mockWizard = {
       wizardAds: vi.fn().mockResolvedValue({ ads: [{ headline: "От писателя", text: "Текст", facts: [] }] }),
@@ -589,7 +588,7 @@ describe("хранилище прототипа", () => {
   });
 
   it("проверяет все граничные ветки next() и nextReal()", async () => {
-    const store = new Store(initialState("start"));
+    const store = new MockStore(initialState("start"));
     store.reader = { readSite: vi.fn(), siteRead: vi.fn() };
 
     // Шаг 0: пустой сайт с reader
@@ -692,7 +691,7 @@ describe("хранилище прототипа", () => {
     await store.writeAds();
 
     // resume и resumeConnect: повторный вызов при resumed: true ничего не делает
-    const resumedStore = new Store(initialState("start"));
+    const resumedStore = new MockStore(initialState("start"));
     saveDraft({ site: "s", facts: [], budget: 1000 });
     await resumedStore.resume({
       session: vi.fn().mockResolvedValue({ me: { email: "u@t.ru", csrf_token: "c" } as any, businesses: [] }),
@@ -705,7 +704,7 @@ describe("хранилище прототипа", () => {
     await resumedStore.resume({} as any, null);
 
     // resume при transferDraft signed_out
-    const signedOutStore = new Store(initialState("start"));
+    const signedOutStore = new MockStore(initialState("start"));
     saveDraft({ site: "s", facts: [], budget: 1000 });
     await signedOutStore.resume({
       session: vi.fn().mockResolvedValue(null),
@@ -715,13 +714,13 @@ describe("хранилище прототипа", () => {
     await resumedStore.resumeConnect({} as any, null);
 
     // resumeConnect при ошибке session
-    const errSessionStore = new Store(initialState("start"));
+    const errSessionStore = new MockStore(initialState("start"));
     errSessionStore.navigate = vi.fn();
     await errSessionStore.resumeConnect({ session: vi.fn().mockRejectedValue(new Error("fail")), open: vi.fn() }, "problem");
     expect(errSessionStore.navigate).toHaveBeenCalledWith("/");
 
     // saveMarking для ИП (okved) и при отсутствии wizard
-    const ipStore = new Store(initialState("start"));
+    const ipStore = new MockStore(initialState("start"));
     ipStore.reader = { readSite: vi.fn(), siteRead: vi.fn() };
     ipStore.set({
       step: 5, marked: false, inn: "1234567890",
@@ -749,7 +748,7 @@ describe("хранилище прототипа", () => {
   });
 
   it("BUG-006 (b): fillByHand отменяет фоновое чтение сайта и не затирает ручные факты", async () => {
-    const store = new Store(initialState("start"));
+    const store = new MockStore(initialState("start"));
     let resolveRead: (val: any) => void = () => {};
     const delayedRead = new Promise((resolve) => { resolveRead = resolve; });
     const reader = {
@@ -793,7 +792,7 @@ describe("хранилище прототипа", () => {
   });
 
   it("BUG-007 (a): saveMarking сохраняет ИНН в состоянии для повторного редактирования", async () => {
-    const store = new Store(initialState("start"));
+    const store = new MockStore(initialState("start"));
     store.reader = { readSite: vi.fn(), siteRead: vi.fn() };
     const mockSaveMarking = vi.fn().mockResolvedValue({});
     store.wizard = { saveMarking: mockSaveMarking } as any;
@@ -814,7 +813,7 @@ describe("хранилище прототипа", () => {
   });
 
   it("BUG-009: next() проверяет пределы бюджета при budgetDraft === null", () => {
-    const store = new Store(initialState("start"));
+    const store = new MockStore(initialState("start"));
     store.set({
       step: 2,
       budgetDraft: null,
