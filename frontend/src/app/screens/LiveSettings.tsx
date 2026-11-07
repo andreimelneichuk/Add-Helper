@@ -666,11 +666,12 @@ function Balance({ api, login }: { api: Api; login: string }) {
   return <p className="set-hint">{text}</p>;
 }
 
-/** Запасной путь, пока Яндекс не одобрил наше приложение: токен берётся в Яндексе вручную и вставляется сюда. */
+/** Запасной путь, пока Яндекс не одобрил наше приложение: токен берётся у Яндекса и вставляется сюда. */
 function ManualToken({ api, onSaved }: { api: Api; onSaved: (account: AdAccount) => void }) {
   const [link, setLink] = useState<string | null>(null);
-  const [login, setLogin] = useState("");
   const [token, setToken] = useState("");
+  const [login, setLogin] = useState("");
+  const [askLogin, setAskLogin] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -681,28 +682,28 @@ function ManualToken({ api, onSaved }: { api: Api; onSaved: (account: AdAccount)
     setBusy(true);
     setError(null);
     try {
-      onSaved(await api.saveManualToken(login.trim(), token.trim()));
+      onSaved(await api.saveManualToken(token.trim(), login.trim() || undefined));
       setToken("");
+      setLogin("");
+      setAskLogin(false);
     } catch (e) {
+      // Если Директ не назвал логин, просим вписать его: токен остаётся в поле.
+      setAskLogin(/логин/i.test(message(e)));
       setError(message(e));
     } finally {
       setBusy(false);
     }
   };
   return (
-    <details className="set-manual">
-      <summary>Подключить вручную, по токену</summary>
-      <ol className="set-hint">
-        <li><a href={link} target="_blank" rel="noopener noreferrer">Откройте страницу Яндекса</a> под своим аккаунтом Директа и разрешите доступ.</li>
-        <li>Скопируйте токен из адресной строки: он стоит после <code>access_token=</code> и до <code>&amp;</code>.</li>
-        <li>Впишите логин кабинета и вставьте токен. Мы храним его в зашифрованном виде.</li>
-      </ol>
-      <label className="set-field">Логин в Директе<input value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="off" /></label>
+    <div className="set-manual">
+      <p className="set-hint">Если вход через Яндекс не даёт доступ к Директу, получите токен вручную: нажмите кнопку, разрешите доступ, скопируйте токен с экрана и вставьте сюда.</p>
+      <div><button type="button" className="ah-btn" onClick={() => window.open(link, "_blank", "noopener")}>Получить токен в Яндексе</button></div>
       <label className="set-field">Токен<input type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" /></label>
-      <p className="set-hint">Такой токен действует около года и сам не обновляется: через год понадобится выдать новый.</p>
-      <button type="button" className="ah-btn" disabled={busy || !login.trim() || !token.trim()} onClick={save}>Сохранить токен</button>
+      {askLogin && <label className="set-field">Логин в Директе<input value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="off" /></label>}
+      <p className="set-hint">Токен хранится в зашифрованном виде, действует около года и сам не обновляется: через год понадобится получить новый.</p>
+      <button type="button" className="ah-btn ah-btn-primary" disabled={busy || !token.trim()} onClick={save}>Сохранить токен</button>
       {error && <p className="ah-error" role="alert">{error}</p>}
-    </details>
+    </div>
   );
 }
 

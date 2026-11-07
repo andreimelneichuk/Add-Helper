@@ -93,7 +93,11 @@ def _cipher(settings: Settings) -> AesGcmCipher | None:
 
 
 def _accounts_service(
-    engine: AsyncEngine, provider: OAuthProvider | None, cipher: AesGcmCipher | None, base_url: str
+    engine: AsyncEngine,
+    provider: OAuthProvider | None,
+    cipher: AesGcmCipher | None,
+    base_url: str,
+    resolve_login: Callable[[str], Awaitable[str | None]],
 ) -> AccountsService | None:
     if cipher is None:
         return None
@@ -107,6 +111,7 @@ def _accounts_service(
         cipher,
         _utc_now,
         base_url,
+        resolve_login,
     )
 
 
@@ -161,8 +166,16 @@ def create_app(
     app.state.clock = _utc_now
     # Без ключей шифрования нет ни входа, ни хранения токенов и ИНН.
     app.state.cipher = _cipher(settings)
+
+    async def resolve_login(token: str) -> str | None:
+        # Площадки появляются ниже: берём их в момент вызова.
+        platforms = getattr(app.state, "platform_for", None)
+        if isinstance(platforms, DirectPlatforms):
+            return await platforms.owner_login(token)
+        return None
+
     app.state.accounts = _accounts_service(
-        engine, oauth_provider, app.state.cipher, settings.public_base_url
+        engine, oauth_provider, app.state.cipher, settings.public_base_url, resolve_login
     )
     app.include_router(accounts_router(settings))
     app.include_router(cabinet_router())
@@ -229,9 +242,10 @@ def create_app(
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "Not Found")
             if full_path.startswith(("api/", "stand-yandex/")):
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "Not Found")
-            file_path = frontend_dist / full_path
-            if full_path and file_path.is_file():
-                return FileResponse(file_path)
-            return FileResponse(frontend_dist / "index.html")
+            root = frontend_dist.resolve()
+            candidate = (root / full_path).resolve()
+            if full_path and candidate.is_relative_to(root) and candidate.is_file():
+                return FileResponse(candidate)
+            return FileResponse(root / "index.html")
 
     return app

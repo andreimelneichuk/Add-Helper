@@ -154,8 +154,9 @@ class DirectHttpClient:
         headers = {
             "Authorization": f"Bearer {token}",
             "Accept-Language": "ru",
-            "Client-Login": account,
         }
+        if account:
+            headers["Client-Login"] = account
         headers.update(extra or {})
         return headers
 
@@ -228,6 +229,15 @@ class DirectHttpClient:
                 continue
             raise _request_error(code, error)
         raise DirectError(None, f"{service}.{method} retries exhausted")
+
+    async def token_owner(self, token: str) -> str | None:
+        """Логин владельца токена: Директ отдаёт его сам, без права `login:info`."""
+        result = await self.call("", token, "clients", "get", {"FieldNames": ["Login"]})
+        clients = result.get("Clients")
+        if isinstance(clients, list) and clients and isinstance(clients[0], Mapping):
+            login = clients[0].get("Login")
+            return login if isinstance(login, str) and login else None
+        return None
 
     async def live(self, account: str, token: str, method: str, param: Mapping[str, Any]) -> Any:
         """Live v4: токен идёт в теле. Ответ — `data`."""

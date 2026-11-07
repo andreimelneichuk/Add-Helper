@@ -14,6 +14,7 @@ from adhelper.accounts.application.service import (
     BusinessNotFound,
     FlowInvalid,
     GrantRejected,
+    LoginUnknown,
     ProviderUnavailable,
 )
 from adhelper.config import Settings
@@ -34,7 +35,7 @@ class NewBusiness(BaseModel):
 
 
 class ManualToken(BaseModel):
-    login: str = Field(pattern=r"^[A-Za-z0-9._-]{1,50}$")
+    login: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._-]{1,50}$")
     token: str = Field(min_length=20, max_length=500, pattern=r"^\S+$")
 
 
@@ -232,10 +233,15 @@ def accounts_router(settings: Settings) -> APIRouter:
     ) -> dict[str, Any]:
         try:
             account = await service.connect_manual(
-                info.user.id, business_id, body.login, body.token
+                info.user.id, business_id, body.token, body.login
             )
         except BusinessNotFound:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Бизнес не найден") from None
+        except LoginUnknown:
+            raise HTTPException(
+                422,
+                "Не удалось узнать логин по токену. Впишите логин кабинета в Директе",
+            ) from None
         except AccountTaken:
             raise HTTPException(
                 status.HTTP_409_CONFLICT, "Этот кабинет уже подключён к другому бизнесу"

@@ -579,21 +579,36 @@ describe("остаток в Директе", () => {
 });
 
 describe("ручной токен кабинета", () => {
-  it("сохраняет токен и показывает кабинет в списке", async () => {
+  it("кнопка открывает Яндекс, токен вставляется и кабинет появляется в списке", async () => {
     const api = fakeApi();
+    const windowOpen = vi.spyOn(window, "open").mockImplementation(() => null);
     render(<Settings store={await open(api)} />);
-    await userEvent.click(await screen.findByText("Подключить вручную, по токену"));
-    await userEvent.type(screen.getByLabelText("Логин в Директе"), "salon-login");
+    await userEvent.click(await screen.findByRole("button", { name: "Получить токен в Яндексе" }));
+    expect(windowOpen).toHaveBeenCalledWith(expect.stringContaining("response_type=token"), "_blank", "noopener");
     await userEvent.type(screen.getByLabelText("Токен"), "y0_secret-token-value-123");
     await userEvent.click(screen.getByRole("button", { name: "Сохранить токен" }));
-    expect(api.saveManualToken).toHaveBeenCalledWith("salon-login", "y0_secret-token-value-123");
-    expect(await screen.findByText("salon-login")).toBeInTheDocument();
+    expect(api.saveManualToken).toHaveBeenCalledWith("y0_secret-token-value-123", undefined);
+    expect(await screen.findByText("owner-login")).toBeInTheDocument();
+    windowOpen.mockRestore();
+  });
+
+  it("просит логин, только если по токену его не узнали", async () => {
+    const save = vi.fn()
+      .mockRejectedValueOnce(new Error("Не удалось узнать логин по токену. Впишите логин кабинета в Директе"))
+      .mockResolvedValueOnce({ id: "a3", platform: "yandex_direct", login: "salon-login", scopes: [], state: "connected" });
+    render(<Settings store={await open(fakeApi({ saveManualToken: save } as Partial<Api>))} />);
+    await userEvent.type(await screen.findByLabelText("Токен"), "y0_secret-token-value-123");
+    expect(screen.queryByLabelText("Логин в Директе")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Сохранить токен" }));
+    await userEvent.type(await screen.findByLabelText("Логин в Директе"), "salon-login");
+    await userEvent.click(screen.getByRole("button", { name: "Сохранить токен" }));
+    expect(save).toHaveBeenLastCalledWith("y0_secret-token-value-123", "salon-login");
   });
 
   it("скрыт, когда сервис не настроен", async () => {
     const api = fakeApi({ manualTokenLink: vi.fn(async () => { throw new Error("503"); }) } as Partial<Api>);
     render(<Settings store={await open(api)} />);
     await screen.findByText(/Подключить заново|Подключить кабинет/);
-    expect(screen.queryByText("Подключить вручную, по токену")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Получить токен в Яндексе" })).not.toBeInTheDocument();
   });
 });

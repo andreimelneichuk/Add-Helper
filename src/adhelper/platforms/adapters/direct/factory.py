@@ -19,6 +19,7 @@ from adhelper.config import Settings
 from adhelper.platforms.adapters.direct.platform import DirectPlatform
 from adhelper.platforms.adapters.direct.transport import (
     DirectAuthError,
+    DirectError,
     DirectHttpClient,
     TokenSource,
 )
@@ -87,6 +88,13 @@ class DirectPlatforms:
                 raise DirectAuthError(None, "stored token is unreadable") from error
 
         return token_for
+
+    async def owner_login(self, token: str) -> str | None:
+        """Логин владельца токена или None, если Директ не ответил."""
+        try:
+            return await self._client.token_owner(token)
+        except DirectError:
+            return None
 
     def __call__(self, business_id: UUID, login: str) -> DirectPlatform:
         return DirectPlatform(self._client, self._tokens(business_id), self._clock)

@@ -1,7 +1,7 @@
 import base64
 import hashlib
 import secrets
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import UUID
@@ -34,6 +34,7 @@ __all__ = [
     "BusinessNotFound",
     "FlowInvalid",
     "GrantRejected",
+    "LoginUnknown",
     "NewSession",
     "OAuthProvider",
     "ProviderUnavailable",
@@ -56,6 +57,10 @@ VERIFIER_CONTEXT = "oauth_verifier"
 
 class FlowInvalid(Exception):
     """state неизвестен, устарел, уже использован или выдан другому браузеру либо пользователю."""
+
+
+class LoginUnknown(Exception):
+    """По токену не удалось узнать логин: пусть пользователь впишет его сам."""
 
 
 class BusinessNotFound(Exception):
@@ -148,7 +153,9 @@ class AccountsService:
         cipher: TokenCipher,
         clock: Callable[[], datetime],
         public_base_url: str,
+        resolve_login: Callable[[str], Awaitable[str | None]] | None = None,
     ) -> None:
+        self._resolve_login = resolve_login
         self._store = identity_store
         self._scope_for = scope_for
         self._tokens_for = tokens_for
@@ -262,11 +269,15 @@ class AccountsService:
         )
 
     async def connect_manual(
-        self, user_id: UUID, business_id: UUID, login: str, token: str
+        self, user_id: UUID, business_id: UUID, token: str, login: str | None
     ) -> AdAccount:
         """Кабинет по токену, который пользователь получил сам. Токен не обновляется."""
         if await self._scope_for(user_id).business(business_id) is None:
             raise BusinessNotFound
+        if not login:
+            login = await self._resolve_login(token) if self._resolve_login else None
+            if not login:
+                raise LoginUnknown
         login = login.strip().lower()
         tokens = OAuthTokens(token, "", self._clock() + MANUAL_TOKEN_LIFETIME, MANUAL_SCOPES)
         return await self._tokens_for(business_id).save_connected(

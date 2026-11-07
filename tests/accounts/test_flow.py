@@ -22,6 +22,7 @@ from adhelper.accounts.application.service import ProviderUnavailable, Reconnect
 from adhelper.accounts.domain.model import ExternalIdentity
 from adhelper.api.app import create_app
 from adhelper.config import Settings
+from adhelper.platforms.adapters.direct.factory import DirectPlatforms
 from tests.accounts.fake_provider import FakeProvider
 
 BASE = "https://adhelper.test"
@@ -586,11 +587,12 @@ def _manual_settings(api_settings: Settings) -> Settings:
 
 
 async def _save_manual(
-    client: httpx.AsyncClient, csrf: str, business_id: str, login: str = "Anna-Direct"
+    client: httpx.AsyncClient, csrf: str, business_id: str, login: str | None = "Anna-Direct"
 ) -> httpx.Response:
+    body = {"token": MANUAL_TOKEN} if login is None else {"login": login, "token": MANUAL_TOKEN}
     return await client.post(
         f"/api/businesses/{business_id}/accounts/manual-token",
-        json={"login": login, "token": MANUAL_TOKEN},
+        json=body,
         headers={"X-CSRF-Token": csrf},
     )
 
@@ -632,9 +634,7 @@ async def test_manual_token_expiry_asks_to_reconnect_not_refresh(
         assert await connection.scalar(text("SELECT state FROM ad_accounts")) == "needs_reconnect"
 
 
-@pytest.mark.parametrize(
-    ("login", "token"), [("", MANUAL_TOKEN), ("bad login!", MANUAL_TOKEN), ("anna", "short")]
-)
+@pytest.mark.parametrize(("login", "token"), [("bad login!", MANUAL_TOKEN), ("anna", "short")])
 async def test_manual_token_rejects_bad_input(
     browser: Browser, provider: FakeProvider, login: str, token: str
 ) -> None:
@@ -688,3 +688,41 @@ async def test_manual_token_link_is_implicit_flow_of_approved_app(
     assert response.status_code == 200
     query = _query(response.json()["url"])
     assert (query["response_type"], query["client_id"]) == ("token", "approved-app")
+
+
+async def test_manual_token_without_login_asks_for_it_when_direct_is_silent(
+    browser: Browser, provider: FakeProvider
+) -> None:
+    client = browser()
+    csrf = await _login(client, provider, ANNA)
+    business_id = await _business(client, csrf)
+
+    response = await _save_manual(client, csrf, business_id, login=None)
+
+    assert response.status_code == 422
+    assert "логин" in response.json()["detail"].lower()
+    assert MANUAL_TOKEN not in response.text
+
+
+async def test_manual_token_without_login_takes_it_from_direct(
+    api_settings: Settings, provider: FakeProvider
+) -> None:
+    app = create_app(api_settings, provider)
+
+    class _Platforms(DirectPlatforms):
+        def __init__(self) -> None:  # без сети: логин подставляем
+            pass
+
+        async def owner_login(self, token: str) -> str | None:
+            return "Salon-Owner" if token == MANUAL_TOKEN else None
+
+    app.state.platform_for = _Platforms()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url=BASE) as client:
+        csrf = await _login(client, provider, ANNA)
+        business_id = await _business(client, csrf)
+        saved = await _save_manual(client, csrf, business_id, login=None)
+    await app.state.engine.dispose()
+
+    assert saved.status_code == 200
+    assert saved.json()["login"] == "salon-owner"

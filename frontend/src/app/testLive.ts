@@ -71,7 +71,7 @@ export function fakeApi(over: Partial<Api> = {}) {
     uploadPhoto: vi.fn(async () => ({ id: 1, url: "/api/businesses/b1/photos/1" })),
     archivePhoto: vi.fn(async () => ({ archived: true })),
     manualTokenLink: vi.fn(async () => ({ url: "https://oauth.yandex.ru/authorize?response_type=token&client_id=app" })),
-    saveManualToken: vi.fn(async (login: string) => ({ id: "a2", platform: "yandex_direct", login, scopes: ["direct:api"], state: "connected" })),
+    saveManualToken: vi.fn(async (_token: string, login?: string) => ({ id: "a2", platform: "yandex_direct", login: login ?? "owner-login", scopes: ["direct:api"], state: "connected" })),
     connect: vi.fn(async () => ({ authorize_url: "https://oauth.yandex.ru/authorize?x=1" })),
     logout: vi.fn(async () => undefined),
     channels: vi.fn(async () => ({ email: "anna@example.ru", telegram: { available: true, linked: false } })),
