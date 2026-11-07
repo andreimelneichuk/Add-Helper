@@ -33,6 +33,7 @@ from adhelper.business.adapters.fetcher import (
     checked_url,
 )
 from adhelper.business.adapters.html_text import page_from_html
+from adhelper.business.adapters.site_images import image_urls
 from adhelper.business.domain.ports import FetchedPage, FetchProblem, SiteUnavailable
 from adhelper.business.domain.site import RenderRules, SiteRules, check_url, is_public_address
 
@@ -277,7 +278,8 @@ class ChromiumRenderer:
             len(shadows),
             len(texts) - 1 - len(shadows),
         )
-        return FetchedPage(found.url, text, found.links, found.counters, found.builders)
+        images = tuple(image_urls("\n".join([html, *shadows]), page.url))
+        return FetchedPage(found.url, text, found.links, found.counters, found.builders, images)
 
     async def _route(self, route: Route, page: Page, budget: _Budget) -> None:
         request = route.request

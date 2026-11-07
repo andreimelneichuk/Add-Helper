@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from adhelper.api.cabinet import Owned, OwnedChecked
+from adhelper.business.adapters.browser import ChromiumRenderer
 from adhelper.business.adapters.fetcher import SafeFetcher
 from adhelper.business.adapters.rules_file import load_site_rules
 from adhelper.business.adapters.site_images import download_many, site_image_urls
@@ -129,7 +130,9 @@ def images_router() -> APIRouter:
         site_rules = load_site_rules()
         rules = load_image_rules()
         fetcher = SafeFetcher(site_rules)
-        urls = await site_image_urls(fetcher, body.url, site_rules)
+        # Браузер поднимается, только если в разметке картинок мало.
+        async with ChromiumRenderer(site_rules) as renderer:
+            urls = await site_image_urls(fetcher, body.url, site_rules, renderer)
         if urls is None:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, SITE_FAILED)
         shown: list[dict[str, Any]] = []
