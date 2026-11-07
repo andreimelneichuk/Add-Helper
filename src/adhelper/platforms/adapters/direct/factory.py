@@ -13,7 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from adhelper.accounts.adapters.crypto import DecryptionFailed
 from adhelper.accounts.adapters.sql import SqlAccountTokens
 from adhelper.accounts.adapters.yandex_oauth import SplitYandexOAuth, YandexOAuth
-from adhelper.accounts.application.service import OAuthProvider, ReconnectRequired, TokenVault
+from adhelper.accounts.application.service import (
+    OAuthProvider,
+    ReconnectRequired,
+    TokenInvalid,
+    TokenVault,
+)
 from adhelper.accounts.domain.ports import TokenCipher
 from adhelper.config import Settings
 from adhelper.platforms.adapters.direct.platform import DirectPlatform
@@ -93,6 +98,8 @@ class DirectPlatforms:
         """Логин владельца токена или None, если Директ не ответил."""
         try:
             return await self._client.token_owner(token)
+        except DirectAuthError as error:
+            raise TokenInvalid("Токен отклонён Яндекс Директом") from error
         except DirectError:
             return None
 

@@ -1,11 +1,13 @@
 import base64
 import hashlib
+import logging
 import secrets
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import UUID
 
+from adhelper.accounts.adapters.crypto import DecryptionFailed
 from adhelper.accounts.domain.model import (
     AccountState,
     AdAccount,
@@ -39,9 +41,12 @@ __all__ = [
     "OAuthProvider",
     "ProviderUnavailable",
     "ReconnectRequired",
+    "TokenInvalid",
     "TokenVault",
     "hash_token",
 ]
+
+logger = logging.getLogger(__name__)
 
 FLOW_TTL = timedelta(minutes=10)
 SESSION_TTL = timedelta(days=30)
@@ -65,6 +70,10 @@ class LoginUnknown(Exception):
 
 class BusinessNotFound(Exception):
     """Чужой бизнес и несуществующий неразличимы намеренно."""
+
+
+class TokenInvalid(Exception):
+    """Токен отклонён площадкой или недействителен."""
 
 
 class ReconnectRequired(Exception):
@@ -115,32 +124,38 @@ class TokenVault:
         stored = await self._tokens.load(login)
         if stored is None:
             raise ReconnectRequired
-        if stored.expires_at - self._clock() > REFRESH_MARGIN:
-            return self._access(stored)
-        refresh_context = token_context(self._business_id, login, "refresh")
-        refresh = self._cipher.decrypt(stored.encrypted_refresh, refresh_context)
-        if not refresh:
-            # Токен выдан вручную: обновить нечем, нужен новый.
-            await self._tokens.mark_needs_reconnect(login)
-            raise ReconnectRequired
         try:
-            fresh = await self._provider.refresh(refresh)
-        except GrantRejected:
+            if stored.expires_at - self._clock() > REFRESH_MARGIN:
+                return self._access(stored)
+            refresh_context = token_context(self._business_id, login, "refresh")
+            refresh = self._cipher.decrypt(stored.encrypted_refresh, refresh_context)
+            if not refresh:
+                # Токен выдан вручную: обновить нечем, нужен новый.
+                await self._tokens.mark_needs_reconnect(login)
+                raise ReconnectRequired
+            try:
+                fresh = await self._provider.refresh(refresh)
+            except GrantRejected:
+                await self._tokens.mark_needs_reconnect(login)
+                raise ReconnectRequired from None
+            saved = await self._tokens.replace(
+                stored,
+                self._cipher.encrypt(
+                    fresh.access, token_context(self._business_id, login, "access")
+                ),
+                self._cipher.encrypt(fresh.refresh, refresh_context),
+                fresh.expires_at,
+            )
+            if saved:
+                return fresh.access
+            # Другой процесс успел раньше: его токены действующие, берём их.
+            current = await self._tokens.load(login)
+            if current is None:
+                raise ReconnectRequired
+            return self._access(current)
+        except DecryptionFailed:
             await self._tokens.mark_needs_reconnect(login)
             raise ReconnectRequired from None
-        saved = await self._tokens.replace(
-            stored,
-            self._cipher.encrypt(fresh.access, token_context(self._business_id, login, "access")),
-            self._cipher.encrypt(fresh.refresh, refresh_context),
-            fresh.expires_at,
-        )
-        if saved:
-            return fresh.access
-        # Другой процесс успел раньше: его токены действующие, берём их.
-        current = await self._tokens.load(login)
-        if current is None:
-            raise ReconnectRequired
-        return self._access(current)
 
 
 class AccountsService:
@@ -243,7 +258,30 @@ class AccountsService:
         scope = self._scope_for(user_id)
         if await scope.business(business_id) is None:
             raise BusinessNotFound
-        return await scope.accounts(business_id)
+        found = await scope.accounts(business_id)
+        result: list[AdAccount] = []
+        tokens = self._tokens_for(business_id)
+        for account in found:
+            if account.state == AccountState.CONNECTED:
+                stored = await tokens.load(account.login)
+                if stored is not None:
+                    try:
+                        self._cipher.decrypt(
+                            stored.encrypted_access,
+                            token_context(business_id, account.login, "access"),
+                        )
+                    except DecryptionFailed:
+                        await tokens.mark_needs_reconnect(account.login)
+                        account = AdAccount(
+                            account.id,
+                            account.business_id,
+                            account.platform,
+                            account.login,
+                            account.scopes,
+                            AccountState.NEEDS_RECONNECT,
+                        )
+            result.append(account)
+        return result
 
     async def begin_connect(self, user_id: UUID, business_id: UUID) -> tuple[str, str]:
         if await self._scope_for(user_id).business(business_id) is None:
@@ -274,16 +312,21 @@ class AccountsService:
         """Кабинет по токену, который пользователь получил сам. Токен не обновляется."""
         if await self._scope_for(user_id).business(business_id) is None:
             raise BusinessNotFound
-        if not login:
-            login = await self._resolve_login(token) if self._resolve_login else None
-            if not login:
-                raise LoginUnknown
+        resolved: str | None = None
+        if self._resolve_login:
+            resolved = await self._resolve_login(token)
+        if resolved:
+            login = resolved
+        elif not login:
+            raise LoginUnknown
         login = login.strip().lower()
         tokens = OAuthTokens(token, "", self._clock() + MANUAL_TOKEN_LIFETIME, MANUAL_SCOPES)
-        return await self._tokens_for(business_id).save_connected(
+        account = await self._tokens_for(business_id).save_connected(
             login,
             DIRECT_PLATFORM,
             self._cipher.encrypt(token, token_context(business_id, login, "access")),
             self._cipher.encrypt("", token_context(business_id, login, "refresh")),
             tokens,
         )
+        logger.info("Подключён ручной токен кабинета %s для бизнеса %s", login, business_id)
+        return account
