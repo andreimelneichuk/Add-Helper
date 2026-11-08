@@ -91,6 +91,35 @@ async def test_city_region_uses_exact_russian_direct_dictionary(
     assert request["body"]["params"]["SelectionCriteria"] == {"ExactNames": ["Тольятти"]}
 
 
+async def test_city_region_falls_back_to_name_search_but_keeps_exact_russian_match(
+    platform: DirectPlatform, direct: FakeDirect
+) -> None:
+    direct.geo_exact_names_empty = True
+    direct.geo_regions = [
+        {
+            "GeoRegionId": 50,
+            "GeoRegionName": "Пермь",
+            "ParentGeoRegionNames": {"Items": ["Пермский край", "Россия"]},
+        },
+        {
+            "GeoRegionId": 51,
+            "GeoRegionName": "Пермский край",
+            "ParentGeoRegionNames": {"Items": ["Россия"]},
+        },
+    ]
+
+    assert await platform.resolve_city_region(
+        ACCOUNT, "г. Пермь, ул. Комсомольский проспект, 71"
+    ) == (
+        50,
+        "Пермь",
+    )
+    assert [request["body"]["params"]["SelectionCriteria"] for request in direct.requests] == [
+        {"ExactNames": ["Пермь"]},
+        {"Name": "Пермь"},
+    ]
+
+
 async def test_city_region_refuses_duplicate_russian_names(
     platform: DirectPlatform, direct: FakeDirect
 ) -> None:

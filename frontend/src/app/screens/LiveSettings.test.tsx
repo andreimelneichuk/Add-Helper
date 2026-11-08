@@ -43,6 +43,18 @@ describe("настройки на настоящих данных", () => {
     expect(vi.mocked(api.profile).mock.calls.length).toBeGreaterThanOrEqual(3);
   });
 
+  it("сохраняет город из адреса профиля для проверки запуска", async () => {
+    const api = fakeApi();
+    render(<Settings store={await open(api)} />);
+    const address = await screen.findByLabelText("Адрес");
+    await userEvent.clear(address);
+    await userEvent.type(address, "г. Тюмень, ул. Ленина, 10");
+    await userEvent.click(screen.getByRole("button", { name: "Сохранить профиль" }));
+
+    expect(api.saveProfile).toHaveBeenCalledWith(expect.objectContaining({ address: "г. Тюмень, ул. Ленина, 10" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Сохранил.");
+  });
+
   it("запоздавший ответ о профиле не затирает то, что владелец уже ввёл", async () => {
     const base = await fakeApi().profile();
     let late: (p: Profile) => void = () => undefined;
@@ -184,6 +196,7 @@ describe("где и когда показывать", () => {
     render(<Settings store={await open(api)} />);
     const block = await screen.findByRole("region", { name: "Где и когда показывать" });
     expect(await within(block).findByText(/Сейчас: Москва/)).toBeInTheDocument();
+    expect(within(block).getByText(/подсвеченные будут выбраны.*Можно отметить несколько/s)).toBeInTheDocument();
     await userEvent.click(within(block).getByRole("button", { name: "Санкт-Петербург" }));
     await userEvent.click(within(block).getByRole("button", { name: "Изменить регион" }));
     const ask = within(block).getByRole("group", { name: "Подтверждение показа" });
@@ -203,6 +216,16 @@ describe("где и когда показывать", () => {
     expect(within(block).getByRole("group", { name: "Подтверждение показа" })).toHaveTextContent("пн–сб, 10:00–21:00");
     await userEvent.click(within(block).getByRole("button", { name: "Применить" }));
     expect(api.setSchedule).toHaveBeenCalledWith([0, 1, 2, 3, 4, 5], 10, 21, expect.any(String));
+  });
+
+  it("объясняет, где задать город, если кампаний ещё нет", async () => {
+    const base = await fakeApi().display();
+    const api = fakeApi({ display: vi.fn(async () => ({ ...base, campaigns: 0 })) } as Partial<Api>);
+    render(<Settings store={await open(api)} />);
+    const block = await screen.findByRole("region", { name: "Где и когда показывать" });
+    expect(within(block).getByText(/Кампаний пока нет/)).toHaveTextContent("поля «Адрес» в профиле");
+    expect(within(block).queryByRole("button", { name: "Изменить регион" })).not.toBeInTheDocument();
+    expect(within(block).queryByRole("button", { name: "Москва" })).not.toBeInTheDocument();
   });
 
   it("расписание, которое Яндекс не примет, отправить нельзя", async () => {

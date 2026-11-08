@@ -378,19 +378,25 @@ function DisplayForm({ api, store }: { api: Api; store: LiveStore }) {
 
   return (
     <div className="set-form">
-      {noCampaigns && <p className="set-hint">Кампаний ещё нет: регион и часы зададутся при запуске.</p>}
       <div role="group" aria-label="Где показывать">
         <div className="ah-label">Где показывать</div>
-        {!noCampaigns && <p className="set-hint">Сейчас: {display.regions_text ?? "у направлений разный регион или Яндекс его ещё не передал"}.</p>}
-        <div className="set-options">
-          {display.catalog.map((r) => (
-            <button key={r.id} type="button" className="ah-chip" aria-pressed={regions.includes(r.id)} onClick={() => { setStatus(null); setRegions(toggle(regions, r.id)); }}>{r.name}</button>
-          ))}
-        </div>
-        {!noCampaigns && !regions.length && <p className="ah-error" role="alert">Выберите хотя бы один регион.</p>}
-        <div className="set-actions">
-          <button type="button" className="ah-btn" disabled={noCampaigns || !regions.length || sameRegions || busy} onClick={() => setAsk({ text: `Показывать рекламу: ${names(regions)}${display.regions_text ? ` вместо «${display.regions_text}»` : ""}? Это изменится в Яндексе для всех направлений, отменить можно в истории.`, apply: async () => { await api.setRegions(regions, crypto.randomUUID()); return `Регион показов теперь: ${names(regions)}. Вы попросили. Отменить можно в истории.`; } })}>Изменить регион</button>
-        </div>
+        {noCampaigns ? (
+          <p className="set-hint">Кампаний пока нет. Этот список не задаёт город новому запуску: он берётся из поля «Адрес» в профиле. После запуска здесь можно изменить регионы уже созданных кампаний.</p>
+        ) : (
+          <>
+            <p className="set-hint">Сейчас: {display.regions_text ?? "у направлений разный регион или Яндекс его ещё не передал"}.</p>
+            <p className="set-hint">Кнопки ниже только выбирают регионы: подсвеченные будут выбраны. Можно отметить несколько. Затем нажмите «Изменить регион» и подтвердите действие — оно применится ко всем кампаниям этого бизнеса. Отменить можно в истории.</p>
+            <div className="set-options">
+              {display.catalog.map((r) => (
+                <button key={r.id} type="button" className="ah-chip" aria-pressed={regions.includes(r.id)} onClick={() => { setStatus(null); setRegions(toggle(regions, r.id)); }}>{r.name}</button>
+              ))}
+            </div>
+            {!regions.length && <p className="ah-error" role="alert">Выберите хотя бы один регион.</p>}
+            <div className="set-actions">
+              <button type="button" className="ah-btn" disabled={!regions.length || sameRegions || busy} onClick={() => setAsk({ text: `Показывать рекламу: ${names(regions)}${display.regions_text ? ` вместо «${display.regions_text}»` : ""}? Это изменится в Яндексе для всех направлений, отменить можно в истории.`, apply: async () => { await api.setRegions(regions, crypto.randomUUID()); return `Регион показов теперь: ${names(regions)}. Вы попросили. Отменить можно в истории.`; } })}>Изменить регион</button>
+            </div>
+          </>
+        )}
       </div>
       <div role="group" aria-label="Когда показывать">
         <div className="ah-label">Когда показывать</div>
@@ -627,6 +633,7 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
       </div>
       <label><span className="ah-label">Чем занимаетесь</span><input className="ah-input" value={profile.niche} placeholder="маникюр" onChange={(e) => set({ niche: e.target.value })} /></label>
       <label><span className="ah-label">Адрес</span><input className="ah-input" value={profile.address} onChange={(e) => set({ address: e.target.value })} /></label>
+      <p className="set-hint">Город для нового запуска берётся из этого поля. Укажите его в начале адреса, например: «Пермь, ул. Комсомольский проспект, 71», затем нажмите «Сохранить профиль» внизу.</p>
       <fieldset className="set-services">
         <legend className="ah-label">Услуги и цены</legend>
         {profile.services.map((x, i) => (

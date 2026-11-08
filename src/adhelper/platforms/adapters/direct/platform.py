@@ -245,32 +245,51 @@ class DirectPlatform:
                 return None
         if not query:
             return None
+        normalized = query.casefold().replace("ё", "е")
+        fields = ["GeoRegionId", "GeoRegionName", "ParentGeoRegionNames"]
+
+        def exact_russian_matches(
+            result: Mapping[str, Any],
+        ) -> dict[int, tuple[str, tuple[str, ...]]]:
+            found: dict[int, tuple[str, tuple[str, ...]]] = {}
+            for region in result.get("GeoRegions") or []:
+                if not isinstance(region, Mapping):
+                    continue
+                name = str(region.get("GeoRegionName") or "").strip()
+                parents = (region.get("ParentGeoRegionNames") or {}).get("Items") or []
+                if name.casefold().replace("ё", "е") != normalized:
+                    continue
+                parent_names = tuple(str(parent) for parent in parents)
+                if not any(parent.casefold() in {"россия", "russia"} for parent in parent_names):
+                    continue
+                try:
+                    found[int(region["GeoRegionId"])] = (name, parent_names)
+                except (KeyError, TypeError, ValueError):
+                    continue
+            return found
+
+        request = {
+            "Page": {"Limit": 1000, "Offset": 0},
+            "FieldNames": fields,
+        }
         result = await self._call(
             account,
             "dictionaries",
             "getGeoRegions",
-            {
-                "Page": {"Limit": 1000, "Offset": 0},
-                "SelectionCriteria": {"ExactNames": [query]},
-                "FieldNames": ["GeoRegionId", "GeoRegionName", "ParentGeoRegionNames"],
-            },
+            {**request, "SelectionCriteria": {"ExactNames": [query]}},
         )
-        normalized = query.casefold().replace("ё", "е")
-        matches: dict[int, tuple[str, tuple[str, ...]]] = {}
-        for region in result.get("GeoRegions") or []:
-            if not isinstance(region, Mapping):
-                continue
-            name = str(region.get("GeoRegionName") or "").strip()
-            parents = (region.get("ParentGeoRegionNames") or {}).get("Items") or []
-            if name.casefold().replace("ё", "е") != normalized:
-                continue
-            parent_names = tuple(str(parent) for parent in parents)
-            if not any(parent.casefold() in {"россия", "russia"} for parent in parent_names):
-                continue
-            try:
-                matches[int(region["GeoRegionId"])] = (name, parent_names)
-            except (KeyError, TypeError, ValueError):
-                continue
+        matches = exact_russian_matches(result)
+        if not matches:
+            # ExactNames иногда не возвращает город из пользовательского адреса.
+            # Fallback ищет похожие записи, но ниже всё равно пропускается только
+            # точное совпадение российского города.
+            result = await self._call(
+                account,
+                "dictionaries",
+                "getGeoRegions",
+                {**request, "SelectionCriteria": {"Name": query}},
+            )
+            matches = exact_russian_matches(result)
         if len(matches) > 1:
             context = normalized_address.casefold().replace("ё", "е")
             narrowed = {

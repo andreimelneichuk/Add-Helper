@@ -22,6 +22,7 @@ class FakeDirect:
     keywords: dict[int, dict[str, Any]] = field(default_factory=dict)
     clients: dict[str, dict[str, Any]] = field(default_factory=dict)
     geo_regions: list[dict[str, Any]] = field(default_factory=list)
+    geo_exact_names_empty: bool = False
     report_rows: list[tuple[str, str, int]] = field(default_factory=list)
     amount: str | None = "1500.5"
     status_blocked: bool = False
@@ -36,8 +37,21 @@ class FakeDirect:
     next_id: int = 100
 
     def _dictionaries_getGeoRegions(self, params: dict[str, Any]) -> dict[str, Any]:
-        names = set(params["SelectionCriteria"].get("ExactNames") or [])
-        regions = [region for region in self.geo_regions if region["GeoRegionName"] in names]
+        criteria = params["SelectionCriteria"]
+        if criteria.get("ExactNames"):
+            names = set(criteria["ExactNames"])
+            regions = (
+                []
+                if self.geo_exact_names_empty
+                else [region for region in self.geo_regions if region["GeoRegionName"] in names]
+            )
+        else:
+            query = str(criteria.get("Name") or "").casefold()
+            regions = [
+                region
+                for region in self.geo_regions
+                if query in str(region["GeoRegionName"]).casefold()
+            ]
         return {"GeoRegions": regions}
 
     def _id(self) -> int:
