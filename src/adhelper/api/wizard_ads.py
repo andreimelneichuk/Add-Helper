@@ -9,7 +9,7 @@ import secrets
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Header, HTTPException, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from adhelper.api.cabinet import Owned, OwnedChecked, _now, _sessions
 from adhelper.api.site import _guest_key, _token_hash
@@ -65,6 +65,14 @@ class AdoptBody(BaseModel):
 class WizardAdBody(BaseModel):
     headline: str = Field(min_length=1, max_length=56)
     text: str = Field(min_length=1, max_length=81)
+
+    @field_validator("headline", "text")
+    @classmethod
+    def check_not_empty_after_strip(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("Поле не может быть пустым или состоять только из пробелов")
+        return s
 
 
 class WizardAdStateBody(BaseModel):
@@ -187,9 +195,7 @@ def wizard_ads_router() -> APIRouter:
         wizard = SqlWizardAds(sessions, business_id)
         all_items = await wizard.all_ads()
         items = (
-            all_items
-            if include_inactive
-            else [i for i in all_items if i.active and not i.archived]
+            all_items if include_inactive else [i for i in all_items if i.active and not i.archived]
         )
         ads_list = [
             {

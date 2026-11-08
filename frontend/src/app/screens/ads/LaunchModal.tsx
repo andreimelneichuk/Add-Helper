@@ -11,7 +11,7 @@ type LaunchModalProps = {
 };
 
 export function LaunchModal({ isOpen, onClose, store, api: propsApi }: LaunchModalProps) {
-  const api = propsApi ?? liveApi(store) ?? (store as any).api;
+  const api = propsApi ?? liveApi(store);
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);

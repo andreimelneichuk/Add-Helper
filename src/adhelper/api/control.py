@@ -191,6 +191,28 @@ async def _note_restored(
         )
 
 
+def _parse_wizard_ad_index(account: str, ad_id: str) -> int | None:
+    """Извлекает целочисленный индекс черновика мастера, либо возвращает None для боевых.
+
+    У черновиков мастера ID всегда w0, w1... или передаются через account='draft'/'w0'.
+    Боевые аккаунты Директа могут начинаться на букву 'w' (например 'winner', 'wellness'),
+    поэтому для распознавания черновика требуется строгая проверка: префикс w с цифрами.
+    """
+    candidate: str | None = None
+    if account == "draft":
+        candidate = ad_id
+    elif account.startswith("w") and account.removeprefix("w").isdigit():
+        candidate = account
+    elif (ad_id.startswith("w") and ad_id.removeprefix("w").isdigit()) or "draft/" in ad_id:
+        candidate = ad_id
+
+    if candidate is not None:
+        raw = candidate.removeprefix("draft/").removeprefix("w")
+        if raw.isdigit():
+            return int(raw)
+    return None
+
+
 def control_router() -> APIRouter:
     """Действия владельца. Площадку меняет только журнал, здесь нет прямых вызовов."""
     router = APIRouter(prefix="/api/businesses/{business_id}")
@@ -235,22 +257,12 @@ def control_router() -> APIRouter:
         business_id: OwnedChecked,
         period: Period,
     ) -> dict[str, str]:
-        target = ad_id if account == "draft" else (account if account.startswith("w") else ad_id)
-        if target.startswith("draft/"):
-            target = target.removeprefix("draft/")
-        is_wizard_target = (
-            account.startswith("w")
-            or ad_id.startswith("w")
-            or account == "draft"
-            or "draft/" in ad_id
-        )
-        if is_wizard_target:
+        wizard_idx = _parse_wizard_ad_index(account, ad_id)
+        if wizard_idx is not None:
             wizard = SqlWizardAds(_sessions(request), business_id)
-            idx_str = target.removeprefix("w")
-            if idx_str.isdigit():
-                ok = await wizard.set_active(int(idx_str), body.active)
-                if ok:
-                    return {"status": "applied"}
+            ok = await wizard.set_active(wizard_idx, body.active)
+            if ok:
+                return {"status": "applied"}
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
         view = await ad_detail(
             SqlDashboard(_sessions(request), business_id), period, account, ad_id
@@ -288,22 +300,12 @@ def control_router() -> APIRouter:
         business_id: OwnedChecked,
         period: Period,
     ) -> dict[str, str]:
-        target = ad_id if account == "draft" else (account if account.startswith("w") else ad_id)
-        if target.startswith("draft/"):
-            target = target.removeprefix("draft/")
-        is_wizard_target = (
-            account.startswith("w")
-            or ad_id.startswith("w")
-            or account == "draft"
-            or "draft/" in ad_id
-        )
-        if is_wizard_target:
+        wizard_idx = _parse_wizard_ad_index(account, ad_id)
+        if wizard_idx is not None:
             wizard = SqlWizardAds(_sessions(request), business_id)
-            idx_str = target.removeprefix("w")
-            if idx_str.isdigit():
-                ok = await wizard.set_archived(int(idx_str), True)
-                if ok:
-                    return {"status": "applied"}
+            ok = await wizard.set_archived(wizard_idx, True)
+            if ok:
+                return {"status": "applied"}
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
 
         view = await ad_detail(

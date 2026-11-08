@@ -169,4 +169,3 @@ async def test_expand_keywords_with_model_failure_fallback() -> None:
 
     assert keywords[0] == AUTOTARGETING_KEYWORD
     assert "стрижка волос казань" in keywords
-

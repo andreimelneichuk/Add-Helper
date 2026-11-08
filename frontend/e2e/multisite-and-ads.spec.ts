@@ -178,4 +178,60 @@ test.describe("E2E Юзеркейсы: Мультибизнес, генерац�
     await expect(confirmGroup).toHaveCount(0);
     await expect(delBtn).toBeVisible();
   });
+
+  test("UC-7: Управление объявлениями: табы статусов (Все, К запуску/Работают, Отключены, В архиве), архивация и восстановление", async ({ page }) => {
+    await page.goto("/");
+    await page.locator(".ah-rail").getByRole("button", { name: "Реклама" }).click();
+    await expect(page.locator(".ann")).toBeVisible();
+
+    // 1. Проверяем табы фильтров
+    const filterGroup = page.getByRole("group", { name: "Какие показать" });
+    await expect(filterGroup).toBeVisible();
+    const tabAll = filterGroup.getByRole("button", { name: /^Все/ });
+    const tabActive = filterGroup.getByRole("button", { name: /^(Работают|К запуску)/ });
+    const tabOff = filterGroup.getByRole("button", { name: /^Отключены/ });
+    const tabArchived = filterGroup.getByRole("button", { name: /^В архиве/ });
+
+    await expect(tabAll).toBeVisible();
+    await expect(tabActive).toBeVisible();
+    await expect(tabOff).toBeVisible();
+    await expect(tabArchived).toBeVisible();
+
+    // 2. Открываем первое объявление и архивируем его
+    const openBtn = page.getByRole("button", { name: /^Открыть «/ }).first();
+    await expect(openBtn).toBeVisible();
+    await openBtn.click();
+    await expect(page.locator(".anno-screen")).toBeVisible();
+
+    // Нажимаем «В архив» и подтверждаем действие через Proposal pattern (.ah-confirm)
+    const archiveBtn = page.getByRole("button", { name: "В архив" });
+    await expect(archiveBtn).toBeVisible();
+    await archiveBtn.click();
+
+    const confirmBox = page.locator(".ah-confirm");
+    await expect(confirmBox).toBeVisible();
+    await confirmBox.getByRole("button", { name: "Применить" }).click();
+    await expect(confirmBox).toHaveCount(0);
+
+    // Возвращаемся к списку объявлений
+    await page.getByRole("button", { name: "Все объявления" }).click();
+    await expect(page.locator(".ann")).toBeVisible();
+
+    // 3. Переключаемся на таб «В архиве»
+    await tabArchived.click();
+    await expect(tabArchived).toHaveAttribute("aria-pressed", "true");
+
+    // 4. Восстанавливаем объявление из архива (aria-label: Вернуть «...» из архива)
+    const restoreBtn = page.getByRole("button", { name: /^Вернуть «/ }).first();
+    await expect(restoreBtn).toBeVisible();
+    await restoreBtn.click();
+
+    await expect(confirmBox).toBeVisible();
+    await confirmBox.getByRole("button", { name: "Применить" }).click();
+    await expect(confirmBox).toHaveCount(0);
+
+    // 5. Переключаемся на «Все» — карточка снова в основном списке
+    await tabAll.click();
+    await expect(page.getByRole("button", { name: /^Открыть «/ }).first()).toBeVisible();
+  });
 });

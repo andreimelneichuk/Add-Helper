@@ -290,3 +290,26 @@ async def test_wizard_ads_via_control_routes(
     )
     assert not_found.status_code == 404
 
+
+async def test_wizard_ads_whitespace_validation(
+    anna: Anna,  # noqa: F811
+) -> None:
+    client, csrf, business_id = anna
+    headers = {"X-CSRF-Token": csrf}
+    base = f"/api/businesses/{business_id}"
+
+    # Заголовок из пробелов
+    resp1 = await client.post(
+        f"{base}/wizard-ads",
+        json={"headline": "   ", "text": "Нормальный текст"},
+        headers=headers,
+    )
+    assert resp1.status_code == 422
+
+    # Текст из пробелов
+    resp2 = await client.post(
+        f"{base}/wizard-ads",
+        json={"headline": "Нормальный заголовок", "text": "   "},
+        headers=headers,
+    )
+    assert resp2.status_code == 422

@@ -3,6 +3,7 @@ import type { ReworkVariant } from "../../api";
 import type { Ad } from "../data";
 import { adName, adShown, adStat, draftAd, inTest, useStoreState } from "../store";
 import type { ReworkApi, State, Store } from "../store";
+import { isWizardAdId } from "../live";
 import { usePollingTask } from "../polling";
 import { useObjectUrl } from "../useObjectUrl";
 import "./AdDetail.css";
@@ -315,7 +316,7 @@ export function AdDetail({ store, id }: { store: Store; id: string }) {
                   <button type="button" className="ah-btn ah-btn-primary" onClick={() => store.ask({ action: "adRestore", value: id })}>Вернуть из архива</button>
                 ) : (
                   <>
-                    {(!s.live?.hasCampaigns || id.startsWith("w")) && (
+                    {(!s.live?.hasCampaigns || isWizardAdId(id)) && (
                       <button type="button" className="ah-btn" onClick={() => { setEditTitle(ad.title); setEditText(ad.text); setEditing(true); }}>Редактировать</button>
                     )}
                     {(!s.live || store.rework) && <button type="button" className="ah-btn ah-btn-primary" onClick={() => setComposing(true)}>Переделать</button>}

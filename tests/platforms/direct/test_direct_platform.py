@@ -330,9 +330,7 @@ async def test_balance_raises_when_no_shared_account(
         await platform.fetch_balance(ACCOUNT)
 
 
-async def test_balance_case_insensitive_login(
-    platform: DirectPlatform, direct: FakeDirect
-) -> None:
+async def test_balance_case_insensitive_login(platform: DirectPlatform, direct: FakeDirect) -> None:
     assert await platform.fetch_balance(ACCOUNT.upper()) == 1_500_500_000
 
 

@@ -33,6 +33,7 @@ export function savedText(outdated: OutdatedAd[]): string {
 
 export const rubles = (micros: number | null | undefined) => (micros ?? 0) / MICROS_PER_RUBLE;
 const rublesOrNull = (micros: number | null | undefined) => (micros === null || micros === undefined ? null : rubles(micros));
+export const isWizardAdId = (id: string): boolean => !id.includes("/") && /^w\d+$/.test(id);
 export const dayNumber = (day: string) => Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10))) / 86400000;
 export const dayAt = (n: number) => new Date(n * 86400000).toISOString().slice(0, 10);
 const sumMoney = (money: Money[], pick: (m: Money) => number | null) => money.reduce((x, m) => x + rubles(pick(m)), 0);
@@ -454,7 +455,7 @@ export class LiveStore extends Store {
       case "ad": {
         const active = !!s.adsOff[a.value];
         const name = s.ads.find((x) => x.id === a.value)?.name ?? "";
-        if (a.value.startsWith("w")) {
+        if (isWizardAdId(a.value)) {
           if (this.api.setWizardAdState) {
             await this.api.setWizardAdState(a.value, active);
           }
@@ -497,7 +498,7 @@ export class LiveStore extends Store {
             return `Добавил объявление «${created.headline}». Оно готово к запуску.`;
           }
         } else {
-          if (ad.id.startsWith("w") && this.api.updateWizardAd) {
+          if (isWizardAdId(ad.id) && this.api.updateWizardAd) {
             await this.api.updateWizardAd(ad.id, { headline: ad.title, text: ad.text });
           }
           const updatedAds = this.state.ads.map((x) =>
@@ -511,7 +512,7 @@ export class LiveStore extends Store {
       case "adArchive": {
         const id = a.value;
         const name = s.ads.find((x) => x.id === id)?.name ?? "";
-        if (id.startsWith("w") || !s.live?.hasCampaigns) {
+        if (isWizardAdId(id) || !s.live?.hasCampaigns) {
           if (this.api.archiveWizardAd) {
             await this.api.archiveWizardAd(id, true);
           }
@@ -530,7 +531,7 @@ export class LiveStore extends Store {
       case "adRestore": {
         const id = a.value;
         const name = s.ads.find((x) => x.id === id)?.name ?? "";
-        if (id.startsWith("w") || !s.live?.hasCampaigns) {
+        if (isWizardAdId(id) || !s.live?.hasCampaigns) {
           if (this.api.archiveWizardAd) {
             await this.api.archiveWizardAd(id, false);
           }
@@ -540,7 +541,7 @@ export class LiveStore extends Store {
             await this.api.setAdState(account, adId, true, crypto.randomUUID());
           }
         }
-        const isLive = !!s.live?.hasCampaigns && !id.startsWith("w");
+        const isLive = !!s.live?.hasCampaigns && !isWizardAdId(id);
         const updatedAds = this.state.ads.map((x) =>
           x.id === id
             ? {
@@ -643,7 +644,7 @@ export class LiveStore extends Store {
         // Без направлений в Директе нечего ни останавливать, ни включать: говорим сразу, без «Применить?».
         if (s.live && !s.live.hasCampaigns) {
           const isConnected = !!(s.live.account || s.yandex);
-          const hasDraftAds = s.ads.some((a) => a.id.startsWith("w") || a.tag === "готово к запуску");
+          const hasDraftAds = s.ads.some((a) => isWizardAdId(a.id) || a.tag === "готово к запуску");
           const text = isConnected
             ? (hasDraftAds
               ? "Реклама ещё не запущена: объявления готовы к запуску, но кампании в Директе ещё не созданы. Чтобы начать показы, завершите запуск рекламы."

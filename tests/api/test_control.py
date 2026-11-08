@@ -640,3 +640,65 @@ async def test_balance_names_the_reason_in_owner_words(anna: Anna) -> None:
         assert (expected in got["problem"]) or expected == "reconnect"
     _app(client).state.platform_for = lambda _b, _a: None
     assert (await client.get(url)).json()["balance_micros"] is None
+
+
+async def test_platform_ad_archive_stops_platform_and_notes_archived_state(
+    anna: Anna, platform: FakePlatform, sessions: Sessions
+) -> None:
+    client, csrf, business = anna
+    _app(client).state.platform_for = lambda _b, _a: platform
+    base = f"/api/businesses/{business}"
+
+    done = await client.post(f"{base}/ads/{LOGIN}/11/archive", headers=csrf)
+    assert done.status_code == 200
+    assert done.json() == {"status": "applied"}
+    assert platform.ads["ad:11"] is False
+    assert ("user", "pause_ad", "applied") in await _rows(sessions, business)
+
+    async with sessions() as session:
+        ad_state = (
+            await session.execute(
+                text("SELECT state FROM ads WHERE business_id = :b AND ad_id = '11'"),
+                {"b": business},
+            )
+        ).scalar_one()
+    assert ad_state == "archived"
+
+
+async def test_platform_ad_archive_conflict_when_platform_fails(
+    anna: Anna, platform: FakePlatform, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from unittest.mock import AsyncMock
+
+    import adhelper.api.control as control_module
+
+    client, csrf, business = anna
+    _app(client).state.platform_for = lambda _b, _a: platform
+    base = f"/api/businesses/{business}"
+
+    monkeypatch.setattr(control_module, "set_ad_active", AsyncMock(return_value="failed"))
+    response = await client.post(f"{base}/ads/{LOGIN}/11/archive", headers=csrf)
+    assert response.status_code == 409
+    assert "Яндекс не принял" in response.json()["detail"]
+
+    monkeypatch.setattr(control_module, "set_ad_active", AsyncMock(return_value=None))
+    resp_unavailable = await client.post(f"{base}/ads/{LOGIN}/11/archive", headers=csrf)
+    assert resp_unavailable.status_code == 503
+
+
+async def test_account_starting_with_w_is_not_intercepted_as_wizard(
+    anna: Anna, platform: FakePlatform
+) -> None:
+    client, csrf, business = anna
+    _app(client).state.platform_for = lambda _b, _a: platform
+    base = f"/api/businesses/{business}"
+
+    # Логин на букву 'w', например 'wellness-salon', не должен перехватываться роутером черновиков
+    # Так как объявления 999 нет, ad_detail возвращает 404
+    response = await client.post(
+        f"{base}/ads/wellness-salon/999/state",
+        json={"active": False, "request_id": "r-w-acc"},
+        headers=csrf,
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Объявление не найдено"

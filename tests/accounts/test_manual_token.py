@@ -126,14 +126,18 @@ async def test_manual_token_validates_via_direct_client_and_stores_encrypted(
         # Проверяем, что в базе токен зашифрован и не хранится в открытом виде
         async with engine.connect() as conn:
             row = (
-                await conn.execute(
-                    text(
-                        "SELECT external_login, encrypted_access, state, token_expires_at "
-                        "FROM ad_accounts WHERE business_id = :bid"
-                    ),
-                    {"bid": UUID(business_id)},
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT external_login, encrypted_access, state, token_expires_at "
+                            "FROM ad_accounts WHERE business_id = :bid"
+                        ),
+                        {"bid": UUID(business_id)},
+                    )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
             assert row["external_login"] == "verified-salon-owner"
             assert row["state"] == "connected"
             assert token_input not in row["encrypted_access"]
