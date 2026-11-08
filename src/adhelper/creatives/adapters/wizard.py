@@ -1,5 +1,6 @@
 """Наборы мастера до входа и выбор владельца после входа. Миграция 0018."""
 
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -140,7 +141,12 @@ class SqlWizardSets:
                     (CreativeSetRow.business_id.is_(None))
                     | (CreativeSetRow.business_id == business_id),
                 )
-                .values(business_id=business_id, guest_key=None, kept=list(kept))
+                .values(
+                    business_id=business_id,
+                    guest_key=None,
+                    kept=list(kept),
+                    created_at=func.now(),
+                )
             )
             return bool(result.rowcount)  # type: ignore[attr-defined]
 
@@ -223,10 +229,13 @@ class SqlWizardAds:
         )
         async with self._sessions() as session:
             row = await session.scalar(statement)
+            if row is None or not row.drafts:
+                return []
             confirmed = (
                 await session.scalars(
                     select(ChangeRow.planned).where(
                         ChangeRow.business_id == self._business_id,
+                        ChangeRow.created_at >= row.created_at,
                         ChangeRow.kind.in_(
                             (ChangeKind.CREATE_CAMPAIGN.value, ChangeKind.CREATE_AD.value)
                         ),
@@ -234,17 +243,16 @@ class SqlWizardAds:
                     )
                 )
             ).all()
-        submitted = {
+        submitted = Counter(
             (str(ad["headline"]), str(ad["text"]))
             for planned in confirmed
             for ad in planned.get("ads", [planned])
             if "headline" in ad and "text" in ad
-        }
-        if row is None or not row.drafts:
-            return []
+        )
         view = _view(row)
         drafts = view.drafts
         kept_set = set(row.kept or [])
+        submitted_remaining = submitted.copy()
         items: list[WizardAdItem] = []
         for i, d in enumerate(drafts):
             raw = row.drafts[i] if i < len(row.drafts) else {}
@@ -255,6 +263,10 @@ class SqlWizardAds:
                 continue
             raw_sources = tuple(s.get("label", "") for s in raw.get("sources", []))
             facts = tuple(source.label for source in d.sources) or raw_sources or ("Ваш текст",)
+            text_key = (d.headline, d.text)
+            is_submitted = submitted_remaining[text_key] > 0
+            if is_submitted:
+                submitted_remaining[text_key] -= 1
             items.append(
                 WizardAdItem(
                     id=f"w{i}",
@@ -264,7 +276,7 @@ class SqlWizardAds:
                     facts=facts,
                     active=is_active,
                     archived=is_archived,
-                    submitted=(d.headline, d.text) in submitted,
+                    submitted=is_submitted,
                 )
             )
         return items
@@ -310,7 +322,7 @@ class SqlWizardAds:
                     profile={},
                     drafts=[],
                     kept=[],
-                    created_at=now,
+                    created_at=func.now(),
                 )
                 session.add(row)
                 await session.flush()

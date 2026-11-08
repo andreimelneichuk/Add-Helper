@@ -1,12 +1,14 @@
 """Шаг «Объявления» мастера: писатель до входа, выбор переносится в бизнес после входа."""
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
+from sqlalchemy import update
 
 from adhelper.creatives.adapters.rules_file import load_rules, load_wizard_rules
-from adhelper.creatives.adapters.sql import SqlCreativeQueue, SqlProfileSource
+from adhelper.creatives.adapters.sql import CreativeSetRow, SqlCreativeQueue, SqlProfileSource
 from adhelper.creatives.application.service import run_queued
 from adhelper.creatives.application.wizard import CURRENT_WIZARD_RULES
 from adhelper.ledger.adapters.sql import SqlChangeRepository
@@ -168,7 +170,7 @@ async def test_wizard_ads_identify_confirmed_submissions(
     sent = {"headline": "Уже отправлено", "text": "Запишитесь"}
     other = {"headline": "Новый черновик", "text": "Приходите"}
     headers = {"X-CSRF-Token": csrf}
-    for body in (sent, other):
+    for body in (sent, sent, other):
         assert (await client.post(url, json=body, headers=headers)).status_code == 201
     planned = {"ads": [sent]} if kind is ChangeKind.CREATE_CAMPAIGN else sent
     repo = SqlChangeRepository(sessions, business_id)
@@ -186,7 +188,7 @@ async def test_wizard_ads_identify_confirmed_submissions(
         ChangeStatus.PLANNED,
     )
     saved = (await client.get(url)).json()["ads"]
-    assert [ad["submitted"] for ad in saved] == [True, False]
+    assert [ad["submitted"] for ad in saved] == [True, False, False]
 
 
 async def test_custom_ad_retry_is_idempotent_even_when_first_requests_overlap(
@@ -219,6 +221,48 @@ async def test_custom_ad_retry_is_idempotent_even_when_first_requests_overlap(
     for _ in range(2):
         assert (await client.post(url, json=edited, headers=headers)).status_code == 201
     assert len((await client.get(url, params={"include_inactive": True})).json()["ads"]) == 3
+
+
+async def test_previous_launch_does_not_hide_same_text_in_a_new_wizard_set(
+    anna: Anna,  # noqa: F811
+    sessions: Sessions,
+    provider: FakeProvider,
+) -> None:
+    client, csrf, business_id = anna
+    await _connect(client, provider, csrf, str(business_id), ANNA)
+    url = f"/api/businesses/{business_id}/wizard-ads"
+    body = {"headline": "Маникюр рядом", "text": "Запишитесь сегодня"}
+    headers = {"X-CSRF-Token": csrf}
+    assert (await client.post(url, json=body, headers=headers)).status_code == 201
+
+    repo = SqlChangeRepository(sessions, business_id)
+    await repo.add(
+        ProposedChange(
+            "anna-direct",
+            ChangeSource.USER,
+            ChangeKind.CREATE_AD,
+            "old-set-ad",
+            body,
+            "Запуск",
+            "old-set-ad",
+        ),
+        {},
+        ChangeStatus.APPLIED,
+    )
+    # Новый набор создан после прошлой отправки, хотя в нём тот же текст.
+    async with sessions.begin() as session:
+        await session.execute(
+            update(CreativeSetRow)
+            .where(
+                CreativeSetRow.business_id == business_id,
+                CreativeSetRow.reason == "wizard",
+            )
+            .values(created_at=datetime.now(UTC) + timedelta(days=1))
+        )
+
+    saved = (await client.get(url)).json()["ads"]
+    assert len(saved) == 1
+    assert saved[0]["submitted"] is False
 
 
 async def test_wizard_ads_crud_operations(

@@ -53,7 +53,14 @@ class UserRow(Base):
 
 class BusinessRow(Base):
     __tablename__ = "businesses"
-    __table_args__ = (Index("ix_businesses_user_id", "user_id"),)
+    __table_args__ = (
+        Index("ix_businesses_user_id", "user_id"),
+        Index(
+            "ix_businesses_user_id_active",
+            "user_id",
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
