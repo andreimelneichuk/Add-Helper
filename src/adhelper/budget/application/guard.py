@@ -173,8 +173,9 @@ async def _read_balance(
     period: BudgetPeriod,
     opening: BalanceBaseline | None,
     snapshot: SpendSnapshot,
-    spent: int,
+    account_snapshot: SpendSnapshot,
     rules: BudgetRules,
+    balance_hard_limit: int | None = None,
 ) -> _BalanceReading:
     try:
         current = await platform.fetch_balance(account)
@@ -184,11 +185,16 @@ async def _read_balance(
         return _BalanceReading(state=BalanceState.UNAVAILABLE)
     if opening is None:
         # Без точки отсчёта сверять не с чем: ставим её сейчас, а не пропускаем сверку молча.
-        baseline = BalanceBaseline(current, snapshot.reported)
+        baseline = BalanceBaseline(current, account_snapshot.reported)
         state = BalanceState.ZERO if current <= 0 else BalanceState.OK
         return _BalanceReading(current, state, baseline)
     state = check_balance(
-        opening.balance, current, spent, period.hard_limit, rules, opening_spent=opening.spent
+        opening.balance,
+        current,
+        account_snapshot.reported,
+        balance_hard_limit or period.hard_limit,
+        rules,
+        opening_spent=opening.spent,
     )
     return _BalanceReading(current, state)
 
@@ -202,6 +208,7 @@ async def watch_once(
     rules: BudgetRules,
     opening_balance: int | None = None,
     opening_spent: int = 0,
+    balance_hard_limit: int | None = None,
 ) -> WatchResult:
     try:
         snapshot = await platform.fetch_spend(account)
@@ -219,12 +226,23 @@ async def watch_once(
     if state.snapshot is not None and snapshot.data_as_of < state.snapshot.data_as_of:
         snapshot = state.snapshot
     burn = BurnRate.between(state.snapshot, snapshot, state.burn) if state.snapshot else state.burn
+    try:
+        account_snapshot = await platform.fetch_account_spend(account)
+    except PlatformUnavailable:
+        account_snapshot = snapshot
     verdict = evaluate_watch(period, snapshot, burn, now, rules, opening_spent=opening_spent)
     opening = (
         BalanceBaseline(opening_balance, opening_spent) if opening_balance is not None else None
     )
     reading = await _read_balance(
-        platform, account, period, opening, snapshot, corrected_spend(snapshot, burn, now), rules
+        platform,
+        account,
+        period,
+        opening,
+        snapshot,
+        account_snapshot,
+        rules,
+        balance_hard_limit,
     )
     balance_state = reading.state
     must_stop = (

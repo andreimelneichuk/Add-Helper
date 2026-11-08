@@ -13,6 +13,7 @@ const KIND_LABEL: Record<AdvertiserKind, string> = { legal: "Организац�
 export function RealYandex({ store, s }: Props) {
   const api = store.wizard;
   const [accounts, setAccounts] = useState<AdAccount[] | null>(null);
+  const [available, setAvailable] = useState<AdAccount[]>([]);
   const [status, setStatus] = useState("");
   const [manualLink, setManualLink] = useState<string | null>(null);
   const [token, setToken] = useState("");
@@ -20,6 +21,7 @@ export function RealYandex({ store, s }: Props) {
   const [askLogin, setAskLogin] = useState(false);
   const [busy, setBusy] = useState(false);
   const [tokenError, setTokenError] = useState<string | null>(null);
+  const takenElsewhere = !!tokenError && /уже подключён|другому бизнесу/i.test(tokenError);
 
   useEffect(() => {
     if (!api) return;
@@ -28,6 +30,7 @@ export function RealYandex({ store, s }: Props) {
       const isConn = found.some((a) => a.state === "connected");
       store.set({ yandex: isConn });
     }, (e: unknown) => setStatus(say(e)));
+    api.availableAccounts?.().then(setAvailable, (e: unknown) => setStatus(say(e)));
     if (api.manualTokenLink) {
       api.manualTokenLink().then((r) => setManualLink(r.url), () => setManualLink(null));
     }
@@ -62,6 +65,22 @@ export function RealYandex({ store, s }: Props) {
     api.connect("start").then((r) => store.navigate(r.authorize_url), (e: unknown) => setStatus(say(e)));
   };
 
+  const attach = async (account: AdAccount) => {
+    if (!api) return;
+    setBusy(true);
+    setStatus("");
+    try {
+      const saved = await api.attachAccount(account.login);
+      setAccounts((all) => [...(all ?? []).filter((item) => item.login !== saved.login), saved]);
+      setAvailable((all) => all.filter((item) => item.login !== saved.login));
+      store.set({ yandex: true, block: "" });
+    } catch (e) {
+      setStatus(say(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="st-link">
       <div className="st-link-text">
@@ -78,9 +97,25 @@ export function RealYandex({ store, s }: Props) {
         <button type="button" className="ah-btn st-link-done" disabled>Подключено</button>
       ) : (
         <div className="st-token-box" style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10, width: "100%" }}>
-          <p className="set-hint" style={{ margin: 0 }}>
+          {available.map((account) => (
+            <button
+              key={account.login}
+              type="button"
+              className="ah-btn"
+              disabled={busy}
+              onClick={() => void attach(account)}
+            >
+              Подключить уже используемый кабинет {account.login}
+            </button>
+          ))}
+          {available.length > 0 && <p className="set-hint">Баланс у кабинета общий с другими вашими бизнесами.</p>}
+          {takenElsewhere ? (
+            <p className="set-hint" role="status" style={{ margin: 0 }}>
+              Этот кабинет уже связан с другим вашим бизнесом. Существующая привязка не менялась. Не нужно получать новый токен для этого кабинета: вернитесь в бизнес, где он подключён, или подключите другой кабинет.
+            </p>
+          ) : <p className="set-hint" style={{ margin: 0 }}>
             Получите код доступа в Яндексе: нажмите кнопку, разрешите доступ, скопируйте строку доступа из адресной строки и вставьте сюда.
-          </p>
+          </p>}
           {manualLink && (
             <div>
               <button
@@ -131,7 +166,7 @@ export function RealYandex({ store, s }: Props) {
               Подключить кабинет
             </button>
           </div>
-          {tokenError && <p className="ah-error" role="alert" style={{ margin: 0 }}>{tokenError}</p>}
+          {tokenError && !takenElsewhere && <p className="ah-error" role="alert" style={{ margin: 0 }}>{tokenError}</p>}
         </div>
       )}
     </div>

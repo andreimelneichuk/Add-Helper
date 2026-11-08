@@ -4,6 +4,11 @@ from enum import StrEnum
 from uuid import UUID
 
 
+def token_context(business_id: UUID, login: str, kind: str) -> str:
+    """Контекст шифрования токена привязан к бизнесу и логину кабинета."""
+    return f"ad_account:{business_id}:{login}:{kind}"
+
+
 class AccountState(StrEnum):
     CONNECTED = "connected"
     NEEDS_RECONNECT = "needs_reconnect"

@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from adhelper.accounts.adapters.crypto import CipherConfigError, DecryptionFailed
+from adhelper.accounts.adapters.sql import SqlMarking, SqlUserScope
 from adhelper.accounts.application.service import (
     AccountsService,
     AccountState,
@@ -18,6 +19,7 @@ from adhelper.accounts.application.service import (
     GrantRejected,
     LoginUnknown,
     ProviderUnavailable,
+    ReconnectRequired,
     TokenInvalid,
 )
 from adhelper.config import Settings
@@ -40,6 +42,10 @@ class NewBusiness(BaseModel):
 class ManualToken(BaseModel):
     login: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._-]{1,50}$")
     token: str = Field(min_length=20, max_length=500, pattern=r"^\S+$")
+
+
+class AttachAccount(BaseModel):
+    login: str = Field(min_length=1, max_length=50, pattern=r"^[A-Za-z0-9._-]+$")
 
 
 def _service(request: Request) -> AccountsService:
@@ -261,6 +267,82 @@ def accounts_router(settings: Settings) -> APIRouter:
                     "state": "needs_reconnect",
                 }
             ]
+
+    @router.get("/businesses/{business_id}/accounts/available")
+    async def available_accounts(
+        business_id: UUID, service: Service, info: CurrentSession
+    ) -> list[dict[str, Any]]:
+        try:
+            return [
+                _account_view(account)
+                for account in await service.available_accounts(info.user.id, business_id)
+            ]
+        except BusinessNotFound:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Бизнес не найден") from None
+
+    @router.post("/businesses/{business_id}/accounts/attach")
+    async def attach_account(
+        request: Request,
+        business_id: UUID,
+        body: AttachAccount,
+        service: Service,
+        info: CheckedSession,
+    ) -> dict[str, Any]:
+        try:
+            scope = SqlUserScope(request.app.state.sessions, info.user.id)
+            target_marking = await SqlMarking(
+                request.app.state.sessions, business_id, request.app.state.cipher
+            ).get()
+            for source_business_id, source in await scope.available_accounts(business_id):
+                if source.login != body.login.strip().lower():
+                    continue
+                source_marking = await SqlMarking(
+                    request.app.state.sessions, source_business_id, request.app.state.cipher
+                ).get()
+                if (
+                    target_marking
+                    and source_marking
+                    and (
+                        target_marking.kind != source_marking.kind
+                        or target_marking.inn != source_marking.inn
+                    )
+                ):
+                    raise HTTPException(
+                        status.HTTP_409_CONFLICT,
+                        "В кабинете уже рекламируется другой ИНН. "
+                        "Для другого рекламодателя подключите отдельный кабинет.",
+                    )
+                platform_for = getattr(request.app.state, "platform_for", None)
+                platform = platform_for(source_business_id, source.login) if platform_for else None
+                if target_marking and platform and hasattr(platform, "read_advertiser"):
+                    actual = await platform.read_advertiser(source.login)
+                    if (
+                        actual
+                        and actual.inn
+                        and (
+                            actual.kind != target_marking.kind.value
+                            or actual.inn != target_marking.inn
+                        )
+                    ):
+                        raise HTTPException(
+                            status.HTTP_409_CONFLICT,
+                            "В кабинете уже зарегистрирован другой рекламодатель. "
+                            "Для другого ИНН подключите отдельный кабинет.",
+                        )
+            account = await service.attach_existing_account(
+                info.user.id, business_id, body.login.strip().lower()
+            )
+        except HTTPException:
+            raise
+        except BusinessNotFound:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Бизнес не найден") from None
+        except AccountTaken:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Кабинет больше недоступен") from None
+        except ReconnectRequired:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "Подключите кабинет заново в исходном бизнесе"
+            ) from None
+        return _account_view(account)
 
     @router.get("/businesses/{business_id}/accounts/manual-token/link")
     async def manual_token_link(

@@ -299,10 +299,10 @@ async def test_state_of_other_user_cannot_attach_account(
     assert (await boris.get(f"/api/businesses/{boris_business}/accounts")).json() == []
 
 
-async def test_same_cabinet_cannot_serve_two_businesses(
+async def test_same_cabinet_cannot_be_claimed_by_another_user(
     browser: Browser, provider: FakeProvider
 ) -> None:
-    """Два стража на один кабинет не видели бы лимиты друг друга."""
+    """Кабинет можно повторно привязать только в пределах его владельца Ad Helper."""
     anna, boris = browser(), browser()
     anna_csrf = await _login(anna, provider, ANNA)
     boris_csrf = await _login(boris, provider, BORIS)
@@ -314,6 +314,33 @@ async def test_same_cabinet_cannot_serve_two_businesses(
 
     assert done.headers["location"] == "/?connect=taken"
     assert (await boris.get(f"/api/businesses/{boris_business}/accounts")).json() == []
+
+
+async def test_owner_can_attach_same_cabinet_to_another_business(
+    browser: Browser, provider: FakeProvider, sessions: Sessions
+) -> None:
+    client = browser()
+    csrf = await _login(client, provider, ANNA)
+    first = await _business(client, csrf, "Первый бизнес")
+    second = await _business(client, csrf, "Второй бизнес")
+    await _connect(client, provider, csrf, first, ANNA)
+
+    available = await client.get(f"/api/businesses/{second}/accounts/available")
+    attached = await client.post(
+        f"/api/businesses/{second}/accounts/attach",
+        json={"login": "anna-direct"},
+        headers={"X-CSRF-Token": csrf},
+    )
+
+    assert [(item["login"], item["state"]) for item in available.json()] == [
+        ("anna-direct", "connected")
+    ]
+    assert attached.status_code == 200
+    assert attached.json()["login"] == "anna-direct"
+    assert (await client.get(f"/api/businesses/{first}/accounts")).json()[0]["state"] == "connected"
+    second_accounts = (await client.get(f"/api/businesses/{second}/accounts")).json()
+    assert second_accounts[0]["state"] == "connected"
+    assert await _vault(sessions, uuid.UUID(second), provider, NOW).access_token("anna-direct")
 
 
 async def test_reconnect_replaces_tokens_of_same_account(

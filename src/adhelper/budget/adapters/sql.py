@@ -124,6 +124,30 @@ class SqlPeriodStore:
         async with self._sessions() as session:
             return [_to_record(row) for row in await session.scalars(statement)]
 
+    async def account_hard_limit(self, account: str, now: datetime) -> int:
+        statement = select(func.coalesce(func.sum(BudgetPeriodRow.hard_limit_micros), 0)).where(
+            BudgetPeriodRow.account == account,
+            BudgetPeriodRow.state == "active",
+            BudgetPeriodRow.starts_at <= now,
+            BudgetPeriodRow.ends_at > now,
+        )
+        async with self._sessions() as session:
+            return int(await session.scalar(statement) or 0)
+
+    async def active_for_account(self, account: str, now: datetime) -> Sequence[PeriodRecord]:
+        statement = (
+            select(BudgetPeriodRow)
+            .where(
+                BudgetPeriodRow.account == account,
+                BudgetPeriodRow.state == "active",
+                BudgetPeriodRow.starts_at <= now,
+                BudgetPeriodRow.ends_at > now,
+            )
+            .order_by(BudgetPeriodRow.business_id, BudgetPeriodRow.starts_at)
+        )
+        async with self._sessions() as session:
+            return [_to_record(row) for row in await session.scalars(statement)]
+
     async def active_for(
         self, business_id: UUID, account: str, now: datetime
     ) -> PeriodRecord | None:

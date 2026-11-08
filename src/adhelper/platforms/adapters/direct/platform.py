@@ -9,7 +9,7 @@ import base64
 import hashlib
 import json
 import logging
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -211,10 +211,20 @@ class DirectPlatform:
         client: DirectHttpClient,
         token_for: TokenSource,
         clock: Callable[[], datetime],
+        campaign_ids_for: Callable[[str], Awaitable[Sequence[str]]] | None = None,
     ) -> None:
         self._client = client
         self._token_for = token_for
         self._clock = clock
+        self._campaign_ids_for = campaign_ids_for
+
+    async def _managed_campaigns(self, account: str) -> list[Mapping[str, Any]]:
+        if self._campaign_ids_for is None:
+            return await self._campaigns(account)
+        ids = await self._campaign_ids_for(account)
+        if not ids:
+            return []
+        return await self._campaigns(account, [int(campaign_id) for campaign_id in ids])
 
     async def _call(
         self, account: str, service: str, method: str, params: Mapping[str, Any]
@@ -380,7 +390,7 @@ class DirectPlatform:
         return spent
 
     async def read_campaigns(self, account: str) -> list[CampaignBudget]:
-        campaigns = await self._campaigns(account)
+        campaigns = await self._managed_campaigns(account)
         spent = await self._spent(account, campaigns)
         return [
             CampaignBudget(
@@ -394,7 +404,61 @@ class DirectPlatform:
             for campaign in campaigns
         ]
 
+    async def read_account_campaigns(self, account: str) -> list[CampaignBudget]:
+        """Все кампании аккаунта для проверки общего лимита, включая созданные вне сервиса."""
+        campaigns = await self._campaigns(account)
+        spent = await self._spent(account, campaigns)
+        return [
+            CampaignBudget(
+                campaign_id=str(campaign["Id"]),
+                limit=period_limit(self._strategy(campaign)),
+                spent=spent.get(str(campaign["Id"]), 0),
+                active=campaign.get("State") in ACTIVE_CAMPAIGN_STATES,
+                last_increase_at=None,
+            )
+            for campaign in campaigns
+        ]
+
     async def fetch_spend(self, account: str) -> SpendSnapshot:
+        if self._campaign_ids_for is None:
+            return await self.fetch_account_spend(account)
+        campaigns = await self._managed_campaigns(account)
+        campaign_ids = [str(campaign["Id"]) for campaign in campaigns]
+        if not campaign_ids:
+            return SpendSnapshot(reported=0, data_as_of=self._clock() - REPORT_LAG)
+        rows = await self._report(
+            account,
+            {
+                "SelectionCriteria": {
+                    "Filter": [
+                        {
+                            "Field": "CampaignId",
+                            "Operator": "IN",
+                            "Values": campaign_ids,
+                        }
+                    ]
+                },
+                "FieldNames": ["CampaignId", "Cost"],
+                "ReportType": "CAMPAIGN_PERFORMANCE_REPORT",
+                "DateRangeType": "ALL_TIME",
+                "Format": "TSV",
+                "IncludeVAT": "YES",
+                "IncludeDiscount": "NO",
+            },
+        )
+        reported = sum(_cost(row["Cost"]) for row in rows)
+        data_as_of = self._clock() - REPORT_LAG
+        logger.info(
+            "fetch_spend: account=%s, campaigns=%d, reported_micros=%d, data_as_of=%s",
+            account,
+            len(campaign_ids),
+            reported,
+            data_as_of.isoformat(),
+        )
+        return SpendSnapshot(reported=reported, data_as_of=data_as_of)
+
+    async def fetch_account_spend(self, account: str) -> SpendSnapshot:
+        """Расход всего аккаунта для сверки его общего баланса."""
         now = self._clock()
         rows = await self._report(
             account,

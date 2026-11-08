@@ -55,7 +55,8 @@ async def _watch_period(
     alerts: AlertSink,
     now: datetime,
     rules: BudgetRules,
-) -> None:
+    account_hard_limit: int,
+) -> WatchResult:
     state = _state(record, await store.recent_snapshots(record.id))
     result = await watch_once(
         platform,
@@ -66,6 +67,7 @@ async def _watch_period(
         rules,
         opening_balance=record.opening_balance,
         opening_spent=record.opening_spent or 0,
+        balance_hard_limit=account_hard_limit,
     )
     seconds = (
         result.verdict.next_check_seconds
@@ -87,6 +89,54 @@ async def _watch_period(
             snapshot.reported if snapshot else None,
         )
     await _publish(alerts, result, rules)
+    return result
+
+
+async def _stop_shared_account(
+    store: PeriodStore,
+    platform_for: Callable[[UUID, str], BudgetPlatform | None],
+    alerts_for: Callable[[UUID], AlertSink],
+    account: str,
+    current_business_id: UUID,
+    now: datetime,
+    rules: BudgetRules,
+) -> None:
+    retry_at = now + timedelta(seconds=rules.alert_check_interval_seconds)
+    seen: set[UUID] = set()
+    for record in await store.active_for_account(account, now):
+        if record.business_id == current_business_id or record.business_id in seen:
+            continue
+        seen.add(record.business_id)
+        platform = platform_for(record.business_id, account)
+        if platform is None:
+            await alerts_for(record.business_id).raise_alert("platform_not_connected", {})
+            await store.reschedule(record.id, retry_at)
+            continue
+        try:
+            active = [
+                campaign.campaign_id
+                for campaign in await platform.read_campaigns(account)
+                if campaign.active
+            ]
+            if active:
+                await platform.pause_campaigns(account, active)
+            remaining = [
+                campaign.campaign_id
+                for campaign in await platform.read_campaigns(account)
+                if campaign.active
+            ]
+            if remaining:
+                await store.save_cycle(record.id, None, True, retry_at)
+            await alerts_for(record.business_id).raise_alert(
+                "balance_mismatch", {"shared_account": True}
+            )
+        except Exception as error:
+            logger.error(
+                "Страж общего счёта: бизнес %s, %s",
+                record.business_id,
+                type(error).__name__,
+            )
+            await store.save_cycle(record.id, None, True, retry_at)
 
 
 async def run_watch_cycle(
@@ -108,7 +158,26 @@ async def run_watch_cycle(
                 await alerts.raise_alert("platform_not_connected", {})
                 await store.reschedule(record.id, retry_at)
                 continue
-            await _watch_period(record, store, platform, alerts, now, rules)
+            account_hard_limit = await store.account_hard_limit(record.account, now)
+            result = await _watch_period(
+                record,
+                store,
+                platform,
+                alerts,
+                now,
+                rules,
+                account_hard_limit or record.period.hard_limit,
+            )
+            if result.balance_state is BalanceState.MISMATCH:
+                await _stop_shared_account(
+                    store,
+                    platform_for,
+                    alerts_for,
+                    record.account,
+                    record.business_id,
+                    now,
+                    rules,
+                )
         except Exception as error:
             # В логе только тип: текст ошибки может содержать токен или адрес.
             logger.error("Страж бюджета: период %s, %s", record.id, type(error).__name__)

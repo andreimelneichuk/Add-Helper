@@ -83,7 +83,9 @@ async def test_delete_business_success(browser: Browser, provider: FakeProvider)
     assert accs_res.status_code == 404
 
 
-async def test_delete_business_frees_cabinet(browser: Browser, provider: FakeProvider) -> None:
+async def test_delete_business_keeps_cabinet_with_same_owner(
+    browser: Browser, provider: FakeProvider
+) -> None:
     client = browser()
     csrf = await _login(client, provider, ANNA)
 
@@ -94,15 +96,16 @@ async def test_delete_business_frees_cabinet(browser: Browser, provider: FakePro
     connected = await _connect(client, provider, csrf, b1, ANNA)
     assert connected.headers["location"] == "/?connect=ok"
 
-    # Попытка подключить тот же кабинет ко второму бизнесу отклоняется (taken)
+    # Один владелец может подключить кабинет к двум своим бизнесам.
     dup = await _connect(client, provider, csrf, b2, ANNA)
-    assert dup.headers["location"] == "/?connect=taken"
+    assert dup.headers["location"] == "/?connect=ok"
 
     # Удаляем первый бизнес
     del_res = await client.delete(f"/api/businesses/{b1}", headers={"X-CSRF-Token": csrf})
     assert del_res.status_code == 204
 
-    # Теперь тот же кабинет успешно подключается ко второму бизнесу!
+    # Удаление первого бизнеса не освобождает кабинет для другого владельца,
+    # но тот же владелец может продолжать подключать его к своим бизнесам.
     reconnected = await _connect(client, provider, csrf, b2, ANNA)
     assert reconnected.headers["location"] == "/?connect=ok"
 

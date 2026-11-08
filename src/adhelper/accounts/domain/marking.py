@@ -23,6 +23,10 @@ class MarkingProblem(StrEnum):
     OKVED = "okved"
 
 
+class SharedAccountMarkingMismatch(Exception):
+    """Бизнесы одного кабинета Директа должны иметь одного рекламодателя."""
+
+
 @dataclass(frozen=True)
 class Marking:
     kind: AdvertiserKind

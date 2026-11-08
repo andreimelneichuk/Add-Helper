@@ -218,6 +218,10 @@ class FakePlatform:
         self._check_fault("read_campaigns", after_apply=False)
         return list(self.campaigns.values())
 
+    async def read_account_campaigns(self, account: str) -> list[CampaignBudget]:
+        self._check_fault("read_account_campaigns", after_apply=False)
+        return list(self.campaigns.values())
+
     async def fetch_spend(self, account: str) -> SpendSnapshot:
         self._check_fault("fetch_spend", after_apply=False)
         visible_until = self.now - self.stats_lag
@@ -228,6 +232,9 @@ class FakePlatform:
             if moment_candidate <= visible_until:
                 moment, reported = moment_candidate, value
         return SpendSnapshot(reported=reported, data_as_of=moment)
+
+    async def fetch_account_spend(self, account: str) -> SpendSnapshot:
+        return await self.fetch_spend(account)
 
     async def fetch_balance(self, account: str) -> int:
         self._check_fault("fetch_balance", after_apply=False)

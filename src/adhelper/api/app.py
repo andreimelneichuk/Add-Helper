@@ -106,7 +106,7 @@ def _accounts_service(
     return AccountsService(
         SqlIdentityStore(sessions),
         lambda user_id: SqlUserScope(sessions, user_id),
-        lambda business_id: SqlAccountTokens(sessions, business_id),
+        lambda business_id: SqlAccountTokens(sessions, business_id, cipher),
         # Без провайдера сессии работают, а новый вход и подключение кабинета отвечают 503.
         provider or UnconfiguredProvider(),
         cipher,

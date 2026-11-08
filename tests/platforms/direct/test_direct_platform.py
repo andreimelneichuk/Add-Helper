@@ -359,6 +359,49 @@ async def test_queued_report_waits_for_retry_in(
     assert direct.calls.count("reports") == 3
 
 
+async def test_business_spend_uses_only_its_managed_campaign_ids(
+    direct: FakeDirect,
+) -> None:
+    client = DirectHttpClient(transport=direct.transport(), sleep=_no_sleep)
+    platform = DirectPlatform(
+        client,
+        _token,
+        lambda: NOW,
+        lambda _account: _campaign_ids(),
+    )
+    direct.campaigns[101] = {
+        "Id": 101,
+        "Name": "Business A",
+        "Type": "UNIFIED_CAMPAIGN",
+        "State": "ON",
+        "Status": "ACCEPTED",
+        "UnifiedCampaign": {"BiddingStrategy": {}},
+    }
+    direct.campaigns[202] = {
+        "Id": 202,
+        "Name": "Business B",
+        "Type": "UNIFIED_CAMPAIGN",
+        "State": "ON",
+        "Status": "ACCEPTED",
+        "UnifiedCampaign": {"BiddingStrategy": {}},
+    }
+    direct.report_rows = [("2026-11-04", "101", 100), ("2026-11-04", "202", 900)]
+    try:
+        snapshot = await platform.fetch_spend(ACCOUNT)
+        account_snapshot = await platform.fetch_account_spend(ACCOUNT)
+        assert snapshot.reported == 100
+        assert account_snapshot.reported == 1_000
+        definition = direct.requests[-2]["body"]["params"]
+        assert definition["ReportType"] == "CAMPAIGN_PERFORMANCE_REPORT"
+        assert definition["SelectionCriteria"]["Filter"][0]["Values"] == ["101"]
+    finally:
+        await client.aclose()
+
+
+async def _campaign_ids() -> tuple[str, ...]:
+    return ("101",)
+
+
 def test_rubles_become_micros_without_rounding() -> None:
     assert rubles_to_micros("1500.5") == 1_500_500_000
     assert rubles_to_micros("0") == 0

@@ -812,6 +812,7 @@ function ManualToken({ api, onSaved }: { api: Api; onSaved: (account: AdAccount)
 
 function Accounts({ api, store }: { api: Api; store?: Store }) {
   const [accounts, setAccounts] = useState<AdAccount[] | null>(null);
+  const [available, setAvailable] = useState<AdAccount[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -823,6 +824,7 @@ function Accounts({ api, store }: { api: Api; store?: Store }) {
       },
       (e: unknown) => setError(message(e)),
     );
+    api.availableAccounts?.().then(setAvailable, (e: unknown) => setError(message(e)));
   }, [api, store]);
   const onBalance = useCallback(
     (rubles: number) => {
@@ -848,6 +850,20 @@ function Accounts({ api, store }: { api: Api; store?: Store }) {
       setBusy(false);
     }
   };
+  const attach = async (login: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = await api.attachAccount(login);
+      setAccounts((all) => [...(all ?? []).filter((item) => item.login !== saved.login), saved]);
+      setAvailable((all) => all.filter((item) => item.login !== saved.login));
+      store?.set({ yandex: true });
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  };
   const working = accounts?.some((a) => a.state === "connected" && (a as { status?: string }).status !== "needs_reconnect");
   const reconnectNeeded = accounts?.some(
     (a) => a.state === "needs_reconnect" || (a as { status?: string }).status === "needs_reconnect"
@@ -867,6 +883,22 @@ function Accounts({ api, store }: { api: Api; store?: Store }) {
           <span className={a.state === "connected" && (a as { status?: string }).status !== "needs_reconnect" ? "ah-tag ah-tag-good" : "ah-tag ah-tag-bad"}>{ACCOUNT_STATE[a.state] ?? a.state}</span>
         </div>
       ))}
+      {available.length > 0 && (
+        <div className="set-section">
+          <p className="set-hint">Кабинет уже подключён в другом вашем бизнесе. Баланс у него общий.</p>
+          {available.map((account) => (
+            <button
+              key={account.login}
+              type="button"
+              className="ah-btn"
+              disabled={busy}
+              onClick={() => void attach(account.login)}
+            >
+              Подключить кабинет {account.login}
+            </button>
+          ))}
+        </div>
+      )}
       {accounts !== null && (
         <div><button type="button" className={working ? "ah-btn" : "ah-btn ah-btn-primary"} disabled={busy} onClick={connect}>{reconnectNeeded ? "Переподключить" : (accounts.length ? "Подключить заново" : "Подключить кабинет")}</button></div>
       )}
@@ -1052,7 +1084,7 @@ function DeleteBusiness({ store, businessId, businessName }: { store: Store; bus
 
   return (
     <div className="set-danger">
-      <p className="set-hint">Удалит бизнес «{businessName}» из сервиса. Кампании в Яндекс Директе будут остановлены и перенесены в архив, а кабинет отвязан.</p>
+      <p className="set-hint">Удалит бизнес «{businessName}» из сервиса. Кампании этого бизнеса будут остановлены и перенесены в архив. Другие ваши бизнесы в этом кабинете продолжат работу.</p>
       {asking ? (
         <div className="set-confirm" role="group" aria-label="Подтверждение удаления бизнеса" style={{ marginTop: 12 }}>
           <p>Удалить бизнес «{businessName}»? Это действие нельзя отменить.</p>

@@ -22,7 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Mapped, mapped_column
 
 from adhelper.accounts.adapters.crypto import DecryptionFailed
-from adhelper.accounts.domain.marking import AdvertiserKind, Marking
+from adhelper.accounts.domain.marking import (
+    AdvertiserKind,
+    Marking,
+    SharedAccountMarkingMismatch,
+)
 from adhelper.accounts.domain.model import (
     AccountState,
     AdAccount,
@@ -34,11 +38,12 @@ from adhelper.accounts.domain.model import (
     SessionInfo,
     StoredTokens,
     User,
+    token_context,
 )
 from adhelper.accounts.domain.ports import AccountTaken, TokenCipher
 from adhelper.db import Base
 
-ACTIVE_ACCOUNT_INDEX = "uq_ad_accounts_active_platform_login"
+ACTIVE_ACCOUNT_INDEX = "ix_ad_accounts_platform_login_active"
 
 
 class UserRow(Base):
@@ -77,7 +82,6 @@ class AdAccountRow(Base):
             ACTIVE_ACCOUNT_INDEX,
             "platform",
             "external_login",
-            unique=True,
             postgresql_where=text("state <> 'disconnected'"),
         ),
     )
@@ -96,6 +100,15 @@ class AdAccountRow(Base):
     balance_checked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+
+class AdAccountOwnerRow(Base):
+    __tablename__ = "ad_account_owners"
+
+    platform: Mapped[str] = mapped_column(Text, primary_key=True)
+    external_login: Mapped[str] = mapped_column(Text, primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[Any] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class SessionRow(Base):
@@ -276,6 +289,29 @@ class SqlUserScope:
         async with self._sessions() as session:
             return [_account(row) for row in await session.scalars(statement)]
 
+    async def available_accounts(self, business_id: UUID) -> Sequence[tuple[UUID, AdAccount]]:
+        statement = (
+            select(AdAccountRow, BusinessRow.id)
+            .join(BusinessRow, BusinessRow.id == AdAccountRow.business_id)
+            .where(
+                BusinessRow.user_id == self._user_id,
+                BusinessRow.deleted_at.is_(None),
+                AdAccountRow.business_id != business_id,
+                AdAccountRow.state == AccountState.CONNECTED.value,
+            )
+            .order_by(AdAccountRow.external_login, BusinessRow.created_at)
+        )
+        async with self._sessions() as session:
+            rows = (await session.execute(statement)).all()
+        seen: set[tuple[str, str]] = set()
+        result: list[tuple[UUID, AdAccount]] = []
+        for row, source_business_id in rows:
+            key = (row.platform, row.external_login)
+            if key not in seen:
+                seen.add(key)
+                result.append((source_business_id, _account(row)))
+        return result
+
     async def delete_business(self, business_id: UUID) -> bool:
         now = datetime.now(UTC)
         async with self._sessions.begin() as session:
@@ -289,7 +325,7 @@ class SqlUserScope:
                 return False
             row.deleted_at = now
             # Переводим привязанные кабинеты в disconnected:
-            # это освобождает uq_ad_accounts_active_platform_login
+            # это помечает связь именно этого бизнеса отключённой.
             await session.execute(
                 update(AdAccountRow)
                 .where(AdAccountRow.business_id == business_id)
@@ -323,9 +359,15 @@ class SqlUserScope:
 
 
 class SqlAccountTokens:
-    def __init__(self, sessions: async_sessionmaker[AsyncSession], business_id: UUID) -> None:
+    def __init__(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        business_id: UUID,
+        cipher: TokenCipher | None = None,
+    ) -> None:
         self._sessions = sessions
         self._business_id = business_id
+        self._cipher = cipher
 
     async def save_connected(
         self,
@@ -359,15 +401,82 @@ class SqlAccountTokens:
         )
         try:
             async with self._sessions.begin() as session:
-                return _account((await session.scalars(statement)).one())
+                owner = await session.scalar(
+                    select(BusinessRow.user_id).where(
+                        BusinessRow.id == self._business_id,
+                        BusinessRow.deleted_at.is_(None),
+                    )
+                )
+                if owner is None:
+                    raise AccountTaken
+                await session.execute(
+                    insert(AdAccountOwnerRow)
+                    .values(platform=platform, external_login=login, user_id=owner)
+                    .on_conflict_do_nothing(index_elements=["platform", "external_login"])
+                )
+                account_owner = await session.scalar(
+                    select(AdAccountOwnerRow)
+                    .where(
+                        AdAccountOwnerRow.platform == platform,
+                        AdAccountOwnerRow.external_login == login,
+                    )
+                    .with_for_update()
+                )
+                if account_owner is None or account_owner.user_id != owner:
+                    raise AccountTaken
+                connected = _account((await session.scalars(statement)).one())
+                if self._cipher is not None:
+                    await self._copy_connected_tokens(
+                        session, login, platform, encrypted_access, encrypted_refresh, tokens
+                    )
+                return connected
         except IntegrityError as error:
             if ACTIVE_ACCOUNT_INDEX in str(error.orig):
                 raise AccountTaken from None
             raise
 
+    async def _copy_connected_tokens(
+        self,
+        session: AsyncSession,
+        login: str,
+        platform: str,
+        encrypted_access: str,
+        encrypted_refresh: str,
+        tokens: OAuthTokens,
+    ) -> None:
+        if self._cipher is None:
+            return
+        access = self._cipher.decrypt(
+            encrypted_access, token_context(self._business_id, login, "access")
+        )
+        refresh = self._cipher.decrypt(
+            encrypted_refresh, token_context(self._business_id, login, "refresh")
+        )
+        siblings = await session.scalars(
+            select(AdAccountRow).where(
+                AdAccountRow.platform == platform,
+                AdAccountRow.external_login == login,
+                AdAccountRow.business_id != self._business_id,
+                AdAccountRow.state != AccountState.DISCONNECTED.value,
+            )
+        )
+        for sibling in siblings:
+            sibling.encrypted_access = self._cipher.encrypt(
+                access, token_context(sibling.business_id, login, "access")
+            )
+            sibling.encrypted_refresh = self._cipher.encrypt(
+                refresh, token_context(sibling.business_id, login, "refresh")
+            )
+            sibling.token_expires_at = tokens.expires_at
+            sibling.scopes = list(tokens.scopes)
+            sibling.token_version += 1
+            sibling.state = AccountState.CONNECTED.value
+
     async def load(self, login: str) -> StoredTokens | None:
         statement = select(AdAccountRow).where(
-            AdAccountRow.business_id == self._business_id, AdAccountRow.external_login == login
+            AdAccountRow.business_id == self._business_id,
+            AdAccountRow.external_login == login,
+            AdAccountRow.state != AccountState.DISCONNECTED.value,
         )
         async with self._sessions() as session:
             row = (await session.scalars(statement)).one_or_none()
@@ -390,31 +499,60 @@ class SqlAccountTokens:
         expires_at: datetime,
     ) -> bool:
         """False, если другой процесс обновил токены раньше."""
-        statement = (
-            update(AdAccountRow)
-            .where(
-                AdAccountRow.id == stored.account_id,
-                AdAccountRow.business_id == self._business_id,
-                AdAccountRow.token_version == stored.version,
-            )
-            .values(
-                encrypted_access=encrypted_access,
-                encrypted_refresh=encrypted_refresh,
-                token_expires_at=expires_at,
-                token_version=stored.version + 1,
-            )
-            .returning(AdAccountRow.id)
-        )
         async with self._sessions.begin() as session:
-            return (await session.execute(statement)).first() is not None
+            rows = list(
+                await session.scalars(
+                    select(AdAccountRow)
+                    .where(
+                        AdAccountRow.platform == "yandex_direct",
+                        AdAccountRow.external_login == stored.login,
+                        AdAccountRow.state != AccountState.DISCONNECTED.value,
+                    )
+                    .order_by(AdAccountRow.business_id)
+                    .with_for_update()
+                )
+            )
+            current = next(
+                (
+                    row
+                    for row in rows
+                    if row.business_id == self._business_id and row.id == stored.account_id
+                ),
+                None,
+            )
+            if current is None or current.token_version != stored.version:
+                return False
+            if self._cipher is None:
+                current.encrypted_access = encrypted_access
+                current.encrypted_refresh = encrypted_refresh
+                current.token_expires_at = expires_at
+                current.token_version += 1
+                return True
+            access = self._cipher.decrypt(
+                encrypted_access, token_context(self._business_id, stored.login, "access")
+            )
+            refresh = self._cipher.decrypt(
+                encrypted_refresh, token_context(self._business_id, stored.login, "refresh")
+            )
+            for row in rows:
+                row.encrypted_access = self._cipher.encrypt(
+                    access, token_context(row.business_id, stored.login, "access")
+                )
+                row.encrypted_refresh = self._cipher.encrypt(
+                    refresh, token_context(row.business_id, stored.login, "refresh")
+                )
+                row.token_expires_at = expires_at
+                row.token_version += 1
+            return True
 
     async def mark_needs_reconnect(self, login: str) -> None:
         async with self._sessions.begin() as session:
             await session.execute(
                 update(AdAccountRow)
                 .where(
-                    AdAccountRow.business_id == self._business_id,
+                    AdAccountRow.platform == "yandex_direct",
                     AdAccountRow.external_login == login,
+                    AdAccountRow.state != AccountState.DISCONNECTED.value,
                 )
                 .values(state=AccountState.NEEDS_RECONNECT.value)
             )
@@ -424,8 +562,9 @@ class SqlAccountTokens:
             await session.execute(
                 update(AdAccountRow)
                 .where(
-                    AdAccountRow.business_id == self._business_id,
+                    AdAccountRow.platform == "yandex_direct",
                     AdAccountRow.external_login == login,
+                    AdAccountRow.state != AccountState.DISCONNECTED.value,
                 )
                 .values(last_balance_micros=balance_micros, balance_checked_at=checked_at)
             )
@@ -493,6 +632,49 @@ class SqlMarking:
             return None
 
     async def save(self, marking: Marking) -> None:
+        async with self._sessions() as session:
+            logins = list(
+                await session.scalars(
+                    select(AdAccountRow.external_login).where(
+                        AdAccountRow.business_id == self._business_id,
+                        AdAccountRow.platform == "yandex_direct",
+                        AdAccountRow.state != AccountState.DISCONNECTED.value,
+                    )
+                )
+            )
+            sibling_ids = (
+                list(
+                    await session.scalars(
+                        select(AdAccountRow.business_id).where(
+                            AdAccountRow.platform == "yandex_direct",
+                            AdAccountRow.external_login.in_(logins),
+                            AdAccountRow.business_id != self._business_id,
+                            AdAccountRow.state != AccountState.DISCONNECTED.value,
+                        )
+                    )
+                )
+                if logins
+                else []
+            )
+            sibling_rows = (
+                list(
+                    await session.scalars(
+                        select(MarkingRow).where(MarkingRow.business_id.in_(sibling_ids))
+                    )
+                )
+                if sibling_ids
+                else []
+            )
+        for row in sibling_rows:
+            try:
+                sibling_kind = AdvertiserKind(row.kind)
+                sibling_inn = self._cipher.decrypt(
+                    row.encrypted_inn, marking_context(row.business_id, "inn")
+                )
+            except (DecryptionFailed, ValueError):
+                raise SharedAccountMarkingMismatch from None
+            if sibling_kind is not marking.kind or sibling_inn != marking.inn:
+                raise SharedAccountMarkingMismatch
         fields = {
             "kind": marking.kind.value,
             "encrypted_inn": self._seal(marking.inn, "inn"),

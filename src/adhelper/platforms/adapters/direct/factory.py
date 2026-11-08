@@ -21,6 +21,7 @@ from adhelper.accounts.application.service import (
 )
 from adhelper.accounts.domain.ports import TokenCipher
 from adhelper.config import Settings
+from adhelper.ledger.adapters.sql import SqlChangeRepository
 from adhelper.platforms.adapters.direct.platform import DirectPlatform
 from adhelper.platforms.adapters.direct.transport import (
     DirectAuthError,
@@ -76,7 +77,7 @@ class DirectPlatforms:
 
     def _tokens(self, business_id: UUID) -> TokenSource:
         vault = TokenVault(
-            SqlAccountTokens(self._sessions, business_id),
+            SqlAccountTokens(self._sessions, business_id, self._cipher),
             business_id,
             self._provider,
             self._cipher,
@@ -104,7 +105,12 @@ class DirectPlatforms:
             return None
 
     def __call__(self, business_id: UUID, login: str) -> DirectPlatform:
-        return DirectPlatform(self._client, self._tokens(business_id), self._clock)
+        async def campaign_ids_for(account: str) -> tuple[str, ...]:
+            return await SqlChangeRepository.campaign_ids_for(self._sessions, business_id, account)
+
+        return DirectPlatform(
+            self._client, self._tokens(business_id), self._clock, campaign_ids_for
+        )
 
     async def aclose(self) -> None:
         await self._client.aclose()

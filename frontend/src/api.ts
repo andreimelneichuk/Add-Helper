@@ -354,6 +354,9 @@ export function createApi(businessId: string, csrf: string) {
       request<ReworkView>(`${base}/reworks/${id}/choose`, { method: "POST", body: JSON.stringify({ creative_id: creativeId }) }, csrf),
     withdraw: (id: number) => request<CreativeReport>(`${base}/creatives/${id}/withdraw`, { method: "POST" }, csrf),
     accounts: (init?: RequestInit) => request<AdAccount[]>(`${base}/accounts`, init),
+    availableAccounts: (init?: RequestInit) => request<AdAccount[]>(`${base}/accounts/available`, init),
+    attachAccount: (login: string) =>
+      request<AdAccount>(`${base}/accounts/attach`, { method: "POST", body: JSON.stringify({ login }) }, csrf),
     balance: (login: string) => request<AccountBalance>(`${base}/accounts/${part(login)}/balance`),
     photos: (init?: RequestInit) => request<Photos>(`${base}/photos`, init),
     photoUrl: (id: number) => `${base}/photos/${id}`,

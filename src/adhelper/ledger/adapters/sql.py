@@ -82,6 +82,25 @@ class SqlChangeRepository:
         self._sessions = sessions
         self._business_id = business_id
 
+    @staticmethod
+    async def campaign_ids_for(
+        sessions: async_sessionmaker[AsyncSession], business_id: UUID, account: str
+    ) -> tuple[str, ...]:
+        statement = (
+            select(ChangeRow.after["campaign_id"].astext)
+            .where(
+                ChangeRow.business_id == business_id,
+                ChangeRow.account == account,
+                ChangeRow.kind == ChangeKind.CREATE_CAMPAIGN.value,
+                ChangeRow.status == ChangeStatus.APPLIED.value,
+                ChangeRow.after.is_not(None),
+                ChangeRow.after.has_key("campaign_id"),
+            )
+            .distinct()
+        )
+        async with sessions() as session:
+            return tuple(value for value in await session.scalars(statement) if value)
+
     async def add(
         self,
         proposed: ProposedChange,

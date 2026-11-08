@@ -58,11 +58,11 @@ async def test_token_comes_from_own_business_only(sessions: Sessions) -> None:
     client = DirectHttpClient(transport=direct.transport())
     platforms = DirectPlatforms(client, sessions, UnconfiguredProvider(), _cipher(), lambda: NOW)
 
-    assert await platforms(mine, LOGIN).read_campaigns(LOGIN) == []
+    assert await platforms(mine, LOGIN).read_account_campaigns(LOGIN) == []
     assert direct.requests[0]["headers"]["authorization"] == "Bearer secret-access"
     # Тот же логин у другого бизнеса: токена нет, нужен вход владельца, запроса нет.
     with pytest.raises(DirectAuthError):
-        await platforms(other, LOGIN).read_campaigns(LOGIN)
+        await platforms(other, LOGIN).read_account_campaigns(LOGIN)
     assert len(direct.requests) == 1
     await platforms.aclose()
 
@@ -82,6 +82,6 @@ async def test_token_written_with_another_key_asks_owner_to_reconnect(sessions: 
     platforms = DirectPlatforms(client, sessions, UnconfiguredProvider(), other_key, lambda: NOW)
 
     with pytest.raises(DirectAuthError):
-        await platforms(business_id, LOGIN).read_campaigns(LOGIN)
+        await platforms(business_id, LOGIN).read_account_campaigns(LOGIN)
     assert direct.requests == []
     await platforms.aclose()

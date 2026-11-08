@@ -118,7 +118,7 @@ export type State = SessionState & ChatState & WizardState & CabinetState;
 export type BudgetOptions = { min: number; max: number; presets: number[] };
 /** Шаги мастера после входа работают с бизнесом через эти методы. */
 export type ReworkApi = Pick<Api, "rework" | "reworkSet" | "chooseRework">;
-export type WizardApi = Pick<Api, "accounts" | "connect" | "marking" | "saveMarking" | "tagCheck" | "requestTagCheck" | "launchCheck" | "startLaunch" | "wizardAds" | "manualTokenLink" | "saveManualToken">;
+export type WizardApi = Pick<Api, "accounts" | "availableAccounts" | "attachAccount" | "connect" | "marking" | "saveMarking" | "tagCheck" | "requestTagCheck" | "launchCheck" | "startLaunch" | "wizardAds" | "manualTokenLink" | "saveManualToken">;
 export type WizardDeps = {
   session: () => Promise<{ me: Me; businesses: Business[] } | null>;
   open: (businessId: string, csrf: string) => WizardApi;

@@ -298,11 +298,23 @@ class FakeDirect:
             return httpx.Response(201, headers={"retryIn": "2"})
         definition = body["params"]
         fields = definition["FieldNames"]
+        campaign_filter = next(
+            (
+                item
+                for item in definition.get("SelectionCriteria", {}).get("Filter", [])
+                if item.get("Field") == "CampaignId"
+            ),
+            None,
+        )
+        rows = self.report_rows
+        if campaign_filter is not None:
+            campaign_ids = set(campaign_filter["Values"])
+            rows = [row for row in rows if row[1] in campaign_ids]
         lines = ["\t".join(fields)]
         if fields == ["Cost"]:
-            lines.append(str(sum(cost for _, _, cost in self.report_rows)))
+            lines.append(str(sum(cost for _, _, cost in rows)))
         else:
-            for day, campaign_id, cost in self.report_rows:
+            for day, campaign_id, cost in rows:
                 values = {"Date": day, "CampaignId": campaign_id, "Cost": str(cost)}
                 lines.append("\t".join(values[f] for f in fields))
         return httpx.Response(

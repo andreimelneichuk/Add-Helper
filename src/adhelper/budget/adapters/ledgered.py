@@ -85,8 +85,14 @@ class LedgeredBudgetPlatform:
             for c in campaigns
         ]
 
+    async def read_account_campaigns(self, account: str) -> Sequence[CampaignBudget]:
+        return await self._platform.read_account_campaigns(account)
+
     async def fetch_spend(self, account: str) -> SpendSnapshot:
         return await self._platform.fetch_spend(account)
+
+    async def fetch_account_spend(self, account: str) -> SpendSnapshot:
+        return await self._platform.fetch_account_spend(account)
 
     async def fetch_balance(self, account: str) -> int:
         return await self._platform.fetch_balance(account)

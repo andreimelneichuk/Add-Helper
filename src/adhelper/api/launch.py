@@ -16,6 +16,7 @@ from adhelper.accounts.application.marking import (
     AdvertiserKind,
     Marking,
     MarkingProblem,
+    SharedAccountMarkingMismatch,
     mask_inn,
     masked,
     save_marking,
@@ -214,7 +215,14 @@ def launch_router() -> APIRouter:
         phone = _text(raw, "phone") or None
         okved = _text(raw, "okved").strip() or None
         marking = Marking(kind, _text(raw, "inn").strip(), _text(raw, "name"), phone, okved)
-        problem = await save_marking(_store(request, business_id), marking)
+        try:
+            problem = await save_marking(_store(request, business_id), marking)
+        except SharedAccountMarkingMismatch:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "В этом кабинете уже указан другой рекламодатель. "
+                "Для другого ИНН подключите отдельный кабинет.",
+            ) from None
         if problem is not None:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, MARKING_PROBLEMS[problem])
         return await get_marking(request, business_id)

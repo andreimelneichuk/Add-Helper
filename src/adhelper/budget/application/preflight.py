@@ -84,11 +84,18 @@ class StoredPeriodPreflight:
         if record.period.ends_at is not None and ends_at > record.period.ends_at:
             return "ends_after_period"
         try:
-            campaigns = await self.platform.read_campaigns(change.account)
+            campaigns = await self.platform.read_account_campaigns(change.account)
         except PlatformUnavailable as error:
             raise GatewayUnavailable(str(error)) from error
+        aggregate_limit = await self.store.account_hard_limit(change.account, self.clock())
+        aggregate_period = BudgetPeriod(
+            aggregate_limit or record.period.hard_limit,
+            record.period.reserve_bp,
+            record.period.starts_at,
+            record.period.ends_at,
+        )
         total = sum(c.limit for c in campaigns) + int(change.planned["limit"])
-        if total > record.period.operating_budget:
+        if total > aggregate_period.operating_budget:
             return "exceeds_operating_budget"
         return None
 
@@ -103,11 +110,18 @@ class StoredPeriodPreflight:
         history = await self.store.recent_snapshots(record.id)
         burn = burn_from_history(history)
         try:
-            campaigns = await self.platform.read_campaigns(change.account)
-            snapshot = await self.platform.fetch_spend(change.account)
+            campaigns = await self.platform.read_account_campaigns(change.account)
+            snapshot = await self.platform.fetch_account_spend(change.account)
         except PlatformUnavailable as error:
             raise GatewayUnavailable(str(error)) from error
         spent = corrected_spend(freshest(snapshot, history), burn, now)
         period_spent = max(spent - (record.opening_spent or 0), 0)
-        reason = check_resume(record.period, campaigns, change.target_ref, period_spent, now)
+        aggregate_limit = await self.store.account_hard_limit(change.account, now)
+        aggregate_period = BudgetPeriod(
+            aggregate_limit or record.period.hard_limit,
+            record.period.reserve_bp,
+            record.period.starts_at,
+            record.period.ends_at,
+        )
+        reason = check_resume(aggregate_period, campaigns, change.target_ref, period_spent, now)
         return reason.value if reason else None

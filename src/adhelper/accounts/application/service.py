@@ -16,6 +16,7 @@ from adhelper.accounts.domain.model import (
     OAuthTokens,
     SessionInfo,
     StoredTokens,
+    token_context,
 )
 from adhelper.accounts.domain.ports import (
     AccountTaken,
@@ -44,6 +45,7 @@ __all__ = [
     "TokenInvalid",
     "TokenVault",
     "hash_token",
+    "token_context",
 ]
 
 logger = logging.getLogger(__name__)
@@ -93,10 +95,6 @@ def hash_token(token: str) -> str:
 def _challenge(verifier: str) -> str:
     digest = hashlib.sha256(verifier.encode()).digest()
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
-
-
-def token_context(business_id: UUID, login: str, kind: str) -> str:
-    return f"ad_account:{business_id}:{login}:{kind}"
 
 
 class TokenVault:
@@ -280,6 +278,52 @@ class AccountsService:
                         account = replace(account, state=AccountState.NEEDS_RECONNECT)
             result.append(account)
         return result
+
+    async def available_accounts(self, user_id: UUID, business_id: UUID) -> Sequence[AdAccount]:
+        scope = self._scope_for(user_id)
+        if await scope.business(business_id) is None:
+            raise BusinessNotFound
+        accounts = await scope.available_accounts(business_id)
+        return [account for _source_business_id, account in accounts]
+
+    async def attach_existing_account(
+        self, user_id: UUID, business_id: UUID, login: str
+    ) -> AdAccount:
+        scope = self._scope_for(user_id)
+        if await scope.business(business_id) is None:
+            raise BusinessNotFound
+        sources = await scope.available_accounts(business_id)
+        source = next(
+            (
+                (source_business_id, account)
+                for source_business_id, account in sources
+                if account.login == login and account.state == AccountState.CONNECTED
+            ),
+            None,
+        )
+        if source is None:
+            raise AccountTaken
+        source_business_id, account = source
+        stored = await self._tokens_for(source_business_id).load(login)
+        if stored is None:
+            raise AccountTaken
+        try:
+            access = self._cipher.decrypt(
+                stored.encrypted_access, token_context(source_business_id, login, "access")
+            )
+            refresh = self._cipher.decrypt(
+                stored.encrypted_refresh, token_context(source_business_id, login, "refresh")
+            )
+        except DecryptionFailed:
+            raise ReconnectRequired from None
+        tokens = OAuthTokens(access, refresh, stored.expires_at, account.scopes)
+        return await self._tokens_for(business_id).save_connected(
+            login,
+            account.platform,
+            self._cipher.encrypt(access, token_context(business_id, login, "access")),
+            self._cipher.encrypt(refresh, token_context(business_id, login, "refresh")),
+            tokens,
+        )
 
     async def begin_connect(self, user_id: UUID, business_id: UUID) -> tuple[str, str]:
         if await self._scope_for(user_id).business(business_id) is None:
