@@ -177,6 +177,7 @@ class SqlWizardAds:
             select(CreativeSetRow)
             .where(
                 CreativeSetRow.business_id == self._business_id,
+                CreativeSetRow.reason == "wizard",
                 CreativeSetRow.kept.is_not(None),
             )
             .order_by(CreativeSetRow.id.desc())
@@ -209,7 +210,10 @@ class SqlWizardAds:
     async def all_ads(self) -> list[WizardAdItem]:
         statement = (
             select(CreativeSetRow)
-            .where(CreativeSetRow.business_id == self._business_id)
+            .where(
+                CreativeSetRow.business_id == self._business_id,
+                CreativeSetRow.reason == "wizard",
+            )
             .order_by(CreativeSetRow.id.desc())
             .limit(1)
         )
@@ -248,7 +252,10 @@ class SqlWizardAds:
     ) -> WizardAdItem:
         statement = (
             select(CreativeSetRow)
-            .where(CreativeSetRow.business_id == self._business_id)
+            .where(
+                CreativeSetRow.business_id == self._business_id,
+                CreativeSetRow.reason == "wizard",
+            )
             .order_by(CreativeSetRow.id.desc())
             .limit(1)
             .with_for_update()
@@ -298,7 +305,10 @@ class SqlWizardAds:
     async def update_ad(self, index: int, headline: str, text: str) -> WizardAdItem | None:
         statement = (
             select(CreativeSetRow)
-            .where(CreativeSetRow.business_id == self._business_id)
+            .where(
+                CreativeSetRow.business_id == self._business_id,
+                CreativeSetRow.reason == "wizard",
+            )
             .order_by(CreativeSetRow.id.desc())
             .limit(1)
             .with_for_update()
@@ -330,7 +340,10 @@ class SqlWizardAds:
     async def set_active(self, index: int, active: bool) -> bool:
         statement = (
             select(CreativeSetRow)
-            .where(CreativeSetRow.business_id == self._business_id)
+            .where(
+                CreativeSetRow.business_id == self._business_id,
+                CreativeSetRow.reason == "wizard",
+            )
             .order_by(CreativeSetRow.id.desc())
             .limit(1)
             .with_for_update()
@@ -360,7 +373,10 @@ class SqlWizardAds:
     async def set_archived(self, index: int, archived: bool) -> bool:
         statement = (
             select(CreativeSetRow)
-            .where(CreativeSetRow.business_id == self._business_id)
+            .where(
+                CreativeSetRow.business_id == self._business_id,
+                CreativeSetRow.reason == "wizard",
+            )
             .order_by(CreativeSetRow.id.desc())
             .limit(1)
             .with_for_update()

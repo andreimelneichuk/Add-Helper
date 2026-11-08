@@ -751,4 +751,4 @@ export class LiveStore extends Store {
 }
 
 /** API сервиса, если экран открыт на настоящих данных; в прототипе null. */
-export const liveApi = (store: Store): Api | null => (store instanceof LiveStore ? store.api : null);
+export const liveApi = (store: Store): Api | null => (store instanceof LiveStore ? store.api : ((store as any).api as Api | null) ?? null);

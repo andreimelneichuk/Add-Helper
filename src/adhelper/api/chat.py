@@ -64,14 +64,14 @@ def chat_router() -> APIRouter:
         lines = await ads(dashboard, window(platform_today(now), None, None))
         history_lines = await dashboard.history(limit=10)
         found = await SqlProfiles(sessions, business_id).get()
-        chosen = await SqlWizardAds(sessions, business_id).chosen()
+        all_wizard_ads = await SqlWizardAds(sessions, business_id).all_ads()
         accounts = await account_states(sessions, business_id)
         connected_logins = [login for login, state in accounts if state is AccountState.CONNECTED]
         connected_login = connected_logins[0] if connected_logins else None
 
         ad_pairs = [(f"{line.account}/{line.ad_id}", line.title) for line, _ in lines]
-        if not ad_pairs and chosen:
-            ad_pairs = [(f"draft/{i}", draft.headline) for i, draft in enumerate(chosen)]
+        if not ad_pairs and all_wizard_ads:
+            ad_pairs = [(item.id, item.headline) for item in all_wizard_ads if item.active]
         known = known_from(ad_pairs, found[0] if found else None)
 
         cost_micros = sum(line.totals.cost for line, _ in lines)
@@ -109,7 +109,7 @@ def chat_router() -> APIRouter:
             recent_history=recent_history,
             has_campaigns=bool(lines),
             connected_account=connected_login,
-            wizard_ads=tuple(draft.headline for draft in chosen),
+            wizard_ads=tuple(item.headline for item in all_wizard_ads if item.active),
         )
 
         rules = load_rules(CURRENT_RULES)

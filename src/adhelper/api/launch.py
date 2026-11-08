@@ -151,6 +151,9 @@ def launch_router() -> APIRouter:
 
     @router.get("/marking")
     async def get_marking(request: Request, business_id: Owned) -> dict[str, Any]:
+        found = await _store(request, business_id).get()
+        if found is not None:
+            return {"saved": masked(found)}
         sessions = _sessions(request)
         accounts = await account_states(sessions, business_id)
         connected = [login for login, state in accounts if state is AccountState.CONNECTED]
@@ -180,8 +183,7 @@ def launch_router() -> APIRouter:
                         }
                 except Exception as error:
                     logger.warning("Не удалось прочитать реквизиты из Директа: %s", error)
-        found = await _store(request, business_id).get()
-        return {"saved": None if found is None else masked(found)}
+        return {"saved": None}
 
     # Тело разбираем сами: стандартная ошибка проверки вернула бы ИНН в ответе.
     @router.put("/marking")

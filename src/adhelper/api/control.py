@@ -1,4 +1,5 @@
 import logging
+import secrets
 from typing import Any
 from uuid import UUID
 
@@ -234,9 +235,17 @@ def control_router() -> APIRouter:
         business_id: OwnedChecked,
         period: Period,
     ) -> dict[str, str]:
-        if account.startswith("w") or ad_id.startswith("w"):
+        target = account if (account.startswith("w") or account.startswith("draft")) else ad_id
+        if target.startswith("draft/"):
+            target = target.removeprefix("draft/")
+        is_wizard_target = (
+            account.startswith("w")
+            or ad_id.startswith("w")
+            or account == "draft"
+            or "draft/" in ad_id
+        )
+        if is_wizard_target:
             wizard = SqlWizardAds(_sessions(request), business_id)
-            target = account if account.startswith("w") else ad_id
             idx_str = target.removeprefix("w")
             if idx_str.isdigit():
                 ok = await wizard.set_active(int(idx_str), body.active)
@@ -279,9 +288,17 @@ def control_router() -> APIRouter:
         business_id: OwnedChecked,
         period: Period,
     ) -> dict[str, str]:
-        if account.startswith("w") or ad_id.startswith("w"):
+        target = account if (account.startswith("w") or account.startswith("draft")) else ad_id
+        if target.startswith("draft/"):
+            target = target.removeprefix("draft/")
+        is_wizard_target = (
+            account.startswith("w")
+            or ad_id.startswith("w")
+            or account == "draft"
+            or "draft/" in ad_id
+        )
+        if is_wizard_target:
             wizard = SqlWizardAds(_sessions(request), business_id)
-            target = account if account.startswith("w") else ad_id
             idx_str = target.removeprefix("w")
             if idx_str.isdigit():
                 ok = await wizard.set_archived(int(idx_str), True)
@@ -295,10 +312,11 @@ def control_router() -> APIRouter:
         if view is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
 
-        # Если объявление уже на площадке, сначала останавливаем показы через журнал (Ledger)
+        # Если объявление уже на площадке, сначала останавливаем показы через журнал (Ledger).
+        # Используем динамический request_id, чтобы повтор не блокировался старой записью.
         platform = _platform(request, business_id, account)
         ledger = _ledger(request, business_id, platform)
-        request_id = f"archive-{account}-{ad_id}"
+        request_id = f"archive-{account}-{ad_id}-{secrets.token_urlsafe(12)}"
         done = await set_ad_active(
             ledger,
             account,

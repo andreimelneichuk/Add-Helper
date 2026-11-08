@@ -7,6 +7,7 @@ import type { LiveStore } from "../live";
 import { AdArt, AdDetail, AdMaker } from "./AdDetail";
 import { Decisions } from "./Decisions";
 import { GenerateAdsModal } from "./ads/GenerateAdsModal";
+import { LaunchModal } from "./ads/LaunchModal";
 import "./Ads.css";
 
 type AdsView = Pick<State, "price" | "ads" | "adsOff" | "situation" | "live" | "openAd">;
@@ -47,6 +48,7 @@ export function Ads({ store }: { store: Store }) {
   const s = useStore(store, (x): AdsView => ({ price: x.price, ads: x.ads, adsOff: x.adsOff, situation: x.situation, live: x.live, openAd: x.openAd }));
   const [filter, setFilter] = useState<Filter>("all");
   const [genModalOpen, setGenModalOpen] = useState(false);
+  const [launchModalOpen, setLaunchModalOpen] = useState(false);
   if (s.openAd === "new") return <AdMaker store={store} />;
   if (s.openAd && s.ads.some((a) => a.id === s.openAd)) return <AdDetail store={store} id={s.openAd} />;
 
@@ -76,13 +78,13 @@ export function Ads({ store }: { store: Store }) {
         <h2 id="ann-list-title" className="ah-panel-title">Объявления</h2>
         <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
           {isPrelaunch && (
-            <a
-              href="/?start"
+            <button
+              type="button"
               className="ah-btn ah-btn-primary"
-              style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}
+              onClick={() => setLaunchModalOpen(true)}
             >
               {s.live && !s.live.account ? "Подключить Директ и запустить" : "Запустить рекламу"}
-            </a>
+            </button>
           )}
           <button type="button" className="ah-btn" onClick={() => setGenModalOpen(true)}>
             Сгенерировать объявления
@@ -112,6 +114,7 @@ export function Ads({ store }: { store: Store }) {
         {groups[filter].map((ad) => <Card key={ad.id} store={store} s={s} ad={ad} />)}
       </div>
       <GenerateAdsModal isOpen={genModalOpen} onClose={() => setGenModalOpen(false)} store={store} />
+      <LaunchModal isOpen={launchModalOpen} onClose={() => setLaunchModalOpen(false)} store={store} />
     </>
   );
   return (
