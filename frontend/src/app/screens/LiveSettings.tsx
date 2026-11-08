@@ -655,7 +655,17 @@ function Channels({ api }: { api: Api }) {
 }
 
 /** Остаток на счёте в Директе: читается из Яндекса при открытии, сохраняется в базе данных. */
-function Balance({ api, login, initialBalance }: { api: Api; login: string; initialBalance?: number | null }) {
+function Balance({
+  api,
+  login,
+  initialBalance,
+  onBalance,
+}: {
+  api: Api;
+  login: string;
+  initialBalance?: number | null;
+  onBalance?: (rubles: number) => void;
+}) {
   const [text, setText] = useState(() =>
     initialBalance !== null && initialBalance !== undefined
       ? `На счёте в Директе: ${rub(Math.round(initialBalance / MICROS_PER_RUBLE))}`
@@ -663,10 +673,18 @@ function Balance({ api, login, initialBalance }: { api: Api; login: string; init
   );
   useEffect(() => {
     api.balance(login).then(
-      (b) => setText(b.balance_micros !== null ? `На счёте в Директе: ${rub(Math.round(b.balance_micros / MICROS_PER_RUBLE))}` : (b.problem ?? "Остаток сейчас недоступен.")),
+      (b) => {
+        if (b.balance_micros !== null) {
+          const rubles = Math.round(b.balance_micros / MICROS_PER_RUBLE);
+          setText(`На счёте в Директе: ${rub(rubles)}`);
+          onBalance?.(rubles);
+        } else {
+          setText(b.problem ?? "Остаток сейчас недоступен.");
+        }
+      },
       (e: unknown) => setText(message(e)),
     );
-  }, [api, login]);
+  }, [api, login, onBalance]);
   return <p className="set-hint">{text}</p>;
 }
 
@@ -726,6 +744,19 @@ function Accounts({ api, store }: { api: Api; store?: Store }) {
       (e: unknown) => setError(message(e)),
     );
   }, [api, store]);
+  const onBalance = useCallback(
+    (rubles: number) => {
+      if (store && "live" in store.state && store.state.live) {
+        store.set({
+          live: {
+            ...store.state.live,
+            balance: rubles,
+          },
+        });
+      }
+    },
+    [store],
+  );
   const connect = async () => {
     setBusy(true);
     setError(null);
@@ -752,7 +783,7 @@ function Accounts({ api, store }: { api: Api; store?: Store }) {
       )}
       {accounts?.map((a) => (
         <div key={a.id} className="set-row">
-          <div><strong>{a.login}</strong><p className="set-hint">Яндекс Директ</p>{a.state === "connected" && (a as { status?: string }).status !== "needs_reconnect" && <Balance api={api} login={a.login} initialBalance={a.last_balance_micros} />}</div>
+          <div><strong>{a.login}</strong><p className="set-hint">Яндекс Директ</p>{a.state === "connected" && (a as { status?: string }).status !== "needs_reconnect" && <Balance api={api} login={a.login} initialBalance={a.last_balance_micros} onBalance={onBalance} />}</div>
           <span className={a.state === "connected" && (a as { status?: string }).status !== "needs_reconnect" ? "ah-tag ah-tag-good" : "ah-tag ah-tag-bad"}>{ACCOUNT_STATE[a.state] ?? a.state}</span>
         </div>
       ))}
@@ -763,6 +794,15 @@ function Accounts({ api, store }: { api: Api; store?: Store }) {
         <ManualToken api={api} onSaved={(saved) => {
           setAccounts((all) => [...(all ?? []).filter((x) => x.login !== saved.login), saved]);
           store?.set({ yandex: true });
+          if (saved.last_balance_micros != null && store && "live" in store.state && store.state.live) {
+            store.set({
+              live: {
+                ...store.state.live,
+                balance: Math.round(saved.last_balance_micros / MICROS_PER_RUBLE),
+                account: saved.login,
+              },
+            });
+          }
         }} />
       )}
       {error && <p className="ah-error" role="alert">{error}</p>}
