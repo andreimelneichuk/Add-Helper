@@ -461,7 +461,7 @@ describe("шаги после входа на сервисе", () => {
   it("кабинет подключается через Яндекс с возвратом в мастер", async () => {
     const api = wizardApi();
     const { store, user } = wizard(4, api);
-    await user.click(await screen.findByRole("button", { name: "Войти через Яндекс OAuth" }));
+    await user.click(await screen.findByRole("button", { name: "Подключить кабинет" }));
     expect(api.connect).toHaveBeenCalledWith("start");
     expect(store.navigate).toHaveBeenCalledWith("https://oauth.yandex.ru/authorize?x=1");
   });

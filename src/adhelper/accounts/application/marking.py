@@ -16,6 +16,7 @@ __all__ = [
     "Marking",
     "MarkingProblem",
     "MarkingStore",
+    "mask_inn",
     "masked",
     "save_marking",
 ]

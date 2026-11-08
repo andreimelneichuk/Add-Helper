@@ -226,8 +226,8 @@ test.describe("Задача 15. Онбординг клиента (onboarding.sp
     await page.getByRole("button", { name: "Продолжить" }).click();
 
     // 5. Шаг маркировки: автоматическая сверка реквизитов в Директе
-    await expect(page.getByRole("heading", { level: 1, name: "Реквизиты для маркировки" })).toBeVisible();
-    await expect(page.getByText(/Реквизиты указаны в Директе: ИНН 7707083893/)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("heading", { level: 1, name: "Укажите ИНН для маркировки" })).toBeVisible();
+    await expect(page.getByText(/Реквизиты указаны в Директе: ИНН .*3893/)).toBeVisible({ timeout: 20_000 });
     await page.getByRole("button", { name: "Продолжить" }).click();
 
     // 6. Шаг кода статистики Яндекс Метрики

@@ -177,11 +177,16 @@ export async function transferDraft(deps: TransferDeps, draft: StartDraft): Prom
       if (!(e instanceof ApiError) || e.status >= 500) throw e;
     }
   }
-  if (draft.customAds && draft.customAds.length > 0 && (api as any).createWizardAd) {
+  if (draft.customAds && draft.customAds.length > 0) {
     for (const ca of draft.customAds) {
-      if (ca.id.startsWith("custom-")) {
+      if (ca.id.startsWith("custom-") && (api as any).createWizardAd) {
         try {
           await (api as any).createWizardAd({ headline: ca.headline, text: ca.text });
+        } catch { /* без ошибки мастера */ }
+      } else if ((ca.id.startsWith("w") || ca.id.startsWith("draft-")) && (api as any).updateWizardAd) {
+        try {
+          const wId = ca.id.startsWith("w") ? ca.id : ca.id.replace("draft-", "w");
+          await (api as any).updateWizardAd(wId, { headline: ca.headline, text: ca.text });
         } catch { /* без ошибки мастера */ }
       }
     }

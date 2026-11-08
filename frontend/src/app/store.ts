@@ -309,7 +309,13 @@ export class Store {
   private persistDraft() {
     if (this.state.stage !== "start") return;
     const s = this.state;
-    const kept = s.ads.map((a, i) => (s.draftOff[a.id] ? -1 : i)).filter((i) => i >= 0);
+    const kept = s.ads
+      .map((a, i) => {
+        if (s.draftOff[a.id] || a.id.startsWith("custom-")) return -1;
+        const match = a.id.match(/^[wd](\d+)$/) || a.id.match(/^draft-(\d+)$/);
+        return match ? Number(match[1]) : i;
+      })
+      .filter((idx) => idx >= 0);
     const ads = s.adSet ? { ads: { id: s.adSet.id, token: s.adSet.token, kept } } : {};
     saveDraft({
       site: s.site,
@@ -498,7 +504,13 @@ export class Store {
     if (this.saving) return;
     this.saving = true;
     const s = this.state;
-    const kept = s.ads.map((a, i) => (s.draftOff[a.id] ? -1 : i)).filter((i) => i >= 0);
+    const kept = s.ads
+      .map((a, i) => {
+        if (s.draftOff[a.id] || a.id.startsWith("custom-")) return -1;
+        const match = a.id.match(/^[wd](\d+)$/) || a.id.match(/^draft-(\d+)$/);
+        return match ? Number(match[1]) : i;
+      })
+      .filter((idx) => idx >= 0);
     const ads = s.adSet && kept.length > 0 ? { ads: { id: s.adSet.id, token: s.adSet.token, kept } } : {};
     // Повтор после сбоя идёт в уже созданный бизнес, а не создаёт второй.
     const businessId = loadDraft()?.businessId;

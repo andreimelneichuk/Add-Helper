@@ -234,6 +234,7 @@ class SqlWizardAds:
             .where(CreativeSetRow.business_id == self._business_id)
             .order_by(CreativeSetRow.id.desc())
             .limit(1)
+            .with_for_update()
         )
         async with self._sessions.begin() as session:
             row = await session.scalar(statement)
@@ -283,6 +284,7 @@ class SqlWizardAds:
             .where(CreativeSetRow.business_id == self._business_id)
             .order_by(CreativeSetRow.id.desc())
             .limit(1)
+            .with_for_update()
         )
         async with self._sessions.begin() as session:
             row = await session.scalar(statement)
@@ -314,6 +316,7 @@ class SqlWizardAds:
             .where(CreativeSetRow.business_id == self._business_id)
             .order_by(CreativeSetRow.id.desc())
             .limit(1)
+            .with_for_update()
         )
         async with self._sessions.begin() as session:
             row = await session.scalar(statement)
@@ -341,6 +344,7 @@ class SqlWizardAds:
             .where(CreativeSetRow.business_id == self._business_id)
             .order_by(CreativeSetRow.id.desc())
             .limit(1)
+            .with_for_update()
         )
         async with self._sessions.begin() as session:
             row = await session.scalar(statement)

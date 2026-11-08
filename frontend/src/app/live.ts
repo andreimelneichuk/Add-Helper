@@ -179,7 +179,7 @@ export async function loadLive(api: Api, name: string): Promise<Partial<State>> 
   const hasProfileFacts = !!(profile && (profile.services?.some((s) => s.name?.trim()) || profile.features?.length > 0 || profile.niche?.trim()));
   if (ads.length === 0 && api.wizardAds && hasProfileFacts) {
     try {
-      const wizard = await api.wizardAds();
+      const wizard = await api.wizardAds(true);
       if (wizard?.ads?.length) {
         ads = wizard.ads.map((w, i) => {
           const isArchived = !!w.archived;
@@ -478,35 +478,33 @@ export class LiveStore extends Store {
       case "adSave": {
         const ad = a.value;
         const isNew = !s.ads.some((x) => x.id === ad.id);
-        if (!s.live?.hasCampaigns || ad.id.startsWith("w") || isNew) {
-          if (isNew) {
-            if (this.api.createWizardAd) {
-              const created = await this.api.createWizardAd({ headline: ad.title, text: ad.text });
-              const newAd: Ad = {
-                id: created.id || `w${s.ads.length}`,
-                name: created.headline,
-                tag: "готово к запуску",
-                tagTone: "accent",
-                leads: 0,
-                cost: 0,
-                hook: created.headline,
-                title: created.headline,
-                text: created.text,
-                facts: Array.isArray(created.facts) ? created.facts.join(", ") : "Ваш текст",
-              };
-              this.set({ ads: [newAd, ...this.state.ads], openAd: null });
-              return `Добавил объявление «${created.headline}». Оно готово к запуску.`;
-            }
-          } else {
-            if (this.api.updateWizardAd) {
-              await this.api.updateWizardAd(ad.id, { headline: ad.title, text: ad.text });
-            }
-            const updatedAds = this.state.ads.map((x) =>
-              x.id === ad.id ? { ...x, title: ad.title, hook: ad.title, name: ad.title, text: ad.text } : x
-            );
-            this.set({ ads: updatedAds, openAd: null });
-            return `Сохранил изменения в «${ad.title}».`;
+        if (isNew) {
+          if (this.api.createWizardAd) {
+            const created = await this.api.createWizardAd({ headline: ad.title, text: ad.text });
+            const newAd: Ad = {
+              id: created.id || `w${s.ads.length}`,
+              name: created.headline,
+              tag: "готово к запуску",
+              tagTone: "accent",
+              leads: 0,
+              cost: 0,
+              hook: created.headline,
+              title: created.headline,
+              text: created.text,
+              facts: Array.isArray(created.facts) ? created.facts.join(", ") : "Ваш текст",
+            };
+            this.set({ ads: [newAd, ...this.state.ads], openAd: null });
+            return `Добавил объявление «${created.headline}». Оно готово к запуску.`;
           }
+        } else {
+          if (ad.id.startsWith("w") && this.api.updateWizardAd) {
+            await this.api.updateWizardAd(ad.id, { headline: ad.title, text: ad.text });
+          }
+          const updatedAds = this.state.ads.map((x) =>
+            x.id === ad.id ? { ...x, title: ad.title, hook: ad.title, name: ad.title, text: ad.text } : x
+          );
+          this.set({ ads: updatedAds, openAd: null });
+          return `Сохранил изменения в «${ad.title}».`;
         }
         return `Обновление сохранено.`;
       }
@@ -542,8 +540,15 @@ export class LiveStore extends Store {
             await this.api.setAdState(account, adId, true, crypto.randomUUID());
           }
         }
+        const isLive = !!s.live?.hasCampaigns && !id.startsWith("w");
         const updatedAds = this.state.ads.map((x) =>
-          x.id === id ? { ...x, tag: "готово к запуску", tagTone: "accent" as const } : x
+          x.id === id
+            ? {
+                ...x,
+                tag: isLive ? "работает" : "готово к запуску",
+                tagTone: isLive ? ("good" as const) : ("accent" as const),
+              }
+            : x
         );
         const nextOff = { ...this.state.adsOff };
         delete nextOff[id];

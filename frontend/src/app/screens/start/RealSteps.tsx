@@ -128,7 +128,7 @@ export function RealYandex({ store, s }: Props) {
               className="ah-btn"
               onClick={connectOAuth}
             >
-              Войти через Яндекс OAuth
+              Подключить кабинет
             </button>
           </div>
           {tokenError && <p className="ah-error" role="alert" style={{ margin: 0 }}>{tokenError}</p>}

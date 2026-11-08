@@ -178,35 +178,24 @@ def wizard_ads_router() -> APIRouter:
         return {"kept": len(kept)}
 
     @router.get("/wizard-ads")
-    async def wizard_ads(request: Request, business_id: Owned) -> dict[str, Any]:
+    async def wizard_ads(
+        request: Request,
+        business_id: Owned,
+    ) -> dict[str, Any]:
         sessions = _sessions(request)
         wizard = SqlWizardAds(sessions, business_id)
         all_items = await wizard.all_ads()
-        if all_items:
-            ads_list = [
-                {
-                    "id": item.id,
-                    "headline": item.headline,
-                    "text": item.text,
-                    "facts": list(item.facts),
-                    "active": item.active,
-                    "archived": item.archived,
-                }
-                for item in all_items
-            ]
-        else:
-            chosen = await wizard.chosen()
-            ads_list = [
-                {
-                    "id": f"w{i}",
-                    "headline": d.headline,
-                    "text": d.text,
-                    "facts": [s.label for s in d.sources],
-                    "active": True,
-                    "archived": False,
-                }
-                for i, d in enumerate(chosen)
-            ]
+        ads_list = [
+            {
+                "id": item.id,
+                "headline": item.headline,
+                "text": item.text,
+                "facts": list(item.facts),
+                "active": item.active,
+                "archived": item.archived,
+            }
+            for item in all_items
+        ]
         profiles = await SqlProfiles(sessions, business_id).get()
         keywords: list[str] = []
         if profiles:
@@ -285,7 +274,7 @@ def wizard_ads_router() -> APIRouter:
         ok = await wizard.set_archived(int(idx_str), body.archived)
         if not ok:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
-        return {"status": "applied", "archived": body.archived}
+        return {"status": "applied", "archived": body.archived, "active": not body.archived}
 
     @router.delete("/wizard-ads/{ad_id}")
     async def delete_wizard_ad(

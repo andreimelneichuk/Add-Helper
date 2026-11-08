@@ -234,7 +234,7 @@ def control_router() -> APIRouter:
         business_id: OwnedChecked,
         period: Period,
     ) -> dict[str, str]:
-        if account.startswith("w") or ad_id == "undefined" or ad_id.startswith("w"):
+        if account.startswith("w") or ad_id.startswith("w"):
             wizard = SqlWizardAds(_sessions(request), business_id)
             target = account if account.startswith("w") else ad_id
             idx_str = target.removeprefix("w")
@@ -242,6 +242,7 @@ def control_router() -> APIRouter:
                 ok = await wizard.set_active(int(idx_str), body.active)
                 if ok:
                     return {"status": "applied"}
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
         view = await ad_detail(
             SqlDashboard(_sessions(request), business_id), period, account, ad_id
         )
@@ -276,8 +277,9 @@ def control_router() -> APIRouter:
         account: str,
         ad_id: str,
         business_id: OwnedChecked,
+        period: Period,
     ) -> dict[str, str]:
-        if account.startswith("w") or ad_id == "undefined" or ad_id.startswith("w"):
+        if account.startswith("w") or ad_id.startswith("w"):
             wizard = SqlWizardAds(_sessions(request), business_id)
             target = account if account.startswith("w") else ad_id
             idx_str = target.removeprefix("w")
@@ -285,8 +287,34 @@ def control_router() -> APIRouter:
                 ok = await wizard.set_archived(int(idx_str), True)
                 if ok:
                     return {"status": "applied"}
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
+
+        view = await ad_detail(
+            SqlDashboard(_sessions(request), business_id), period, account, ad_id
+        )
+        if view is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
+
+        # Если объявление уже на площадке, сначала останавливаем показы через журнал (Ledger)
+        platform = _platform(request, business_id, account)
+        ledger = _ledger(request, business_id, platform)
+        request_id = f"archive-{account}-{ad_id}"
+        done = await set_ad_active(
+            ledger,
+            account,
+            ad_id,
+            view.ad.title,
+            False,
+            request_id,
+        )
+        if done == "failed":
+            raise HTTPException(status.HTTP_409_CONFLICT, "Яндекс не принял это изменение")
+
         dashboard = SqlDashboard(_sessions(request), business_id)
         await dashboard.note_ad_state(account, ad_id, "archived")
+        await follow_owner(
+            SqlModeration(_sessions(request), business_id), ledger, account, _now(request)
+        )
         return {"status": "applied"}
 
     @router.post("/pause")

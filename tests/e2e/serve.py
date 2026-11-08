@@ -40,9 +40,9 @@ from adhelper.creatives.adapters.rules_file import load_rework_rules, load_rules
 from adhelper.creatives.adapters.sql import SqlCreativeQueue, SqlProfileSource
 from adhelper.creatives.application.service import run_queued
 from adhelper.creatives.domain.model import ModelReply
+from adhelper.platforms.domain.ports import Advertiser
 from adhelper.worker.demo import ADS, CAMPAIGNS, DEMO_LOGIN, ENV_FILE, seed_demo, write_demo_env
 from adhelper.worker.runtime import Runtime, open_runtime
-from adhelper.platforms.domain.ports import Advertiser
 from tests.budget.fake_platform import FakePlatform
 from tests.claims import with_claims
 

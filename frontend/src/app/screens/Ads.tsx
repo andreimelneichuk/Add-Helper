@@ -76,13 +76,13 @@ export function Ads({ store }: { store: Store }) {
         <h2 id="ann-list-title" className="ah-panel-title">Объявления</h2>
         <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
           {isPrelaunch && (
-            <button
-              type="button"
+            <a
+              href="/?start"
               className="ah-btn ah-btn-primary"
-              onClick={() => store.goView("settings")}
+              style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}
             >
               {s.live && !s.live.account ? "Подключить Директ и запустить" : "Запустить рекламу"}
-            </button>
+            </a>
           )}
           <button type="button" className="ah-btn" onClick={() => setGenModalOpen(true)}>
             Сгенерировать объявления

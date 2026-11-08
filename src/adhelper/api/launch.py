@@ -14,6 +14,7 @@ from adhelper.accounts.application.marking import (
     AdvertiserKind,
     Marking,
     MarkingProblem,
+    mask_inn,
     masked,
     save_marking,
 )
@@ -160,12 +161,20 @@ def launch_router() -> APIRouter:
                 try:
                     adv = await platform.read_advertiser(login)
                     if adv and adv.inn:
+                        phone = adv.phone
+                        masked_phone = (
+                            None
+                            if not phone
+                            else f"+7 ••• •••-{phone[-4:-2]}-{phone[-2:]}"
+                            if len(phone) >= 4
+                            else "••••"
+                        )
                         return {
                             "saved": {
                                 "kind": adv.kind,
-                                "inn": f"••••{adv.inn[-4:]}",
+                                "inn": mask_inn(adv.inn),
                                 "name": adv.name,
-                                "phone": adv.phone,
+                                "phone": masked_phone,
                                 "okved": adv.okved,
                             }
                         }
@@ -251,7 +260,7 @@ def launch_router() -> APIRouter:
         )
         inn_tail = adv_info.inn[-4:] if (adv_info and adv_info.inn) else ""
         marking_text = (
-            f"Маркировка: {kind_label}, ИНН ••••{inn_tail}"
+            f"Маркировка: {kind_label}, ИНН ••••••{inn_tail}"
             if marking_ok
             else "В кабинете Директа не указаны реквизиты рекламодателя (ИНН)"
         )
