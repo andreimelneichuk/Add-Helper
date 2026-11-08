@@ -17,7 +17,7 @@ from adhelper.creatives.domain.model import (
     SetStatus,
     WizardRules,
 )
-from adhelper.creatives.domain.wizard import WizardDraft, WizardSet, with_sources
+from adhelper.creatives.domain.wizard import FactSource, WizardDraft, WizardSet, with_sources
 
 DAY = timedelta(hours=24)
 # Лимит гостя считается под замком: два запроса подряд не проскочат оба.
@@ -194,10 +194,12 @@ class SqlWizardAds:
                 d = drafts[i]
                 raw_d = raw[i]
                 if not d.sources and raw_d.get("sources"):
-                    from adhelper.creatives.domain.wizard import FactSource
-
                     custom_sources = tuple(
-                        FactSource(s.get("label", "Ваш текст"), s.get("quote", ""))
+                        FactSource(
+                            fragment=s.get("quote", ""),
+                            label=s.get("label", "Ваш текст"),
+                            key="custom",
+                        )
                         for s in raw_d.get("sources", [])
                     )
                     d = WizardDraft(d.headline, d.text, sources=custom_sources)

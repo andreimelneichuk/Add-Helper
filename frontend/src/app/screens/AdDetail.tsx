@@ -199,7 +199,15 @@ export function LiveRework({ api, ad, hook, title, waitMs, onDone, onCancel }: L
 
 export function AdDetail({ store, id }: { store: Store; id: string }) {
   const s = useStoreState(store);
-  const ad = s.ads.find((a) => a.id === id)!;
+  const ad = s.ads.find((a) => a.id === id);
+  if (!ad) {
+    return (
+      <div className="anno-screen">
+        <button type="button" className="ah-btn anno-back" onClick={() => store.set({ openAd: null })}>Все объявления</button>
+        <p className="ah-muted">Объявление не найдено.</p>
+      </div>
+    );
+  }
   const name = adName(s, id);
   const isArchived = ad.tag === "в архиве" || ad.tag === "заменено";
   const off = !isArchived && (!!s.adsOff[id] || ad.tag === "отключено");
@@ -307,7 +315,9 @@ export function AdDetail({ store, id }: { store: Store; id: string }) {
                   <button type="button" className="ah-btn ah-btn-primary" onClick={() => store.ask({ action: "adRestore", value: id })}>Вернуть из архива</button>
                 ) : (
                   <>
-                    <button type="button" className="ah-btn" onClick={() => { setEditTitle(ad.title); setEditText(ad.text); setEditing(true); }}>Редактировать</button>
+                    {(!s.live?.hasCampaigns || id.startsWith("w")) && (
+                      <button type="button" className="ah-btn" onClick={() => { setEditTitle(ad.title); setEditText(ad.text); setEditing(true); }}>Редактировать</button>
+                    )}
                     {(!s.live || store.rework) && <button type="button" className="ah-btn ah-btn-primary" onClick={() => setComposing(true)}>Переделать</button>}
                     <button type="button" className="ah-btn" onClick={() => (off ? store.run({ action: "ad", value: id }) : store.ask({ action: "ad", value: id }))}>{action}</button>
                     <button type="button" className="ah-btn" onClick={() => store.ask({ action: "adArchive", value: id })}>В архив</button>

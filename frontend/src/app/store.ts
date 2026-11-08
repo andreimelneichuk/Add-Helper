@@ -264,7 +264,12 @@ export function confirmText(s: State, a: Pending): string {
     case "adArchive": return `Отправить «${adName(s, a.value)}» в архив? В любой момент можно вернуть обратно из вкладки «В архиве».`;
     case "adRestore": return `Вернуть «${adName(s, a.value)}» из архива?`;
     case "adSave": {
-      if (!s.ads.some((x) => x.id === a.value.id)) return `Добавить объявление «${a.value.name}»? Яндекс проверит его, обычно до суток. Общий бюджет не вырастет: деньги поделю между объявлениями. Отключить можно в истории.`;
+      const isPrelaunch = s.live ? !s.live.hasCampaigns : s.situation === "first";
+      if (!s.ads.some((x) => x.id === a.value.id)) {
+        if (isPrelaunch) return `Добавить объявление «${a.value.name}»? Оно пойдёт в показы после запуска рекламы.`;
+        return `Добавить объявление «${a.value.name}»? Яндекс проверит его, обычно до суток. Общий бюджет не вырастет: деньги поделю между объявлениями. Отключить можно в истории.`;
+      }
+      if (isPrelaunch) return `Сохранить изменения в «${adName(s, a.value.id)}»?`;
       return `Поставить новый вариант «${adName(s, a.value.id)}»? Старый работает, пока Яндекс проверяет новый, обычно до суток. ${inTest(s, a.value.id) ? "Идёт проверка вариантов, она закончится раньше срока. " : ""}Отменить можно в истории.`;
     }
   }
@@ -310,10 +315,10 @@ export class Store {
     if (this.state.stage !== "start") return;
     const s = this.state;
     const kept = s.ads
-      .map((a, i) => {
+      .map((a) => {
         if (s.draftOff[a.id] || a.id.startsWith("custom-")) return -1;
         const match = a.id.match(/^[wd](\d+)$/) || a.id.match(/^draft-(\d+)$/);
-        return match ? Number(match[1]) : i;
+        return match ? Number(match[1]) : -1;
       })
       .filter((idx) => idx >= 0);
     const ads = s.adSet ? { ads: { id: s.adSet.id, token: s.adSet.token, kept } } : {};
@@ -505,10 +510,10 @@ export class Store {
     this.saving = true;
     const s = this.state;
     const kept = s.ads
-      .map((a, i) => {
+      .map((a) => {
         if (s.draftOff[a.id] || a.id.startsWith("custom-")) return -1;
         const match = a.id.match(/^[wd](\d+)$/) || a.id.match(/^draft-(\d+)$/);
-        return match ? Number(match[1]) : i;
+        return match ? Number(match[1]) : -1;
       })
       .filter((idx) => idx >= 0);
     const ads = s.adSet && kept.length > 0 ? { ads: { id: s.adSet.id, token: s.adSet.token, kept } } : {};

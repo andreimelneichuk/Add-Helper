@@ -28,6 +28,8 @@ export type TransferDeps = {
     saveProfile: (profile: Profile) => Promise<unknown>;
     saveBudgetPlan: (rubles: number) => Promise<unknown>;
     adoptAds?: (choice: AdsChoice) => Promise<unknown>;
+    createWizardAd?: (body: { headline: string; text: string }) => Promise<unknown>;
+    updateWizardAd?: (id: string, body: { headline: string; text: string }) => Promise<unknown>;
   };
 };
 
@@ -179,14 +181,14 @@ export async function transferDraft(deps: TransferDeps, draft: StartDraft): Prom
   }
   if (draft.customAds && draft.customAds.length > 0) {
     for (const ca of draft.customAds) {
-      if (ca.id.startsWith("custom-") && (api as any).createWizardAd) {
+      if (ca.id.startsWith("custom-") && api.createWizardAd) {
         try {
-          await (api as any).createWizardAd({ headline: ca.headline, text: ca.text });
+          await api.createWizardAd({ headline: ca.headline, text: ca.text });
         } catch { /* без ошибки мастера */ }
-      } else if ((ca.id.startsWith("w") || ca.id.startsWith("draft-")) && (api as any).updateWizardAd) {
+      } else if ((ca.id.startsWith("w") || ca.id.startsWith("draft-")) && api.updateWizardAd) {
         try {
           const wId = ca.id.startsWith("w") ? ca.id : ca.id.replace("draft-", "w");
-          await (api as any).updateWizardAd(wId, { headline: ca.headline, text: ca.text });
+          await api.updateWizardAd(wId, { headline: ca.headline, text: ca.text });
         } catch { /* без ошибки мастера */ }
       }
     }

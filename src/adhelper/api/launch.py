@@ -258,9 +258,9 @@ def launch_router() -> APIRouter:
             if adv_info and adv_info.kind in AdvertiserKind._value2member_map_
             else (adv_info.kind if adv_info else "")
         )
-        inn_tail = adv_info.inn[-4:] if (adv_info and adv_info.inn) else ""
+        inn_str = mask_inn(adv_info.inn) if (adv_info and adv_info.inn) else ""
         marking_text = (
-            f"Маркировка: {kind_label}, ИНН ••••••{inn_tail}"
+            f"Маркировка: {kind_label}, ИНН {inn_str}"
             if marking_ok
             else "В кабинете Директа не указаны реквизиты рекламодателя (ИНН)"
         )

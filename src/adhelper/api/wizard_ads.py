@@ -288,6 +288,6 @@ def wizard_ads_router() -> APIRouter:
         ok = await wizard.set_archived(int(idx_str), True)
         if not ok:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
-        return {"status": "applied", "archived": True}
+        return {"status": "archived", "archived": True}
 
     return router
