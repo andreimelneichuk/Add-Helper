@@ -18,10 +18,13 @@ from adhelper.creatives.domain.model import (
     WizardRules,
 )
 from adhelper.creatives.domain.wizard import FactSource, WizardDraft, WizardSet, with_sources
+from adhelper.ledger.adapters.sql import ChangeRow
+from adhelper.ledger.domain.model import ChangeKind, ChangeStatus
 
 DAY = timedelta(hours=24)
 # Лимит гостя считается под замком: два запроса подряд не проскочат оба.
 GUEST_LOCK = 0x5173_0002
+WIZARD_AD_LOCK = 0x5173_0004
 
 
 class TooManySets(Exception):
@@ -163,6 +166,7 @@ class WizardAdItem:
     facts: tuple[str, ...]
     active: bool
     archived: bool = False
+    submitted: bool = False
 
 
 class SqlWizardAds:
@@ -219,6 +223,23 @@ class SqlWizardAds:
         )
         async with self._sessions() as session:
             row = await session.scalar(statement)
+            confirmed = (
+                await session.scalars(
+                    select(ChangeRow.planned).where(
+                        ChangeRow.business_id == self._business_id,
+                        ChangeRow.kind.in_(
+                            (ChangeKind.CREATE_CAMPAIGN.value, ChangeKind.CREATE_AD.value)
+                        ),
+                        ChangeRow.status == ChangeStatus.APPLIED.value,
+                    )
+                )
+            ).all()
+        submitted = {
+            (str(ad["headline"]), str(ad["text"]))
+            for planned in confirmed
+            for ad in planned.get("ads", [planned])
+            if "headline" in ad and "text" in ad
+        }
         if row is None or not row.drafts:
             return []
         view = _view(row)
@@ -243,12 +264,20 @@ class SqlWizardAds:
                     facts=facts,
                     active=is_active,
                     archived=is_archived,
+                    submitted=(d.headline, d.text) in submitted,
                 )
             )
         return items
 
     async def add_ad(
-        self, headline: str, text: str, now: datetime, rules_version: str = "wizard-1"
+        self,
+        headline: str,
+        text: str,
+        now: datetime,
+        rules_version: str = "wizard-1",
+        *,
+        active: bool = True,
+        client_id: str | None = None,
     ) -> WizardAdItem:
         statement = (
             select(CreativeSetRow)
@@ -261,6 +290,14 @@ class SqlWizardAds:
             .with_for_update()
         )
         async with self._sessions.begin() as session:
+            # Строки набора ещё может не быть: блокируем бизнес до поиска и создания.
+            await session.execute(
+                select(
+                    func.pg_advisory_xact_lock(
+                        WIZARD_AD_LOCK, func.hashtext(str(self._business_id))
+                    )
+                )
+            )
             row = await session.scalar(statement)
             if row is None:
                 row = CreativeSetRow(
@@ -279,15 +316,31 @@ class SqlWizardAds:
                 await session.flush()
             drafts = [dict(d) for d in (row.drafts or [])]
             kept = list(row.kept or [])
+            if client_id is not None:
+                for index, draft in enumerate(drafts):
+                    if draft.get("client_id") == client_id:
+                        archived = bool(draft.get("archived", False))
+                        return WizardAdItem(
+                            id=f"w{index}",
+                            index=index,
+                            headline=str(draft["headline"]),
+                            text=str(draft["text"]),
+                            facts=tuple(s.get("label", "") for s in draft.get("sources", [])),
+                            active=index in kept and not archived,
+                            archived=archived,
+                        )
             new_draft = {
                 "headline": headline,
                 "text": text,
                 "sources": [{"label": "Ваш текст", "quote": ""}],
                 "archived": False,
+                "off": not active,
+                "client_id": client_id,
             }
             drafts.append(new_draft)
             idx = len(drafts) - 1
-            kept.append(idx)
+            if active:
+                kept.append(idx)
             row.drafts = drafts
             row.kept = kept
             flag_modified(row, "drafts")
@@ -298,7 +351,7 @@ class SqlWizardAds:
                 headline=headline,
                 text=text,
                 facts=("Ваш текст",),
-                active=True,
+                active=active,
                 archived=False,
             )
 

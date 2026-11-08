@@ -4,6 +4,7 @@ import { ApiError } from "../api";
 import { saveDraft } from "./draft";
 import {
   adName,
+  Store,
   adShown,
   adStat,
   budgetOf,
@@ -21,6 +22,57 @@ import {
   writtenAds} from "./store";
 
 describe("хранилище прототипа", () => {
+  it("повтор сохранения нового сайта не переносит уже подтверждённое объявление заново", async () => {
+    const store = new Store({ ...initialState("start"), step: 4, account: { email: "anna@example.ru" } });
+    const createWizardAd = vi.fn().mockResolvedValueOnce({ id: "w0" }).mockRejectedValueOnce(new Error("Сеть недоступна")).mockResolvedValue({ id: "w1" });
+    const createBusiness = vi.fn(async () => ({ id: "new", name: "Салон" }));
+    store.reader = { readSite: vi.fn(), siteRead: vi.fn() };
+    store.transferDeps = {
+      session: vi.fn(async () => ({ me: { email: "anna@example.ru", csrf_token: "c" }, businesses: createBusiness.mock.calls.length ? [{ id: "new", name: "Салон" }] : [] })),
+      createBusiness,
+      business: () => ({ saveProfile: vi.fn(), saveBudgetPlan: vi.fn(), createWizardAd }),
+    };
+    const base = { name: "Маникюр", tag: "", tagTone: "accent" as const, leads: 0, cost: 0, hook: "", facts: "" };
+    store.set({ ads: [
+      { ...base, id: "custom-1", title: "Первое объявление", text: "Первый текст" },
+      { ...base, id: "custom-2", title: "Второе объявление", text: "Второй текст" },
+    ], adSet: null, draftOff: {} });
+    store.next();
+    await vi.waitFor(() => expect(store.state.block).toContain("Сеть недоступна"));
+    store.next();
+    await vi.waitFor(() => expect(createWizardAd).toHaveBeenCalledTimes(3));
+    expect(createBusiness).toHaveBeenCalledTimes(1);
+    expect(createWizardAd.mock.calls.map(([body]) => body.client_id)).toEqual(["custom-1", "custom-2", "custom-2"]);
+  });
+
+  it("новый сайт вошедшего владельца переносит свои объявления, правки и пустой выбор набора", async () => {
+    const store = new Store({ ...initialState("start"), step: 4, account: { email: "anna@example.ru" } });
+    const createWizardAd = vi.fn().mockResolvedValue({ id: "w1" });
+    const updateWizardAd = vi.fn().mockResolvedValue({ id: "w0" });
+    const adoptAds = vi.fn().mockResolvedValue({ kept: 0 });
+    store.reader = { readSite: vi.fn(), siteRead: vi.fn() };
+    store.transferDeps = {
+      session: vi.fn(async () => ({ me: { email: "anna@example.ru", csrf_token: "c" }, businesses: [] })),
+      createBusiness: vi.fn(async () => ({ id: "new", name: "Салон" })),
+      business: () => ({ saveProfile: vi.fn(), saveBudgetPlan: vi.fn(), createWizardAd, updateWizardAd, adoptAds }),
+    };
+    const base = { name: "Маникюр", tag: "", tagTone: "accent" as const, leads: 0, cost: 0, hook: "", facts: "" };
+    store.set({
+      ads: [
+        { ...base, id: "w0", title: "Правка заголовка", text: "Правка текста" },
+        { ...base, id: "custom-1", title: "Свое объявление", text: "Свой текст" },
+        { ...base, id: "custom-2", title: "Оставленное объявление", text: "Текст для запуска" },
+      ],
+      draftOff: { w0: true, "custom-1": true },
+      adSet: { id: 7, token: "t", template: false, needsReview: false, facts: "{}" },
+    });
+    store.next();
+    await vi.waitFor(() => expect(createWizardAd).toHaveBeenCalled());
+    expect(adoptAds).toHaveBeenCalledWith({ id: 7, token: "t", kept: [] });
+    expect(updateWizardAd).toHaveBeenCalledWith("w0", { headline: "Правка заголовка", text: "Правка текста" });
+    expect(createWizardAd).toHaveBeenCalledWith({ headline: "Свое объявление", text: "Свой текст", client_id: "custom-1", active: false });
+  });
+
   it("чат меняет только после подтверждения и пишет в историю", () => {
     const store = new MockStore();
     const before = store.state.hist.length;

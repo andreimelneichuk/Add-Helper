@@ -15,7 +15,7 @@ describe("Модальное окно запуска рекламы (LaunchModal
     ],
     ready: true,
     launch_available: true,
-    launch_text: "Бюджет 18 000 ₽ в неделю.",
+    launch_text: "Бюджет 18 000 ₽ за 30 дней.",
   };
 
   const answer: LaunchAnswer = {
@@ -49,7 +49,7 @@ describe("Модальное окно запуска рекламы (LaunchModal
       expect(screen.getByText(/Кабинет Директа подключён/)).toBeInTheDocument();
     });
 
-    expect(screen.getByText("Бюджет 18 000 ₽ в неделю.")).toBeInTheDocument();
+    expect(screen.getByText("Бюджет 18 000 ₽ за 30 дней.")).toBeInTheDocument();
 
     const launchBtn = screen.getByRole("button", { name: "Запустить рекламу" });
     expect(launchBtn).toBeEnabled();
@@ -60,6 +60,48 @@ describe("Модальное окно запуска рекламы (LaunchModal
       expect(screen.getByText("Кампании успешно созданы.")).toBeInTheDocument();
     });
     expect(screen.getByText("Поиск и сети (ah-1-1)")).toBeInTheDocument();
+    expect(screen.getByText("18000 ₽ за 30 дней")).toBeInTheDocument();
+  });
+
+  it("показывает лимит каждой кампании за весь 30-дневный период", async () => {
+    const user = userEvent.setup();
+    const store = new MockStore(initialState("work"));
+    const api = {
+      launchCheck: vi.fn().mockResolvedValue(readyCheck),
+      startLaunch: vi.fn().mockResolvedValue({
+        ...answer,
+        campaigns: [
+          { name: "Поиск", limit_rubles: 18000 },
+          { name: "Сети", limit_rubles: 9000 },
+        ],
+      }),
+    };
+
+    render(<LaunchModal isOpen={true} onClose={vi.fn()} store={store} api={api} />);
+    await user.click(await screen.findByRole("button", { name: "Запустить рекламу" }));
+
+    expect(await screen.findByText("18000 ₽ за 30 дней")).toBeInTheDocument();
+    expect(screen.getByText("9000 ₽ за 30 дней")).toBeInTheDocument();
+    expect(screen.queryByText(/₽\/нед/)).not.toBeInTheDocument();
+  });
+
+  it.each(["", "Яндекс ещё применяет запуск. Подождите."])("не выдаёт pending за завершённый запуск: %s", async (text) => {
+    const user = userEvent.setup();
+    const store = new MockStore(initialState("work"));
+    const api = {
+      launchCheck: vi.fn().mockResolvedValue(readyCheck),
+      startLaunch: vi.fn().mockResolvedValue({ status: "pending", campaigns: [], text }),
+    };
+    render(<LaunchModal isOpen={true} onClose={vi.fn()} store={store} api={api} />);
+    await user.click(await screen.findByRole("button", { name: "Запустить рекламу" }));
+
+    expect(await screen.findByRole("heading", { name: "Запуск ещё не завершён" })).toBeInTheDocument();
+    expect(screen.getByText("Яндекс ещё применяет запуск")).toBeInTheDocument();
+    expect(screen.queryByText("Кампании созданы в Яндекс Директе")).not.toBeInTheDocument();
+    expect(screen.queryByText("Реклама запущена")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Показы начнутся сразу после проверки/)).not.toBeInTheDocument();
+    if (text) expect(screen.getByText(text)).toBeInTheDocument();
+    expect(api.startLaunch).toHaveBeenCalledTimes(1);
   });
 
   it("при неготовности показывает предупреждения и кнопку перехода в настройки", async () => {

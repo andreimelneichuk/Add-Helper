@@ -266,6 +266,7 @@ export function confirmText(s: State, a: Pending): string {
     case "adSave": {
       const isPrelaunch = s.live ? !s.live.hasCampaigns : s.situation === "first";
       if (!s.ads.some((x) => x.id === a.value.id)) {
+        if (s.live) return `Сохранить черновик «${a.value.name}»? Объявление будет в разделе «Реклама» со статусом «К запуску». Оно ещё не отправлено в Яндекс.`;
         if (isPrelaunch) return `Добавить объявление «${a.value.name}»? Оно пойдёт в показы после запуска рекламы.`;
         return `Добавить объявление «${a.value.name}»? Яндекс проверит его, обычно до суток. Общий бюджет не вырастет: деньги поделю между объявлениями. Отключить можно в истории.`;
       }
@@ -516,10 +517,15 @@ export class Store {
         return match ? Number(match[1]) : -1;
       })
       .filter((idx) => idx >= 0);
-    const ads = s.adSet && kept.length > 0 ? { ads: { id: s.adSet.id, token: s.adSet.token, kept } } : {};
+    const ads = s.adSet ? { ads: { id: s.adSet.id, token: s.adSet.token, kept } } : {};
     // Повтор после сбоя идёт в уже созданный бизнес, а не создаёт второй.
-    const businessId = loadDraft()?.businessId;
-    const draft = { site: s.site, facts: s.facts, budget: Number(s.f.budget), createAsNew: true, ...(businessId ? { businessId } : {}), ...ads };
+    const saved = loadDraft();
+    const draft = saved?.businessId ? saved : {
+      site: s.site, facts: s.facts, budget: Number(s.f.budget), createAsNew: true,
+      draftOff: s.draftOff,
+      customAds: s.ads.map((a) => ({ id: a.id, headline: a.title, text: a.text, facts: a.facts ? a.facts.split(", ") : [] })),
+      ...ads,
+    };
     saveDraft(draft);
     this.set({ block: "" });
     try {

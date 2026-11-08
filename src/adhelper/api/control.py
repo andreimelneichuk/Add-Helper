@@ -332,6 +332,9 @@ def control_router() -> APIRouter:
         if done == "failed":
             raise HTTPException(status.HTTP_409_CONFLICT, "Яндекс не принял это изменение")
 
+        if done == "pending":
+            return {"status": "pending"}
+
         dashboard = SqlDashboard(_sessions(request), business_id)
         await dashboard.note_ad_state(account, ad_id, "archived")
         await follow_owner(

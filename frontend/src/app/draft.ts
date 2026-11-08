@@ -11,6 +11,8 @@ export type StartDraft = {
   businessId?: string;
   /** Объявления, которые владелец оставил на шаге «Объявления». */
   ads?: AdsChoice;
+  /** Набор объявлений не перенёсся; пользовательские правки создаются как свои объявления. */
+  adoptionFailed?: boolean;
   /** Шаг мастера, на котором остановился владелец. */
   step?: number;
   /** Выключенные черновики объявлений. */
@@ -28,7 +30,7 @@ export type TransferDeps = {
     saveProfile: (profile: Profile) => Promise<unknown>;
     saveBudgetPlan: (rubles: number) => Promise<unknown>;
     adoptAds?: (choice: AdsChoice) => Promise<unknown>;
-    createWizardAd?: (body: { headline: string; text: string }) => Promise<unknown>;
+    createWizardAd?: (body: { headline: string; text: string; active?: boolean; client_id?: string }) => Promise<unknown>;
     updateWizardAd?: (id: string, body: { headline: string; text: string }) => Promise<unknown>;
   };
 };
@@ -169,6 +171,9 @@ export async function transferDraft(deps: TransferDeps, draft: StartDraft): Prom
   }
   try { window.localStorage.setItem("adhelper.activeBusinessId", id); } catch { /* без хранилища */ }
   const api = deps.business(id, csrf);
+  let progress: StartDraft = { ...draft, businessId: id };
+  let adoptionFailed = !!draft.adoptionFailed;
+  saveDraft(progress);
   await api.saveProfile(draftProfile(draft));
   await api.saveBudgetPlan(draft.budget);
   if (draft.ads && api.adoptAds) {
@@ -177,20 +182,27 @@ export async function transferDraft(deps: TransferDeps, draft: StartDraft): Prom
     } catch (e) {
       // Набор пропал или ещё не готов: вход важнее, объявления напишутся заново к запуску.
       if (!(e instanceof ApiError) || e.status >= 500) throw e;
+      adoptionFailed = true;
     }
+    // Повторное принятие набора сбросило бы уже перенесённые правки и свои объявления.
+    progress = { ...progress, ads: undefined, ...(adoptionFailed ? { adoptionFailed: true } : {}) };
+    saveDraft(progress);
   }
   if (draft.customAds && draft.customAds.length > 0) {
     for (const ca of draft.customAds) {
       if (ca.id.startsWith("custom-") && api.createWizardAd) {
-        try {
-          await api.createWizardAd({ headline: ca.headline, text: ca.text });
-        } catch { /* без ошибки мастера */ }
-      } else if ((ca.id.startsWith("w") || ca.id.startsWith("draft-")) && api.updateWizardAd) {
-        try {
-          const wId = ca.id.startsWith("w") ? ca.id : ca.id.replace("draft-", "w");
-          await api.updateWizardAd(wId, { headline: ca.headline, text: ca.text });
-        } catch { /* без ошибки мастера */ }
+        await api.createWizardAd({ headline: ca.headline, text: ca.text, client_id: ca.id, ...(draft.draftOff?.[ca.id] ? { active: false } : {}) });
+      } else if ((ca.id.startsWith("w") || ca.id.startsWith("draft-")) && !adoptionFailed && api.updateWizardAd) {
+        const wId = ca.id.startsWith("w") ? ca.id : ca.id.replace("draft-", "w");
+        await api.updateWizardAd(wId, { headline: ca.headline, text: ca.text });
+      } else if ((ca.id.startsWith("w") || ca.id.startsWith("draft-")) && api.createWizardAd) {
+        await api.createWizardAd({ headline: ca.headline, text: ca.text, client_id: `transfer-${ca.id}`, ...(draft.draftOff?.[ca.id] ? { active: false } : {}) });
+      } else {
+        throw new Error("Не удалось перенести объявление. Черновик сохранён, попробуйте снова.");
       }
+      // Без ошибки мастера: сохраняем подтверждённый прогресс; при сбое остаток ждёт повтора.
+      progress = { ...progress, customAds: progress.customAds?.slice(1) };
+      saveDraft(progress);
     }
   }
   clearDraft();

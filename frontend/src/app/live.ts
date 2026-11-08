@@ -177,12 +177,12 @@ export async function loadLive(api: Api, name: string): Promise<Partial<State>> 
   const seen = new Set(adsWeek.map((a) => a.ad_id));
   const lines = [...adsWeek, ...adsMonth.filter((a) => !seen.has(a.ad_id)).map((a) => ({ ...a, totals: { impressions: 0, clicks: 0, cost: 0, conversions: 0 } }))];
   let ads = lines.map((line) => toAd(line, api.photoUrl));
-  const hasProfileFacts = !!(profile && (profile.services?.some((s) => s.name?.trim()) || profile.features?.length > 0 || profile.niche?.trim()));
-  if (ads.length === 0 && api.wizardAds && hasProfileFacts) {
+  if (api.wizardAds) {
     try {
       const wizard = await api.wizardAds(true);
       if (wizard?.ads?.length) {
-        ads = wizard.ads.map((w, i) => {
+        ads = [...ads, ...wizard.ads.flatMap((w, i) => {
+          if (w.submitted) return [];
           const isArchived = !!w.archived;
           const isActive = w.active !== false && !isArchived;
           const tag = isArchived ? "в архиве" : isActive ? "готово к запуску" : "отключено";
@@ -199,7 +199,7 @@ export async function loadLive(api: Api, name: string): Promise<Partial<State>> 
             text: w.text,
             facts: Array.isArray(w.facts) ? w.facts.join(", ") : "",
           };
-        });
+        })];
       }
     } catch { /* без мастера */ }
   }
@@ -519,7 +519,10 @@ export class LiveStore extends Store {
         } else {
           const [account, adId] = id.split("/");
           if (account && adId && this.api.archiveAd) {
-            await this.api.archiveAd(account, adId);
+            const { status } = await this.api.archiveAd(account, adId);
+            if (status === "pending") {
+              return `Яндекс ещё останавливает показы «${name}». Дождитесь остановки и повторите архивацию.`;
+            }
           }
         }
         const updatedAds = this.state.ads.map((x) =>

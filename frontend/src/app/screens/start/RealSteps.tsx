@@ -349,7 +349,7 @@ export function RealAds({ store, s }: Props) {
     e.preventDefault();
     if (!newTitle.trim() || !newText.trim()) return;
     const customAd: Ad = {
-      id: `custom-${Date.now()}`,
+      id: `custom-${crypto.randomUUID()}`,
       name: newTitle.trim(),
       title: newTitle.trim(),
       hook: newTitle.trim(),

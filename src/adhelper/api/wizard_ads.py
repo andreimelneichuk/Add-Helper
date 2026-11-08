@@ -79,6 +79,11 @@ class WizardAdStateBody(BaseModel):
     active: bool
 
 
+class CreateWizardAdBody(WizardAdBody):
+    active: bool = True
+    client_id: str | None = Field(default=None, min_length=1, max_length=200)
+
+
 class WizardAdArchiveBody(BaseModel):
     archived: bool = True
 
@@ -205,6 +210,7 @@ def wizard_ads_router() -> APIRouter:
                 "facts": list(item.facts),
                 "active": item.active,
                 "archived": item.archived,
+                "submitted": item.submitted,
             }
             for item in items
         ]
@@ -225,11 +231,17 @@ def wizard_ads_router() -> APIRouter:
 
     @router.post("/wizard-ads", status_code=status.HTTP_201_CREATED)
     async def post_wizard_ad(
-        request: Request, body: WizardAdBody, business_id: OwnedChecked
+        request: Request, body: CreateWizardAdBody, business_id: OwnedChecked
     ) -> dict[str, Any]:
         sessions = _sessions(request)
         wizard = SqlWizardAds(sessions, business_id)
-        item = await wizard.add_ad(body.headline.strip(), body.text.strip(), _now(request))
+        item = await wizard.add_ad(
+            body.headline.strip(),
+            body.text.strip(),
+            _now(request),
+            active=body.active,
+            client_id=body.client_id,
+        )
         return {
             "id": item.id,
             "headline": item.headline,

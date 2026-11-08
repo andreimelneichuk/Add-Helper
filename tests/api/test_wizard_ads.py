@@ -1,13 +1,18 @@
 """Шаг «Объявления» мастера: писатель до входа, выбор переносится в бизнес после входа."""
 
+import asyncio
+
 import httpx
+import pytest
 
 from adhelper.creatives.adapters.rules_file import load_rules, load_wizard_rules
 from adhelper.creatives.adapters.sql import SqlCreativeQueue, SqlProfileSource
 from adhelper.creatives.application.service import run_queued
 from adhelper.creatives.application.wizard import CURRENT_WIZARD_RULES
+from adhelper.ledger.adapters.sql import SqlChangeRepository
+from adhelper.ledger.domain.model import ChangeKind, ChangeSource, ChangeStatus, ProposedChange
 from tests.accounts.fake_provider import FakeProvider
-from tests.accounts.test_flow import BORIS, Browser, _login
+from tests.accounts.test_flow import ANNA, BORIS, Browser, _connect, _login
 from tests.api.test_cabinet import NOW, Sessions
 from tests.api.test_guest_site import Guest, guest  # noqa: F401
 from tests.api.test_site import Anna, anna  # noqa: F401
@@ -132,6 +137,88 @@ async def test_owner_keeps_chosen_ads_after_login(
     other = browser()
     await _login(other, provider, BORIS)
     assert (await other.get(f"{base}/wizard-ads")).status_code == 404
+
+
+async def test_custom_ad_can_be_created_excluded_from_launch(anna: Anna) -> None:  # noqa: F811
+    client, csrf, business_id = anna
+    base = f"/api/businesses/{business_id}/wizard-ads"
+    created = await client.post(
+        base,
+        json={"headline": "Своя стрижка", "text": "Запишитесь", "active": False},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert created.status_code == 201
+    assert created.json()["active"] is False
+    assert (await client.get(base)).json()["ads"] == []
+    saved = (await client.get(base, params={"include_inactive": "true"})).json()["ads"]
+    assert len(saved) == 1
+    assert saved[0]["active"] is False
+
+
+@pytest.mark.parametrize("kind", [ChangeKind.CREATE_CAMPAIGN, ChangeKind.CREATE_AD])
+async def test_wizard_ads_identify_confirmed_submissions(
+    anna: Anna,  # noqa: F811
+    sessions: Sessions,
+    kind: ChangeKind,
+    provider: FakeProvider,
+) -> None:
+    client, csrf, business_id = anna
+    await _connect(client, provider, csrf, str(business_id), ANNA)
+    url = f"/api/businesses/{business_id}/wizard-ads"
+    sent = {"headline": "Уже отправлено", "text": "Запишитесь"}
+    other = {"headline": "Новый черновик", "text": "Приходите"}
+    headers = {"X-CSRF-Token": csrf}
+    for body in (sent, other):
+        assert (await client.post(url, json=body, headers=headers)).status_code == 201
+    planned = {"ads": [sent]} if kind is ChangeKind.CREATE_CAMPAIGN else sent
+    repo = SqlChangeRepository(sessions, business_id)
+    # Ожидающая запись не выдаётся за подтверждённую отправку.
+    await repo.add(
+        ProposedChange("anna-direct", ChangeSource.USER, kind, "sent", planned, "Запуск", "sent"),
+        {},
+        ChangeStatus.APPLIED,
+    )
+    await repo.add(
+        ProposedChange(
+            "anna-direct", ChangeSource.USER, kind, "wait", {"ads": [other]}, "Ждёт", "wait"
+        ),
+        {},
+        ChangeStatus.PLANNED,
+    )
+    saved = (await client.get(url)).json()["ads"]
+    assert [ad["submitted"] for ad in saved] == [True, False]
+
+
+async def test_custom_ad_retry_is_idempotent_even_when_first_requests_overlap(
+    anna: Anna,  # noqa: F811
+) -> None:
+    client, csrf, business_id = anna
+    headers = {"X-CSRF-Token": csrf}
+    url = f"/api/businesses/{business_id}/wizard-ads"
+    body = {"headline": "Своё объявление", "text": "Запишитесь", "client_id": "custom-stable"}
+
+    # Оба запроса начинают, когда набора ещё нет; один ответ мог потеряться в сети.
+    first, retry = await asyncio.gather(
+        client.post(url, json=body, headers=headers),
+        client.post(url, json=body, headers=headers),
+    )
+    assert first.status_code == retry.status_code == 201
+    assert first.json()["id"] == retry.json()["id"]
+    assert len((await client.get(url)).json()["ads"]) == 1
+
+    ad_id = first.json()["id"]
+    edited = {"headline": "Правка владельца", "text": "Приходите"}
+    assert (await client.put(f"{url}/{ad_id}", json=edited, headers=headers)).status_code == 200
+    assert (
+        await client.post(f"{url}/{ad_id}/archive", headers=headers, json={})
+    ).status_code == 200
+    replay = await client.post(url, json=body, headers=headers)
+    assert replay.json() == {**first.json(), **edited, "active": False, "archived": True}
+
+    # Без ключа совпадающие тексты остаются отдельными объявлениями.
+    for _ in range(2):
+        assert (await client.post(url, json=edited, headers=headers)).status_code == 201
+    assert len((await client.get(url, params={"include_inactive": True})).json()["ads"]) == 3
 
 
 async def test_wizard_ads_crud_operations(

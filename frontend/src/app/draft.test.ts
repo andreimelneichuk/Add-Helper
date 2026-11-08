@@ -27,6 +27,22 @@ function deps(over: Partial<TransferDeps> = {}) {
 }
 
 describe("черновик запуска", () => {
+  it("свои выключенные объявления переносятся без включения, а правки не меняют выбор", async () => {
+    const createWizardAd = vi.fn().mockResolvedValue({ id: "w1" });
+    const updateWizardAd = vi.fn().mockResolvedValue({ id: "w0" });
+    const { full } = deps({ business: () => ({ saveProfile: vi.fn(), saveBudgetPlan: vi.fn(), createWizardAd, updateWizardAd }) });
+    await transferDraft(full, {
+      ...draft,
+      draftOff: { "custom-1": true, w0: true },
+      customAds: [
+        { id: "custom-1", headline: "Своё объявление", text: "Запишитесь", facts: [] },
+        { id: "w0", headline: "Исправленный заголовок", text: "Ваш маникюр", facts: [] },
+      ],
+    });
+    expect(createWizardAd).toHaveBeenCalledWith({ headline: "Своё объявление", text: "Запишитесь", client_id: "custom-1", active: false });
+    expect(updateWizardAd).toHaveBeenCalledWith("w0", { headline: "Исправленный заголовок", text: "Ваш маникюр" });
+  });
+
   it("становится профилем: цена отделяется от названия, слова владельца идут в особенности", () => {
     expect(draftProfile(draft)).toEqual({
       niche: "маникюр",
@@ -96,6 +112,49 @@ describe("черновик запуска", () => {
     expect(await transferDraft(second.full, { ...draft, ads })).toMatchObject({ status: "done" });
   });
 
+  it("после отклонения набора переносит сохранённую правку как своё объявление", async () => {
+    const input: StartDraft = {
+      ...draft,
+      ads: { id: 7, token: "k", kept: [0] },
+      draftOff: { w0: true },
+      customAds: [{ id: "w0", headline: "Мой заголовок", text: "Мой текст", facts: [] }],
+    };
+    const adoptAds = vi.fn().mockRejectedValue(new ApiError(409, "Набор устарел"));
+    const createWizardAd = vi.fn().mockResolvedValue({ id: "w0" });
+    const updateWizardAd = vi.fn();
+    const business = () => ({ saveProfile: vi.fn(), saveBudgetPlan: vi.fn(), adoptAds, createWizardAd, updateWizardAd });
+    saveDraft(input);
+
+    await expect(transferDraft(deps({ business }).full, input)).resolves.toMatchObject({ status: "done" });
+
+    expect(createWizardAd).toHaveBeenCalledWith({ headline: "Мой заголовок", text: "Мой текст", client_id: "transfer-w0", active: false });
+    expect(updateWizardAd).not.toHaveBeenCalled();
+    expect(loadDraft()).toBeNull();
+  });
+
+  it("повторяет fallback-создание после потерянного ответа тем же ключом", async () => {
+    const input: StartDraft = {
+      ...draft,
+      ads: { id: 7, token: "k", kept: [0] },
+      customAds: [{ id: "w0", headline: "Мой заголовок", text: "Мой текст", facts: [] }],
+    };
+    const adoptAds = vi.fn().mockRejectedValue(new ApiError(409, "Набор устарел"));
+    const createWizardAd = vi.fn().mockRejectedValueOnce(new TypeError("Ответ потерялся")).mockResolvedValue({ id: "w1" });
+    const updateWizardAd = vi.fn();
+    const business = () => ({ saveProfile: vi.fn(), saveBudgetPlan: vi.fn(), adoptAds, createWizardAd, updateWizardAd });
+
+    await expect(transferDraft(deps({ business }).full, input)).rejects.toThrow("Ответ потерялся");
+    const kept = loadDraft();
+    expect(kept).toMatchObject({ adoptionFailed: true, customAds: input.customAds });
+    expect(kept?.ads).toBeUndefined();
+    const retry = deps({ business, session: async () => ({ me: { email: null, csrf_token: "c" }, businesses: [{ id: "b1", name: "nogti.ru" }] }) });
+    await transferDraft(retry.full, kept!);
+
+    expect(createWizardAd).toHaveBeenNthCalledWith(1, { headline: "Мой заголовок", text: "Мой текст", client_id: "transfer-w0" });
+    expect(createWizardAd).toHaveBeenNthCalledWith(2, { headline: "Мой заголовок", text: "Мой текст", client_id: "transfer-w0" });
+    expect(updateWizardAd).not.toHaveBeenCalled();
+  });
+
   it("чужой бизнес у владельца не затирает", async () => {
     saveDraft(draft);
     const { full, saved } = deps({ session: vi.fn(async () => ({ me: { email: null, csrf_token: "c" }, businesses: [{ id: "old", name: "Салон Анны" }] })) });
@@ -125,6 +184,64 @@ describe("черновик запуска", () => {
     const second = deps({ session: vi.fn(async () => ({ me: { email: null, csrf_token: "c" }, businesses: [{ id: "b1", name: "nogti.ru" }] })) });
     expect(await transferDraft(second.full, kept!)).toMatchObject({ status: "done", businessId: "b1" });
     expect(second.full.createBusiness).not.toHaveBeenCalled();
+  });
+
+  it.each(["w0", "draft-0", "custom-1"])("ошибка переноса %s сохраняет объявление для повтора", async (id) => {
+    const input: StartDraft = { ...draft, customAds: [{ id, headline: "Ваш маникюр", text: "Запишитесь", facts: [] }] };
+    saveDraft(input);
+    const failing = vi.fn().mockRejectedValue(new ApiError(500, "Сервис не ответил"));
+    const { full } = deps({ business: () => ({ saveProfile: vi.fn(), saveBudgetPlan: vi.fn(), createWizardAd: failing, updateWizardAd: failing }) });
+
+    await expect(transferDraft(full, input)).rejects.toThrow("Сервис не ответил");
+    expect(loadDraft()).toMatchObject({ businessId: "b1", customAds: input.customAds });
+  });
+
+  it("повтор после частичного переноса не принимает набор заново и не создаёт объявление дважды", async () => {
+    const input: StartDraft = {
+      ...draft,
+      ads: { id: 7, token: "k", kept: [0] },
+      customAds: [
+        { id: "custom-1", headline: "Своё объявление", text: "Запишитесь", facts: [] },
+        { id: "w0", headline: "Правка объявления", text: "Ваш маникюр", facts: [] },
+      ],
+    };
+    saveDraft(input);
+    const adoptAds = vi.fn().mockResolvedValue({ kept: 1 });
+    const createWizardAd = vi.fn().mockResolvedValue({ id: "w1" });
+    const updateWizardAd = vi.fn().mockRejectedValueOnce(new TypeError("Сеть недоступна")).mockResolvedValue({ id: "w0" });
+    const business = () => ({ saveProfile: vi.fn(), saveBudgetPlan: vi.fn(), adoptAds, createWizardAd, updateWizardAd });
+    const first = deps({ business });
+
+    await expect(transferDraft(first.full, input)).rejects.toThrow("Сеть недоступна");
+    const kept = loadDraft();
+    expect(kept?.businessId).toBe("b1");
+    expect(kept?.ads).toBeUndefined();
+    expect(kept?.customAds).toEqual([input.customAds![1]]);
+
+    const second = deps({ business, session: async () => ({ me: { email: null, csrf_token: "c" }, businesses: [{ id: "b1", name: "nogti.ru" }] }) });
+    expect(await transferDraft(second.full, kept!)).toMatchObject({ status: "done", businessId: "b1" });
+    expect(second.full.createBusiness).not.toHaveBeenCalled();
+    expect(adoptAds).toHaveBeenCalledTimes(1);
+    expect(createWizardAd).toHaveBeenCalledTimes(1);
+    expect(updateWizardAd).toHaveBeenCalledTimes(2);
+    expect(loadDraft()).toBeNull();
+  });
+
+  it("повтор после потерянного ответа создания использует тот же ключ объявления", async () => {
+    const input: StartDraft = { ...draft, customAds: [{ id: "custom-stable", headline: "Маникюр", text: "Запишитесь", facts: [] }] };
+    saveDraft(input);
+    const createWizardAd = vi.fn().mockRejectedValueOnce(new TypeError("Ответ потерялся")).mockResolvedValue({ id: "w0" });
+    const business = () => ({ saveProfile: vi.fn(), saveBudgetPlan: vi.fn(), createWizardAd });
+    await expect(transferDraft(deps({ business }).full, input)).rejects.toThrow("Ответ потерялся");
+    const kept = loadDraft();
+    expect(kept?.customAds).toEqual(input.customAds);
+    const retry = deps({ business, session: async () => ({ me: { email: null, csrf_token: "c" }, businesses: [{ id: "b1", name: "nogti.ru" }] }) });
+    await transferDraft(retry.full, kept!);
+    for (const call of createWizardAd.mock.calls) {
+      expect(call[0]).toEqual({ headline: "Маникюр", text: "Запишитесь", client_id: "custom-stable" });
+    }
+    expect(createWizardAd).toHaveBeenCalledTimes(2);
+    expect(loadDraft()).toBeNull();
   });
 
   it("без входа ничего не переносит", async () => {

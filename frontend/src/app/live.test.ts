@@ -8,6 +8,28 @@ import { MockStore } from "../mock/MockStore";
 import { liveApi, savedText } from "./live";
 
 describe("живые данные", () => {
+  it("показывает сохранённый ручной черновик даже без заполненного профиля", async () => {
+    const wizardAds = vi.fn().mockResolvedValue({ ads: [{ id: "w1", headline: "Мой текст", text: "Запишитесь", facts: [] }] });
+    const profile = vi.fn().mockResolvedValue({ niche: "", services: [], features: [], website: "", address: "" });
+    const store = await open(fakeApi({ wizardAds, profile }));
+    expect(store.state.ads.map((a) => a.id)).toEqual(["anna/11", "w1"]);
+  });
+
+  it("показывает новые черновики рядом с рекламой площадки и скрывает уже отправленные", async () => {
+    const wizardAds = vi.fn().mockResolvedValue({ ads: [
+      { id: "w0", headline: "Маникюр", text: "Текст", facts: [], submitted: true },
+      { id: "w1", headline: "Новое объявление", text: "Запишитесь", facts: [], active: true, submitted: false },
+      { id: "w2", headline: "Выключенный черновик", text: "Запишитесь", facts: [], active: false },
+      { id: "w3", headline: "Архивный черновик", text: "Запишитесь", facts: [], archived: true },
+    ] });
+    const store = await open(fakeApi({ wizardAds }));
+    expect(wizardAds).toHaveBeenCalledWith(true);
+    expect(store.state.ads.map((a) => a.id)).toEqual(["anna/11", "w1", "w2", "w3"]);
+    expect(store.state.ads.find((a) => a.id === "w1")?.tag).toBe("готово к запуску");
+    expect(store.state.ads.find((a) => a.id === "w2")?.tag).toBe("отключено");
+    expect(store.state.ads.find((a) => a.id === "w3")?.tag).toBe("в архиве");
+  });
+
   it("переводит микроединицы в рубли только для показа и заполняет дни без статистики", async () => {
     const store = await open(fakeApi());
     const { live } = store.state;
@@ -59,6 +81,38 @@ describe("живые данные", () => {
 });
 
 describe("действия идут через сервис", () => {
+  it("своё объявление после запуска остаётся видно после перечитывания кабинета", async () => {
+    const created = { id: "w1", headline: "Новое объявление", text: "Запишитесь", facts: [] };
+    let saved = false;
+    const createWizardAd = vi.fn(async () => { saved = true; return created; });
+    const wizardAds = vi.fn(async () => ({ ads: saved ? [created] : [] }));
+    const store = await open(fakeApi({ createWizardAd, wizardAds }));
+    const ad = { ...store.state.ads[0]!, id: "custom-new", title: created.headline, text: created.text };
+    store.run({ action: "adSave", value: ad });
+    await settled();
+    expect(createWizardAd).toHaveBeenCalledWith({ headline: created.headline, text: created.text });
+    await store.refresh();
+    expect(store.state.ads.map((a) => a.id)).toEqual(["anna/11", "w1"]);
+    expect(store.state.ads.find((a) => a.id === "w1")?.tag).toBe("готово к запуску");
+  });
+
+  it("при ожидающей остановке не сообщает об архивации и позволяет повторить её", async () => {
+    const archiveAd = vi.fn().mockResolvedValueOnce({ status: "pending" }).mockResolvedValueOnce({ status: "applied" });
+    const store = await open(fakeApi({ archiveAd }));
+    store.set({ openAd: "anna/11" });
+    store.run({ action: "adArchive", value: "anna/11" });
+    await settled();
+    expect(store.state.notice).toContain("повторите архивацию");
+    expect(store.state.ads[0]?.tag).not.toBe("в архиве");
+    expect(store.state.openAd).toBe("anna/11");
+
+    store.run({ action: "adArchive", value: "anna/11" });
+    await settled();
+    expect(archiveAd).toHaveBeenCalledTimes(2);
+    expect(store.state.notice).toContain("в архив");
+    expect(store.state.openAd).toBeNull();
+  });
+
   it("отключение объявления вызывает API и перечитывает данные", async () => {
     const api = fakeApi();
     const store = await open(api);

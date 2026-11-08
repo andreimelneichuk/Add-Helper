@@ -665,6 +665,38 @@ async def test_platform_ad_archive_stops_platform_and_notes_archived_state(
     assert ad_state == "archived"
 
 
+@pytest.mark.parametrize("creative_state", ["running", "moderation"])
+async def test_service_ad_stays_archived_after_owner_stop(
+    anna: Anna, platform: FakePlatform, sessions: Sessions, creative_state: str
+) -> None:
+    client, csrf, business = anna
+    _app(client).state.platform_for = lambda _b, _a: platform
+    async with sessions.begin() as session:
+        await session.execute(
+            text(
+                "INSERT INTO creatives (business_id, account, campaign_id, headline, text, source,"
+                " auto_ok, reason, facts, sources, state, state_reason, history, ad_id,"
+                " created_at, updated_at) SELECT business_id, account, campaign_id, title, text,"
+                " 'template', true, 'refill', '[]', '[]', :state, 'accepted', '[]', ad_id,"
+                " :n, :n FROM ads WHERE business_id = :b AND ad_id = '11'"
+            ),
+            {"b": business, "n": NOW, "state": creative_state},
+        )
+    for _ in range(2):
+        response = await client.post(
+            f"/api/businesses/{business}/ads/{LOGIN}/11/archive", headers=csrf
+        )
+        assert response.json() == {"status": "applied"}
+        assert platform.ads["ad:11"] is False
+        assert await _creative_state(sessions, business) == ("stopped", "owner_stopped")
+        async with sessions() as session:
+            state = await session.scalar(
+                text("SELECT state FROM ads WHERE business_id = :b AND ad_id = '11'"),
+                {"b": business},
+            )
+        assert state == "archived"
+
+
 async def test_platform_ad_archive_conflict_when_platform_fails(
     anna: Anna, platform: FakePlatform, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -684,6 +716,49 @@ async def test_platform_ad_archive_conflict_when_platform_fails(
     monkeypatch.setattr(control_module, "set_ad_active", AsyncMock(return_value=None))
     resp_unavailable = await client.post(f"{base}/ads/{LOGIN}/11/archive", headers=csrf)
     assert resp_unavailable.status_code == 503
+
+
+async def test_platform_ad_archive_waits_for_confirmed_stop(
+    anna: Anna, platform: FakePlatform, sessions: Sessions, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from unittest.mock import AsyncMock
+
+    import adhelper.api.control as control_module
+
+    client, csrf, business = anna
+    _app(client).state.platform_for = lambda _b, _a: platform
+    stop = platform.set_ad_active
+    # Площадка приняла запрос, но чтение пока подтверждает продолжающиеся показы.
+    monkeypatch.setattr(platform, "set_ad_active", AsyncMock(return_value=None))
+    follow = AsyncMock()
+    monkeypatch.setattr(control_module, "follow_owner", follow)
+    url = f"/api/businesses/{business}/ads/{LOGIN}/11/archive"
+
+    waiting = await client.post(url, headers=csrf)
+    assert waiting.status_code == 200
+    assert waiting.json() == {"status": "pending"}
+    assert platform.ads["ad:11"] is True
+    assert await _rows(sessions, business) == [("user", "pause_ad", "applying")]
+    async with sessions() as session:
+        state = await session.scalar(
+            text("SELECT state FROM ads WHERE business_id = :b AND ad_id = '11'"),
+            {"b": business},
+        )
+    assert state != "archived"
+    follow.assert_not_awaited()
+
+    # Повтор после применения остановки архивирует только подтверждённо выключенное объявление.
+    monkeypatch.setattr(platform, "set_ad_active", stop)
+    done = await client.post(url, headers=csrf)
+    assert done.json() == {"status": "applied"}
+    assert platform.ads["ad:11"] is False
+    async with sessions() as session:
+        state = await session.scalar(
+            text("SELECT state FROM ads WHERE business_id = :b AND ad_id = '11'"),
+            {"b": business},
+        )
+    assert state == "archived"
+    follow.assert_awaited_once()
 
 
 async def test_account_starting_with_w_is_not_intercepted_as_wizard(

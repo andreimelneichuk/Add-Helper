@@ -329,7 +329,17 @@ class SqlModeration:
     async def owner_stopped(self, account: str, ad_id: str, now: datetime) -> None:
         """Журнал применил снятие владельцем: место в направлении свободно."""
         async with self._sessions.begin() as session:
-            await self._set_ad(session, account, ad_id, "suspended")
+            # Архив уже означает подтверждённую остановку: сохраняем выбор владельца.
+            await session.execute(
+                update(ADS)
+                .where(
+                    ADS.c.business_id == self._business_id,
+                    ADS.c.account == account,
+                    ADS.c.ad_id == ad_id,
+                    ADS.c.state != "archived",
+                )
+                .values(state="suspended")
+            )
             row = await self._row_by_ad(session, account, ad_id)
             if row is not None and row.state in ON_PLATFORM:
                 _set_state(row, CreativeState.STOPPED, OWNER_STOPPED, now)

@@ -2,8 +2,10 @@ import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { AppShell } from "../AppShell";
-import { draftAd, initialState} from "../store";
+import { confirmText, draftAd, initialState} from "../store";
 import { MockStore } from "../../mock/MockStore";
+import { fakeApi, open } from "../testLive";
+import { AdMaker } from "./AdDetail";
 
 const button = (name: string | RegExp) => screen.getByRole("button", { name });
 
@@ -100,6 +102,19 @@ describe("переделка объявления", () => {
 });
 
 describe("новое объявление", () => {
+  it.each([true, false])("новое объявление на сервисе сохраняет черновик, наличие кампаний: %s", async (hasCampaigns) => {
+    const store = await open(fakeApi());
+    store.set({ live: { ...store.state.live!, hasCampaigns } });
+    render(<AdMaker store={store} />);
+    await userEvent.click(button("Маникюр"));
+    expect(screen.queryByRole("button", { name: "Поставить в показы" })).toBeNull();
+    await userEvent.click(button("Сохранить черновик"));
+    const pending = store.state.pending;
+    expect(pending?.action).toBe("adSave");
+    expect(confirmText(store.state, pending!)).toContain("Сохранить черновик");
+    expect(confirmText(store.state, pending!)).toContain("не отправлено в Яндекс");
+  });
+
   it("появляется после подтверждения, бюджет не меняется", async () => {
     const store = openFirst();
     const before = store.state.ads.length;

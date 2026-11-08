@@ -177,7 +177,7 @@ export type SiteRead = {
 };
 
 /** Объявление писателя в мастере: facts — на какие поля черновика оно опирается. */
-export type WizardAd = { id?: string; headline: string; text: string; facts: string[]; active?: boolean; archived?: boolean };
+export type WizardAd = { id?: string; headline: string; text: string; facts: string[]; active?: boolean; archived?: boolean; submitted?: boolean };
 export type AdSet = {
   id: number;
   status: "queued" | "running" | "ready" | "failed";
@@ -389,7 +389,7 @@ export function createApi(businessId: string, csrf: string) {
       const query = includeInactive ? "?include_inactive=true" : "";
       return request<{ ads: WizardAd[]; keywords?: string[] }>(`${base}/wizard-ads${query}`, opts);
     },
-    createWizardAd: (body: { headline: string; text: string }) =>
+    createWizardAd: (body: { headline: string; text: string; active?: boolean; client_id?: string }) =>
       request<WizardAd>(`${base}/wizard-ads`, { method: "POST", body: JSON.stringify(body) }, csrf),
     updateWizardAd: (id: string, body: { headline: string; text: string }) =>
       request<WizardAd>(`${base}/wizard-ads/${part(id)}`, { method: "PUT", body: JSON.stringify(body) }, csrf),
@@ -400,7 +400,7 @@ export function createApi(businessId: string, csrf: string) {
     deleteWizardAd: (id: string) =>
       request<{ status: string }>(`${base}/wizard-ads/${part(id)}`, { method: "DELETE" }, csrf),
     archiveAd: (account: string, adId: string) =>
-      request<{ status: string }>(`${base}/ads/${part(account)}/${part(adId)}/archive`, { method: "POST" }, csrf),
+      request<{ status: "applied" | "pending" }>(`${base}/ads/${part(account)}/${part(adId)}/archive`, { method: "POST" }, csrf),
     logout: () => request<void>("/api/auth/logout", { method: "POST" }, csrf),
     channels: (init?: RequestInit) => request<Channels>("/api/me/notifications", init),
     linkTelegram: () => request<{ url: string }>("/api/me/telegram", { method: "POST" }, csrf),

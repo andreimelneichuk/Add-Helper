@@ -90,7 +90,7 @@ export function LaunchModal({ isOpen, onClose, store, api: propsApi }: LaunchMod
       <div className="ah-modal-card" style={{ maxWidth: 540 }}>
         <div className="ah-modal-head">
           <h2 id="launch-modal-title" style={{ margin: 0, fontSize: "18px", fontWeight: 700 }}>
-            {answer ? "Реклама запущена" : "Запуск рекламы"}
+            {answer ? (answer.status === "done" ? "Реклама запущена" : "Запуск ещё не завершён") : "Запуск рекламы"}
           </h2>
           <button
             type="button"
@@ -113,14 +113,16 @@ export function LaunchModal({ isOpen, onClose, store, api: propsApi }: LaunchMod
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div style={{ background: "var(--accent-soft)", padding: "16px", borderRadius: "12px", border: "1px solid var(--accent)" }}>
               <strong style={{ display: "block", color: "var(--ink)", marginBottom: 6 }}>
-                Кампании созданы в Яндекс Директе
+                {answer.status === "done" ? "Кампании созданы в Яндекс Директе" : "Яндекс ещё применяет запуск"}
               </strong>
               <p style={{ margin: 0, fontSize: "14px", color: "var(--ink)" }}>
-                {answer.text || "Объявления отправлены на модерацию в Яндекс Директ. Показы начнутся сразу после проверки."}
+                {answer.text || (answer.status === "done"
+                  ? "Объявления отправлены на модерацию в Яндекс Директ. Показы начнутся сразу после проверки."
+                  : "Запрос на запуск сохранён. Завершение ещё не подтверждено; проверьте состояние в кабинете.")}
               </p>
             </div>
 
-            {answer.campaigns && answer.campaigns.length > 0 && (
+            {answer.status === "done" && answer.campaigns && answer.campaigns.length > 0 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <span className="ah-label">Созданные кампании</span>
                 {answer.campaigns.map((c, i) => (
@@ -137,7 +139,7 @@ export function LaunchModal({ isOpen, onClose, store, api: propsApi }: LaunchMod
                     }}
                   >
                     <span>{c.name}</span>
-                    <strong>{c.limit_rubles} ₽/нед</strong>
+                    <strong>{c.limit_rubles} ₽ за 30 дней</strong>
                   </div>
                 ))}
               </div>

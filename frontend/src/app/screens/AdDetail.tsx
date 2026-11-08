@@ -354,7 +354,7 @@ export function AdMaker({ store }: { store: Store }) {
       <button type="button" className="ah-btn anno-back" onClick={() => store.set({ openAd: null })}>Все объявления</button>
       <h2 className="anno-name">Новое объявление</h2>
       <p className="ah-muted">Напишу из фактов вашего профиля или укажите пожелание. Общий бюджет не вырастет.</p>
-      <Compose s={s} base={null} useLabel="Поставить в показы" onCancel={() => store.set({ openAd: null })} onUse={(value) => store.ask({ action: "adSave", value })} />
+      <Compose s={s} base={null} useLabel={s.live ? "Сохранить черновик" : "Поставить в показы"} onCancel={() => store.set({ openAd: null })} onUse={(value) => store.ask({ action: "adSave", value })} />
     </div>
   );
 }
