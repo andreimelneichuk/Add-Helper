@@ -345,7 +345,12 @@ async def launch(
 
     # План строим заново от сохранённого периода: повтор после сбоя даёт те же метки и лимиты.
     plan = _plan(str(stored.id), inputs, stored.period, rules)
-    started = {c.target_ref for c in await _creations(ledger, stored)}
+    # Упавшее создание не считается начатым: повтор после устранения причины ставит его заново.
+    started = {
+        c.target_ref
+        for c in await _creations(ledger, stored)
+        if c.status not in {ChangeStatus.FAILED, ChangeStatus.REJECTED}
+    }
     if require_advertiser and (advertiser is None or not advertiser.get("inn_tail")):
         raise UnregisteredAdvertiserError(
             "Нельзя создать кампанию: рекламодатель не зарегистрирован (нет ИНН для маркировки)"

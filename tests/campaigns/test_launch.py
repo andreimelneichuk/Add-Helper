@@ -162,6 +162,25 @@ async def test_outside_campaigns_count_against_budget(
     assert platform.create_calls == 0
 
 
+async def test_refused_launch_is_retried_once_the_cause_is_gone(
+    sessions: Sessions, engine: AsyncEngine, business: uuid.UUID
+) -> None:
+    # Регрессия: отказ оставлял запуск «refused» навсегда, кнопка не нажималась и повтор
+    # не создавал кампанию, хотя причину (чужую кампанию с лимитом) уже убрали.
+    platform = FakePlatform([CampaignBudget("77", 10_000 * MICROS, 0, False, None)], NOW)
+    first = await _launch(platform, sessions, engine, business)
+    assert first.status is LaunchStatus.REFUSED  # type: ignore[attr-defined]
+
+    del platform.campaigns["77"]  # владелец остановил и удалил её в Директе
+    second = await _launch(platform, sessions, engine, business)
+    assert second.status is LaunchStatus.DONE  # type: ignore[attr-defined]
+    assert platform.create_calls == 1
+    state = await launch_state(
+        SqlLaunches(sessions, business), _ledger(platform, sessions, engine, business)
+    )
+    assert state is not None and state.status is LaunchStatus.DONE
+
+
 async def test_problem_stores_nothing(
     sessions: Sessions, engine: AsyncEngine, business: uuid.UUID
 ) -> None:

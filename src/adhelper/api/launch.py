@@ -457,7 +457,7 @@ def launch_router() -> APIRouter:
         available = (
             inputs is not None
             and platform is not None
-            and launched in (None, LaunchStatus.PENDING.value)
+            and launched in (None, LaunchStatus.PENDING.value, LaunchStatus.REFUSED.value)
         )
         if launched == LaunchStatus.DONE.value:
             text = LAUNCH_DONE
