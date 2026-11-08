@@ -406,7 +406,8 @@ class DirectPlatform:
 
     async def read_account_campaigns(self, account: str) -> list[CampaignBudget]:
         """Все кампании аккаунта для проверки общего лимита, включая созданные вне сервиса."""
-        campaigns = await self._campaigns(account)
+        # Архивные не тратят деньги и не занимают место в бюджете кабинета.
+        campaigns = [c for c in await self._campaigns(account) if c.get("State") != "ARCHIVED"]
         spent = await self._spent(account, campaigns)
         return [
             CampaignBudget(
@@ -672,7 +673,8 @@ class DirectPlatform:
     ) -> list[int]:
         if not ads:
             return []
-        # Mobile обязателен и устарел: Директ всегда берёт NO.
+        # Mobile помечен устаревшим; Директ принимает и NO, и отсутствие поля
+        # (проверено 2026-11-08).
         image = {"AdImageHash": image_hash} if image_hash else {}
         result = await self._call(
             account,
@@ -891,7 +893,8 @@ class DirectPlatform:
     async def _launch_campaign(self, account: str, marker: str) -> Mapping[str, Any] | None:
         tag = f"({marker})"
         for campaign in await self._campaigns(account):
-            if tag in str(campaign.get("Name", "")):
+            # Архивная кампания не показывает объявления: повтор создаёт новую, а не доделывает эту.
+            if tag in str(campaign.get("Name", "")) and campaign.get("State") != "ARCHIVED":
                 return campaign
         return None
 
@@ -920,7 +923,7 @@ class DirectPlatform:
             limit=period_limit(strategy),
             ends_at=ends_at_of(end_date) if end_date else datetime.min.replace(tzinfo=UTC),
             regions=tuple(sorted({int(r) for g in groups for r in g.get("RegionIds") or []})),
-            href=str(text_ads[0].get("Href") or "") if text_ads else "",
+            href=unmark_href(str(text_ads[0].get("Href") or ""))[0] if text_ads else "",
             counters=tuple(int(c) for c in counters),
             ads=tuple(NewAd(str(t.get("Title") or ""), str(t.get("Text") or "")) for t in text_ads),
         )
@@ -1001,8 +1004,10 @@ class DirectPlatform:
             for ad in await self._ads_of_campaigns(account, [campaign_id])
         ]
         missing = [ad for ad in campaign.ads if (ad.headline, ad.text) not in present]
+        # Метка в ссылке — та же, что у объявлений вручную: по ней ищем и читаем обратно.
+        href = mark_href(campaign.href, campaign.marker)
         await self._add_text_ads(
-            account, group_id, [(ad.headline, ad.text, campaign.href) for ad in missing]
+            account, group_id, [(ad.headline, ad.text, href) for ad in missing]
         )
         await self._moderate(account, await self._ads_of_campaigns(account, [campaign_id]))
 

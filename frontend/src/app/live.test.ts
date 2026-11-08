@@ -621,7 +621,7 @@ describe("сетевые ошибки и граничные сценарии (50
     const historyLines = [
       { ref: "change-1", at: "2026-11-01T10:00:00Z", source: "experiment", kind: "test", target: "ad:99", status: "applied", explanation: "Тест", before: {}, after: {}, rules_version: null },
       { ref: "change-2", at: "2026-11-01T10:00:00Z", source: "system", kind: "set_limit", target: "camp:1", status: "conflict", explanation: "Лимит", before: {}, after: {}, rules_version: null },
-      { ref: "change-3", at: "2026-11-01T10:00:00Z", source: "system", kind: "pause", target: "camp:1", status: "failed", explanation: "Пауза", before: {}, after: {}, rules_version: null },
+      { ref: "change-3", at: "2026-11-01T10:00:00Z", source: "system", kind: "pause", target: "camp:1", status: "failed", explanation: "Пауза", before: {}, after: {}, rules_version: null, failure: "Бюджет на период закончился" },
       { ref: "change-4", at: "2026-11-01T10:00:00Z", source: "rollback", kind: "pause_ad", target: "ad:11", status: "applied", explanation: "Откат", before: {}, after: {}, rules_version: null, reverted: true },
       { ref: "change-6", at: "2026-11-01T10:00:00Z", source: "system", kind: "create_campaign", target: "camp:1", status: "planned", explanation: "Создание", before: {}, after: {}, rules_version: null },
     ];
@@ -643,6 +643,9 @@ describe("сетевые ошибки и граничные сценарии (50
     expect(store.state.live?.profile).toEqual([]);
     expect(store.state.hist.some((h) => h.kind === "tests")).toBe(true);
     expect(store.state.hist.some((h) => h.kind === "money")).toBe(true);
+    const failedPause = store.state.hist.find((h) => h.why === "Пауза");
+    expect(failedPause?.next).toBe("Причина: Бюджет на период закончился");
+    expect(failedPause?.state).toBe("Не удалось");
     expect(store.state.ads.some((a) => a.tag === "на проверке Яндекса")).toBe(true);
     expect(store.state.ads.some((a) => a.tag === "отклонено Яндексом")).toBe(true);
 

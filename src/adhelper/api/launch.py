@@ -46,6 +46,7 @@ from adhelper.campaigns.application.launch import (
     NewAd,
     UnregisteredAdvertiserError,
     expand_keywords_with_model,
+    failure_message,
     launch,
     launch_state,
     preview,
@@ -98,16 +99,6 @@ LAUNCH_PENDING = (
     "Запуск начат, но Яндекс пока не подтвердил создание кампаний."
     " Сервис проверит сам и не создаст их дважды. Можно нажать «Запустить рекламу» ещё раз."
 )
-# Почему журнал не дал создать кампанию: слова для владельца.
-REFUSALS = {
-    "period_exists": "В этом кабинете реклама уже идёт с бюджетом на месяц. Новый запуск создал"
-    " бы второй бюджет; меняйте настройки в кабинете",
-    "exceeds_operating_budget": "В кабинете Яндекса уже есть кампании с лимитами: вместе с новыми"
-    " они превысили бы ваш бюджет. Остановите или удалите лишние в Яндексе и запустите снова",
-    "budget_stop_pending": "Сейчас сработала защита бюджета: запуск подождёт её решения",
-    "no_active_period": "Бюджет месяца не начался: попробуйте запустить ещё раз",
-    "ends_after_period": "Срок кампании вышел за бюджетный период: попробуйте запустить ещё раз",
-}
 
 
 def _check_view(check: StoredTagCheck | None) -> dict[str, Any] | None:
@@ -586,10 +577,14 @@ async def _answer(
     if result.status is LaunchStatus.PROBLEM:
         raise HTTPException(status.HTTP_409_CONFLICT, "Запустить пока нельзя: проверьте сводку")
     if result.status is LaunchStatus.REFUSED:
-        text = REFUSALS.get(result.reason or "", "Проверка бюджета не дала создать кампании")
+        text = failure_message(result.reason) or "Проверка бюджета не дала создать кампании"
+        logger.warning("Запуск отклонён журналом: причина=%s", result.reason)
         raise HTTPException(status.HTTP_409_CONFLICT, text)
     if result.status is LaunchStatus.PENDING:
-        return {"status": result.status.value, "campaigns": [], "text": LAUNCH_PENDING}
+        text = LAUNCH_PENDING
+        if result.reason:
+            text = f"{LAUNCH_PENDING} {failure_message(result.reason)}"
+        return {"status": result.status.value, "campaigns": [], "text": text}
     dashboard = SqlDashboard(_sessions(request), business_id)
     for created in result.created:
         await dashboard.note_created_campaign(

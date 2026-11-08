@@ -185,8 +185,15 @@ class DirectHttpClient:
                     response = await self._http.post(url, json=body, headers=headers)
             except httpx.TimeoutException as error:
                 # Тайм-аут после отправки: применилось ли, неизвестно. Решает журнал после чтения.
+                logger.warning("direct %s timeout attempt=%s", url.rsplit("/", 1)[-1], attempt + 1)
                 raise DirectError(None, f"timeout {url}") from error
             except httpx.TransportError as error:
+                logger.warning(
+                    "direct %s %s attempt=%s",
+                    url.rsplit("/", 1)[-1],
+                    type(error).__name__,
+                    attempt + 1,
+                )
                 last = DirectError(None, f"{type(error).__name__} {url}")
                 if isinstance(error, httpx.ConnectError):
                     continue

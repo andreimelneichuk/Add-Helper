@@ -101,7 +101,7 @@ function toEntry(line: HistoryLine, ads: Ad[]): HistoryEntry {
     when,
     title: (line.source === "rollback" ? "Отмена. " : "") + (about ? `${KIND_TITLE[line.kind] ?? "Изменил"}: «${about.name}»` : (KIND_TITLE[line.kind] ?? "Оценил результат")),
     why: line.explanation,
-    next: "",
+    next: line.failure ? `Причина: ${line.failure}` : "",
     canUndo,
     undoNote: canUndo ? "Вернётся прежнее значение. Потраченные деньги не вернутся, общий бюджет не вырастет." : undefined,
     state: canUndo ? undefined : line.reverted ? "Отменено" : (STATUS_WORD[line.status] ?? "Записано"),

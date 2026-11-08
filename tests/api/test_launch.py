@@ -405,7 +405,7 @@ async def test_launch_refuses_when_not_ready_or_over_budget(
     # В кабинете уже есть чужая кампания с лимитом: вместе с новой вышли бы за бюджет.
     over = await client.post(f"{base}/launch", headers=headers)
     assert over.status_code == 409
-    assert "уже есть кампании" in over.json()["detail"]
+    assert "Лимиты кампаний в кабинете Яндекса" in over.json()["detail"]
     assert platform.create_calls == 0
 
 
