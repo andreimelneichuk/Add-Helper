@@ -59,7 +59,7 @@ test("подключение кабинета: отказ в Яндексе ви
   const account = page.getByRole("region", { name: "Кабинет Яндекса" });
   // Подставной Яндекс ID стенда: владелец отказывает на его странице, сервис возвращает его домой.
   await page.request.post("http://localhost:8011/stand-yandex/deny");
-  await account.getByRole("button", { name: /^Подключить/ }).click();
+  await account.getByRole("button", { name: /подключить/i }).click();
   await expect(notice(page)).toContainText("Вы отменили подключение в Яндексе");
   await expect(page.getByRole("heading", { name: "Кабинет Яндекса" })).toBeVisible();
   await expect(page).toHaveURL(/:\d+\/$/);

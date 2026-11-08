@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -59,6 +59,7 @@ class BusinessRow(Base):
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     name: Mapped[str] = mapped_column(Text)
     created_at: Mapped[Any] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class AdAccountRow(Base):
@@ -229,7 +230,10 @@ class SqlUserScope:
     async def businesses(self) -> Sequence[Business]:
         statement = (
             select(BusinessRow)
-            .where(BusinessRow.user_id == self._user_id)
+            .where(
+                BusinessRow.user_id == self._user_id,
+                BusinessRow.deleted_at.is_(None),
+            )
             .order_by(BusinessRow.created_at)
         )
         async with self._sessions() as session:
@@ -237,7 +241,9 @@ class SqlUserScope:
 
     async def business(self, business_id: UUID) -> Business | None:
         statement = select(BusinessRow).where(
-            BusinessRow.id == business_id, BusinessRow.user_id == self._user_id
+            BusinessRow.id == business_id,
+            BusinessRow.user_id == self._user_id,
+            BusinessRow.deleted_at.is_(None),
         )
         async with self._sessions() as session:
             row = (await session.scalars(statement)).one_or_none()
@@ -247,11 +253,60 @@ class SqlUserScope:
         statement = (
             select(AdAccountRow)
             .join(BusinessRow, BusinessRow.id == AdAccountRow.business_id)
-            .where(AdAccountRow.business_id == business_id, BusinessRow.user_id == self._user_id)
+            .where(
+                AdAccountRow.business_id == business_id,
+                BusinessRow.user_id == self._user_id,
+                BusinessRow.deleted_at.is_(None),
+            )
             .order_by(AdAccountRow.external_login)
         )
         async with self._sessions() as session:
             return [_account(row) for row in await session.scalars(statement)]
+
+    async def delete_business(self, business_id: UUID) -> bool:
+        now = datetime.now(UTC)
+        async with self._sessions.begin() as session:
+            statement = select(BusinessRow).where(
+                BusinessRow.id == business_id,
+                BusinessRow.user_id == self._user_id,
+                BusinessRow.deleted_at.is_(None),
+            )
+            row = (await session.scalars(statement)).one_or_none()
+            if row is None:
+                return False
+            row.deleted_at = now
+            # Переводим привязанные кабинеты в disconnected:
+            # это освобождает uq_ad_accounts_active_platform_login
+            await session.execute(
+                update(AdAccountRow)
+                .where(AdAccountRow.business_id == business_id)
+                .values(state=AccountState.DISCONNECTED.value)
+            )
+            # Останавливаем активные периоды бюджета
+            await session.execute(
+                text(
+                    "UPDATE budget_periods SET state = 'stopped' "
+                    "WHERE business_id = :b AND state = 'active'"
+                ),
+                {"b": business_id},
+            )
+            # Закрываем открытые тревоги
+            await session.execute(
+                text(
+                    "UPDATE alerts SET resolved_at = :now "
+                    "WHERE business_id = :b AND resolved_at IS NULL"
+                ),
+                {"b": business_id, "now": now},
+            )
+            # Отменяем висящие в очереди уведомления
+            await session.execute(
+                text(
+                    "UPDATE notification_deliveries SET status = 'skipped' "
+                    "WHERE business_id = :b AND status = 'pending'"
+                ),
+                {"b": business_id},
+            )
+            return True
 
 
 class SqlAccountTokens:

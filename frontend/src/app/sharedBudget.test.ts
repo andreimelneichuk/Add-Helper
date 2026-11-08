@@ -63,7 +63,7 @@ describe("общий бюджет на все сайты", () => {
   it("останавливается на первой ошибке и называет, что уже изменено", async () => {
     const s = await store();
     failOn = "a";
-    await expect(s.applySharedBudget(60000)).rejects.toThrow(/Остановился на сайте «Салон».*Уже изменил: «Бигуди»/);
+    await expect(s.applySharedBudget(60000)).rejects.toThrow(/Остановился на бизнесе «Салон».*Уже изменил: «Бигуди»/);
     expect(calls).toEqual([{ id: "b", rubles: 20000 }]);
   });
 });

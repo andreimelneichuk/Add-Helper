@@ -623,3 +623,33 @@ describe("ручной токен кабинета", () => {
     expect(screen.getByRole("button", { name: "Переподключить" })).toBeInTheDocument();
   });
 });
+
+describe("удаление бизнеса", () => {
+  it("кнопка «Удалить бизнес» показывает подтверждение, которое можно отменить", async () => {
+    const api = fakeApi();
+    const store = await open(api);
+    render(<Settings store={store} />);
+    const delBtn = await screen.findByRole("button", { name: "Удалить бизнес" });
+    expect(delBtn).toBeInTheDocument();
+
+    await userEvent.click(delBtn);
+    expect(screen.getByRole("group", { name: "Подтверждение удаления бизнеса" })).toBeInTheDocument();
+    expect(screen.getByText(/Это действие нельзя отменить/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Отмена" }));
+    expect(screen.queryByRole("group", { name: "Подтверждение удаления бизнеса" })).toBeNull();
+  });
+
+  it("подтверждение вызывает deleteBusiness в store", async () => {
+    const api = fakeApi();
+    const store = await open(api);
+    store.set({ activeBusinessId: "b1", businesses: [{ id: "b1", name: "Салон Анны" }] });
+    const deleteSpy = vi.spyOn(store, "deleteBusiness").mockResolvedValue(undefined);
+    render(<Settings store={store} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Удалить бизнес" }));
+    await userEvent.click(screen.getByRole("button", { name: "Да, удалить бизнес" }));
+
+    expect(deleteSpy).toHaveBeenCalledWith("b1");
+  });
+});

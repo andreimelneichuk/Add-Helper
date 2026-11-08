@@ -58,14 +58,14 @@ function BusinessSelector({ store, s }: { store: Store; s: State }) {
         className="ah-brand-btn"
         aria-expanded={open}
         aria-haspopup="true"
-        aria-label={`Выбрать сайт (текущий: ${currentName})`}
+        aria-label={`Выбрать бизнес (текущий: ${currentName})`}
         onClick={() => setOpen(!open)}
       >
         <span className="ah-brand-arrow" aria-hidden="true">▾</span>
       </button>
       {open && (
         <div className="ah-brand-menu" role="menu">
-          <div className="ah-brand-menu-header">Ваши сайты</div>
+          <div className="ah-brand-menu-header">Ваши бизнесы</div>
           {businesses.map((b) => {
             const active = s.activeBusinessId ? b.id === s.activeBusinessId : b.name === currentName;
             return (
@@ -97,7 +97,7 @@ function BusinessSelector({ store, s }: { store: Store; s: State }) {
               else window.location.assign("/?start=new");
             }}
           >
-            <span>+ Добавить сайт</span>
+            <span>+ Добавить бизнес</span>
           </button>
         </div>
       )}
@@ -138,9 +138,9 @@ export function AppShell({ store }: { store: Store }) {
               type="button"
               className="ah-btn ah-btn-small ah-bar-new"
               onClick={() => setShowNewSite(true)}
-              aria-label="Создать новый сайт"
+              aria-label="Создать новый бизнес"
             >
-              + Новый сайт
+              + Новый бизнес
             </button>
           </div>
         )}

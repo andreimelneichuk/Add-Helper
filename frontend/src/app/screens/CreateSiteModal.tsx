@@ -22,7 +22,7 @@ export function CreateSiteModal({ isOpen, onClose, store }: CreateSiteModalProps
     e.preventDefault();
     const trimmedName = name.trim();
     if (!trimmedName) {
-      setError("Укажите название бизнеса или сайта.");
+      setError("Укажите название бизнеса.");
       return;
     }
 
@@ -36,7 +36,7 @@ export function CreateSiteModal({ isOpen, onClose, store }: CreateSiteModalProps
         window.location.assign("/?start=new");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось создать сайт. Попробуйте позже.");
+      setError(err instanceof Error ? err.message : "Не удалось создать бизнес. Попробуйте позже.");
     } finally {
       setBusy(false);
     }
@@ -63,7 +63,7 @@ export function CreateSiteModal({ isOpen, onClose, store }: CreateSiteModalProps
       >
         <div className="ah-modal-head">
           <h2 id="new-site-modal-title" className="ah-modal-title">
-            Добавить сайт или бизнес
+            Добавить бизнес
           </h2>
           <button
             type="button"
@@ -81,11 +81,11 @@ export function CreateSiteModal({ isOpen, onClose, store }: CreateSiteModalProps
           </p>
 
           <label>
-            <span className="ah-label">Название бизнеса или сайта</span>
+            <span className="ah-label">Название бизнеса</span>
             <input
               className="ah-input"
               style={{ width: "100%", marginTop: 4 }}
-              placeholder="Например: Автосервис «Мотор» или salon-beauty.ru"
+              placeholder="Например: Автосервис «Мотор» или Салон красоты «Лак»"
               value={name}
               onChange={(e) => {
                 setName(e.target.value);
@@ -134,7 +134,7 @@ export function CreateSiteModal({ isOpen, onClose, store }: CreateSiteModalProps
                 className="ah-btn ah-btn-primary"
                 disabled={busy || !name.trim()}
               >
-                {busy ? "Создаю…" : "Создать сайт"}
+                {busy ? "Создаю…" : "Создать бизнес"}
               </button>
             </div>
           </div>

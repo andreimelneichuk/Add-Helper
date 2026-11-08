@@ -6,8 +6,7 @@ import { rub } from "../data";
 import * as v from "valibot";
 import { PriceSchema, planProblem } from "../schemas";
 import { isAbort } from "../polling";
-import { liveApi, savedText } from "../live";
-import type { LiveStore } from "../live";
+import { liveApi, savedText, LiveStore } from "../live";
 import { useStore } from "../store";
 import type { Store } from "../store";
 import "./Settings.css";
@@ -60,10 +59,10 @@ function PlanForm({ api, businesses }: { api: Api; businesses?: Business[] }) {
     if (busy) return;
     setBusy(true);
     if (mode === "shared") {
-      // Сервер делит сумму между всеми сайтами и пишет доли одной операцией: либо у всех, либо ни у кого.
+      // Сервер делит сумму между всеми бизнесами и пишет доли одной операцией: либо у всех, либо ни у кого.
       api.saveBudgetPortfolio({ mode: "shared", rubles: sharedNum }).then(
         (saved) => {
-          setStatus(`Сохранил общий бюджет: ${rub(sharedNum)} в месяц на ${count} ${count === 1 ? "сайт" : "сайта"}. Доли записаны для каждого сайта.`);
+          setStatus(`Сохранил общий бюджет: ${rub(sharedNum)} в месяц на ${count} ${count === 1 ? "бизнес" : count < 5 ? "бизнеса" : "бизнесов"}. Доли записаны для каждого бизнеса.`);
           api.budgetPlan().then((p) => setDraft(p.rubles ? String(p.rubles) : ""), () => undefined);
           return saved;
         },
@@ -91,7 +90,7 @@ function PlanForm({ api, businesses }: { api: Api; businesses?: Business[] }) {
           aria-pressed={mode === "separate"}
           onClick={() => { picked.current = true; setStatus(""); setMode("separate"); }}
         >
-          Раздельный на каждый сайт
+          Раздельный на каждый бизнес
         </button>
         <button
           type="button"
@@ -99,7 +98,7 @@ function PlanForm({ api, businesses }: { api: Api; businesses?: Business[] }) {
           aria-pressed={mode === "shared"}
           onClick={() => { picked.current = true; setStatus(""); setMode("shared"); }}
         >
-          Общий на все сайты
+          Общий на все бизнесы
         </button>
       </div>
 
@@ -119,7 +118,7 @@ function PlanForm({ api, businesses }: { api: Api; businesses?: Business[] }) {
       ) : (
         <>
           <label>
-            <span className="ah-label">Общий бюджет на все сайты, ₽ в месяц</span>
+            <span className="ah-label">Общий бюджет на все бизнесы, ₽ в месяц</span>
             <input
               className="ah-input"
               inputMode="numeric"
@@ -128,7 +127,7 @@ function PlanForm({ api, businesses }: { api: Api; businesses?: Business[] }) {
             />
           </label>
           <p className="set-hint">
-            {sharedNum > 0 ? <>Единый лимит {rub(sharedNum)} в месяц делится между {count} {count === 1 ? "сайтом" : "сайтами"} (примерно по {rub(Math.floor(sharedNum / count))} на сайт).</> : `Укажите общую сумму: она поделится между ${count} ${count === 1 ? "сайтом" : "сайтами"}.`}
+            {sharedNum > 0 ? <>Единый лимит {rub(sharedNum)} в месяц делится между {count} {count === 1 ? "бизнесом" : "бизнесами"} (примерно по {rub(Math.floor(sharedNum / count))} на бизнес).</> : `Укажите общую сумму: она поделится между ${count} ${count === 1 ? "бизнесом" : "бизнесами"}.`}
           </p>
         </>
       )}
@@ -183,7 +182,7 @@ function BudgetForm({ store }: { store: LiveStore }) {
           aria-pressed={mode === "separate"}
           onClick={() => pick("separate")}
         >
-          Раздельный на каждый сайт
+          Раздельный на каждый бизнес
         </button>
         <button
           type="button"
@@ -191,7 +190,7 @@ function BudgetForm({ store }: { store: LiveStore }) {
           aria-pressed={mode === "shared"}
           onClick={() => pick("shared")}
         >
-          Общий на все сайты
+          Общий на все бизнесы
         </button>
       </div>
 
@@ -206,11 +205,11 @@ function BudgetForm({ store }: { store: LiveStore }) {
       ) : (
         <>
           <label>
-            <span className="ah-label">Общий бюджет на все сайты, ₽ в месяц</span>
+            <span className="ah-label">Общий бюджет на все бизнесы, ₽ в месяц</span>
             <input className="ah-input" inputMode="numeric" value={sharedDraft} onChange={(e) => { setAsking(false); setSharedDraft(e.target.value.replace(/\D/g, "").slice(0, 9)); }} />
           </label>
           <p className="set-hint">
-            Единый лимит {rub(sharedAmount)} в месяц делится между {count} {count === 1 ? "сайтом" : "сайтами"} (примерно по {rub(perSite)} на сайт). Сначала снижу бюджет там, где он уменьшается, потом подниму там, где растёт: сумма лимитов не выйдет за большую из старой и новой.
+            Единый лимит {rub(sharedAmount)} в месяц делится между {count} {count === 1 ? "бизнесом" : "бизнесами"} (примерно по {rub(perSite)} на бизнес). Сначала снижу бюджет там, где он уменьшается, потом подниму там, где растёт: сумма лимитов не выйдет за большую из старой и новой.
           </p>
         </>
       )}
@@ -220,7 +219,7 @@ function BudgetForm({ store }: { store: LiveStore }) {
         <div className="set-confirm" role="group" aria-label="Подтверждение бюджета">
           <p>
             {mode === "shared"
-              ? `Поставить общий бюджет ${rub(sharedAmount)} на все сайты? Сумма поделится между ${count} ${count === 1 ? "сайтом" : "сайтами"}, у запущенных лимиты сменятся по очереди. Если на каком-то сайте не получится, остановлюсь и скажу, что уже изменено.`
+              ? `Поставить общий бюджет ${rub(sharedAmount)} на все бизнесы? Сумма поделится между ${count} ${count === 1 ? "бизнесом" : "бизнесами"}, у запущенных лимиты сменятся по очереди. Если на каком-то бизнесе не получится, остановлюсь и скажу, что уже изменено.`
               : `Поставить ${rub(amount)} в месяц вместо ${rub(live.budget)}? ${lower ? "Сначала снижу лимиты в Яндексе, потом сменю бюджет: так расход не выйдет за новую сумму ни в какой момент." : "Лимиты в Яндексе не изменятся сразу: автопилот поднимает их по правилам, понемногу."}`}
           </p>
           <div className="set-actions">
@@ -904,6 +903,55 @@ function Photos({ api }: { api: Api }) {
   );
 }
 
+function DeleteBusiness({ store, businessId, businessName }: { store: Store; businessId: string; businessName: string }) {
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const remove = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      if (store instanceof LiveStore) {
+        await store.deleteBusiness(businessId);
+      } else {
+        const remaining = (store.state.businesses ?? []).filter((b) => b.id !== businessId);
+        store.set({ businesses: remaining });
+      }
+    } catch (e) {
+      setError(message(e));
+      setBusy(false);
+      setAsking(false);
+    }
+  };
+
+  return (
+    <div className="set-danger">
+      <p className="set-hint">Удалит бизнес «{businessName}» из сервиса. Кампании в Яндекс Директе будут остановлены и перенесены в архив, а кабинет отвязан.</p>
+      {asking ? (
+        <div className="set-confirm" role="group" aria-label="Подтверждение удаления бизнеса" style={{ marginTop: 12 }}>
+          <p>Удалить бизнес «{businessName}»? Это действие нельзя отменить.</p>
+          <div className="set-actions" style={{ marginTop: 12 }}>
+            <button type="button" className="ah-btn ah-btn-danger" disabled={busy} onClick={remove}>
+              {busy ? "Удаляю…" : "Да, удалить бизнес"}
+            </button>
+            <button type="button" className="ah-btn" disabled={busy} onClick={() => setAsking(false)}>
+              Отмена
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="set-actions" style={{ marginTop: 12 }}>
+          <button type="button" className="ah-btn ah-btn-danger" onClick={() => setAsking(true)}>
+            Удалить бизнес
+          </button>
+        </div>
+      )}
+      {error && <p className="ah-error" role="alert" style={{ marginTop: 8 }}>{error}</p>}
+    </div>
+  );
+}
+
 // У каждого сайта свои данные: формы настроек пересоздаются при смене сайта, чтобы не сохранить данные одного в другой.
 export function LiveSettings({ store }: { store: Store }) {
   // Подписка на магазин: смена сайта меняет API, и экран должен это увидеть.
@@ -913,6 +961,8 @@ export function LiveSettings({ store }: { store: Store }) {
 }
 
 function SiteSettings({ store, api }: { store: Store; api: Api }) {
+  const s = useStore(store, (x) => ({ activeBusinessId: x.activeBusinessId, businesses: x.businesses, live: x.live }));
+  const businessName = s.businesses?.find((b) => b.id === s.activeBusinessId)?.name ?? s.live?.name ?? "этот бизнес";
   const [leaving, setLeaving] = useState<string | null>(null);
   const logout = async () => {
     setLeaving("Выхожу…");
@@ -958,6 +1008,10 @@ function SiteSettings({ store, api }: { store: Store; api: Api }) {
           <h2 id="set-channels-title" className="ah-panel-title">Уведомления</h2>
           <p className="set-hint">Напишу, если показы остановлены или с деньгами что-то не так.</p>
           <Channels api={api} />
+        </section>
+        <section className="ah-panel set-section" aria-labelledby="set-delete-title">
+          <h2 id="set-delete-title" className="ah-panel-title">Удаление бизнеса</h2>
+          <DeleteBusiness store={store} businessId={s.activeBusinessId ?? ""} businessName={businessName} />
         </section>
         <section className="ah-panel set-section" aria-labelledby="set-exit-title">
           <h2 id="set-exit-title" className="ah-panel-title">Вход</h2>

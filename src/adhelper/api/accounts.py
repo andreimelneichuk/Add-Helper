@@ -205,6 +205,39 @@ def accounts_router(settings: Settings) -> APIRouter:
         found = await service.businesses(info.user.id)
         return [{"id": str(item.id), "name": item.name} for item in found]
 
+    @router.delete("/businesses/{business_id}", status_code=status.HTTP_204_NO_CONTENT)
+    async def delete_business(
+        request: Request,
+        business_id: UUID,
+        service: Service,
+        info: CheckedSession,
+    ) -> Response:
+        try:
+            try:
+                accounts = await service.accounts(info.user.id, business_id)
+                platform_for = getattr(request.app.state, "platform_for", None)
+                if platform_for:
+                    for account in accounts:
+                        platform = platform_for(business_id, account.login)
+                        if platform is not None and hasattr(platform, "read_campaigns"):
+                            campaigns = await platform.read_campaigns(account.login)
+                            active_ids = [c.campaign_id for c in campaigns if c.active]
+                            all_ids = [c.campaign_id for c in campaigns]
+                            if active_ids and hasattr(platform, "pause_campaigns"):
+                                await platform.pause_campaigns(account.login, active_ids)
+                            if all_ids and hasattr(platform, "archive_campaigns"):
+                                await platform.archive_campaigns(account.login, all_ids)
+            except Exception as e:
+                logger.warning(
+                    "Не удалось заархивировать кампании при удалении бизнеса %s: %s",
+                    business_id,
+                    e,
+                )
+            await service.delete_business(info.user.id, business_id)
+        except BusinessNotFound:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Бизнес не найден") from None
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
     @router.get("/businesses/{business_id}/accounts")
     async def accounts(
         business_id: UUID, service: Service, info: CurrentSession

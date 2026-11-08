@@ -260,6 +260,11 @@ class FakePlatform:
             self.campaigns[campaign_id] = replace(self.campaigns[campaign_id], active=True)
         self._check_fault("resume_campaigns", after_apply=True)
 
+    async def archive_campaigns(self, account: str, campaign_ids: list[str]) -> None:
+        for campaign_id in campaign_ids:
+            if campaign_id in self.campaigns:
+                self.campaigns[campaign_id] = replace(self.campaigns[campaign_id], active=False)
+
     async def record_rejection(
         self, account: str, change: LimitChange, decision: LimitDecision
     ) -> None:

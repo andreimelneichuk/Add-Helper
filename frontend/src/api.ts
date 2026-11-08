@@ -312,6 +312,9 @@ export function createGuestApi() {
 export const createBusiness = (name: string, csrf: string) =>
   request<Business>("/api/businesses", { method: "POST", body: JSON.stringify({ name }) }, csrf);
 
+export const deleteBusiness = (businessId: string, csrf: string) =>
+  request<void>(`/api/businesses/${businessId}`, { method: "DELETE" }, csrf);
+
 export function createApi(businessId: string, csrf: string) {
   const base = `/api/businesses/${businessId}`;
   const part = encodeURIComponent;
@@ -421,6 +424,8 @@ export function createApi(businessId: string, csrf: string) {
         { method: "POST", body: JSON.stringify({ account }) },
         csrf,
       ),
+    deleteBusiness: (id?: string) =>
+      request<void>(`/api/businesses/${id ?? businessId}`, { method: "DELETE" }, csrf),
   };
 }
 

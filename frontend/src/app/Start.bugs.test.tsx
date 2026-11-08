@@ -114,14 +114,14 @@ describe("Мастер и первый запуск: регрессии (BUG-…
   });
 
   describe("UX: Main panel site creation", () => {
-    it("renders '+ Новый сайт' button in header and opens CreateSiteModal", async () => {
+    it("renders '+ Новый бизнес' button in header and opens CreateSiteModal", async () => {
       const store = new MockStore(initialState("work"));
       store.set({ live: { name: "Салон Пермь", budget: 20000, spent: 5000, hasCampaigns: true, alerts: [] } as any });
       render(<AppShell store={store} />);
-      const btn = screen.getByRole("button", { name: "Создать новый сайт" });
+      const btn = screen.getByRole("button", { name: "Создать новый бизнес" });
       expect(btn).toBeInTheDocument();
       fireEvent.click(btn);
-      expect(screen.getByRole("dialog", { name: "Добавить сайт или бизнес" })).toBeInTheDocument();
+      expect(screen.getByRole("dialog", { name: "Добавить бизнес" })).toBeInTheDocument();
     });
   });
 

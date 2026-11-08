@@ -21,7 +21,8 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from adhelper.accounts.application.service import hash_token
+from adhelper.accounts.adapters.crypto import AesGcmCipher
+from adhelper.accounts.application.service import hash_token, token_context
 from adhelper.creatives.application.service import cited_facts, profile_from
 
 DEMO_UID = "demo-owner"
@@ -267,14 +268,29 @@ async def _seed(
         id=business_id,
         u=user_id,
     )
+    enc_access = "demo"
+    enc_refresh = "demo"
+    keys = os.environ.get("TOKEN_ENCRYPTION_KEYS")
+    if keys:
+        try:
+            cipher = AesGcmCipher.from_config(keys)
+            enc_access = cipher.encrypt("demo-token", token_context(business_id, login, "access"))
+            enc_refresh = cipher.encrypt(
+                "demo-refresh", token_context(business_id, login, "refresh")
+            )
+        except Exception:
+            pass
+
     await run(
         "INSERT INTO ad_accounts (id, business_id, platform, external_login, encrypted_access,"
         " encrypted_refresh, token_expires_at, scopes, state)"
-        " VALUES (:id, :b, 'yandex_direct', :login, 'demo', 'demo', :exp,"
+        " VALUES (:id, :b, 'yandex_direct', :login, :ea, :er, :exp,"
         " '{direct:api}', 'connected')",
         id=uuid.uuid4(),
         b=business_id,
         login=login,
+        ea=enc_access,
+        er=enc_refresh,
         exp=now + timedelta(days=365),
     )
     await run(

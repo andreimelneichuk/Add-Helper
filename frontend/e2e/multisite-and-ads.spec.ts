@@ -30,7 +30,7 @@ test.describe("E2E Юзеркейсы: Мультибизнес, генерац�
     await selectorBtn.click();
     const menu = page.locator(".ah-brand-menu");
     await expect(menu).toBeVisible();
-    await expect(menu.locator(".ah-brand-menu-header")).toHaveText("Ваши сайты");
+    await expect(menu.locator(".ah-brand-menu-header")).toHaveText("Ваши бизнесы");
 
     // 3. Меню содержит список сайтов и действие добавления нового
     const items = menu.locator(".ah-brand-menu-item");
@@ -52,7 +52,7 @@ test.describe("E2E Юзеркейсы: Мультибизнес, генерац�
     await page.locator(".ah-brand-selector .ah-brand-btn").click();
     const addSiteBtn = page.locator(".ah-brand-menu-action");
     await expect(addSiteBtn).toBeVisible();
-    await expect(addSiteBtn).toContainText("+ Добавить сайт");
+    await expect(addSiteBtn).toContainText("+ Добавить бизнес");
 
     // 2. Клик переводит на экран добавления нового сайта (?start=new)
     await addSiteBtn.click();
@@ -130,8 +130,8 @@ test.describe("E2E Юзеркейсы: Мультибизнес, генерац�
     await expect(budgetForm).toBeVisible();
 
     // 1. Проверяем наличие переключателя режима бюджета
-    const sepChip = budgetForm.getByRole("button", { name: "Раздельный на каждый сайт" });
-    const sharedChip = budgetForm.getByRole("button", { name: "Общий на все сайты" });
+    const sepChip = budgetForm.getByRole("button", { name: "Раздельный на каждый бизнес" });
+    const sharedChip = budgetForm.getByRole("button", { name: "Общий на все бизнесы" });
     await expect(sepChip).toBeVisible();
     await expect(sharedChip).toBeVisible();
 
@@ -158,5 +158,24 @@ test.describe("E2E Юзеркейсы: Мультибизнес, генерац�
     await budgetInput.fill("20000");
     await budgetForm.getByRole("button", { name: "Изменить бюджет" }).click();
     await budgetForm.getByRole("button", { name: "Применить" }).click();
+  });
+
+  test("UC-6: Удаление бизнеса в настройках и предупреждение", async ({ page }) => {
+    await page.goto("/");
+    await page.locator(".ah-rail").getByRole("button", { name: "Настройки" }).click();
+    await expect(page.locator(".set")).toBeVisible();
+
+    const delBtn = page.getByRole("button", { name: "Удалить бизнес" });
+    await expect(delBtn).toBeVisible();
+    await delBtn.click();
+
+    const confirmGroup = page.getByRole("group", { name: "Подтверждение удаления бизнеса" });
+    await expect(confirmGroup).toBeVisible();
+    await expect(confirmGroup.getByText("Это действие нельзя отменить")).toBeVisible();
+
+    // Отмена скрывает подтверждение
+    await confirmGroup.getByRole("button", { name: "Отмена" }).click();
+    await expect(confirmGroup).toHaveCount(0);
+    await expect(delBtn).toBeVisible();
   });
 });

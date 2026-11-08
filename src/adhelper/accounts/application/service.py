@@ -254,6 +254,11 @@ class AccountsService:
             raise BusinessNotFound
         return business
 
+    async def delete_business(self, user_id: UUID, business_id: UUID) -> None:
+        deleted = await self._scope_for(user_id).delete_business(business_id)
+        if not deleted:
+            raise BusinessNotFound
+
     async def accounts(self, user_id: UUID, business_id: UUID) -> Sequence[AdAccount]:
         scope = self._scope_for(user_id)
         if await scope.business(business_id) is None:

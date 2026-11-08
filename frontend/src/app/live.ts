@@ -303,20 +303,20 @@ export class LiveStore extends Store {
       } catch (e) {
         const reason = e instanceof Error ? e.message : "Сервис не ответил";
         const before = done.length ? `Уже изменил: ${done.map((n) => `«${n}»`).join(", ")}. ` : "Лимиты не менялись. ";
-        throw new Error(`Остановился на сайте «${site.name}»: ${reason}. ${before}Остальные сайты не менял, сумма лимитов не выросла.`);
+        throw new Error(`Остановился на бизнесе «${site.name}»: ${reason}. ${before}Остальные бизнесы не менял, сумма лимитов не выросла.`);
       }
     }
     await this.refresh();
     const n = sites.length;
-    return `Общий бюджет ${rub(total)} в месяц на ${n} ${n === 1 ? "сайт" : n < 5 ? "сайта" : "сайтов"} сохранён. Бюджет изменился у ${done.length} из ${changes.length || 0} запущенных. Режим хранится в сервисе.`;
+    return `Общий бюджет ${rub(total)} в месяц на ${n} ${n === 1 ? "бизнес" : n < 5 ? "бизнеса" : "бизнесов"} сохранён. Бюджет изменился у ${done.length} из ${changes.length || 0} запущенных. Режим хранится в сервисе.`;
   }
 
-  /** Переключить активный бизнес/сайт на другой из списка. */
+  /** Переключить активный бизнес на другой из списка. */
   async switchBusiness(id: string) {
     try { window.localStorage.setItem("adhelper.activeBusinessId", id); } catch { /* без хранилища */ }
     const name = this.state.businesses.find((b) => b.id === id)?.name;
     // Загрузка занимает секунду: без отклика кажется, что нажатие не сработало.
-    if (name) this.set({ notice: `Переключаю на сайт «${name}»…` });
+    if (name) this.set({ notice: `Переключаю на бизнес «${name}»…` });
     const session = await openSession();
     if (!session) return;
     const business = session.businesses.find((b) => b.id === id);
@@ -332,11 +332,30 @@ export class LiveStore extends Store {
       pending: null,
       activeBusinessId: id,
       businesses: session.businesses,
-      notice: `Вы переключились на сайт «${business.name}»`,
+      notice: `Вы переключились на бизнес «${business.name}»`,
     });
   }
 
-  /** Открыть мастер создания нового сайта для этого же аккаунта. */
+  /** Удалить бизнес: отвязать кабинет, остановить/архивировать кампании и переключиться. */
+  async deleteBusiness(id: string) {
+    await this.api.deleteBusiness(id);
+    const session = await openSession();
+    const remaining = session?.businesses.filter((b) => b.id !== id) ?? this.state.businesses.filter((b) => b.id !== id);
+    this.set({ businesses: remaining });
+    if (remaining.length > 0) {
+      const next = remaining[0]!;
+      await this.switchBusiness(next.id);
+      this.set({ notice: `Бизнес удалён. Переключил на «${next.name}».` });
+    } else {
+      try { window.localStorage.removeItem("adhelper.activeBusinessId"); } catch {}
+      clearDraft();
+      clearStartSite();
+      clearStartReading();
+      window.location.assign("/?start=new");
+    }
+  }
+
+  /** Открыть мастер создания нового сайта или бизнеса для этого же аккаунта. */
   addNewSite() {
     clearDraft();
     clearStartSite();

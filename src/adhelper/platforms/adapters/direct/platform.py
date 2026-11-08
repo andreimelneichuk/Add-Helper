@@ -441,7 +441,13 @@ class DirectPlatform:
             method,
             {"SelectionCriteria": {"Ids": [int(c) for c in campaign_ids]}},
         )
-        key = "SuspendResults" if method == "suspend" else "ResumeResults"
+        key = (
+            "SuspendResults"
+            if method == "suspend"
+            else "ArchiveResults"
+            if method == "archive"
+            else "ResumeResults"
+        )
         check_results(result.get(key) or [])
 
     async def pause_campaigns(self, account: str, campaign_ids: list[str]) -> None:
@@ -449,6 +455,9 @@ class DirectPlatform:
 
     async def resume_campaigns(self, account: str, campaign_ids: list[str]) -> None:
         await self._campaign_action(account, "resume", campaign_ids)
+
+    async def archive_campaigns(self, account: str, campaign_ids: list[str]) -> None:
+        await self._campaign_action(account, "archive", campaign_ids)
 
     async def record_rejection(
         self, account: str, change: LimitChange, decision: LimitDecision

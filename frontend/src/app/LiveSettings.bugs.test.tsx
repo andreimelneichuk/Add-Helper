@@ -185,7 +185,7 @@ describe("Настройки кабинета: профиль, бюджет, п�
       store.set({ businesses: [{ id: "b1", name: "Салон Ромашка" }, { id: "b2", name: "Бигуди Пермь" }], activeBusinessId: "b1" });
       const switchBusiness = vi.spyOn(store, "switchBusiness").mockResolvedValue();
       render(<AppShell store={store} />);
-      await userEvent.click(screen.getByRole("button", { name: /Выбрать сайт/ }));
+      await userEvent.click(screen.getByRole("button", { name: /Выбрать бизнес/ }));
       expect(screen.getByRole("menuitemradio", { name: "Салон Ромашка" })).toHaveAttribute("aria-checked", "true");
       await userEvent.click(screen.getByRole("menuitemradio", { name: "Бигуди Пермь" }));
       expect(switchBusiness).toHaveBeenCalledOnce();
@@ -208,8 +208,8 @@ describe("Настройки кабинета: профиль, бюджет, п�
       render(<LiveSettings store={store} />);
       expect(await screen.findByText(/Кампаний ещё нет/)).toBeInTheDocument();
       expect(screen.queryByText(/разный регион/)).toBeNull();
-      await userEvent.click(await screen.findByRole("button", { name: "Общий на все сайты" }));
-      expect(screen.getByLabelText("Общий бюджет на все сайты, ₽ в месяц")).toHaveValue("");
+      await userEvent.click(await screen.findByRole("button", { name: "Общий на все бизнесы" }));
+      expect(screen.getByLabelText("Общий бюджет на все бизнесы, ₽ в месяц")).toHaveValue("");
       expect(screen.queryByText(/30.000/)).toBeNull();
     });
   });

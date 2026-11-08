@@ -132,6 +132,10 @@ class LedgeredBudgetPlatform:
                 )
             )
 
+    async def archive_campaigns(self, account: str, campaign_ids: list[str]) -> None:
+        if hasattr(self._platform, "archive_campaigns"):
+            await self._platform.archive_campaigns(account, campaign_ids)
+
     async def record_rejection(
         self, account: str, change: LimitChange, decision: LimitDecision
     ) -> None:
