@@ -150,6 +150,7 @@ CHANGES = table(
     column("before", JSONB),
     column("after", JSONB),
     column("reverts_change_id", BigInteger),
+    column("failure_reason", Text),
     column("created_at", DateTime(timezone=True)),
 )
 DECISIONS = table(

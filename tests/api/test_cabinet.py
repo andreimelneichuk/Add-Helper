@@ -395,6 +395,31 @@ async def test_history_merges_changes_and_decisions(
     assert [(line["source"], line["kind"]) for line in body] == [("autopilot", "keep")]
 
 
+async def test_history_shows_failure_reason_of_a_refused_change(
+    anna: tuple[httpx.AsyncClient, str, uuid.UUID], sessions: Sessions
+) -> None:
+    # Регрессия: колонка failure_reason не читалась в запросе истории, и /history и /today
+    # отвечали 500 на любом неуспешном изменении.
+    client, _, business_id = anna
+    async with sessions.begin() as session:
+        await session.execute(
+            text(
+                "INSERT INTO changes (business_id, account, source, kind, target_ref, before,"
+                " planned, after, status, explanation, idempotency_key, failure_reason,"
+                " created_at, updated_at)"
+                " VALUES (:b, 'anna-direct', 'user', 'create_campaign', 'camp:9', '{}', '{}',"
+                " NULL, 'failed', 'Создал кампанию', 'test-failed-1', 'exceeds_operating_budget',"
+                " :t, :t)"
+            ),
+            {"b": business_id, "t": NOW - timedelta(hours=1)},
+        )
+    response = await client.get(f"/api/businesses/{business_id}/history")
+    assert response.status_code == 200
+    failed = [line for line in response.json() if line["status"] == "failed"]
+    assert len(failed) == 1
+    assert "превысили бы рабочую часть бюджета" in failed[0]["failure"]
+
+
 async def test_login_without_provider_is_closed_but_sessions_work(
     api_settings: Settings,
 ) -> None:
