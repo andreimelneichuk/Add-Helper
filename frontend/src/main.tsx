@@ -2,6 +2,7 @@ import { lazy, StrictMode, Suspense, useEffect, useMemo, useState } from "react"
 import { createRoot } from "react-dom/client";
 import { createApi, createBusiness, createGuestApi, openSession } from "./api";
 import { AppShell } from "./app/AppShell";
+import { AppSkeleton } from "./app/screens/AppSkeleton";
 import { loadDraft, loadStartReading, loadStartSite, loadWizard } from "./app/draft";
 import { LiveStore, loadLive } from "./app/live";
 import { initialState, Store } from "./app/store";
@@ -136,7 +137,7 @@ function Live() {
     }).catch(() => cancelled || setStore("failed"));
     return () => { cancelled = true; };
   }, []);
-  if (store === null) return <p className="ah-boot" role="status">Загружаем данные…</p>;
+  if (store === null) return <AppSkeleton />;
   if (store === "failed") return <p className="ah-boot" role="alert">Сервис не ответил. Обновите страницу через минуту.</p>;
   if (store === "login") return <Login error={loginError} />;
   if (store === "start") return <GuestStart />;

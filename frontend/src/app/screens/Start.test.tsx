@@ -416,6 +416,8 @@ describe("шаги после входа на сервисе", () => {
       tagCheck: vi.fn(async () => ({ check: null, site: "https://nogti.ru/" })),
       requestTagCheck: vi.fn(async () => ({ check: { ...found, status: "queued" as const, counters: [] }, site: "https://nogti.ru/" })),
       launchCheck: vi.fn(async () => ({ items: [], ready: false, launch_available: false, launch_text: "" })),
+      manualTokenLink: vi.fn(async () => ({ url: "https://oauth.yandex.ru/authorize?manual=1" })),
+      saveManualToken: vi.fn(async (_token: string, login?: string) => ({ id: "m1", platform: "yandex_direct", login: login || "anna-token", scopes: [], state: "connected" as const })),
       ...over,
     } as WizardApi;
   }
@@ -438,7 +440,7 @@ describe("шаги после входа на сервисе", () => {
     const store = new MockStore({ ...initialState("start") });
     store.reader = { readSite: vi.fn(), siteRead: vi.fn() };
     store.navigate = vi.fn();
-    const api = wizardApi();
+    const api = wizardApi({ accounts: vi.fn(async () => [{ id: "a", platform: "yandex_direct", login: "anna", scopes: [], state: "connected" }]) });
     const open = vi.fn(() => api);
     render(<Start store={store} />);
     const deps = {
@@ -450,6 +452,7 @@ describe("шаги после входа на сервисе", () => {
     await act(() => store.resume(deps, null));
     expect(open).toHaveBeenCalledWith("b1", "c");
     expect(loadWizard()).toBe("b1");
+    await waitFor(() => expect(screen.getByText("Кабинет подключён: anna")).toBeInTheDocument());
     await userEvent.click(button("Продолжить"));
     expect(store.state.step).toBe(5);
     expect(store.navigate).not.toHaveBeenCalled();
@@ -458,52 +461,59 @@ describe("шаги после входа на сервисе", () => {
   it("кабинет подключается через Яндекс с возвратом в мастер", async () => {
     const api = wizardApi();
     const { store, user } = wizard(4, api);
-    await user.click(await screen.findByRole("button", { name: "Подключить кабинет" }));
+    await user.click(await screen.findByRole("button", { name: "Войти через Яндекс OAuth" }));
     expect(api.connect).toHaveBeenCalledWith("start");
     expect(store.navigate).toHaveBeenCalledWith("https://oauth.yandex.ru/authorize?x=1");
+  });
+
+  it("кабинет подключается через ручной токен доступа", async () => {
+    const api = wizardApi();
+    const { store, user } = wizard(4, api);
+    const tokenInput = await screen.findByPlaceholderText("Вставьте токен доступа из адресной строки");
+    await user.type(tokenInput, "y0_manual_token_secret");
+    await user.click(screen.getByRole("button", { name: "Сохранить токен" }));
+    expect(api.saveManualToken).toHaveBeenCalledWith("y0_manual_token_secret", undefined);
+    expect(store.state.yandex).toBe(true);
+    expect(await screen.findByText("Кабинет подключён: anna-token")).toBeInTheDocument();
+  });
+
+  it("на шаге 4 блокирует переход без подключения кабинета", async () => {
+    const api = wizardApi();
+    const { store, user } = wizard(4, api);
+    await user.click(button("Продолжить"));
+    expect(store.state.step).toBe(4);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Подключите кабинет Директа");
   });
 
   it("подключённый кабинет виден по логину и считается в подключениях", async () => {
     const api = wizardApi({ accounts: vi.fn(async () => [{ id: "a", platform: "yandex_direct", login: "anna-direct", scopes: [], state: "connected" }]) });
     wizard(4, api);
     expect(await screen.findByText("Кабинет подключён: anna-direct")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Подключить кабинет" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Сохранить токен" })).not.toBeInTheDocument();
     expect(side().getByText("1 из 3")).toBeInTheDocument();
   });
 
-  it("отказ сервиса по ИНН держит на шаге и объясняет", async () => {
-    const saveMarking = vi.fn(async () => { throw new ApiError(422, "В ИНН ошибка в цифрах: проверьте по документам"); });
-    const { store, user } = wizard(5, wizardApi({ saveMarking }));
-    await user.type(screen.getByLabelText("ИНН для маркировки"), "7707083894");
-    await user.type(screen.getByLabelText("Наименование, как в ЕГРЮЛ"), "ООО «Ноготки»");
-    await user.type(screen.getByLabelText("ОКВЭД основного вида деятельности"), "96.02");
+  it("отсутствие реквизитов маркировки в Директе держит на шаге и предлагает перейти в Яндекс", async () => {
+    const api = wizardApi({ marking: vi.fn(async () => ({ saved: null })) });
+    const { store, user } = wizard(5, api);
+    expect(await screen.findByText("Реквизиты рекламодателя для маркировки")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Перейти в Яндекс Директ" })).toBeInTheDocument();
     await user.click(button("Продолжить"));
-    expect(await screen.findByRole("alert")).toHaveTextContent("ошибка в цифрах");
-    expect(saveMarking).toHaveBeenCalledWith({ kind: "legal", inn: "7707083894", name: "ООО «Ноготки»", okved: "96.02" });
+    expect(await screen.findByRole("alert")).toHaveTextContent("Укажите реквизиты рекламодателя в кабинете Директа");
     expect(store.state.step).toBe(5);
   });
 
-  it("маркировка уходит в сервис, полный ИНН в браузере не остаётся", async () => {
-    const api = wizardApi();
+  it("реквизиты из Директа отображаются подтверждёнными и позволяют идти дальше", async () => {
+    const api = wizardApi({
+      marking: vi.fn(async () => ({
+        saved: { kind: "legal" as const, inn: "••••3893", name: "ООО «Ноготки»", phone: null, okved: "96.02" },
+      })),
+    });
     const { store, user } = wizard(5, api);
-    await user.click(screen.getByRole("radio", { name: "Физическое лицо" }));
-    await user.type(screen.getByLabelText("ИНН для маркировки"), "500100732259");
-    await user.type(screen.getByLabelText("ФИО"), "Иванова Анна");
-    expect(screen.queryByLabelText("ОКВЭД основного вида деятельности")).not.toBeInTheDocument();
-    await user.type(screen.getByLabelText("Телефон"), "+7 916 123-45-67");
-    await user.click(button("Продолжить"));
-    await waitFor(() => expect(store.state.step).toBe(6));
-    expect(api.saveMarking).toHaveBeenCalledWith({ kind: "person", inn: "500100732259", name: "Иванова Анна", phone: "+7 916 123-45-67" });
-    expect(store.state.inn).toBe("");
-  });
-
-  it("сохранённая маркировка показывается без полного ИНН и не отправляется снова", async () => {
-    const api = wizardApi({ marking: vi.fn(async () => ({ saved: { kind: "legal" as const, inn: "••••••3893", name: "ООО «Ноготки»", phone: null, okved: "96.02" } })) });
-    const { store, user } = wizard(5, api);
-    expect(await screen.findByText(/Сохранено: организация, ИНН ••••••3893/)).toBeInTheDocument();
+    expect(await screen.findByText(/Реквизиты указаны в Директе: ИНН ••••3893/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Проверено" })).toBeInTheDocument();
     await user.click(button("Продолжить"));
     expect(store.state.step).toBe(6);
-    expect(api.saveMarking).not.toHaveBeenCalled();
   });
 
   it("код статистики проверяет сервис и ждёт воркер", async () => {

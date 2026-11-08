@@ -57,33 +57,27 @@ describe("Мастер и первый запуск: регрессии (BUG-…
   });
 
   describe("BUG-034: Step 5 marking validation in real onboarding mode", () => {
-    it("34.1: rejects invalid/empty INN and empty name without calling wizard.saveMarking", async () => {
+    it("34.1: blocks advancement without Direct requisites and does not call wizard.saveMarking", async () => {
       const saveMarking = vi.fn();
       const store = new MockStore(initialState("start"));
       // Simulate real onboarding mode
       store.reader = { readSite: vi.fn(), siteRead: vi.fn() } as any;
       store.wizard = { saveMarking } as any;
 
-      // Navigate to step 5 (Marking)
-      store.set({ step: 5, inn: "", advertiser: { kind: "legal", name: "", phone: "", okved: "96.02" } });
+      // Navigate to step 5 (Marking) without verified requisites
+      store.set({ step: 5, marked: false });
 
       store.next();
 
       // wizard.saveMarking must NOT have been called
       expect(saveMarking).not.toHaveBeenCalled();
-      expect(store.state.block).toMatch(/ИНН это 10 или 12 цифр/);
+      expect(store.state.step).toBe(5);
+      expect(store.state.block).toMatch(/реквизиты рекламодателя в кабинете Директа/);
 
-      // Try with wrong digit count
-      store.set({ inn: "12345" });
+      // Once marked in Direct, step 5 advances
+      store.set({ marked: true });
       store.next();
-      expect(saveMarking).not.toHaveBeenCalled();
-      expect(store.state.block).toMatch(/ИНН это 10 или 12 цифр/);
-
-      // Valid INN but empty name
-      store.set({ inn: "7701234567", advertiser: { kind: "legal", name: "   ", phone: "", okved: "96.02" } });
-      store.next();
-      expect(saveMarking).not.toHaveBeenCalled();
-      expect(store.state.block).toMatch(/Укажите наименование/);
+      expect(store.state.step).toBe(6);
     });
   });
 

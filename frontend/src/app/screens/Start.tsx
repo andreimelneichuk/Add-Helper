@@ -23,7 +23,7 @@ export function formatSite(url: string): string {
 function summary(s: State, real: boolean) {
   const site = s.site.trim();
   const siteDisplay = site ? formatSite(site) : "пока нет";
-  const links = [s.yandex, real ? s.marked : innReady(s), s.metrica].filter(Boolean).length;
+  const links = [s.yandex, real ? s.marked : (s.marked || innReady(s)), s.metrica].filter(Boolean).length;
   const adsCount = adsLeft(s);
   const adsOn = adsCount > 0;
   return [

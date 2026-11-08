@@ -101,6 +101,9 @@ describe("api client", () => {
     await api.overview({ since: "2026-11-01", until: "2026-11-05" });
     expect(globalThis.fetch).toHaveBeenCalledWith("/api/businesses/b-test/overview?since=2026-11-01&until=2026-11-05", expect.anything());
 
+    await api.overview({ since: "2026-11-01" }); // без until (до текущей даты площадки)
+    expect(globalThis.fetch).toHaveBeenCalledWith("/api/businesses/b-test/overview?since=2026-11-01", expect.anything());
+
     await api.overview(); // без Range
     await api.today();
     await api.answerTest(1, true);

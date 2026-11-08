@@ -55,6 +55,27 @@ export class MockStore extends Store {
         const entry = { ...this.entry(`Поставил новый вариант «${name}»`, "Вы попросили.", "Старый работает, пока Яндекс проверяет новый, обычно до суток.", "ads", undo), about: old.id };
         return { ads: s.ads.map((x) => (x.id === old.id ? a.value : x)), hist: [entry, ...this.closed((h) => h.about === old.id)], text: `Отправил новый вариант «${name}» на проверку Яндексу, обычно до суток. Старый пока работает. Отменить можно в истории.` };
       }
+      case "adArchive": {
+        const name = adName(s, a.value);
+        return {
+          ads: s.ads.map((x) => (x.id === a.value ? { ...x, tag: "в архиве", tagTone: "neutral" as const } : x)),
+          openAd: null,
+          hist: [this.entry(`Отправил «${name}» в архив`, "Вы попросили.", "В любой момент можно вернуть из архива.", "ads"), ...s.hist],
+          text: `Отправил «${name}» в архив.`,
+        };
+      }
+      case "adRestore": {
+        const name = adName(s, a.value);
+        const nextOff = { ...s.adsOff };
+        delete nextOff[a.value];
+        return {
+          ads: s.ads.map((x) => (x.id === a.value ? { ...x, tag: "готово к запуску", tagTone: "accent" as const } : x)),
+          adsOff: nextOff,
+          openAd: null,
+          hist: [this.entry(`Вернул «${name}» из архива`, "Вы попросили.", "Объявление снова в списке.", "ads"), ...s.hist],
+          text: `Вернул «${name}» из архива.`,
+        };
+      }
       case "price":
         return { price: a.value, hist: [this.entry(`Обновил цену маникюра: от ${rub(a.value)}`, "Вы сообщили об изменении.", "Исправил объявление, в котором была старая цена. Яндекс проверит его заново.", "ads"), ...s.hist], text: `Обновил профиль и объявление: маникюр от ${rub(a.value)}. Яндекс проверит его заново, обычно до суток.` };
       case "clients": {

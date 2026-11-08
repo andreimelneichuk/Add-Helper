@@ -45,6 +45,7 @@ export type Day = { day: string; totals: Totals };
 
 // Дни статистики по московскому времени, обе границы включены.
 export type Range = { since: string; until: string };
+export type RangeQuery = { since: string; until?: string };
 
 export type Overview = {
   today: string;
@@ -176,7 +177,7 @@ export type SiteRead = {
 };
 
 /** Объявление писателя в мастере: facts — на какие поля черновика оно опирается. */
-export type WizardAd = { headline: string; text: string; facts: string[] };
+export type WizardAd = { id?: string; headline: string; text: string; facts: string[]; active?: boolean; archived?: boolean };
 export type AdSet = {
   id: number;
   status: "queued" | "running" | "ready" | "failed";
@@ -300,8 +301,9 @@ export type Channels = {
 };
 
 // Без периода сервис отдаёт последние 14 дней.
-function period(range?: Range | null): string {
-  return range ? `?since=${range.since}&until=${range.until}` : "";
+function period(range?: RangeQuery | null): string {
+  if (!range) return "";
+  return range.until ? `?since=${range.since}&until=${range.until}` : `?since=${range.since}`;
 }
 
 /** Разбор сайта до входа: без сессии, черновик открывается ключом из ответа. */
@@ -329,15 +331,15 @@ export function createApi(businessId: string, csrf: string) {
   const base = `/api/businesses/${businessId}`;
   const part = encodeURIComponent;
   return {
-    overview: (range?: Range | null, init?: RequestInit) => request<Overview>(`${base}/overview${period(range)}`, init),
+    overview: (range?: RangeQuery | null, init?: RequestInit) => request<Overview>(`${base}/overview${period(range)}`, init),
     today: (init?: RequestInit) => request<{ rules: string; cards: TodayCard[] }>(`${base}/today`, init),
     answerTest: (decisionId: number, agree: boolean) =>
       request<{ status: string; text: string }>(`${base}/tests/offers/${decisionId}`, { method: "POST", body: JSON.stringify({ agree }) }, csrf),
     cancelTest: (id: number) => request<{ status: string; text: string }>(`${base}/tests/${id}/cancel`, { method: "POST" }, csrf),
-    ads: (range?: Range | null, init?: RequestInit) => request<AdLine[]>(`${base}/ads${period(range)}`, init),
-    campaign: (account: string, id: string, range?: Range | null, init?: RequestInit) =>
+    ads: (range?: RangeQuery | null, init?: RequestInit) => request<AdLine[]>(`${base}/ads${period(range)}`, init),
+    campaign: (account: string, id: string, range?: RangeQuery | null, init?: RequestInit) =>
       request<CampaignDetail>(`${base}/campaigns/${part(account)}/${part(id)}${period(range)}`, init),
-    ad: (account: string, id: string, range?: Range | null, init?: RequestInit) =>
+    ad: (account: string, id: string, range?: RangeQuery | null, init?: RequestInit) =>
       request<AdDetail>(`${base}/ads/${part(account)}/${part(id)}${period(range)}`, init),
     history: (init?: RequestInit) => request<HistoryLine[]>(`${base}/history`, init),
     profile: (init?: RequestInit) => request<Profile>(`${base}/profile`, init),
@@ -381,7 +383,19 @@ export function createApi(businessId: string, csrf: string) {
     startLaunch: () => request<LaunchAnswer>(`${base}/launch`, { method: "POST" }, csrf),
     adoptAds: (choice: AdsChoice) =>
       request<{ kept: number }>(`${base}/creative-sets/adopt`, { method: "POST", body: JSON.stringify(choice) }, csrf),
-    wizardAds: (init?: RequestInit) => request<{ ads: WizardAd[] }>(`${base}/wizard-ads`, init),
+    wizardAds: (init?: RequestInit) => request<{ ads: WizardAd[]; keywords?: string[] }>(`${base}/wizard-ads`, init),
+    createWizardAd: (body: { headline: string; text: string }) =>
+      request<WizardAd>(`${base}/wizard-ads`, { method: "POST", body: JSON.stringify(body) }, csrf),
+    updateWizardAd: (id: string, body: { headline: string; text: string }) =>
+      request<WizardAd>(`${base}/wizard-ads/${part(id)}`, { method: "PUT", body: JSON.stringify(body) }, csrf),
+    setWizardAdState: (id: string, active: boolean) =>
+      request<{ status: string; active: boolean }>(`${base}/wizard-ads/${part(id)}/state`, { method: "POST", body: JSON.stringify({ active }) }, csrf),
+    archiveWizardAd: (id: string, archived: boolean = true) =>
+      request<{ status: string; archived: boolean }>(`${base}/wizard-ads/${part(id)}/archive`, { method: "POST", body: JSON.stringify({ archived }) }, csrf),
+    deleteWizardAd: (id: string) =>
+      request<{ status: string }>(`${base}/wizard-ads/${part(id)}`, { method: "DELETE" }, csrf),
+    archiveAd: (account: string, adId: string) =>
+      request<{ status: string }>(`${base}/ads/${part(account)}/${part(adId)}/archive`, { method: "POST" }, csrf),
     logout: () => request<void>("/api/auth/logout", { method: "POST" }, csrf),
     channels: (init?: RequestInit) => request<Channels>("/api/me/notifications", init),
     linkTelegram: () => request<{ url: string }>("/api/me/telegram", { method: "POST" }, csrf),

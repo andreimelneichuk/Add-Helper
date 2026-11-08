@@ -22,6 +22,7 @@ from adhelper.budget.application.preflight import StoredPeriodPreflight
 from adhelper.campaigns.adapters.rules_file import load_targeting_rules
 from adhelper.campaigns.application.targeting import TARGETING_PREFIX, vitrine_patch
 from adhelper.creatives.adapters.moderation_sql import SqlModeration
+from adhelper.creatives.adapters.wizard import SqlWizardAds
 from adhelper.creatives.application.moderation import follow_owner
 from adhelper.ledger.adapters.sql import PostgresAccountLock, SqlChangeRepository
 from adhelper.ledger.application.consequences import consequence
@@ -233,6 +234,14 @@ def control_router() -> APIRouter:
         business_id: OwnedChecked,
         period: Period,
     ) -> dict[str, str]:
+        if account.startswith("w") or ad_id == "undefined" or ad_id.startswith("w"):
+            wizard = SqlWizardAds(_sessions(request), business_id)
+            target = account if account.startswith("w") else ad_id
+            idx_str = target.removeprefix("w")
+            if idx_str.isdigit():
+                ok = await wizard.set_active(int(idx_str), body.active)
+                if ok:
+                    return {"status": "applied"}
         view = await ad_detail(
             SqlDashboard(_sessions(request), business_id), period, account, ad_id
         )
@@ -260,6 +269,25 @@ def control_router() -> APIRouter:
                 SqlModeration(_sessions(request), business_id), ledger, account, _now(request)
             )
         return {"status": done}
+
+    @router.post("/ads/{account}/{ad_id}/archive")
+    async def post_ad_archive(
+        request: Request,
+        account: str,
+        ad_id: str,
+        business_id: OwnedChecked,
+    ) -> dict[str, str]:
+        if account.startswith("w") or ad_id == "undefined" or ad_id.startswith("w"):
+            wizard = SqlWizardAds(_sessions(request), business_id)
+            target = account if account.startswith("w") else ad_id
+            idx_str = target.removeprefix("w")
+            if idx_str.isdigit():
+                ok = await wizard.set_archived(int(idx_str), True)
+                if ok:
+                    return {"status": "applied"}
+        dashboard = SqlDashboard(_sessions(request), business_id)
+        await dashboard.note_ad_state(account, ad_id, "archived")
+        return {"status": "applied"}
 
     @router.post("/pause")
     async def post_pause(

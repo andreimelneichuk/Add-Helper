@@ -1,35 +1,67 @@
 // Шаги 4–8 мастера на настоящих данных: объявления, кабинет, маркировка, код статистики, сводка.
 // Всё, что владелец вводит, сразу уходит в сервис; сводку готовности проверяет сервис.
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { AdAccount, AdvertiserKind, LaunchAnswer, LaunchCheck, MarkingView, TagCheckView } from "../../../api";
-import { rub } from "../../data";
+import { type Ad, rub } from "../../data";
 import type { State, Store } from "../../store";
 
 type Props = { store: Store; s: State };
 
 const say = (e: unknown) => (e instanceof Error ? e.message : "Сервис не ответил. Попробуйте позже.");
 const KIND_LABEL: Record<AdvertiserKind, string> = { legal: "Организация", ip: "ИП", person: "Физическое лицо" };
-const KIND_NAME: Record<AdvertiserKind, string> = { legal: "Наименование, как в ЕГРЮЛ", ip: "ФИО предпринимателя", person: "ФИО" };
 
 export function RealYandex({ store, s }: Props) {
   const api = store.wizard;
   const [accounts, setAccounts] = useState<AdAccount[] | null>(null);
   const [status, setStatus] = useState("");
+  const [manualLink, setManualLink] = useState<string | null>(null);
+  const [token, setToken] = useState("");
+  const [loginInput, setLoginInput] = useState("");
+  const [askLogin, setAskLogin] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [tokenError, setTokenError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!api) return;
     api.accounts().then((found) => {
       setAccounts(found);
-      store.set({ yandex: found.some((a) => a.state === "connected") });
+      const isConn = found.some((a) => a.state === "connected");
+      store.set({ yandex: isConn });
     }, (e: unknown) => setStatus(say(e)));
+    if (api.manualTokenLink) {
+      api.manualTokenLink().then((r) => setManualLink(r.url), () => setManualLink(null));
+    }
   }, [api, store]);
+
   const connected = accounts?.find((a) => a.state === "connected");
-  const isConnected = !!connected || s.yandex;
+  const isConnected = !!connected;
   const login = connected?.login || s.account?.email?.split("@")[0] || "Яндекс Директ";
-  const connect = () => {
+
+  const saveToken = async () => {
+    if (!api || !api.saveManualToken) return;
+    setBusy(true);
+    setTokenError(null);
+    try {
+      const saved = await api.saveManualToken(token.trim(), loginInput.trim() || undefined);
+      setAccounts((all) => [...(all ?? []).filter((x) => x.login !== saved.login), saved]);
+      store.set({ yandex: true, block: "" });
+      setToken("");
+      setLoginInput("");
+      setAskLogin(false);
+    } catch (e) {
+      setAskLogin(/логин/i.test(say(e)));
+      setTokenError(say(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const connectOAuth = () => {
     if (!api) return;
     setStatus("");
     api.connect("start").then((r) => store.navigate(r.authorize_url), (e: unknown) => setStatus(say(e)));
   };
+
   return (
     <div className="st-link">
       <div className="st-link-text">
@@ -37,91 +69,150 @@ export function RealYandex({ store, s }: Props) {
         <div className="ah-muted">
           {s.account?.email ? `Вы вошли как ${s.account.email}. ` : ""}
           {isConnected
-            ? "Директ подключён вместе с аккаунтом Яндекса. Кампании запуск создаст в этом кабинете."
-            : "Чтобы сервис мог управлять рекламой в вашем Директе, предоставьте доступ к кабинету: нажмите кнопку «Подключить кабинет»."}
+            ? "Директ подключён. Кампании запуск создаст в этом кабинете."
+            : "Чтобы сервис мог управлять рекламой в вашем Директе, предоставьте доступ к кабинету через токен доступа."}
         </div>
         {status && <p className="st-letter" role="status">{status}</p>}
       </div>
       {isConnected ? (
         <button type="button" className="ah-btn st-link-done" disabled>Подключено</button>
       ) : (
-        api && <button type="button" className="ah-btn ah-btn-primary" onClick={connect}>Подключить кабинет</button>
+        <div className="st-token-box" style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10, width: "100%" }}>
+          <p className="set-hint" style={{ margin: 0 }}>
+            Получите код доступа в Яндексе: нажмите кнопку, разрешите доступ, скопируйте строку доступа из адресной строки и вставьте сюда.
+          </p>
+          {manualLink && (
+            <div>
+              <button
+                type="button"
+                className="ah-btn"
+                onClick={() => window.open(manualLink, "_blank", "noopener")}
+              >
+                Получить код доступа к Директу
+              </button>
+            </div>
+          )}
+          <label className="st-field" style={{ margin: 0 }}>
+            <span className="ah-label">Токен доступа к Директу</span>
+            <input
+              type="password"
+              className="ah-input"
+              value={token}
+              placeholder="Вставьте токен доступа из адресной строки"
+              onChange={(e) => setToken(e.target.value)}
+              autoComplete="off"
+            />
+          </label>
+          {askLogin && (
+            <label className="st-field" style={{ margin: 0 }}>
+              <span className="ah-label">Логин в Директе</span>
+              <input
+                className="ah-input"
+                value={loginInput}
+                onChange={(e) => setLoginInput(e.target.value)}
+                autoComplete="off"
+              />
+            </label>
+          )}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="ah-btn ah-btn-primary"
+              disabled={busy || !token.trim()}
+              onClick={saveToken}
+            >
+              {busy ? "Проверяю…" : "Сохранить токен"}
+            </button>
+            <button
+              type="button"
+              className="ah-btn"
+              onClick={connectOAuth}
+            >
+              Войти через Яндекс OAuth
+            </button>
+          </div>
+          {tokenError && <p className="ah-error" role="alert" style={{ margin: 0 }}>{tokenError}</p>}
+        </div>
       )}
     </div>
   );
 }
 
-export function RealMarking({ store, s }: Props) {
+export function RealMarking({ store }: Props) {
   const api = store.wizard;
   const [saved, setSaved] = useState<MarkingView | null>(null);
-  useEffect(() => {
+  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState("");
+
+  const check = useCallback(() => {
     if (!api) return;
-    api.marking().then((r) => {
-      setSaved(r.saved);
-      if (r.saved) store.set({ marked: true });
-    }, () => undefined);
+    setLoading(true);
+    setStatus("");
+    api.marking().then(
+      (r) => {
+        setSaved(r.saved);
+        store.set({ marked: !!(r.saved && r.saved.inn), block: "" });
+        setLoading(false);
+      },
+      (e: unknown) => {
+        setStatus(say(e));
+        setLoading(false);
+      }
+    );
   }, [api, store]);
-  const a = s.advertiser;
-  const edit = (patch: Partial<State["advertiser"]>) => store.set({ advertiser: { ...a, ...patch }, block: "" });
-  if (s.marked && saved) {
+
+  useEffect(() => {
+    check();
+  }, [check]);
+
+  const directUrl = "https://direct.yandex.ru/registered/main.cmd?cmd=clientInfo";
+
+  if (loading && !saved) {
+    return <p className="ah-muted">Проверяю реквизиты в Яндекс Директе…</p>;
+  }
+
+  if (saved && saved.inn) {
+    const kindTitle = KIND_LABEL[saved.kind] ?? saved.kind;
     return (
       <div className="st-link">
         <div className="st-link-text">
-          <div className="st-link-title">Сохранено: {KIND_LABEL[saved.kind].toLowerCase()}, ИНН {saved.inn}</div>
-          <div className="ah-muted">{saved.name}. Передам в Яндекс при запуске, храню зашифрованным.</div>
+          <div className="st-link-title">Реквизиты указаны в Директе: ИНН {saved.inn}</div>
+          <div className="ah-muted">
+            {saved.name ? `${saved.name}. ` : ""}{kindTitle}. Яндекс автоматически передаст данные в ОРД при запуске рекламы по 347-ФЗ.
+          </div>
+          {status && <p className="st-letter" role="status">{status}</p>}
         </div>
-        <button
-          type="button"
-          className="ah-btn"
-          onClick={() =>
-            store.set({
-              marked: false,
-              inn: saved.inn || s.inn,
-              advertiser: {
-                ...a,
-                kind: saved.kind,
-                name: saved.name,
-                okved: saved.okved ?? "",
-                phone: saved.phone ?? a.phone ?? "",
-              },
-            })
-          }
-        >
-          Изменить
-        </button>
+        <div className="st-link-actions" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button type="button" className="ah-btn st-link-done" disabled>Проверено</button>
+          <button type="button" className="ah-btn" onClick={check} disabled={loading}>Проверить снова</button>
+        </div>
       </div>
     );
   }
+
   return (
-    <div className="st-marking">
-      <fieldset className="st-kind">
-        <legend className="ah-label">Кто рекламодатель</legend>
-        {(Object.keys(KIND_LABEL) as AdvertiserKind[]).map((k) => (
-          <label key={k} className="st-kind-option">
-            <input type="radio" name="advertiser-kind" checked={a.kind === k} onChange={() => edit({ kind: k })} /> {KIND_LABEL[k]}
-          </label>
-        ))}
-      </fieldset>
-      <label className="st-field st-inn">
-        <span className="ah-label">ИНН для маркировки</span>
-        <input className="ah-input" inputMode="numeric" autoComplete="off" maxLength={12} value={s.inn} placeholder={a.kind === "legal" ? "10 цифр" : "12 цифр"} onChange={(e) => store.set({ inn: e.target.value.replace(/\D/g, ""), block: "" })} />
-      </label>
-      <label className="st-field">
-        <span className="ah-label">{KIND_NAME[a.kind]}</span>
-        <input className="ah-input" autoComplete="off" maxLength={300} value={a.name} onChange={(e) => edit({ name: e.target.value })} />
-      </label>
-      {a.kind !== "person" && (
-        <label className="st-field">
-          <span className="ah-label">ОКВЭД основного вида деятельности</span>
-          <input className="ah-input" inputMode="decimal" autoComplete="off" maxLength={8} value={a.okved} placeholder="например, 96.02" onChange={(e) => edit({ okved: e.target.value.replace(/[^\d.]/g, "") })} />
-        </label>
-      )}
-      {a.kind === "person" && (
-        <label className="st-field">
-          <span className="ah-label">Телефон</span>
-          <input className="ah-input" type="tel" autoComplete="off" maxLength={20} value={a.phone} placeholder="+7 900 000-00-00" onChange={(e) => edit({ phone: e.target.value })} />
-        </label>
-      )}
+    <div className="st-link">
+      <div className="st-link-text">
+        <div className="st-link-title">Реквизиты рекламодателя для маркировки</div>
+        <div className="ah-muted">
+          По закону № 347-ФЗ вся интернет-реклама должна маркироваться. Яндекс Директ маркирует её автоматически через свой ОРД, но в вашем кабинете Директа реквизиты (ИНН) пока не указаны.
+          <br /><br />
+          Перейдите в настройки кабинета Яндекса, укажите данные плательщика/рекламодателя и нажмите «Проверить снова».
+        </div>
+        {status && <p className="st-letter" role="status">{status}</p>}
+      </div>
+      <div className="st-link-actions" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+        <button
+          type="button"
+          className="ah-btn ah-btn-primary"
+          onClick={() => window.open(directUrl, "_blank", "noopener")}
+        >
+          Перейти в Яндекс Директ
+        </button>
+        <button type="button" className="ah-btn" onClick={check} disabled={loading}>
+          {loading ? "Проверяю…" : "Проверить снова"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -240,6 +331,57 @@ export function RealLaunch({ store }: Props) {
 /** Шаг «Объявления»: пишет настоящий писатель по фактам черновика, владелец оставляет нужные. */
 export function RealAds({ store, s }: Props) {
   const chosenSaved = !!s.account;
+  const [adding, setAdding] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newText, setNewText] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editText, setEditText] = useState("");
+
+  const handleAdd = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTitle.trim() || !newText.trim()) return;
+    const customAd: Ad = {
+      id: `custom-${Date.now()}`,
+      name: newTitle.trim(),
+      title: newTitle.trim(),
+      hook: newTitle.trim(),
+      text: newText.trim(),
+      tag: "в рекламу",
+      tagTone: "good",
+      leads: 0,
+      cost: 0,
+      facts: "Ваш текст",
+    };
+    store.set({ ads: [customAd, ...s.ads], block: "" });
+    setNewTitle("");
+    setNewText("");
+    setAdding(false);
+  };
+
+  const handleSaveEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingId || !editTitle.trim() || !editText.trim()) return;
+    const updated = s.ads.map((item) =>
+      item.id === editingId
+        ? { ...item, title: editTitle.trim(), hook: editTitle.trim(), name: editTitle.trim(), text: editText.trim() }
+        : item
+    );
+    store.set({ ads: updated, block: "" });
+    setEditingId(null);
+  };
+
+  const handleDelete = (adId: string) => {
+    if (s.ads.length <= 1) {
+      store.set({ block: "Оставьте хотя бы одно объявление для запуска рекламы." });
+      return;
+    }
+    const updated = s.ads.filter((item) => item.id !== adId);
+    const nextDraftOff = { ...s.draftOff };
+    delete nextDraftOff[adId];
+    store.set({ ads: updated, draftOff: nextDraftOff, block: "" });
+  };
+
   if (s.writing) {
     return (
       <div className="st-writing-wrap">
@@ -258,13 +400,14 @@ export function RealAds({ store, s }: Props) {
       {s.adSet?.template && <p className="ah-muted">Писатель сейчас не ответил, поэтому объявления собраны по шаблону из ваших фактов. После запуска я буду писать новые и ставить лучшие.</p>}
       {s.adSet?.needsReview && <p className="ah-muted">У вашей сферы строгие правила рекламы: перед запуском каждое объявление покажу вам на подтверждение.</p>}
       {chosenSaved && s.ads.length > 0 && <p className="ah-muted">Выбор сохранён в сервисе: запуск начнётся с этих объявлений.</p>}
+      {s.block && s.ads.length > 0 && <p className="ah-muted" role="alert" style={{ color: "var(--ah-bad, #e53935)" }}>{s.block}</p>}
       {s.ads.length === 0 && (
         <div className="st-link" style={{ marginBottom: 16 }}>
           <div className="st-link-text">
             <div className="st-link-title">Нет готовых объявлений</div>
             <div className="ah-muted" role="alert">
               {s.facts.some((f) => f.field === "service" || f.id === "prices")
-                ? s.block || "Лимит генераций на сегодня исчерпан. Вы можете продолжить к кабинету и настроить объявления там."
+                ? s.block || "Лимит генераций на сегодня исчерпан. Вы можете добавить своё объявление вручную или продолжить к кабинету."
                 : "Объявления составляются по услугам из вашего профиля. Вернитесь на шаг «Профиль» и добавьте хотя бы одну услугу."}
             </div>
           </div>
@@ -279,10 +422,89 @@ export function RealAds({ store, s }: Props) {
           )}
         </div>
       )}
+
+      {adding && (
+        <form className="st-ad st-ad-plain" style={{ marginBottom: 16, border: "2px solid var(--ah-accent, #007aff)" }} onSubmit={handleAdd}>
+          <div className="st-ad-body">
+            <h3 style={{ margin: "0 0 8px 0" }}>Новое объявление</h3>
+            <label style={{ display: "block", marginBottom: 8 }}>
+              <span className="ah-muted" style={{ fontSize: 13 }}>Заголовок ({newTitle.length}/56)</span>
+              <input
+                type="text"
+                className="ah-input"
+                style={{ width: "100%", marginTop: 4 }}
+                maxLength={56}
+                value={newTitle}
+                placeholder="Заголовок объявления"
+                onChange={(e) => setNewTitle(e.target.value)}
+                required
+              />
+            </label>
+            <label style={{ display: "block", marginBottom: 12 }}>
+              <span className="ah-muted" style={{ fontSize: 13 }}>Текст объявления ({newText.length}/81)</span>
+              <textarea
+                className="ah-input"
+                rows={2}
+                style={{ width: "100%", marginTop: 4 }}
+                maxLength={81}
+                value={newText}
+                placeholder="Текст вашего объявления"
+                onChange={(e) => setNewText(e.target.value)}
+                required
+              />
+            </label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button type="submit" className="ah-btn ah-btn-primary" disabled={!newTitle.trim() || !newText.trim()}>Добавить</button>
+              <button type="button" className="ah-btn" onClick={() => setAdding(false)}>Отмена</button>
+            </div>
+          </div>
+        </form>
+      )}
+
       <div className="st-ads">
         {s.ads.map((a) => {
           const off = !!s.draftOff[a.id];
           const action = off ? "Вернуть" : "Убрать";
+          const isEditing = editingId === a.id;
+
+          if (isEditing) {
+            return (
+              <form key={a.id} className="st-ad st-ad-plain" onSubmit={handleSaveEdit}>
+                <div className="st-ad-body">
+                  <h3 style={{ margin: "0 0 8px 0" }}>Редактирование объявления</h3>
+                  <label style={{ display: "block", marginBottom: 8 }}>
+                    <span className="ah-muted" style={{ fontSize: 13 }}>Заголовок ({editTitle.length}/56)</span>
+                    <input
+                      type="text"
+                      className="ah-input"
+                      style={{ width: "100%", marginTop: 4 }}
+                      maxLength={56}
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      required
+                    />
+                  </label>
+                  <label style={{ display: "block", marginBottom: 12 }}>
+                    <span className="ah-muted" style={{ fontSize: 13 }}>Текст ({editText.length}/81)</span>
+                    <textarea
+                      className="ah-input"
+                      rows={2}
+                      style={{ width: "100%", marginTop: 4 }}
+                      maxLength={81}
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      required
+                    />
+                  </label>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button type="submit" className="ah-btn ah-btn-primary" disabled={!editTitle.trim() || !editText.trim()}>Сохранить</button>
+                    <button type="button" className="ah-btn" onClick={() => setEditingId(null)}>Отмена</button>
+                  </div>
+                </div>
+              </form>
+            );
+          }
+
           return (
             <article key={a.id} className={off ? "st-ad st-ad-plain is-off" : "st-ad st-ad-plain"}>
               <div className="st-ad-body">
@@ -293,7 +515,11 @@ export function RealAds({ store, s }: Props) {
                 <p className="st-ad-text">{a.text}</p>
                 <p className="st-ad-facts">{a.facts}</p>
                 {!chosenSaved && (
-                  <button type="button" className="ah-btn st-ad-toggle" aria-label={`${action} «${a.name}»`} onClick={() => store.set({ draftOff: { ...s.draftOff, [a.id]: !off }, block: "" })}>{action}</button>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                    <button type="button" className="ah-btn st-ad-toggle" aria-label={`${action} «${a.name}»`} onClick={() => store.set({ draftOff: { ...s.draftOff, [a.id]: !off }, block: "" })}>{action}</button>
+                    <button type="button" className="ah-btn" onClick={() => { setEditingId(a.id); setEditTitle(a.title); setEditText(a.text); }}>Редактировать</button>
+                    <button type="button" className="ah-btn" onClick={() => handleDelete(a.id)}>Удалить</button>
+                  </div>
                 )}
               </div>
             </article>
@@ -301,7 +527,10 @@ export function RealAds({ store, s }: Props) {
         })}
       </div>
       {!chosenSaved && (
-        <button type="button" className="ah-btn" onClick={() => void store.writeAds(true)}>{s.ads.length ? "Написать другие варианты" : "Написать ещё раз"}</button>
+        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+          <button type="button" className="ah-btn ah-btn-primary" onClick={() => setAdding(true)}>+ Своё объявление</button>
+          <button type="button" className="ah-btn" onClick={() => void store.writeAds(true)}>{s.ads.length ? "Написать другие варианты" : "Написать ещё раз"}</button>
+        </div>
       )}
     </>
   );

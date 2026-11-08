@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from adhelper.api.cabinet import Owned, OwnedChecked, _now, _sessions
 from adhelper.api.site import _guest_key, _token_hash
-from adhelper.campaigns.application.launch import expand_keywords_with_model
+from adhelper.campaigns.application.launch import generate_keywords
 from adhelper.creatives.adapters.rules_file import load_wizard_rules
 from adhelper.creatives.adapters.sql import SqlProfiles
 from adhelper.creatives.adapters.wizard import (
@@ -60,6 +60,19 @@ class AdoptBody(BaseModel):
     id: int
     token: str = Field(min_length=1, max_length=200)
     kept: list[int] = Field(max_length=MAX_KEPT)
+
+
+class WizardAdBody(BaseModel):
+    headline: str = Field(min_length=1, max_length=56)
+    text: str = Field(min_length=1, max_length=81)
+
+
+class WizardAdStateBody(BaseModel):
+    active: bool
+
+
+class WizardAdArchiveBody(BaseModel):
+    archived: bool = True
 
 
 def _draft(draft: WizardDraft) -> dict[str, Any]:
@@ -167,24 +180,125 @@ def wizard_ads_router() -> APIRouter:
     @router.get("/wizard-ads")
     async def wizard_ads(request: Request, business_id: Owned) -> dict[str, Any]:
         sessions = _sessions(request)
-        chosen = await SqlWizardAds(sessions, business_id).chosen()
+        wizard = SqlWizardAds(sessions, business_id)
+        all_items = await wizard.all_ads()
+        if all_items:
+            ads_list = [
+                {
+                    "id": item.id,
+                    "headline": item.headline,
+                    "text": item.text,
+                    "facts": list(item.facts),
+                    "active": item.active,
+                    "archived": item.archived,
+                }
+                for item in all_items
+            ]
+        else:
+            chosen = await wizard.chosen()
+            ads_list = [
+                {
+                    "id": f"w{i}",
+                    "headline": d.headline,
+                    "text": d.text,
+                    "facts": [s.label for s in d.sources],
+                    "active": True,
+                    "archived": False,
+                }
+                for i, d in enumerate(chosen)
+            ]
         profiles = await SqlProfiles(sessions, business_id).get()
         keywords: list[str] = []
         if profiles:
-            model = getattr(request.app.state, "text_model", None) or getattr(
-                request.app.state, "command_model", None
-            )
             keywords = list(
-                await expand_keywords_with_model(
-                    model,
+                generate_keywords(
                     profiles[0].services,
                     niche=profiles[0].niche,
                     address=profiles[0].address,
                 )
             )
-        res: dict[str, Any] = {"ads": [_draft(d) for d in chosen]}
+        res: dict[str, Any] = {"ads": ads_list}
         if keywords:
             res["keywords"] = keywords
         return res
+
+    @router.post("/wizard-ads", status_code=status.HTTP_201_CREATED)
+    async def post_wizard_ad(
+        request: Request, body: WizardAdBody, business_id: OwnedChecked
+    ) -> dict[str, Any]:
+        sessions = _sessions(request)
+        wizard = SqlWizardAds(sessions, business_id)
+        item = await wizard.add_ad(body.headline.strip(), body.text.strip(), _now(request))
+        return {
+            "id": item.id,
+            "headline": item.headline,
+            "text": item.text,
+            "facts": list(item.facts),
+            "active": item.active,
+            "archived": item.archived,
+        }
+
+    @router.put("/wizard-ads/{ad_id}")
+    async def put_wizard_ad(
+        request: Request, ad_id: str, body: WizardAdBody, business_id: OwnedChecked
+    ) -> dict[str, Any]:
+        sessions = _sessions(request)
+        wizard = SqlWizardAds(sessions, business_id)
+        idx_str = ad_id.removeprefix("w")
+        if not idx_str.isdigit():
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
+        item = await wizard.update_ad(int(idx_str), body.headline.strip(), body.text.strip())
+        if item is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
+        return {
+            "id": item.id,
+            "headline": item.headline,
+            "text": item.text,
+            "facts": list(item.facts),
+            "active": item.active,
+            "archived": item.archived,
+        }
+
+    @router.post("/wizard-ads/{ad_id}/state")
+    async def post_wizard_ad_state(
+        request: Request, ad_id: str, body: WizardAdStateBody, business_id: OwnedChecked
+    ) -> dict[str, Any]:
+        sessions = _sessions(request)
+        wizard = SqlWizardAds(sessions, business_id)
+        idx_str = ad_id.removeprefix("w")
+        if not idx_str.isdigit():
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
+        ok = await wizard.set_active(int(idx_str), body.active)
+        if not ok:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
+        return {"status": "applied", "active": body.active}
+
+    @router.post("/wizard-ads/{ad_id}/archive")
+    async def post_wizard_ad_archive(
+        request: Request, ad_id: str, body: WizardAdArchiveBody, business_id: OwnedChecked
+    ) -> dict[str, Any]:
+        sessions = _sessions(request)
+        wizard = SqlWizardAds(sessions, business_id)
+        idx_str = ad_id.removeprefix("w")
+        if not idx_str.isdigit():
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
+        ok = await wizard.set_archived(int(idx_str), body.archived)
+        if not ok:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
+        return {"status": "applied", "archived": body.archived}
+
+    @router.delete("/wizard-ads/{ad_id}")
+    async def delete_wizard_ad(
+        request: Request, ad_id: str, business_id: OwnedChecked
+    ) -> dict[str, Any]:
+        sessions = _sessions(request)
+        wizard = SqlWizardAds(sessions, business_id)
+        idx_str = ad_id.removeprefix("w")
+        if not idx_str.isdigit():
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
+        ok = await wizard.set_archived(int(idx_str), True)
+        if not ok:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
+        return {"status": "applied", "archived": True}
 
     return router

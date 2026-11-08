@@ -201,12 +201,22 @@ export function AdDetail({ store, id }: { store: Store; id: string }) {
   const s = useStoreState(store);
   const ad = s.ads.find((a) => a.id === id)!;
   const name = adName(s, id);
-  const off = !!s.adsOff[id];
+  const isArchived = ad.tag === "в архиве" || ad.tag === "заменено";
+  const off = !isArchived && (!!s.adsOff[id] || ad.tag === "отключено");
   const { hook, title } = adShown(s, ad);
   const [composing, setComposing] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(ad.title);
+  const [editText, setEditText] = useState(ad.text);
+
   // Подтверждённый вариант уже стал объявлением: форма больше не нужна.
-  // Следим за текстом, а не за объектом: подробности с сервиса приходят позже и форму не закрывают.
-  useEffect(() => setComposing(false), [ad.title, ad.text, ad.hook]);
+  useEffect(() => {
+    setComposing(false);
+    setEditing(false);
+    setEditTitle(ad.title);
+    setEditText(ad.text);
+  }, [ad.title, ad.text, ad.hook]);
+
   const events = s.hist.filter((h) => h.about === id || h.title.includes(`«${name}»`));
   const action = off ? "Включить" : "Отключить";
 
@@ -217,7 +227,50 @@ export function AdDetail({ store, id }: { store: Store; id: string }) {
         <h2 className="anno-name">{name}</h2>
         <span className={`ah-tag ah-tag-${ad.tagTone}`}>{ad.tag}</span>
       </div>
-      {composing && s.live && store.rework ? (
+      {editing ? (
+        <form
+          className="ah-panel anno-edit-form"
+          style={{ maxWidth: 640, margin: "16px 0" }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (editTitle.trim() && editText.trim()) {
+              store.ask({
+                action: "adSave",
+                value: { ...ad, title: editTitle.trim(), hook: editTitle.trim(), name: editTitle.trim(), text: editText.trim() },
+              });
+              setEditing(false);
+            }
+          }}
+        >
+          <div className="ah-panel-title">Редактировать объявление</div>
+          <label className="anno-compose-field" style={{ display: "block", marginTop: 8 }}>
+            <span>Заголовок ({editTitle.length}/56)</span>
+            <input
+              type="text"
+              className="ah-input"
+              maxLength={56}
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              required
+            />
+          </label>
+          <label className="anno-compose-field" style={{ display: "block", marginTop: 12 }}>
+            <span>Текст объявления ({editText.length}/81)</span>
+            <textarea
+              className="ah-input"
+              rows={3}
+              maxLength={81}
+              value={editText}
+              onChange={(e) => setEditText(e.target.value)}
+              required
+            />
+          </label>
+          <div className="anno-actions" style={{ display: "flex", gap: 8, marginTop: 16 }}>
+            <button type="submit" className="ah-btn ah-btn-primary" disabled={!editTitle.trim() || !editText.trim()}>Сохранить</button>
+            <button type="button" className="ah-btn" onClick={() => setEditing(false)}>Отмена</button>
+          </div>
+        </form>
+      ) : composing && s.live && store.rework ? (
         <LiveRework
           api={store.rework}
           ad={ad}
@@ -249,9 +302,17 @@ export function AdDetail({ store, id }: { store: Store; id: string }) {
                 <div className="ah-label">Откуда факты</div>
                 <div>{ad.facts || "Проверяю"}</div>
               </div>
-              <div className="anno-actions">
-                {(!s.live || store.rework) && <button type="button" className="ah-btn ah-btn-primary" onClick={() => setComposing(true)}>Переделать</button>}
-                <button type="button" className="ah-btn" onClick={() => (off ? store.run({ action: "ad", value: id }) : store.ask({ action: "ad", value: id }))}>{action}</button>
+              <div className="anno-actions" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+                {isArchived ? (
+                  <button type="button" className="ah-btn ah-btn-primary" onClick={() => store.ask({ action: "adRestore", value: id })}>Вернуть из архива</button>
+                ) : (
+                  <>
+                    <button type="button" className="ah-btn" onClick={() => { setEditTitle(ad.title); setEditText(ad.text); setEditing(true); }}>Редактировать</button>
+                    {(!s.live || store.rework) && <button type="button" className="ah-btn ah-btn-primary" onClick={() => setComposing(true)}>Переделать</button>}
+                    <button type="button" className="ah-btn" onClick={() => (off ? store.run({ action: "ad", value: id }) : store.ask({ action: "ad", value: id }))}>{action}</button>
+                    <button type="button" className="ah-btn" onClick={() => store.ask({ action: "adArchive", value: id })}>В архив</button>
+                  </>
+                )}
               </div>
             </section>
             <section className="ah-panel anno-events">
@@ -281,7 +342,7 @@ export function AdMaker({ store }: { store: Store }) {
     <div className="anno-screen">
       <button type="button" className="ah-btn anno-back" onClick={() => store.set({ openAd: null })}>Все объявления</button>
       <h2 className="anno-name">Новое объявление</h2>
-      <p className="ah-muted">Напишу из фактов вашего профиля. Общий бюджет не вырастет.</p>
+      <p className="ah-muted">Напишу из фактов вашего профиля или укажите пожелание. Общий бюджет не вырастет.</p>
       <Compose s={s} base={null} useLabel="Поставить в показы" onCancel={() => store.set({ openAd: null })} onUse={(value) => store.ask({ action: "adSave", value })} />
     </div>
   );

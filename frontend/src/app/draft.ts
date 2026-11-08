@@ -15,6 +15,8 @@ export type StartDraft = {
   step?: number;
   /** Выключенные черновики объявлений. */
   draftOff?: Record<string, boolean>;
+  /** Пользовательские или отредактированные объявления. */
+  customAds?: { id: string; headline: string; text: string; facts: string[] }[];
   /** Создать как новый бизнес, даже если у пользователя уже есть бизнесы. */
   createAsNew?: boolean;
 };
@@ -173,6 +175,15 @@ export async function transferDraft(deps: TransferDeps, draft: StartDraft): Prom
     } catch (e) {
       // Набор пропал или ещё не готов: вход важнее, объявления напишутся заново к запуску.
       if (!(e instanceof ApiError) || e.status >= 500) throw e;
+    }
+  }
+  if (draft.customAds && draft.customAds.length > 0 && (api as any).createWizardAd) {
+    for (const ca of draft.customAds) {
+      if (ca.id.startsWith("custom-")) {
+        try {
+          await (api as any).createWizardAd({ headline: ca.headline, text: ca.text });
+        } catch { /* без ошибки мастера */ }
+      }
     }
   }
   clearDraft();

@@ -12,6 +12,8 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from adhelper.accounts.adapters.sql import account_states
+from adhelper.accounts.application.service import AccountState
 from adhelper.api.cabinet import OwnedChecked
 from adhelper.commands.adapters.rules_file import load_rules
 from adhelper.commands.application.analytics import AdStatSummary, AnalyticsContext
@@ -23,6 +25,7 @@ from adhelper.commands.application.service import (
     known_from,
 )
 from adhelper.creatives.adapters.sql import SqlProfiles
+from adhelper.creatives.adapters.wizard import SqlWizardAds
 from adhelper.stats.adapters.sql import SqlDashboard
 from adhelper.stats.application.overview import PLATFORM_ZONE, ads, platform_today, window
 
@@ -61,10 +64,15 @@ def chat_router() -> APIRouter:
         lines = await ads(dashboard, window(platform_today(now), None, None))
         history_lines = await dashboard.history(limit=10)
         found = await SqlProfiles(sessions, business_id).get()
-        known = known_from(
-            [(f"{line.account}/{line.ad_id}", line.title) for line, _ in lines],
-            found[0] if found else None,
-        )
+        chosen = await SqlWizardAds(sessions, business_id).chosen()
+        accounts = await account_states(sessions, business_id)
+        connected_logins = [login for login, state in accounts if state is AccountState.CONNECTED]
+        connected_login = connected_logins[0] if connected_logins else None
+
+        ad_pairs = [(f"{line.account}/{line.ad_id}", line.title) for line, _ in lines]
+        if not ad_pairs and chosen:
+            ad_pairs = [(f"draft/{i}", draft.headline) for i, draft in enumerate(chosen)]
+        known = known_from(ad_pairs, found[0] if found else None)
 
         cost_micros = sum(line.totals.cost for line, _ in lines)
         impressions = sum(line.totals.impressions for line, _ in lines)
@@ -99,6 +107,9 @@ def chat_router() -> APIRouter:
             conversions=conversions,
             ads=ad_summaries,
             recent_history=recent_history,
+            has_campaigns=bool(lines),
+            connected_account=connected_login,
+            wizard_ads=tuple(draft.headline for draft in chosen),
         )
 
         rules = load_rules(CURRENT_RULES)

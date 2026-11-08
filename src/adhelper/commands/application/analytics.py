@@ -77,6 +77,9 @@ class AnalyticsContext:
     spent_rubles: int | None = None
     ads: tuple[AdStatSummary, ...] = ()
     recent_history: tuple[dict[str, Any], ...] = ()
+    has_campaigns: bool = False
+    connected_account: str | None = None
+    wizard_ads: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -154,7 +154,7 @@ test.describe("Задача 15. Онбординг клиента (onboarding.sp
 
     // Если все объявления отключены, переход дальше заблокирован
     await page.getByRole("button", { name: "Нравится" }).click();
-    await expect(page.getByRole("alert")).toContainText("Оставьте хотя бы одно объявление.");
+    await expect(page.getByRole("alert").first()).toContainText("Оставьте хотя бы одно объявление.");
 
     // Возвращаем объявления
     for (let i = 0; i < count; i++) {
@@ -225,16 +225,9 @@ test.describe("Задача 15. Онбординг клиента (onboarding.sp
     await expect(page.getByText(/stand-direct-\d+/)).toBeVisible({ timeout: 20_000 });
     await page.getByRole("button", { name: "Продолжить" }).click();
 
-    // 5. Шаг маркировки: радиокнопки рекламодателя и валидация ИНН
-    await expect(page.getByRole("heading", { level: 1, name: "Укажите ИНН для маркировки" })).toBeVisible();
-    await page.getByLabel("ИНН для маркировки").fill("7707083894");
-    await page.getByLabel("Наименование, как в ЕГРЮЛ").fill("ООО «Ноготок»");
-    await page.getByLabel("ОКВЭД основного вида деятельности").fill("96.02");
-    await page.getByRole("button", { name: "Продолжить" }).click();
-    await expect(page.getByRole("alert")).toContainText("ошибка в цифрах");
-
-    // Ввод валидного ИНН юридического лица
-    await page.getByLabel("ИНН для маркировки").fill("7707083893");
+    // 5. Шаг маркировки: автоматическая сверка реквизитов в Директе
+    await expect(page.getByRole("heading", { level: 1, name: "Реквизиты для маркировки" })).toBeVisible();
+    await expect(page.getByText(/Реквизиты указаны в Директе: ИНН 7707083893/)).toBeVisible({ timeout: 20_000 });
     await page.getByRole("button", { name: "Продолжить" }).click();
 
     // 6. Шаг кода статистики Яндекс Метрики

@@ -40,8 +40,9 @@ from adhelper.creatives.adapters.rules_file import load_rework_rules, load_rules
 from adhelper.creatives.adapters.sql import SqlCreativeQueue, SqlProfileSource
 from adhelper.creatives.application.service import run_queued
 from adhelper.creatives.domain.model import ModelReply
-from adhelper.worker.demo import ADS, CAMPAIGNS, ENV_FILE, seed_demo, write_demo_env
+from adhelper.worker.demo import ADS, CAMPAIGNS, DEMO_LOGIN, ENV_FILE, seed_demo, write_demo_env
 from adhelper.worker.runtime import Runtime, open_runtime
+from adhelper.platforms.domain.ports import Advertiser
 from tests.budget.fake_platform import FakePlatform
 from tests.claims import with_claims
 
@@ -440,13 +441,30 @@ def main() -> None:
         max_guest_reads_per_day=1000,
     )
     demo = _platform()
+    demo.advertisers[DEMO_LOGIN] = Advertiser(
+        kind="legal",
+        inn="7707083893",
+        name="ООО «Лак»",
+        phone="+79991234567",
+        okved="96.02",
+    )
     # У каждого кабинета своя площадка: кампании демо-кабинета не считаются в бюджет нового.
     platforms: dict[str, FakePlatform] = {}
 
     def platform_for(_business: object, account: str) -> FakePlatform:
         if not account.startswith(STAND_LOGIN):
             return demo
-        return platforms.setdefault(account, FakePlatform([], datetime.now(UTC)))
+        if account not in platforms:
+            fake_plat = FakePlatform([], datetime.now(UTC))
+            fake_plat.advertisers[account] = Advertiser(
+                kind="legal",
+                inn="7707083893",
+                name="ООО «Ноготок»",
+                phone="+79991234567",
+                okved="96.02",
+            )
+            platforms[account] = fake_plat
+        return platforms[account]
 
     app.state.platform_for = platform_for
     app.include_router(_stand_router(app))

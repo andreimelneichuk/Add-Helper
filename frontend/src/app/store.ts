@@ -18,6 +18,8 @@ type Pending =
   | { action: "price"; value: number }
   | { action: "ad"; value: string }
   | { action: "adSave"; value: Ad }
+  | { action: "adArchive"; value: string }
+  | { action: "adRestore"; value: string }
   | { action: "balance" }
   // Команда из чата на настоящих данных: что именно сделать, понял сервис.
   | { action: "chat"; value: ChatCommand }
@@ -116,7 +118,7 @@ export type State = SessionState & ChatState & WizardState & CabinetState;
 export type BudgetOptions = { min: number; max: number; presets: number[] };
 /** Шаги мастера после входа работают с бизнесом через эти методы. */
 export type ReworkApi = Pick<Api, "rework" | "reworkSet" | "chooseRework">;
-export type WizardApi = Pick<Api, "accounts" | "connect" | "marking" | "saveMarking" | "tagCheck" | "requestTagCheck" | "launchCheck" | "startLaunch" | "wizardAds">;
+export type WizardApi = Pick<Api, "accounts" | "connect" | "marking" | "saveMarking" | "tagCheck" | "requestTagCheck" | "launchCheck" | "startLaunch" | "wizardAds" | "manualTokenLink" | "saveManualToken">;
 export type WizardDeps = {
   session: () => Promise<{ me: Me; businesses: Business[] } | null>;
   open: (businessId: string, csrf: string) => WizardApi;
@@ -217,7 +219,9 @@ export function adShown(s: Pick<State, "price" | "ads">, ad: Ad) {
   return { hook: priced ? adName(s, ad.id) : ad.hook, title: priced ? adName(s, ad.id) : ad.title };
 }
 export function adStat(s: Pick<State, "adsOff" | "situation">, ad: Ad) {
-  if (s.adsOff[ad.id]) return "Отключено";
+  if (ad.tag === "в архиве" || ad.tag === "заменено") return "В архиве";
+  if (s.adsOff[ad.id] || ad.tag === "отключено") return "Отключено";
+  if (ad.tag === "готово к запуску") return "Готово к запуску";
   // В первые дни показатели карточки ещё не накоплены: суммы из данных относятся к работающей рекламе.
   if (s.situation === "first" || ad.leads <= 0) return "Собираю данные";
   return `${ad.leads} ${leadsWord(ad.leads)}, по ${rub(ad.cost / ad.leads)}`;
@@ -237,7 +241,7 @@ export function refusalOf(s: State, a: Pending): string | null {
     const month = s.live ? "этом месяце" : "ноябре";
     return `В ${month} уже потрачено ${rub(spentOf(s))}, бюджет месяца не может быть меньше.`;
   }
-  if (a.action === "ad" && !s.adsOff[a.value] && s.ads.every((x) => x.id === a.value || s.adsOff[x.id])) return "Это последнее объявление. Чтобы остановить показы, нажмите «Пауза».";
+  if ((a.action === "ad" || a.action === "adArchive") && !s.adsOff[a.value] && s.ads.filter((x) => x.tag !== "в архиве" && x.tag !== "заменено").every((x) => x.id === a.value || s.adsOff[x.id])) return "Это последнее объявление. Чтобы остановить показы, нажмите «Пауза».";
   return null;
 }
 
@@ -257,6 +261,8 @@ export function confirmText(s: State, a: Pending): string {
     case "undo": { const h = s.hist.find((x) => x.id === a.value); return `Отменить «${h?.title}»? ${h?.undoNote ?? ""}`; }
     case "price": return `Маникюр теперь от ${rub(a.value)}. Обновлю профиль и объявление со старой ценой.`;
     case "ad": if (s.live) return `Отключить «${adName(s, a.value)}»? Общий бюджет не изменится. Отменить можно в истории.`; return `Отключить «${adName(s, a.value)}»? ${inTest(s, a.value) ? "Идёт проверка вариантов, она закончится раньше срока. " : ""}Его деньги перераспределю между остальными. Отменить можно в истории.`;
+    case "adArchive": return `Отправить «${adName(s, a.value)}» в архив? В любой момент можно вернуть обратно из вкладки «В архиве».`;
+    case "adRestore": return `Вернуть «${adName(s, a.value)}» из архива?`;
     case "adSave": {
       if (!s.ads.some((x) => x.id === a.value.id)) return `Добавить объявление «${a.value.name}»? Яндекс проверит его, обычно до суток. Общий бюджет не вырастет: деньги поделю между объявлениями. Отключить можно в истории.`;
       return `Поставить новый вариант «${adName(s, a.value.id)}»? Старый работает, пока Яндекс проверяет новый, обычно до суток. ${inTest(s, a.value.id) ? "Идёт проверка вариантов, она закончится раньше срока. " : ""}Отменить можно в истории.`;
@@ -294,7 +300,7 @@ export class Store {
   askUndo = (id: string) => this.set({ asked: { ...this.state.asked, [id]: !this.state.asked[id] } });
   set = (patch: Partial<State>) => {
     this.state = { ...this.state, ...patch };
-    if (this.state.stage === "start" && ("site" in patch || "facts" in patch || "step" in patch || "f" in patch || "draftOff" in patch || "adSet" in patch)) {
+    if (this.state.stage === "start" && ("site" in patch || "facts" in patch || "step" in patch || "f" in patch || "draftOff" in patch || "adSet" in patch || "ads" in patch)) {
       this.persistDraft();
     }
     this.listeners.forEach((fn) => fn());
@@ -311,6 +317,7 @@ export class Store {
       budget: Number(s.f.budget),
       step: s.step,
       draftOff: s.draftOff,
+      customAds: s.ads.map((a) => ({ id: a.id, headline: a.title, text: a.text, facts: a.facts ? a.facts.split(", ") : [] })),
       ...(s.createAsNew || loadDraft()?.createAsNew ? { createAsNew: true } : {}),
       ...ads,
     });
@@ -597,7 +604,12 @@ export class Store {
     if (s.step === 4 && !this.wizard && this.transferDeps && !this.keptExisting) { void this.saveNewSite(this.transferDeps); return; }
     // Бизнес уже был: мастер его не трогает, дальше кабинет.
     if (s.step >= 4 && !this.wizard) { clearDraft(); return this.navigate("/"); }
-    if (s.step === 5) { void this.saveMarking(); return; }
+    if (s.step === 4 && !s.yandex) return this.set({ block: "Подключите кабинет Директа: получите код доступа и вставьте токен." });
+    if (s.step === 5) {
+      if (s.marked) return this.advance();
+      if (s.inn) { void this.saveMarking(); return; }
+      return this.set({ block: "Укажите реквизиты рекламодателя в кабинете Директа и нажмите «Проверить снова»." });
+    }
     if (s.step === 6) return this.advance("Проверьте сводку: в ней видно, что готово и чего не хватает.");
     if (s.step === STEPS.length - 1) { clearDraft(); clearWizard(); return this.navigate("/"); }
     return this.advance();

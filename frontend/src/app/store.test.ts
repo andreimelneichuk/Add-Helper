@@ -143,7 +143,7 @@ describe("хранилище прототипа", () => {
     const store = new MockStore(initialState("start"));
     const saveMarking = vi.fn().mockResolvedValue({});
     store.reader = { readSite: vi.fn(), siteRead: vi.fn() };
-    store.wizard = { accounts: vi.fn(), connect: vi.fn(), marking: vi.fn(), saveMarking, tagCheck: vi.fn(), requestTagCheck: vi.fn(), launchCheck: vi.fn(), startLaunch: vi.fn(), wizardAds: vi.fn() };
+    store.wizard = { accounts: vi.fn(), connect: vi.fn(), marking: vi.fn(), saveMarking, tagCheck: vi.fn(), requestTagCheck: vi.fn(), launchCheck: vi.fn(), startLaunch: vi.fn(), wizardAds: vi.fn(), manualTokenLink: vi.fn(), saveManualToken: vi.fn() };
     store.navigate = vi.fn();
 
     // Шаг 4 без входа
@@ -158,7 +158,7 @@ describe("хранилище прототипа", () => {
     expect(store.navigate).toHaveBeenCalledWith("/");
 
     // Шаг 5 сохранение маркировки
-    store.wizard = { accounts: vi.fn(), connect: vi.fn(), marking: vi.fn(), saveMarking, tagCheck: vi.fn(), requestTagCheck: vi.fn(), launchCheck: vi.fn(), startLaunch: vi.fn(), wizardAds: vi.fn() };
+    store.wizard = { accounts: vi.fn(), connect: vi.fn(), marking: vi.fn(), saveMarking, tagCheck: vi.fn(), requestTagCheck: vi.fn(), launchCheck: vi.fn(), startLaunch: vi.fn(), wizardAds: vi.fn(), manualTokenLink: vi.fn(), saveManualToken: vi.fn() };
     store.set({ step: 5, inn: "7701234567", advertiser: { kind: "legal", name: "ООО Салон", phone: "", okved: "96.02" } });
     store.next();
     await new Promise((r) => setTimeout(r, 10));

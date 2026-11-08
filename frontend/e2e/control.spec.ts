@@ -279,12 +279,8 @@ test("после подключения кабинета мастер ведёт
   await expect(page).toHaveURL(/\/\?start$/);
   await page.getByRole("button", { name: "Продолжить" }).click();
 
-  await page.getByLabel("ИНН для маркировки").fill("7707083894");
-  await page.getByLabel("Наименование, как в ЕГРЮЛ").fill("ООО «Лак»");
-  await page.getByLabel("ОКВЭД основного вида деятельности").fill("96.02");
-  await page.getByRole("button", { name: "Продолжить" }).click();
-  await expect(page.getByRole("alert")).toContainText("ошибка в цифрах");
-  await page.getByLabel("ИНН для маркировки").fill("7707083893");
+  await expect(page.getByRole("heading", { level: 1, name: "Реквизиты для маркировки" })).toBeVisible();
+  await expect(page.getByText(/Реквизиты указаны в Директе: ИНН 7707083893/)).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: "Продолжить" }).click();
 
   await expect(page.getByRole("heading", { level: 1, name: "Поставьте код статистики на сайт" })).toBeVisible();
@@ -335,9 +331,8 @@ test("новый владелец проходит мастер и запуск�
   await expect(page.getByText(/stand-direct-\d+/)).toBeVisible();
   await page.getByRole("button", { name: "Продолжить" }).click();
 
-  await page.getByLabel("ИНН для маркировки").fill("7707083893");
-  await page.getByLabel("Наименование, как в ЕГРЮЛ").fill("ООО «Ноготок»");
-  await page.getByLabel("ОКВЭД основного вида деятельности").fill("96.02");
+  await expect(page.getByRole("heading", { level: 1, name: "Реквизиты для маркировки" })).toBeVisible();
+  await expect(page.getByText(/Реквизиты указаны в Директе: ИНН 7707083893/)).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: "Продолжить" }).click();
   await page.getByRole("button", { name: "Проверить установку" }).click();
   await expect(page.getByText(/Код найден на сайте, счётчик 98765432/)).toBeVisible({ timeout: 15_000 });

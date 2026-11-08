@@ -1,11 +1,13 @@
 """Наборы мастера до входа и выбор владельца после входа. Миграция 0018."""
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm.attributes import flag_modified
 
 from adhelper.creatives.adapters.sql import CreativeSetRow, profile_from_json, profile_to_json
 from adhelper.creatives.domain.model import (
@@ -152,6 +154,17 @@ class SqlWizardSets:
         return None if row is None else _view(row)
 
 
+@dataclass(frozen=True)
+class WizardAdItem:
+    id: str
+    index: int
+    headline: str
+    text: str
+    facts: tuple[str, ...]
+    active: bool
+    archived: bool = False
+
+
 class SqlWizardAds:
     """Объявления, которые владелец оставил в мастере. Запрос ограничен business_id."""
 
@@ -174,4 +187,174 @@ class SqlWizardAds:
         if row is None:
             return ()
         drafts = _view(row).drafts
-        return tuple(drafts[i] for i in row.kept or [] if 0 <= i < len(drafts))
+        raw = row.drafts or []
+        return tuple(
+            drafts[i]
+            for i in row.kept or []
+            if 0 <= i < len(drafts) and not (i < len(raw) and bool(raw[i].get("archived", False)))
+        )
+
+    async def all_ads(self) -> list[WizardAdItem]:
+        statement = (
+            select(CreativeSetRow)
+            .where(CreativeSetRow.business_id == self._business_id)
+            .order_by(CreativeSetRow.id.desc())
+            .limit(1)
+        )
+        async with self._sessions() as session:
+            row = await session.scalar(statement)
+        if row is None or not row.drafts:
+            return []
+        view = _view(row)
+        drafts = view.drafts
+        kept_set = set(row.kept or [])
+        items: list[WizardAdItem] = []
+        for i, d in enumerate(drafts):
+            raw = row.drafts[i] if i < len(row.drafts) else {}
+            is_archived = bool(raw.get("archived", False))
+            is_active = (i in kept_set) and not is_archived
+            items.append(
+                WizardAdItem(
+                    id=f"w{i}",
+                    index=i,
+                    headline=d.headline,
+                    text=d.text,
+                    facts=tuple(source.label for source in d.sources),
+                    active=is_active,
+                    archived=is_archived,
+                )
+            )
+        return items
+
+    async def add_ad(
+        self, headline: str, text: str, now: datetime, rules_version: str = "wizard-1"
+    ) -> WizardAdItem:
+        statement = (
+            select(CreativeSetRow)
+            .where(CreativeSetRow.business_id == self._business_id)
+            .order_by(CreativeSetRow.id.desc())
+            .limit(1)
+        )
+        async with self._sessions.begin() as session:
+            row = await session.scalar(statement)
+            if row is None:
+                row = CreativeSetRow(
+                    business_id=self._business_id,
+                    status=SetStatus.READY.value,
+                    rules_version=rules_version,
+                    reason="wizard",
+                    guest_key=None,
+                    token_hash=None,
+                    profile={},
+                    drafts=[],
+                    kept=[],
+                    created_at=now,
+                )
+                session.add(row)
+                await session.flush()
+            drafts = [dict(d) for d in (row.drafts or [])]
+            kept = list(row.kept or [])
+            new_draft = {
+                "headline": headline,
+                "text": text,
+                "sources": [{"label": "Ваш текст", "quote": ""}],
+                "archived": False,
+            }
+            drafts.append(new_draft)
+            idx = len(drafts) - 1
+            kept.append(idx)
+            row.drafts = drafts
+            row.kept = kept
+            flag_modified(row, "drafts")
+            flag_modified(row, "kept")
+            return WizardAdItem(
+                id=f"w{idx}",
+                index=idx,
+                headline=headline,
+                text=text,
+                facts=("Ваш текст",),
+                active=True,
+                archived=False,
+            )
+
+    async def update_ad(self, index: int, headline: str, text: str) -> WizardAdItem | None:
+        statement = (
+            select(CreativeSetRow)
+            .where(CreativeSetRow.business_id == self._business_id)
+            .order_by(CreativeSetRow.id.desc())
+            .limit(1)
+        )
+        async with self._sessions.begin() as session:
+            row = await session.scalar(statement)
+            if row is None or not row.drafts or not (0 <= index < len(row.drafts)):
+                return None
+            drafts = [dict(d) for d in row.drafts]
+            drafts[index]["headline"] = headline
+            drafts[index]["text"] = text
+            row.drafts = drafts
+            flag_modified(row, "drafts")
+            kept_set = set(row.kept or [])
+            is_archived = bool(drafts[index].get("archived", False))
+            return WizardAdItem(
+                id=f"w{index}",
+                index=index,
+                headline=headline,
+                text=text,
+                facts=tuple(
+                    s.get("label", "")
+                    for s in drafts[index].get("sources", [{"label": "Ваш текст"}])
+                ),
+                active=(index in kept_set) and not is_archived,
+                archived=is_archived,
+            )
+
+    async def set_active(self, index: int, active: bool) -> bool:
+        statement = (
+            select(CreativeSetRow)
+            .where(CreativeSetRow.business_id == self._business_id)
+            .order_by(CreativeSetRow.id.desc())
+            .limit(1)
+        )
+        async with self._sessions.begin() as session:
+            row = await session.scalar(statement)
+            if row is None or not row.drafts or not (0 <= index < len(row.drafts)):
+                return False
+            kept = list(row.kept or [])
+            if active:
+                if index not in kept:
+                    kept.append(index)
+                drafts = [dict(d) for d in row.drafts]
+                if drafts[index].get("archived"):
+                    drafts[index]["archived"] = False
+                    row.drafts = drafts
+                    flag_modified(row, "drafts")
+            else:
+                if index in kept:
+                    kept.remove(index)
+            row.kept = kept
+            flag_modified(row, "kept")
+            return True
+
+    async def set_archived(self, index: int, archived: bool) -> bool:
+        statement = (
+            select(CreativeSetRow)
+            .where(CreativeSetRow.business_id == self._business_id)
+            .order_by(CreativeSetRow.id.desc())
+            .limit(1)
+        )
+        async with self._sessions.begin() as session:
+            row = await session.scalar(statement)
+            if row is None or not row.drafts or not (0 <= index < len(row.drafts)):
+                return False
+            drafts = [dict(d) for d in row.drafts]
+            drafts[index]["archived"] = archived
+            row.drafts = drafts
+            flag_modified(row, "drafts")
+            kept = list(row.kept or [])
+            if archived and index in kept:
+                kept.remove(index)
+            elif not archived and index not in kept:
+                kept.append(index)
+            row.kept = kept
+            flag_modified(row, "kept")
+            return True

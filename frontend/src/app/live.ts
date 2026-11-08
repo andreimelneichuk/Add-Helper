@@ -143,7 +143,8 @@ export function platformToday(): string {
   try {
     return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date());
   } catch {
-    return new Date().toISOString().slice(0, 10);
+    const msk = new Date(Date.now() + 3 * 3600 * 1000);
+    return msk.toISOString().slice(0, 10);
   }
 }
 
@@ -154,9 +155,9 @@ export async function loadLive(api: Api, name: string): Promise<Partial<State>> 
   const estTrailStart = dayAt(dayNumber(currentToday) - 13);
   const estSince = estMonthStart < estTrailStart ? estMonthStart : estTrailStart;
   const [overview, adsWeek, adsMonth, history, profile, today_, plan] = await Promise.all([
-    api.overview({ since: estSince, until: currentToday }),
-    api.ads({ since: estWeekStart, until: currentToday }),
-    api.ads({ since: estMonthStart, until: currentToday }),
+    api.overview({ since: estSince }),
+    api.ads({ since: estWeekStart }),
+    api.ads({ since: estMonthStart }),
     api.history(),
     api.profile().catch(() => null),
     // Без ленты сервиса экран соберёт вывод сам из тех же данных.
@@ -180,18 +181,24 @@ export async function loadLive(api: Api, name: string): Promise<Partial<State>> 
     try {
       const wizard = await api.wizardAds();
       if (wizard?.ads?.length) {
-        ads = wizard.ads.map((w, i) => ({
-          id: `w${i}`,
-          name: w.headline,
-          tag: "готово к запуску",
-          tagTone: "accent" as const,
-          leads: 0,
-          cost: 0,
-          hook: w.headline,
-          title: w.headline,
-          text: w.text,
-          facts: w.facts.join(", "),
-        }));
+        ads = wizard.ads.map((w, i) => {
+          const isArchived = !!w.archived;
+          const isActive = w.active !== false && !isArchived;
+          const tag = isArchived ? "в архиве" : isActive ? "готово к запуску" : "отключено";
+          const tagTone: Ad["tagTone"] = isArchived ? "neutral" : isActive ? "accent" : "neutral";
+          return {
+            id: w.id || `w${i}`,
+            name: w.headline,
+            tag,
+            tagTone,
+            leads: 0,
+            cost: 0,
+            hook: w.headline,
+            title: w.headline,
+            text: w.text,
+            facts: Array.isArray(w.facts) ? w.facts.join(", ") : "",
+          };
+        });
       }
     } catch { /* без мастера */ }
   }
@@ -445,18 +452,103 @@ export class LiveStore extends Store {
         return stopped.length ? "Поставил на паузу. Настройки сохранены, запись в истории." : "Идущих показов нет, останавливать нечего.";
       }
       case "ad": {
+        const active = !!s.adsOff[a.value];
+        const name = s.ads.find((x) => x.id === a.value)?.name ?? "";
         if (a.value.startsWith("w")) {
-          return "Это объявление готово к запуску, но пока не создано в Директе. Завершите запуск рекламы, чтобы управлять показами.";
+          if (this.api.setWizardAdState) {
+            await this.api.setWizardAdState(a.value, active);
+          }
+          const nextOff = { ...this.state.adsOff, [a.value]: !active };
+          const updatedAds = this.state.ads.map((x) =>
+            x.id === a.value
+              ? { ...x, tag: active ? "готово к запуску" : "отключено", tagTone: active ? ("accent" as const) : ("neutral" as const) }
+              : x
+          );
+          this.set({ ads: updatedAds, adsOff: nextOff });
+          return `${active ? "Включил" : "Отключил"} «${name}». ${active ? "Объявление пойдёт в показы после запуска." : "Оно исключено из запуска."}`;
         }
         const [account, adId] = a.value.split("/");
         if (!account || !adId) {
           return "Объявление ещё не создано в Директе.";
         }
-        const active = !!s.adsOff[a.value];
-        const name = s.ads.find((x) => x.id === a.value)?.name ?? "";
         const { status } = await this.api.setAdState(account, adId, active, crypto.randomUUID());
         if (status === "pending") return `Запрос про «${name}» записан, Яндекс ещё применяет его.`;
         return `${active ? "Включил" : "Отключил"} «${name}». Общий бюджет не изменился. Запись в истории.`;
+      }
+      case "adSave": {
+        const ad = a.value;
+        const isNew = !s.ads.some((x) => x.id === ad.id);
+        if (!s.live?.hasCampaigns || ad.id.startsWith("w") || isNew) {
+          if (isNew) {
+            if (this.api.createWizardAd) {
+              const created = await this.api.createWizardAd({ headline: ad.title, text: ad.text });
+              const newAd: Ad = {
+                id: created.id || `w${s.ads.length}`,
+                name: created.headline,
+                tag: "готово к запуску",
+                tagTone: "accent",
+                leads: 0,
+                cost: 0,
+                hook: created.headline,
+                title: created.headline,
+                text: created.text,
+                facts: Array.isArray(created.facts) ? created.facts.join(", ") : "Ваш текст",
+              };
+              this.set({ ads: [newAd, ...this.state.ads], openAd: null });
+              return `Добавил объявление «${created.headline}». Оно готово к запуску.`;
+            }
+          } else {
+            if (this.api.updateWizardAd) {
+              await this.api.updateWizardAd(ad.id, { headline: ad.title, text: ad.text });
+            }
+            const updatedAds = this.state.ads.map((x) =>
+              x.id === ad.id ? { ...x, title: ad.title, hook: ad.title, name: ad.title, text: ad.text } : x
+            );
+            this.set({ ads: updatedAds, openAd: null });
+            return `Сохранил изменения в «${ad.title}».`;
+          }
+        }
+        return `Обновление сохранено.`;
+      }
+      case "adArchive": {
+        const id = a.value;
+        const name = s.ads.find((x) => x.id === id)?.name ?? "";
+        if (id.startsWith("w") || !s.live?.hasCampaigns) {
+          if (this.api.archiveWizardAd) {
+            await this.api.archiveWizardAd(id, true);
+          }
+        } else {
+          const [account, adId] = id.split("/");
+          if (account && adId && this.api.archiveAd) {
+            await this.api.archiveAd(account, adId);
+          }
+        }
+        const updatedAds = this.state.ads.map((x) =>
+          x.id === id ? { ...x, tag: "в архиве", tagTone: "neutral" as const } : x
+        );
+        this.set({ ads: updatedAds, openAd: null });
+        return `Отправил объявление «${name}» в архив.`;
+      }
+      case "adRestore": {
+        const id = a.value;
+        const name = s.ads.find((x) => x.id === id)?.name ?? "";
+        if (id.startsWith("w") || !s.live?.hasCampaigns) {
+          if (this.api.archiveWizardAd) {
+            await this.api.archiveWizardAd(id, false);
+          }
+        } else {
+          const [account, adId] = id.split("/");
+          if (account && adId) {
+            await this.api.setAdState(account, adId, true, crypto.randomUUID());
+          }
+        }
+        const updatedAds = this.state.ads.map((x) =>
+          x.id === id ? { ...x, tag: "готово к запуску", tagTone: "accent" as const } : x
+        );
+        const nextOff = { ...this.state.adsOff };
+        delete nextOff[id];
+        this.set({ ads: updatedAds, adsOff: nextOff, openAd: null });
+        return `Вернул объявление «${name}» из архива.`;
       }
       case "undo": {
         const h = s.hist.find((x) => x.id === a.value);
@@ -549,8 +641,8 @@ export class LiveStore extends Store {
           const hasDraftAds = s.ads.some((a) => a.id.startsWith("w") || a.tag === "готово к запуску");
           const text = isConnected
             ? (hasDraftAds
-              ? "Объявления готовы к запуску, но кампании в Директе ещё не созданы. Чтобы начать показы, завершите запуск рекламы."
-              : "Кабинет Директа подключён, но реклама ещё не создана. Чтобы создать кампании и начать показы, завершите запуск рекламы.")
+              ? "Реклама ещё не запущена: объявления готовы к запуску, но кампании в Директе ещё не созданы. Чтобы начать показы, завершите запуск рекламы."
+              : "Реклама ещё не запущена: кабинет Директа подключён, но кампании ещё не созданы. Чтобы создать кампании и начать показы, завершите запуск рекламы.")
             : NOT_LAUNCHED;
           return this.say(text, { label: isConnected ? "Запустить рекламу" : "Открыть настройки", view: isConnected ? "overview" : "settings" });
         }

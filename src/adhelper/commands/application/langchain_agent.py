@@ -133,7 +133,11 @@ SYSTEM_TEMPLATE = (
     "- Никогда не говори 'этого я пока не умею' на обычные человеческие фразы и приветствия.\n"
     "- Будь лаконичен, доброжелателен и полезен (2-4 емких предложения).\n"
     "- Если пользователь называет число без команды, уточни, это бюджет или новая цена услуги.\n"
-    "- Все суммы и параметры бери только из сообщения пользователя. Не придумывай новые числа."
+    "- Все суммы и параметры бери только из сообщения пользователя. Не придумывай новые числа.\n"
+    "- Если в analytics указано has_campaigns=false, реклама в Директе ещё не запущена "
+    "(кампаний 0). Если draft_ads_count > 0, объясни владельцу, что объявления уже подготовлены "
+    "в мастере и ждут старта, но показы ещё не идут: для старта нужно завершить запуск рекламы. "
+    "Не говори, что объявления 'выключены'."
 )
 
 
@@ -160,6 +164,11 @@ class LangChainChatAgent:
                 "clicks": analytics_context.clicks,
                 "leads": analytics_context.conversions,
                 "cost_rub": analytics_context.cost_micros // 1_000_000,
+                "has_campaigns": analytics_context.has_campaigns,
+                "cabinet_connected": bool(analytics_context.connected_account),
+                "account_login": analytics_context.connected_account,
+                "draft_ads_count": len(analytics_context.wizard_ads),
+                "draft_ads": list(analytics_context.wizard_ads),
             }
 
         user_content = json.dumps(

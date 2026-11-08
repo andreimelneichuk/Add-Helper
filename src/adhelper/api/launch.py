@@ -4,6 +4,7 @@
 он честно недоступен: сводка говорит, что всё сохранено и запуск продолжится с этого места.
 """
 
+import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, HTTPException, Request, status
@@ -59,6 +60,8 @@ MARKING_PROBLEMS = {
     MarkingProblem.OKVED: "Укажите ОКВЭД основного вида деятельности, например 96.02. Он есть"
     " в выписке из ЕГРЮЛ или ЕГРИП",
 }
+
+logger = logging.getLogger(__name__)
 
 
 def _text(raw: dict[str, Any], key: str) -> str:
@@ -147,6 +150,27 @@ def launch_router() -> APIRouter:
 
     @router.get("/marking")
     async def get_marking(request: Request, business_id: Owned) -> dict[str, Any]:
+        sessions = _sessions(request)
+        accounts = await account_states(sessions, business_id)
+        connected = [login for login, state in accounts if state is AccountState.CONNECTED]
+        if connected:
+            login = connected[0]
+            platform = request.app.state.platform_for(business_id, login)
+            if platform and hasattr(platform, "read_advertiser"):
+                try:
+                    adv = await platform.read_advertiser(login)
+                    if adv and adv.inn:
+                        return {
+                            "saved": {
+                                "kind": adv.kind,
+                                "inn": f"••••{adv.inn[-4:]}",
+                                "name": adv.name,
+                                "phone": adv.phone,
+                                "okved": adv.okved,
+                            }
+                        }
+                except Exception as error:
+                    logger.warning("Не удалось прочитать реквизиты из Директа: %s", error)
         found = await _store(request, business_id).get()
         return {"saved": None if found is None else masked(found)}
 
@@ -206,7 +230,31 @@ def launch_router() -> APIRouter:
         plan = await SqlBudgetPlans(sessions, business_id).get()
         accounts = await account_states(sessions, business_id)
         connected = [login for login, state in accounts if state is AccountState.CONNECTED]
+        login = connected[0] if connected else None
+        platform = request.app.state.platform_for(business_id, login) if login else None
+        adv_info: Advertiser | None = None
+        if platform and login and hasattr(platform, "read_advertiser"):
+            try:
+                adv_info = await platform.read_advertiser(login)
+            except Exception as error:
+                logger.warning("Не удалось прочитать рекламодателя из Директа: %s", error)
         marking = await _store(request, business_id).get()
+        if (adv_info is None or not adv_info.inn) and marking is not None:
+            adv_info = Advertiser(
+                marking.kind.value, marking.inn, marking.name, marking.phone, marking.okved
+            )
+        marking_ok = adv_info is not None and bool(adv_info.inn)
+        kind_label = (
+            KINDS.get(AdvertiserKind(adv_info.kind), adv_info.kind)
+            if adv_info and adv_info.kind in AdvertiserKind._value2member_map_
+            else (adv_info.kind if adv_info else "")
+        )
+        inn_tail = adv_info.inn[-4:] if (adv_info and adv_info.inn) else ""
+        marking_text = (
+            f"Маркировка: {kind_label}, ИНН ••••{inn_tail}"
+            if marking_ok
+            else "В кабинете Директа не указаны реквизиты рекламодателя (ИНН)"
+        )
         site = await _site(request, business_id)
         chosen = await SqlWizardAds(sessions, business_id).chosen()
         tag = await SqlTagChecks(sessions, business_id).latest()
@@ -239,10 +287,8 @@ def launch_router() -> APIRouter:
             },
             {
                 "key": "marking",
-                "ok": marking is not None,
-                "text": f"Маркировка: {KINDS[marking.kind]}, ИНН {masked(marking)['inn']}"
-                if marking is not None
-                else "Нет данных для маркировки: без них запускать рекламу нельзя по закону",
+                "ok": marking_ok,
+                "text": marking_text,
             },
             {"key": "counter", "ok": counter_ok, "text": counter_text},
             {
@@ -253,7 +299,6 @@ def launch_router() -> APIRouter:
                 else "Объявления не выбраны: вернитесь к шагу «Объявления»",
             },
         ]
-        login = connected[0] if connected else None
         if not all(item["ok"] for item in items) or found is None or plan is None or not login:
             return items, None, login
         counters = tag.counters if tag is not None and tag.status is TagStatus.FOUND else ()
@@ -324,6 +369,15 @@ def launch_router() -> APIRouter:
         marking_store = _store(request, business_id)
 
         async def advertiser() -> Advertiser | None:
+            if platform and hasattr(platform, "read_advertiser"):
+                try:
+                    adv = await platform.read_advertiser(inputs.account)
+                    if adv and adv.inn:
+                        return Advertiser(
+                            str(adv.kind), str(adv.inn), str(adv.name), adv.phone, adv.okved
+                        )
+                except Exception as error:
+                    logger.warning("Не удалось прочитать рекламодателя при запуске: %s", error)
             found = await marking_store.get()
             if found is None:
                 return None
