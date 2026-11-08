@@ -383,7 +383,12 @@ export function createApi(businessId: string, csrf: string) {
     startLaunch: () => request<LaunchAnswer>(`${base}/launch`, { method: "POST" }, csrf),
     adoptAds: (choice: AdsChoice) =>
       request<{ kept: number }>(`${base}/creative-sets/adopt`, { method: "POST", body: JSON.stringify(choice) }, csrf),
-    wizardAds: (init?: RequestInit) => request<{ ads: WizardAd[]; keywords?: string[] }>(`${base}/wizard-ads`, init),
+    wizardAds: (includeInactiveOrInit?: boolean | RequestInit, init?: RequestInit) => {
+      const includeInactive = typeof includeInactiveOrInit === "boolean" ? includeInactiveOrInit : false;
+      const opts = typeof includeInactiveOrInit === "object" ? includeInactiveOrInit : init;
+      const query = includeInactive ? "?include_inactive=true" : "";
+      return request<{ ads: WizardAd[]; keywords?: string[] }>(`${base}/wizard-ads${query}`, opts);
+    },
     createWizardAd: (body: { headline: string; text: string }) =>
       request<WizardAd>(`${base}/wizard-ads`, { method: "POST", body: JSON.stringify(body) }, csrf),
     updateWizardAd: (id: string, body: { headline: string; text: string }) =>

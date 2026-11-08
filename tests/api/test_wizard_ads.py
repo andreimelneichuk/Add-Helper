@@ -210,8 +210,11 @@ async def test_wizard_ads_crud_operations(
     assert deleted.status_code == 200
     assert deleted.json()["status"] == "archived"
 
-    # Проверка списка
-    all_ads = (await client.get(f"{base}/wizard-ads")).json()["ads"]
+    # Проверка списка: активных объявлений нет, в полном списке есть архивное
+    active_ads = (await client.get(f"{base}/wizard-ads")).json()["ads"]
+    assert len(active_ads) == 0
+
+    all_ads = (await client.get(f"{base}/wizard-ads?include_inactive=true")).json()["ads"]
     assert len(all_ads) == 1
     assert all_ads[0]["id"] == ad_id
     assert all_ads[0]["archived"] is True

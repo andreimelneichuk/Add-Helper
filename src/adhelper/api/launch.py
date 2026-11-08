@@ -262,7 +262,7 @@ def launch_router() -> APIRouter:
         marking_text = (
             f"Маркировка: {kind_label}, ИНН {inn_str}"
             if marking_ok
-            else "В кабинете Директа не указаны реквизиты рекламодателя (ИНН)"
+            else "В кабинете Директа не указаны реквизиты для маркировки рекламы (ИНН)"
         )
         site = await _site(request, business_id)
         chosen = await SqlWizardAds(sessions, business_id).chosen()

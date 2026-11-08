@@ -181,10 +181,16 @@ def wizard_ads_router() -> APIRouter:
     async def wizard_ads(
         request: Request,
         business_id: Owned,
+        include_inactive: bool = False,
     ) -> dict[str, Any]:
         sessions = _sessions(request)
         wizard = SqlWizardAds(sessions, business_id)
         all_items = await wizard.all_ads()
+        items = (
+            all_items
+            if include_inactive
+            else [i for i in all_items if i.active and not i.archived]
+        )
         ads_list = [
             {
                 "id": item.id,
@@ -194,7 +200,7 @@ def wizard_ads_router() -> APIRouter:
                 "active": item.active,
                 "archived": item.archived,
             }
-            for item in all_items
+            for item in items
         ]
         profiles = await SqlProfiles(sessions, business_id).get()
         keywords: list[str] = []

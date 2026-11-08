@@ -8,6 +8,8 @@ describe("Скелетон загрузки (AppSkeleton)", () => {
     const root = screen.getByRole("status");
     expect(root).toBeInTheDocument();
     expect(root).toHaveAttribute("aria-label", "Загружаем данные…");
+    expect(root).toHaveAttribute("aria-busy", "true");
+    expect(root).toHaveTextContent("Загружаем данные…");
   });
 
   it("рендерит разделы навигации в отключённом состоянии", () => {

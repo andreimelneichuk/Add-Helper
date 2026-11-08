@@ -14,7 +14,10 @@ const SKELETON_VIEWS: [View, string][] = [
 
 export function AppSkeleton() {
   return (
-    <div className="ah" role="status" aria-label="Загружаем данные…">
+    <div className="ah" role="status" aria-busy="true" aria-label="Загружаем данные…">
+      <span style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", border: 0 }}>
+        Загружаем данные…
+      </span>
       <header className="ah-bar">
         <div className="ah-bar-site">
           <div className="ah-brand-selector">

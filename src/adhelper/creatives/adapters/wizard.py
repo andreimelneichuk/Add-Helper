@@ -225,6 +225,9 @@ class SqlWizardAds:
             raw = row.drafts[i] if i < len(row.drafts) else {}
             is_archived = bool(raw.get("archived", False))
             is_active = (i in kept_set) and not is_archived
+            is_off = bool(raw.get("off", False))
+            if not is_active and not is_archived and not is_off:
+                continue
             raw_sources = tuple(s.get("label", "") for s in raw.get("sources", []))
             facts = tuple(source.label for source in d.sources) or raw_sources or ("Ваш текст",)
             items.append(
@@ -337,18 +340,20 @@ class SqlWizardAds:
             if row is None or not row.drafts or not (0 <= index < len(row.drafts)):
                 return False
             kept = list(row.kept or [])
+            drafts = [dict(d) for d in row.drafts]
             if active:
                 if index not in kept:
                     kept.append(index)
-                drafts = [dict(d) for d in row.drafts]
+                drafts[index]["off"] = False
                 if drafts[index].get("archived"):
                     drafts[index]["archived"] = False
-                    row.drafts = drafts
-                    flag_modified(row, "drafts")
             else:
                 if index in kept:
                     kept.remove(index)
+                drafts[index]["off"] = True
+            row.drafts = drafts
             row.kept = kept
+            flag_modified(row, "drafts")
             flag_modified(row, "kept")
             return True
 

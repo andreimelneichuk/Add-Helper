@@ -1,6 +1,6 @@
 // Шаги 4–8 мастера на настоящих данных: объявления, кабинет, маркировка, код статистики, сводка.
 // Всё, что владелец вводит, сразу уходит в сервис; сводку готовности проверяет сервис.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AdAccount, AdvertiserKind, LaunchAnswer, LaunchCheck, MarkingView, TagCheckView } from "../../../api";
 import { type Ad, rub } from "../../data";
 import type { State, Store } from "../../store";
@@ -143,18 +143,22 @@ export function RealMarking({ store }: Props) {
   const [saved, setSaved] = useState<MarkingView | null>(null);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("");
+  const activeCheckRef = useRef(0);
 
   const check = useCallback(() => {
     if (!api) return;
+    const checkId = ++activeCheckRef.current;
     setLoading(true);
     setStatus("");
     api.marking().then(
       (r) => {
+        if (checkId !== activeCheckRef.current) return;
         setSaved(r.saved);
         store.set({ marked: !!(r.saved && r.saved.inn), block: "" });
         setLoading(false);
       },
       (e: unknown) => {
+        if (checkId !== activeCheckRef.current) return;
         setStatus(say(e));
         setLoading(false);
       }
@@ -163,6 +167,9 @@ export function RealMarking({ store }: Props) {
 
   useEffect(() => {
     check();
+    return () => {
+      activeCheckRef.current++;
+    };
   }, [check]);
 
   const directUrl = "https://direct.yandex.ru/registered/main.cmd?cmd=clientInfo";
