@@ -387,6 +387,8 @@ class SqlWizardAds:
                 return False
             drafts = [dict(d) for d in row.drafts]
             drafts[index]["archived"] = archived
+            if not archived:
+                drafts[index]["off"] = False
             row.drafts = drafts
             flag_modified(row, "drafts")
             kept = list(row.kept or [])

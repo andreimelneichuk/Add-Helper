@@ -20,7 +20,11 @@ export function LaunchModal({ isOpen, onClose, store, api: propsApi }: LaunchMod
   const [error, setError] = useState<string | null>(null);
 
   const loadCheck = () => {
-    if (!api) return;
+    if (!api) {
+      setLoading(false);
+      setError("API сервиса недоступен в демонстрационном режиме.");
+      return;
+    }
     setLoading(true);
     setError(null);
     api
@@ -42,6 +46,18 @@ export function LaunchModal({ isOpen, onClose, store, api: propsApi }: LaunchMod
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) {
+        if (answer) window.location.reload();
+        else onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, busy, answer, onClose]);
+
   if (!isOpen) return null;
 
   const handleLaunch = async () => {
@@ -59,7 +75,18 @@ export function LaunchModal({ isOpen, onClose, store, api: propsApi }: LaunchMod
   };
 
   return (
-    <div className="ah-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="launch-modal-title">
+    <div
+      className="ah-modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="launch-modal-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !busy) {
+          if (answer) window.location.reload();
+          else onClose();
+        }
+      }}
+    >
       <div className="ah-modal-card" style={{ maxWidth: 540 }}>
         <div className="ah-modal-head">
           <h2 id="launch-modal-title" style={{ margin: 0, fontSize: "18px", fontWeight: 700 }}>
@@ -125,6 +152,24 @@ export function LaunchModal({ isOpen, onClose, store, api: propsApi }: LaunchMod
               >
                 Перейти в кабинет
               </button>
+            </div>
+          </div>
+        )}
+
+        {!loading && !answer && !check && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "8px 0" }}>
+            <p className="ah-error" role="alert" style={{ margin: 0 }}>
+              {error || "Не удалось проверить готовность к запуску."}
+            </p>
+            <div className="ah-modal-foot">
+              <button type="button" className="ah-btn" onClick={onClose}>
+                Закрыть
+              </button>
+              {api && (
+                <button type="button" className="ah-btn" onClick={loadCheck}>
+                  Попробовать снова
+                </button>
+              )}
             </div>
           </div>
         )}

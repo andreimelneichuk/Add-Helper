@@ -93,4 +93,47 @@ describe("Модальное окно запуска рекламы (LaunchModal
     expect(onClose).toHaveBeenCalled();
     expect(store.state.view).toBe("settings");
   });
+
+  it("закрывается при нажатии клавиши Escape", async () => {
+    const user = userEvent.setup();
+    const store = new MockStore(initialState("work"));
+    const onClose = vi.fn();
+    (store as any).api = {
+      launchCheck: vi.fn().mockReturnValue(new Promise(() => {})),
+      startLaunch: vi.fn(),
+    };
+
+    render(<LaunchModal isOpen={true} onClose={onClose} store={store} />);
+    await user.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("закрывается при клике на оверлей (backdrop)", async () => {
+    const user = userEvent.setup();
+    const store = new MockStore(initialState("work"));
+    const onClose = vi.fn();
+    (store as any).api = {
+      launchCheck: vi.fn().mockReturnValue(new Promise(() => {})),
+      startLaunch: vi.fn(),
+    };
+
+    const { container } = render(<LaunchModal isOpen={true} onClose={onClose} store={store} />);
+    const overlay = container.querySelector(".ah-modal-overlay");
+    expect(overlay).not.toBeNull();
+    if (overlay) {
+      await user.click(overlay);
+      expect(onClose).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("выводит сообщение об ошибке, если api недоступен", async () => {
+    const store = new MockStore(initialState("work"));
+    render(<LaunchModal isOpen={true} onClose={vi.fn()} store={store} />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("API сервиса недоступен в демонстрационном режиме.")
+      ).toBeInTheDocument();
+    });
+  });
 });

@@ -235,7 +235,7 @@ def control_router() -> APIRouter:
         business_id: OwnedChecked,
         period: Period,
     ) -> dict[str, str]:
-        target = account if (account.startswith("w") or account.startswith("draft")) else ad_id
+        target = ad_id if account == "draft" else (account if account.startswith("w") else ad_id)
         if target.startswith("draft/"):
             target = target.removeprefix("draft/")
         is_wizard_target = (
@@ -288,7 +288,7 @@ def control_router() -> APIRouter:
         business_id: OwnedChecked,
         period: Period,
     ) -> dict[str, str]:
-        target = account if (account.startswith("w") or account.startswith("draft")) else ad_id
+        target = ad_id if account == "draft" else (account if account.startswith("w") else ad_id)
         if target.startswith("draft/"):
             target = target.removeprefix("draft/")
         is_wizard_target = (

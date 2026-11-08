@@ -218,3 +218,75 @@ async def test_wizard_ads_crud_operations(
     assert len(all_ads) == 1
     assert all_ads[0]["id"] == ad_id
     assert all_ads[0]["archived"] is True
+
+
+async def test_wizard_ads_via_control_routes(
+    anna: Anna,  # noqa: F811
+) -> None:
+    client, csrf, business_id = anna
+    headers = {"X-CSRF-Token": csrf}
+    base = f"/api/businesses/{business_id}"
+
+    # Создаём черновик объявления
+    created = await client.post(
+        f"{base}/wizard-ads",
+        json={"headline": "Маникюр со скидкой", "text": "Быстро и качественно."},
+        headers=headers,
+    )
+    assert created.status_code == 201
+    ad_id = created.json()["id"]
+
+    # Проверяем остановку через /ads/draft/{ad_id}/state
+    st_off = await client.post(
+        f"{base}/ads/draft/{ad_id}/state",
+        json={"active": False, "request_id": "r-draft-off"},
+        headers=headers,
+    )
+    assert st_off.status_code == 200
+    assert st_off.json() == {"status": "applied"}
+
+    ads_list = (await client.get(f"{base}/wizard-ads?include_inactive=true")).json()["ads"]
+    assert ads_list[0]["active"] is False
+
+    # Включение обратно через /ads/draft/{ad_id}/state
+    st_on = await client.post(
+        f"{base}/ads/draft/{ad_id}/state",
+        json={"active": True, "request_id": "r-draft-on"},
+        headers=headers,
+    )
+    assert st_on.status_code == 200
+    assert st_on.json() == {"status": "applied"}
+
+    ads_list = (await client.get(f"{base}/wizard-ads?include_inactive=true")).json()["ads"]
+    assert ads_list[0]["active"] is True
+
+    # Архивирование через /ads/draft/{ad_id}/archive
+    arch = await client.post(
+        f"{base}/ads/draft/{ad_id}/archive",
+        headers=headers,
+    )
+    assert arch.status_code == 200
+    assert arch.json() == {"status": "applied"}
+
+    ads_list = (await client.get(f"{base}/wizard-ads?include_inactive=true")).json()["ads"]
+    assert ads_list[0]["archived"] is True
+    assert ads_list[0]["active"] is False
+
+    # Разархивирование через прямой endpoint wizard-ads (проверяем сброс off=False)
+    unarch = await client.post(
+        f"{base}/wizard-ads/{ad_id}/archive",
+        json={"archived": False},
+        headers=headers,
+    )
+    assert unarch.status_code == 200
+    assert unarch.json()["archived"] is False
+    assert unarch.json()["active"] is True
+
+    # Проверка несуществующего индекса
+    not_found = await client.post(
+        f"{base}/ads/draft/999/state",
+        json={"active": False, "request_id": "r-missing"},
+        headers=headers,
+    )
+    assert not_found.status_code == 404
+
