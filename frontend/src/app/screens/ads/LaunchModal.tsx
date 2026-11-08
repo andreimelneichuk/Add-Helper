@@ -25,7 +25,7 @@ export function LaunchModal({ isOpen, onClose, store, api: propsApi }: LaunchMod
     setError(null);
     api
       .launchCheck()
-      .then((res) => {
+      .then((res: LaunchCheck) => {
         setCheck(res);
         setLoading(false);
       })
@@ -49,7 +49,7 @@ export function LaunchModal({ isOpen, onClose, store, api: propsApi }: LaunchMod
     setBusy(true);
     setError(null);
     try {
-      const res = await api.startLaunch();
+      const res: LaunchAnswer = await api.startLaunch();
       setAnswer(res);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Не удалось запустить рекламу. Попробуйте позже.");
