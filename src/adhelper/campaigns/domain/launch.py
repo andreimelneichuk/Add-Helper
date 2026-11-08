@@ -30,6 +30,8 @@ class LaunchRules:
     max_ads_per_campaign: int
     # Город в адресе → номер региона Яндекса. Ищем целым словом.
     cities: Mapping[str, int]
+    # Регион, если город не нашёлся ни в адресе, ни в справочнике. None — запуск не начинается.
+    fallback_region_id: int | None = None
 
 
 class Placement(StrEnum):

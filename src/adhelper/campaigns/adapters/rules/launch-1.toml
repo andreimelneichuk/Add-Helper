@@ -15,6 +15,10 @@ split_from_monthly_rubles = 30000
 # Мест для объявлений в группе: 2–3 (docs/03-integrations.md «Создаваемая структура»).
 max_ads_per_campaign = 3
 
+# ВРЕМЕННО: регион, если город не найден (225 = Россия, проверено в Dictionaries.getGeoRegions
+# по RegionIds). Показ по всей стране, бюджет тратится на всю Россию. Убрать после починки поиска города.
+fallback_region_id = 225
+
 # Город в адресе профиля → номер региона Яндекса (как в targeting-1). Сверить с
 # Dictionaries.get GeoRegions в T5 (S12). Нет города в списке — запуск просит указать его.
 [cities]

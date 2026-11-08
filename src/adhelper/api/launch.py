@@ -430,6 +430,13 @@ def launch_router() -> APIRouter:
                 return items, None, login
             if resolved is not None:
                 inputs = replace(inputs, region_id=resolved[0], city_name=resolved[1])
+            elif launch_rules.fallback_region_id is not None:
+                # Временно: город не найден, регион из правил (вся Россия).
+                inputs = replace(
+                    inputs,
+                    region_id=launch_rules.fallback_region_id,
+                    city_name="Россия (город не найден, временно)",
+                )
         budget_rules = load_budget_rules("budget-1")
         now = _now(request)
         preflight = preview(inputs, launch_rules, budget_rules, now)

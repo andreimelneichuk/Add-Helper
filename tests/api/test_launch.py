@@ -463,3 +463,33 @@ async def test_launch_without_advertiser_returns_409_conflict(
     res = await client.post(f"{base}/launch", headers=headers)
     assert res.status_code == 409
     assert "маркировки" in res.json()["detail"].lower()
+
+
+async def test_launch_uses_fallback_region_when_city_not_found(
+    anna: Anna,  # noqa: F811
+    sessions: Sessions,
+    provider: FakeProvider,
+) -> None:
+    client, csrf, business_id = anna
+    base = f"/api/businesses/{business_id}"
+    await _make_ready(client, csrf, business_id, sessions, provider)
+    await _profile(client, csrf, business_id, "nogti.ru")
+    profile = (await client.get(f"{base}/profile")).json()
+    profile["address"] = "Пермь, ул. Комсомольский проспект, 71"
+    await client.put(
+        f"{base}/profile",
+        json=profile,
+        headers={"X-CSRF-Token": csrf},
+    )
+    platform = FakePlatform([], NOW)
+    platform.resolve_city_region = AsyncMock(return_value=None)  # type: ignore[attr-defined]
+    _with_platform(client, platform)
+
+    check = (await client.get(f"{base}/launch-check")).json()
+    assert check["launch_available"] is True
+    assert any("Город показа: Россия" in item["text"] for item in check["items"])
+
+    result = await client.post(f"{base}/launch", headers={"X-CSRF-Token": csrf})
+    assert result.status_code == 200, result.text
+    campaign = next(iter(platform.created.values())).campaign
+    assert campaign.regions == (225,)
