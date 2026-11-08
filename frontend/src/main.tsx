@@ -10,7 +10,7 @@ import { CONNECT_RESULT } from "./app/screens/LiveSettings";
 import { Login } from "./app/screens/Login";
 import "./app/base.css";
 
-// `/` — кабинет на данных сервиса, а без входа или бизнеса — запуск (`/?start`), шаги идут через сервис.
+// `/` — кабинет для вошедшего пользователя и публичный запуск для новой сессии.
 // Подставной прототип (`/?mock`) есть только в сборке для разработки: владелец его не увидит.
 // Условие вычисляется при сборке: в боевой сборке ветка и вся папка `src/mock` отбрасываются.
 const MockApp = import.meta.env.DEV ? lazy(async () => ({ default: (await import("./mock/entry")).MockApp })) : null;
@@ -115,9 +115,7 @@ function Live() {
 
     openSession().then(async (session) => {
       if (cancelled) return;
-      if (!session) {
-        return setStore("login");
-      }
+      if (!session) return setStore(loginParam !== null ? "login" : "start");
       if (!session.businesses || session.businesses.length === 0) {
         return setStore("start");
       }

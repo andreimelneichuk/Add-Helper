@@ -527,12 +527,14 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
   // Ключ строки услуги не зависит от места в списке: удаление строки не сбивает чужие черновики цен.
   const [priceText, setPriceText] = useState<Record<string, string>>({});
   const [rowIds, setRowIds] = useState<string[]>([]);
+  const originalProfile = useRef<Profile | null>(null);
   // Первый пришедший профиль и есть форма: поздний ответ не затирает то, что владелец уже ввёл.
   useEffect(() => {
     api.profile().then((loaded) => {
       setProfile((current) => {
         if (current) return current;
         setRowIds(freshIds(loaded.services.length));
+        originalProfile.current = loaded;
         return loaded;
       });
     }, (e: unknown) => setStatus(message(e)));
@@ -561,6 +563,7 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
     return () => window.clearInterval(timer);
   }, [reading, poll]);
   if (!profile) return <p className="ah-muted">{status ?? "Загружаю профиль…"}</p>;
+  const dirty = JSON.stringify(profile) !== JSON.stringify(originalProfile.current) || Object.keys(priceText).length > 0;
 
   const set = (patch: Partial<Profile>) => {
     setProfile({ ...profile, ...patch });
@@ -576,6 +579,7 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
       const services = profile.services.filter((x) => x.name.trim());
       const { outdated = [], ...saved } = await api.saveProfile({ ...profile, services, features: profile.features.map((f) => f.trim()).filter(Boolean) });
       setProfile(saved);
+      originalProfile.current = saved;
       setRowIds(freshIds(saved.services.length));
       setPriceText({});
       setFeaturesText(null);
@@ -613,7 +617,7 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
   };
 
   return (
-    <div className="set-form">
+    <div className="set-form set-profile-form">
       <div className="set-site">
         <label><span className="ah-label">Сайт</span><input className="ah-input" value={profile.website} placeholder="salon.ru" onChange={(e) => set({ website: e.target.value })} /></label>
         <button type="button" className="ah-btn" disabled={!profile.website.trim() || reading} onClick={() => void readSite()}>Заполнить с сайта</button>
@@ -660,9 +664,9 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
           }}
         />
       </label>
-      <div className="set-actions">
-        <button type="button" className="ah-btn ah-btn-primary" disabled={busy} onClick={save}>Сохранить</button>
-        {status && <span role="status" className="set-hint">{status}</span>}
+      <div className="set-actions set-profile-actions">
+        <button type="button" className="ah-btn ah-btn-primary" disabled={busy || !dirty} onClick={save}>Сохранить профиль</button>
+        <span role="status" className="set-hint">{dirty ? "Есть несохранённые изменения." : status ?? "Все изменения сохранены."}</span>
       </div>
     </div>
   );

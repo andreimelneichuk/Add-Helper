@@ -20,13 +20,20 @@ function Card({ store, s, ad }: { store: Store; s: AdsView; ad: Ad }) {
   const action = off ? "Включить" : "Отключить";
   return (
     <article className={off || isArchived ? "ann-card ann-card-off" : "ann-card"}>
-      <div className="ann-thumb">
-        <AdArt ad={ad} hook={hook} />
-        {!off && s.situation !== "first" && <span className={`ah-tag ah-tag-${ad.tagTone} ann-badge`}>{ad.tag}</span>}
-      </div>
+      {ad.photo ? (
+        <div className="ann-thumb">
+          <AdArt ad={ad} hook={hook} />
+          {!off && s.situation !== "first" && <span className={`ah-tag ah-tag-${ad.tagTone} ann-badge`}>{ad.tag}</span>}
+        </div>
+      ) : (
+        <div className="ann-text-preview">
+          {!off && s.situation !== "first" && <span className={`ah-tag ah-tag-${ad.tagTone}`}>{ad.tag}</span>}
+          <div className="ann-title">{title}</div>
+          <div className="ann-text">{ad.text}</div>
+        </div>
+      )}
       <div className="ann-body">
-        <div className="ann-title">{title}</div>
-        <div className="ann-text">{ad.text}</div>
+        {ad.photo && <><div className="ann-title">{title}</div><div className="ann-text">{ad.text}</div></>}
         <div className="ann-stat">{adStat(s, ad)}</div>
         <div className="ann-facts">{ad.facts}</div>
         <div className="ann-foot">

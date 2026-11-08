@@ -47,7 +47,7 @@ function AboutStep({ store, s }: StepProps) {
       {store.reader ? (
         <>
           <p className="ah-muted">Регистрироваться пока не нужно. Сайта нет или он не читается? Заполните профиль сами.</p>
-          <button type="button" className="ah-btn st-by-hand" onClick={store.fillByHand}>Заполнить вручную</button>
+          <button type="button" className="ah-link st-by-hand" onClick={store.fillByHand}>Заполнить вручную</button>
         </>
       ) : (
         <p className="ah-muted">Сайта нет? Подойдёт соцсеть или карточка на картах, либо расскажите о бизнесе в чате. Регистрироваться пока не нужно.</p>

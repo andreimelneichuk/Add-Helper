@@ -59,3 +59,4 @@
   min-height: 44px;
   font-size: 15px;
 }
+.ah-login-start { width: 100%; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }

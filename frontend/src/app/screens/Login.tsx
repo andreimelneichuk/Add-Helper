@@ -33,6 +33,7 @@ export function Login({ error, onLogin }: { error?: string | null; onLogin?: () 
         )}
 
         <div className="ah-login-actions">
+          <a className="ah-btn ah-login-start" href="/?start">Настроить рекламу</a>
           <button
             type="button"
             className="ah-btn ah-btn-primary ah-login-btn"

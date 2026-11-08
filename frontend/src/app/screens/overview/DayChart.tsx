@@ -30,7 +30,9 @@ export function DayChart({ s, store }: { s: State; store: Store }) {
           ))}
         </div>
       </div>
-      <div className="ov-chart" style={columns}>
+      {today === 0 ? (
+        <p className="ov-chart-empty" role="status">Показы появятся здесь после запуска рекламы.</p>
+      ) : <div className="ov-chart" style={columns}>
         <span className="ov-chart-top">{cost ? rub(top) : String(top)}</span>
         {cost && !s.paused && top > 0 && perDay > 0 && <div className="ov-chart-limit" aria-hidden="true" style={{ bottom: `${Math.round((perDay * 100) / top)}%` }} />}
         {Array.from({ length: MONTH }, (_, i) => {
@@ -45,11 +47,11 @@ export function DayChart({ s, store }: { s: State; store: Store }) {
             </button>
           );
         })}
-      </div>
-      <div className="ov-chart-ticks" aria-hidden="true" style={columns}>
+      </div>}
+      {today > 0 && <div className="ov-chart-ticks" aria-hidden="true" style={columns}>
         {ticks.map((d) => <span key={d} style={{ gridColumn: d }}>{d}</span>)}
-      </div>
-      <p className="ov-chart-note" aria-live="polite">
+      </div>}
+      {today > 0 && <p className="ov-chart-note" aria-live="polite">
         {budget <= 0
           ? (!s.live?.hasCampaigns && s.live?.planBudget
             ? `План ${rub(s.live.planBudget)}, реклама не запущена.`
@@ -57,7 +59,7 @@ export function DayChart({ s, store }: { s: State; store: Store }) {
           : today === 0
             ? `Показов в этом месяце ещё не было. Лимит до ${rub(perDay)} в день, чтобы уложиться в бюджет.`
             : `${sel + 1} ${monthOf}: ${rub(selCost)}, обращений ${selLeads}. Пунктир и контур: дальше можно до ${rub(perDay)} в день, чтобы уложиться в бюджет.`}
-      </p>
+      </p>}
     </section>
   );
 }

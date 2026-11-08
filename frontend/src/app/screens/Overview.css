@@ -49,6 +49,7 @@
 
 /* Столбики за месяц */
 .ov-chart-panel { display: flex; flex-direction: column; gap: var(--gap); }
+.ov-chart-empty { margin: 0; padding: 18px 0; color: var(--muted); }
 .ov-chart-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 .ov-chart { position: relative; display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); gap: 2px; height: 190px; border-bottom: 1px solid var(--line-strong); }
 .ov-chart-top { position: absolute; top: 0; left: 0; z-index: 1; color: var(--muted); font-size: var(--t-caption); pointer-events: none; }

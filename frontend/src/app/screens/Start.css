@@ -10,7 +10,7 @@
 .st-step-now { display: none; font-weight: 600; }
 
 .st-cols { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: var(--gap); align-items: start; }
-.st-card { display: flex; flex-direction: column; gap: var(--pad); padding: 24px; }
+.st-card { display: flex; flex-direction: column; gap: var(--pad); padding: 24px; min-height: 0; }
 .ah .st-title { font-size: var(--t-number); font-weight: 600; line-height: 1.2; letter-spacing: -0.01em; }
 .st-title:focus { outline: none; }
 .st-lead { color: var(--muted); margin-top: -10px; }
@@ -99,7 +99,7 @@
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
-.st-by-hand { justify-self: start; }
+.st-by-hand { justify-self: start; width: auto; align-self: flex-start; }
 .st-fact-editing { border-color: var(--accent); }
 .st-fact-types { display: flex; flex-wrap: wrap; gap: 6px; }
 .st-fact-types .ah-btn { font-size: var(--t-caption); padding: 4px 10px; }
@@ -157,8 +157,13 @@
   .st-step-now { display: block; }
   .st-cols, .st-grid-2, .st-budgets, .st-ads { grid-template-columns: minmax(0, 1fr); }
   .st-side { display: none; }
-  .st-card { padding: var(--pad); padding-bottom: 96px; }
+  .st-card { padding: var(--pad); }
   .st-inn { max-width: none; }
+}
+
+@media (max-width: 420px) {
+  .st-auth-box { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .st-auth-box > .ah-btn { align-self: flex-start; }
 }
 
 /* Шаги после входа на настоящих данных */

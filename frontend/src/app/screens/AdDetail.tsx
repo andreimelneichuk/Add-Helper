@@ -21,7 +21,7 @@ function Preview({ ad, hook, title, label }: { ad: Ad; hook: string; title: stri
   return (
     <section className="anno-preview" aria-label={label ?? "Как увидит клиент"}>
       {label && <div className="ah-label anno-preview-label">{label}</div>}
-      <AdArt ad={ad} hook={hook} />
+      {ad.photo && <AdArt ad={ad} hook={hook} />}
       <div className="anno-preview-body">
         <div className="ann-title">{title}</div>
         <div>{ad.text}</div>
