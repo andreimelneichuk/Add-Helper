@@ -84,11 +84,18 @@ class Ledger:
         """На аккаунт одновременно работает один исполнитель; занято — выполнит тот, кто держит."""
         async with self._lock.hold(account) as acquired:
             if not acquired:
+                logger.info("Исполнитель аккаунта занят другим запуском, изменения подождут")
                 return
             for change in await self._repository.pending(account):
                 try:
                     finished = await self._execute(change)
                 except GatewayUnavailable:
+                    logger.warning(
+                        "Яндекс не отвечает: изменение %s (%s, %s) останется в очереди",
+                        change.id,
+                        change.kind,
+                        change.target_ref,
+                    )
                     return
                 # Незавершённое изменение держит очередь: порядок шагов переноса важен.
                 if not finished:
@@ -106,14 +113,17 @@ class Ledger:
             await self._repository.finish(
                 change, ChangeStatus.CONFLICT, actual, "changed_outside_service"
             )
+            _log_outcome(change, ChangeStatus.CONFLICT, "changed_outside_service")
             return True
         if step is ExecutionStep.GIVE_UP:
             await self._repository.finish(change, ChangeStatus.FAILED, actual, "attempts_exhausted")
+            _log_outcome(change, ChangeStatus.FAILED, "attempts_exhausted")
             return True
         if self._preflight is not None:
             reason = await self._preflight(change)
             if reason is not None:
                 await self._repository.finish(change, ChangeStatus.FAILED, actual, reason)
+                _log_outcome(change, ChangeStatus.FAILED, reason)
                 return True
         applying = await self._repository.mark_applying(change)
         await self._gateway.apply(
@@ -121,9 +131,27 @@ class Ledger:
         )
         result = await self._gateway.read(applying.account, applying.target_ref)
         if not plan_reached(applying.planned, result):
+            logger.info(
+                "Изменение %s (%s, %s) отправлено, Яндекс ещё не показал нужное значение",
+                applying.id,
+                applying.kind,
+                applying.target_ref,
+            )
             return False
         await self._repository.finish(applying, ChangeStatus.APPLIED, result)
         return True
+
+
+def _log_outcome(change: Change, status: ChangeStatus, reason: str) -> None:
+    """Причина в журнал сервиса: код и цель, без токенов и данных клиента."""
+    logger.warning(
+        "Изменение %s (%s, %s) не применено: статус=%s, причина=%s",
+        change.id,
+        change.kind,
+        change.target_ref,
+        status.value,
+        reason,
+    )
 
 
 async def reconcile_open_changes(

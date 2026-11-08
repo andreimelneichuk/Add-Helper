@@ -24,6 +24,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.sql import ColumnElement, TableClause
 
+from adhelper.ledger.domain.failures import failure_text
 from adhelper.stats.domain.model import (
     AdLine,
     AlertLine,
@@ -193,6 +194,10 @@ def _sums(source: TableClause = STATS) -> list[ColumnElement[int]]:
 
 def _totals(impressions: int, clicks: int, cost: int, conversions: int) -> Totals:
     return Totals(int(impressions), int(clicks), int(cost), int(conversions))
+
+
+# Статусы, у которых журнал записывает причину сбоя.
+FAILED_STATUSES = ("failed", "rejected", "conflict")
 
 
 class SqlDashboard:
@@ -554,6 +559,9 @@ class SqlDashboard:
                 after=row["after"],
                 rules_version=None,
                 reverted=row["id"] in reverted,
+                failure=failure_text(row["failure_reason"])
+                if row["status"] in FAILED_STATUSES
+                else None,
             )
             for row in change_rows
         ] + [

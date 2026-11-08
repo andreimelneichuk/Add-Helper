@@ -152,6 +152,8 @@ class HistoryLine:
     rules_version: str | None
     # Изменение уже отменено новой записью журнала: кнопку отмены не показываем.
     reverted: bool = False
+    # Почему не применилось, словами владельца; для записей без сбоя — None.
+    failure: str | None = None
 
 
 class Dashboard(Protocol):

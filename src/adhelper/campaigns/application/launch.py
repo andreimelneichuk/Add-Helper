@@ -39,6 +39,7 @@ from adhelper.campaigns.domain.launch import (
 from adhelper.campaigns.domain.ports import ActivePeriodExists, LaunchStore, StoredLaunch
 from adhelper.creatives.domain.model import TextModel
 from adhelper.ledger.application.service import Ledger
+from adhelper.ledger.domain.failures import failure_text
 from adhelper.ledger.domain.model import (
     Change,
     ChangeKind,
@@ -216,6 +217,11 @@ async def _creations(ledger: Ledger, stored: StoredLaunch) -> list[Change]:
         index += 1
 
 
+def failure_message(code: str | None) -> str | None:
+    """Причина отказа или ожидания словами владельца; код остаётся в журнале."""
+    return failure_text(code)
+
+
 def _result(stored: StoredLaunch, changes: Sequence[Change]) -> LaunchResult:
     ends_at = stored.period.ends_at
     refused = [c for c in changes if c.status in {ChangeStatus.FAILED, ChangeStatus.REJECTED}]
@@ -347,7 +353,10 @@ async def launch(
     try:
         if advertiser is not None and not await _marked(ledger, stored, advertiser):
             # Без маркировки Яндекс не покажет рекламу: кампании ждут, пока она дойдёт.
-            return LaunchResult(LaunchStatus.PENDING, ends_at=stored.period.ends_at)
+            logger.info("Запуск %s ждёт подтверждения маркировки рекламодателя", stored.id)
+            return LaunchResult(
+                LaunchStatus.PENDING, reason="marking_pending", ends_at=stored.period.ends_at
+            )
         for campaign in plan.campaigns:
             if campaign.target_ref in started:
                 continue
@@ -365,5 +374,8 @@ async def launch(
         await ledger.execute_pending(stored.account)
     except GatewayUnavailable:
         # Записи «planned» остались в журнале: согласование или следующий запуск их завершит.
-        return LaunchResult(LaunchStatus.PENDING, ends_at=stored.period.ends_at)
+        logger.warning("Запуск %s приостановлен: Яндекс не отвечает, запись сохранена", stored.id)
+        return LaunchResult(
+            LaunchStatus.PENDING, reason="gateway_unavailable", ends_at=stored.period.ends_at
+        )
     return _result(stored, await _creations(ledger, stored))

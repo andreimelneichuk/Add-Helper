@@ -200,6 +200,15 @@ class Replay(httpx.AsyncBaseTransport):
         recorded = entry["request"].get("params", {}).get("TextAdFieldNames")
         if names and recorded is not None and "AdImageHash" not in recorded:
             names.remove("AdImageHash")
+        # Запись 2026-11-05 создавала объявления запуска без метки в ссылке;
+        # метку добавили 2026-11-08.
+        recorded_ads = entry["request"].get("params", {}).get("Ads", [])
+        for item, recorded_item in zip(
+            body.get("params", {}).get("Ads", []), recorded_ads, strict=False
+        ):
+            href = item["TextAd"]["Href"]
+            if "ah_ad=" in href and "ah_ad=" not in recorded_item["TextAd"]["Href"]:
+                item["TextAd"]["Href"] = href.replace("?ah_ad=ah-probe-1", "")
         if "ReportName" in body.get("params", {}):
             body["params"].pop("ReportName")
             entry["request"]["params"].pop("ReportName")
@@ -726,3 +735,43 @@ async def test_recorded_ad_with_image_on_real_cabinet() -> None:
     assert await platform.read_ad(ACCOUNT, f"ad:{ad.ad_id}") == {"active": False}
     assert replay.entries == []
     await client.aclose()
+
+
+async def test_archived_launch_campaign_is_not_reused(
+    platform: DirectPlatform, direct: FakeDirect
+) -> None:
+    """Архивную кампанию запуска нельзя доделывать: объявления в ней не покажутся."""
+    await platform.create_campaign(ACCOUNT, launch())
+    archived = next(iter(direct.campaigns))
+    direct.campaigns[archived]["State"] = "ARCHIVED"
+    await platform.create_campaign(ACCOUNT, launch())
+    live = [c for c in direct.campaigns.values() if c["State"] != "ARCHIVED"]
+    assert len(live) == 1
+    assert live[0]["Id"] != archived
+    found = await platform.find_campaign(ACCOUNT, "ah-k1-1")
+    assert found is not None and found.campaign_id != str(archived)
+
+
+async def test_launch_ads_carry_the_marker_in_href(
+    platform: DirectPlatform, direct: FakeDirect
+) -> None:
+    """Объявления запуска помечаются так же, как созданные вручную: метка в ссылке."""
+    await platform.create_campaign(ACCOUNT, launch())
+    stored = {ad["TextAd"]["Href"] for ad in direct.ads.values()}
+    assert stored == {"https://romashka.example/?ah_ad=ah-k1-1"}
+    found = await platform.find_campaign(ACCOUNT, "ah-k1-1")
+    assert found is not None
+    assert plan_reached(launch().planned(), found.campaign.planned())
+
+
+async def test_archived_campaign_does_not_count_toward_account_limit(
+    platform: DirectPlatform, direct: FakeDirect
+) -> None:
+    """Архивная кампания не тратит деньги: её лимит не занимает место в бюджете кабинета."""
+    await platform.create_campaign(ACCOUNT, launch(limit=1_150 * RUB))
+    archived = next(iter(direct.campaigns))
+    direct.campaigns[archived]["State"] = "ARCHIVED"
+    await platform.create_campaign(ACCOUNT, launch(limit=2_700 * RUB))
+    counted = await platform.read_account_campaigns(ACCOUNT)
+    assert str(archived) not in [c.campaign_id for c in counted]
+    assert sum(c.limit for c in counted) == 2_700 * RUB
