@@ -51,6 +51,8 @@ RULE_LOADERS = (
     (load_slot_rules, "ads-1"),
     (load_site_rules, "site-1"),
     (load_site_rules, "site-2"),
+    (load_site_rules, "site-3"),
+    (load_site_rules, "site-4"),
 )
 
 

@@ -129,18 +129,30 @@ export function draftProfile(draft: StartDraft): Profile {
   // Факт, добавленный словами, без поля: в рекламе он пойдёт как особенность, которую подтвердил владелец.
   const free = draft.facts.filter((f) => !f.field).map((f) => f.value.trim()).filter(Boolean);
   let services = of("service").slice(0, MAX_SERVICES).map(service);
-  let features = [...of("feature"), ...free].slice(0, MAX_FEATURES);
+  const foundCities = of("feature").filter(isCityFact);
+  const savedAddress = of("address")[0] ?? "";
+  const address = [savedAddress, ...(foundCities.length === 1 && !savedAddress.toLocaleLowerCase().includes(foundCities[0]!.toLocaleLowerCase()) ? foundCities : [])]
+    .filter((value): value is string => !!value)
+    .join(", ");
+  const profileFeatures = of("feature").filter(
+    (feature) => !isCityFact(feature) || foundCities.length !== 1,
+  );
+  let features = [...profileFeatures, ...free].slice(0, MAX_FEATURES);
   if (services.length === 0 && free.length > 0) {
     services = [service(free[0]!)];
-    features = [...of("feature"), ...free.slice(1)].slice(0, MAX_FEATURES);
+    features = [...profileFeatures, ...free.slice(1)].slice(0, MAX_FEATURES);
   }
   return {
     niche: of("niche")[0] ?? "",
-    address: of("address")[0] ?? "",
+    address: address || savedAddress,
     services,
     features,
     website: draft.site.trim(),
   };
+}
+
+export function isCityFact(value: string): boolean {
+  return /^\s*(?:г(?:ород)?\.?\s+)\S/iu.test(value);
 }
 
 export function businessName(draft: StartDraft): string {

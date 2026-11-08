@@ -5,7 +5,7 @@ from typing import Any
 from adhelper.business.domain.site import RenderRules, SiteRules
 from adhelper.business.domain.tag import TagRules
 
-CURRENT_SITE_RULES = "site-3"
+CURRENT_SITE_RULES = "site-4"
 
 
 def _render(raw: dict[str, Any] | None) -> RenderRules | None:

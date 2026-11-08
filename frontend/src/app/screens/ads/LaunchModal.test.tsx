@@ -65,6 +65,20 @@ describe("Модальное окно запуска рекламы (LaunchModal
     expect(screen.getByText("18000 ₽ за 30 дней")).toBeInTheDocument();
   });
 
+  it("показывает владельцу регион, который будет использован для запуска", async () => {
+    const store = new MockStore(initialState("work"));
+    const api = {
+      launchCheck: vi.fn().mockResolvedValue({
+        ...readyCheck,
+        items: [{ key: "launch_plan", ok: true, text: "Запуск: 1 кампания. Город показа: Тольятти" }],
+      }),
+      startLaunch: vi.fn(),
+    };
+    render(<LaunchModal isOpen={true} onClose={vi.fn()} store={store} api={api} />);
+
+    expect(await screen.findByText(/Город показа: Тольятти/)).toBeInTheDocument();
+  });
+
   it("показывает лимит каждой кампании за весь 30-дневный период", async () => {
     const user = userEvent.setup();
     const store = new MockStore(initialState("work"));

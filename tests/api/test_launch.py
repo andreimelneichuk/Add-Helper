@@ -1,5 +1,7 @@
 """Мастер после входа: проверка кода Метрики и готовность к запуску."""
 
+from unittest.mock import AsyncMock
+
 import httpx
 from sqlalchemy import text
 
@@ -214,6 +216,88 @@ async def test_launch_does_not_reuse_counter_from_previous_site(
 
 def _with_platform(client: httpx.AsyncClient, platform: FakePlatform | None) -> None:
     client._transport.app.state.platform_for = lambda _b, _a: platform  # type: ignore[attr-defined]
+
+
+async def test_launch_uses_direct_dictionary_for_city_outside_shortlist(
+    anna: Anna,  # noqa: F811
+    sessions: Sessions,
+    provider: FakeProvider,
+) -> None:
+    client, csrf, business_id = anna
+    base = f"/api/businesses/{business_id}"
+    await _make_ready(client, csrf, business_id, sessions, provider)
+    await _profile(client, csrf, business_id, "nogti.ru")
+    profile = (await client.get(f"{base}/profile")).json()
+    profile["address"] = "г. Тольятти"
+    await client.put(
+        f"{base}/profile",
+        json=profile,
+        headers={"X-CSRF-Token": csrf},
+    )
+    platform = FakePlatform([], NOW)
+    platform.resolve_city_region = AsyncMock(return_value=(999_999, "Тольятти"))  # type: ignore[attr-defined]
+    _with_platform(client, platform)
+
+    check = (await client.get(f"{base}/launch-check")).json()
+    assert check["launch_available"] is True
+    assert any("Город показа: Тольятти" in item["text"] for item in check["items"])
+
+    result = await client.post(f"{base}/launch", headers={"X-CSRF-Token": csrf})
+    assert result.status_code == 200, result.text
+    campaign = next(iter(platform.created.values())).campaign
+    assert campaign.regions == (999_999,)
+
+
+async def test_launch_blocks_conflicting_profile_cities(
+    anna: Anna,  # noqa: F811
+    sessions: Sessions,
+    provider: FakeProvider,
+) -> None:
+    client, csrf, business_id = anna
+    base = f"/api/businesses/{business_id}"
+    await _make_ready(client, csrf, business_id, sessions, provider)
+    await _profile(client, csrf, business_id, "nogti.ru")
+    profile = (await client.get(f"{base}/profile")).json()
+    profile["address"] = "Москва, ул. Мира, г. Тольятти"
+    await client.put(
+        f"{base}/profile",
+        json=profile,
+        headers={"X-CSRF-Token": csrf},
+    )
+    platform = FakePlatform([], NOW)
+    platform.resolve_city_region = AsyncMock(return_value=(999_999, "Тольятти"))  # type: ignore[attr-defined]
+    _with_platform(client, platform)
+
+    check = (await client.get(f"{base}/launch-check")).json()
+
+    assert check["launch_available"] is False
+    assert any("несколько городов" in item["text"] for item in check["items"])
+    platform.resolve_city_region.assert_not_awaited()  # type: ignore[attr-defined]
+
+
+async def test_launch_accepts_city_aliases_for_the_same_region(
+    anna: Anna,  # noqa: F811
+    sessions: Sessions,
+    provider: FakeProvider,
+) -> None:
+    client, csrf, business_id = anna
+    base = f"/api/businesses/{business_id}"
+    await _make_ready(client, csrf, business_id, sessions, provider)
+    await _profile(client, csrf, business_id, "nogti.ru")
+    profile = (await client.get(f"{base}/profile")).json()
+    profile["address"] = "Санкт-Петербург, ул. Мира, г. Петербург"
+    await client.put(
+        f"{base}/profile",
+        json=profile,
+        headers={"X-CSRF-Token": csrf},
+    )
+    platform = FakePlatform([], NOW)
+    _with_platform(client, platform)
+
+    check = (await client.get(f"{base}/launch-check")).json()
+
+    assert check["launch_available"] is True
+    assert any("Город показа: Санкт-Петербург" in item["text"] for item in check["items"])
 
 
 async def test_launch_creates_campaign_and_shows_it_in_cabinet(

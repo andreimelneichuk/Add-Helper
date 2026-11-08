@@ -160,8 +160,10 @@ async def test_expand_keywords_with_model_none_fallback() -> None:
 
 
 @pytest.mark.anyio
-async def test_expand_keywords_with_model_failure_fallback() -> None:
-    model = FakeTextModel(ModelUnavailable("API timeout", tokens=0))
+async def test_expand_keywords_with_model_failure_fallback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    model = FakeTextModel(ModelUnavailable("length", tokens=300))
     services = [Service("Стрижка волос")]
 
     # При сбое модели метод не падает, а безопасно возвращает базовые фразы
@@ -169,3 +171,4 @@ async def test_expand_keywords_with_model_failure_fallback() -> None:
 
     assert keywords[0] == AUTOTARGETING_KEYWORD
     assert "стрижка волос казань" in keywords
+    assert "обрезано лимитом модели" in caplog.text

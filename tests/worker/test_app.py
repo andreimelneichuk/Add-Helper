@@ -23,6 +23,7 @@ from adhelper.worker.app import (
     site_tag_check,
     state_reconcile,
     telegram_poll,
+    worker_heartbeat_budget,
 )
 
 
@@ -54,7 +55,7 @@ def test_compose_worker_listens_to_every_queue() -> None:
 
 def test_budget_queue_only_has_critical_budget_tasks() -> None:
     budget_tasks = {name for name, task in app.tasks.items() if task.queue == "budget"}
-    assert budget_tasks == {"budget.watch", "state.reconcile"}
+    assert budget_tasks == {"budget.watch", "state.reconcile", "worker.heartbeat.budget"}
 
 
 async def test_worker_runs_money_tasks_from_real_database(
@@ -66,6 +67,7 @@ async def test_worker_runs_money_tasks_from_real_database(
     with app.replace_connector(connector_for(migrated)) as test_app:
         async with test_app.open_async():
             await budget_watch.defer_async(**periodic_arguments)
+            await worker_heartbeat_budget.defer_async(**periodic_arguments)
             await state_reconcile.defer_async(**periodic_arguments)
             await creatives_generate.defer_async(**periodic_arguments)
             await ads_keep.defer_async(**periodic_arguments)
@@ -98,6 +100,7 @@ async def test_worker_runs_money_tasks_from_real_database(
         "experiments.run": "succeeded",
         "worker.heartbeat": "succeeded",
         "worker.heartbeat.creatives": "succeeded",
+        "worker.heartbeat.budget": "succeeded",
     }
 
 

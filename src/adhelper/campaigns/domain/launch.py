@@ -153,12 +153,13 @@ def plan_launch(
     counters: Sequence[int],
     rules: LaunchRules,
     keywords: Sequence[str] = (),
+    region_id: int | None = None,
 ) -> LaunchPlan:
     if not ads:
         return LaunchPlan((), LaunchProblem.NO_ADS)
     if not href:
         return LaunchPlan((), LaunchProblem.NO_SITE)
-    region = region_of(address, rules)
+    region = region_id if region_id is not None else region_of(address, rules)
     if region is None:
         return LaunchPlan((), LaunchProblem.NO_CITY)
     if period.ends_at is None:

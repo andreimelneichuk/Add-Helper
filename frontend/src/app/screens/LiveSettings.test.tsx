@@ -265,6 +265,17 @@ describe("заполнение профиля с сайта", () => {
     });
   });
 
+  it("переносит найденный город в адрес, чтобы его увидела проверка запуска", () => {
+    const profile = { services: [], address: "", features: [], niche: "", website: "" };
+    expect(mergeFacts(profile, [
+      { field: "feature", value: "г. Тольятти", price: null, quote: "г. Тольятти", page: "/" },
+      { field: "address", value: "ул. Мира, 1", price: null, quote: "ул. Мира, 1", page: "/" },
+    ], "https://nogti.ru/")).toMatchObject({
+      address: "ул. Мира, 1, г. Тольятти",
+      features: [],
+    });
+  });
+
   it("находит факты с цитатами, переносит выбранные в форму, сохраняет владелец", async () => {
     const siteRead = vi.fn().mockResolvedValueOnce(null).mockResolvedValue(ready);
     const api = fakeApi({ siteRead } as Partial<Api>);

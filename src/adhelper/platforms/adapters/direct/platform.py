@@ -21,6 +21,7 @@ from adhelper.campaigns.domain.ports import CreatedCampaign, Targeting
 from adhelper.campaigns.domain.targeting import Schedule
 from adhelper.platforms.adapters.direct.transport import (
     DirectError,
+    DirectGeoRegionAmbiguous,
     DirectHttpClient,
     DirectRejected,
     TokenSource,
@@ -227,6 +228,68 @@ class DirectPlatform:
         definition = {**definition, "ReportName": f"ah-{digest[:24]}"}
         token = await self._token_for(account)
         return parse_report(await self._client.report(account, token, definition))
+
+    async def resolve_city_region(self, account: str, city: str) -> tuple[int, str] | None:
+        """Находит однозначный город России по актуальному справочнику Директа."""
+        import re
+
+        normalized_address = city.strip()
+        explicit_city = re.search(
+            r"(?:г(?:ород)?\.?\s*)([^,;]+)", normalized_address, flags=re.IGNORECASE
+        )
+        if explicit_city:
+            query = explicit_city.group(1).strip()
+        else:
+            query = normalized_address.split(",", 1)[0].strip()
+            if re.search(r"\b(?:ул\.?|улица|проспект|пр-т|дом|д\.)\b", query, re.IGNORECASE):
+                return None
+        if not query:
+            return None
+        result = await self._call(
+            account,
+            "dictionaries",
+            "getGeoRegions",
+            {
+                "Page": {"Limit": 1000, "Offset": 0},
+                "SelectionCriteria": {"ExactNames": [query]},
+                "FieldNames": ["GeoRegionId", "GeoRegionName", "ParentGeoRegionNames"],
+            },
+        )
+        normalized = query.casefold().replace("ё", "е")
+        matches: dict[int, tuple[str, tuple[str, ...]]] = {}
+        for region in result.get("GeoRegions") or []:
+            if not isinstance(region, Mapping):
+                continue
+            name = str(region.get("GeoRegionName") or "").strip()
+            parents = (region.get("ParentGeoRegionNames") or {}).get("Items") or []
+            if name.casefold().replace("ё", "е") != normalized:
+                continue
+            parent_names = tuple(str(parent) for parent in parents)
+            if not any(parent.casefold() in {"россия", "russia"} for parent in parent_names):
+                continue
+            try:
+                matches[int(region["GeoRegionId"])] = (name, parent_names)
+            except (KeyError, TypeError, ValueError):
+                continue
+        if len(matches) > 1:
+            context = normalized_address.casefold().replace("ё", "е")
+            narrowed = {
+                region_id: (name, parents)
+                for region_id, (name, parents) in matches.items()
+                if any(
+                    parent.casefold() not in {"россия", "russia"}
+                    and parent.casefold().replace("ё", "е") in context
+                    for parent in parents
+                )
+            }
+            if len(narrowed) == 1:
+                matches = narrowed
+            else:
+                raise DirectGeoRegionAmbiguous(None, "ambiguous Russian city")
+        if not matches:
+            return None
+        region_id, (name, _parents) = next(iter(matches.items()))
+        return region_id, name
 
     # --- Кампании ---
 

@@ -10,6 +10,7 @@ import { isAbort } from "../polling";
 import { liveApi, savedText, LiveStore } from "../live";
 import { useStore } from "../store";
 import type { Store } from "../store";
+import { isCityFact } from "../draft";
 import "./Settings.css";
 
 // Пока владелец открывает бота, проверяем привязку сами: бот читает сообщения раз в минуту.
@@ -452,6 +453,8 @@ export function mergeFacts(profile: Profile, facts: SiteFact[], url: string): Pr
   const services = [...profile.services];
   const features = [...profile.features];
   let { niche, address } = profile;
+  const cityFacts = facts.filter((fact) => fact.field === "feature" && isCityFact(fact.value));
+  const cityFact = cityFacts.length === 1 ? cityFacts[0] : undefined;
   for (const fact of facts) {
     if (fact.field === "niche") niche = fact.value;
     else if (fact.field === "address") address = fact.value;
@@ -461,9 +464,12 @@ export function mergeFacts(profile: Profile, facts: SiteFact[], url: string): Pr
       // Отмеченная цена — выбор владельца: она заменяет прежнюю.
       if (same) services[i] = { ...same, price: fact.price ?? same.price };
       else if (services.length < MAX_SERVICES) services.push({ name: fact.value, price: fact.price });
-    } else if (!features.some((f) => f.trim().toLowerCase() === fact.value.trim().toLowerCase()) && features.length < MAX_FEATURES) {
+    } else if (!(cityFact && fact === cityFact) && !features.some((f) => f.trim().toLowerCase() === fact.value.trim().toLowerCase()) && features.length < MAX_FEATURES) {
       features.push(fact.value);
     }
+  }
+  if (cityFact && !address.toLocaleLowerCase().includes(cityFact.value.toLocaleLowerCase())) {
+    address = [address, cityFact.value].filter(Boolean).join(", ");
   }
   return { ...profile, services, features, niche, address, website: profile.website.trim() || url };
 }

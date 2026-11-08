@@ -34,6 +34,7 @@ from adhelper.campaigns.domain.launch import (
     NewCampaign,
     UnregisteredAdvertiserError,
     plan_launch,
+    region_of,
 )
 from adhelper.campaigns.domain.ports import ActivePeriodExists, LaunchStore, StoredLaunch
 from adhelper.creatives.domain.model import TextModel
@@ -69,6 +70,7 @@ __all__ = [
     "launch",
     "launch_state",
     "preview",
+    "region_of",
 ]
 
 
@@ -89,6 +91,8 @@ class LaunchInputs:
     address: str
     counters: tuple[int, ...]
     keywords: tuple[str, ...] = ()
+    region_id: int | None = None
+    city_name: str = ""
 
 
 @dataclass(frozen=True)
@@ -139,6 +143,7 @@ def _plan(key: str, inputs: LaunchInputs, period: BudgetPeriod, rules: LaunchRul
         inputs.counters,
         rules,
         keywords=inputs.keywords,
+        region_id=inputs.region_id,
     )
 
 
@@ -262,9 +267,16 @@ async def expand_keywords_with_model(
             )
             synonyms = parse_synonyms_response(reply.text)
         except Exception as error:
-            logger.warning(
-                "Семантическое расширение ключевых фраз через модель не удалось: %s", error
-            )
+            if str(error) == "length":
+                logger.warning(
+                    "Семантическое расширение ключевых фраз обрезано лимитом модели; "
+                    "использую обычные фразы"
+                )
+            else:
+                logger.warning(
+                    "Семантическое расширение ключевых фраз через модель не удалось: %s",
+                    type(error).__name__,
+                )
             synonyms = []
 
     combined_services: list[Any] = list(services) + synonyms

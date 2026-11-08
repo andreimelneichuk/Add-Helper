@@ -25,6 +25,7 @@ PERIODIC_TASKS = (
     "cleanup.jobs",
     "worker.heartbeat",
     "worker.heartbeat.creatives",
+    "worker.heartbeat.budget",
 )
 
 
@@ -159,6 +160,17 @@ async def cleanup_jobs(timestamp: int) -> None:
 async def worker_heartbeat(timestamp: int) -> None:
     async with open_runtime(Settings()) as runtime:
         await runtime.worker_heartbeat("notifications")
+
+
+@app.periodic(cron="* * * * *")
+@app.task(
+    name="worker.heartbeat.budget",
+    queue=BUDGET_QUEUE,
+    queueing_lock="worker.heartbeat.budget",
+)
+async def worker_heartbeat_budget(timestamp: int) -> None:
+    async with open_runtime(Settings()) as runtime:
+        await runtime.worker_heartbeat("budget")
 
 
 @app.periodic(cron="* * * * *")

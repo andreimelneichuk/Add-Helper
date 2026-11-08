@@ -5,6 +5,8 @@
 """
 
 import logging
+import re
+from dataclasses import replace
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, HTTPException, Request, status
@@ -46,9 +48,11 @@ from adhelper.campaigns.application.launch import (
     launch,
     launch_state,
     preview,
+    region_of,
 )
 from adhelper.creatives.adapters.sql import SqlProfiles
 from adhelper.creatives.adapters.wizard import SqlWizardAds
+from adhelper.platforms.adapters.direct.transport import DirectGeoRegionAmbiguous
 from adhelper.stats.adapters.sql import SqlDashboard
 
 MARKING_PROBLEMS = {
@@ -327,6 +331,103 @@ def launch_router() -> APIRouter:
             if tag is not None and tag.url == site and tag.status is TagStatus.FOUND
             else ()
         )
+        address = found[0].address
+        city_facts = [
+            feature
+            for feature in found[0].features
+            if re.match(r"^\s*(?:г(?:ород)?\.?\s+)\S", feature, re.IGNORECASE)
+        ]
+        if len(city_facts) == 1 and city_facts[0].casefold() not in address.casefold():
+            address = ", ".join(part for part in (address, city_facts[0]) if part)
+        inputs = LaunchInputs(
+            title=found[0].name,
+            account=login,
+            monthly=plan,
+            ads=tuple(NewAd(draft.headline, draft.text) for draft in chosen),
+            href=site,
+            address=address,
+            counters=tuple(counters),
+        )
+        launch_rules = load_launch_rules()
+        mentioned_cities = {
+            f"region:{region_id}"
+            for city in launch_rules.cities
+            for region_id in (launch_rules.cities[city],)
+            if re.search(rf"(?<!\w){re.escape(city)}(?!\w)", address, re.IGNORECASE)
+        }
+        explicit_cities: set[str] = set()
+        for match in re.findall(r"(?:г(?:ород)?\.?\s*)([^,;]+)", address, re.IGNORECASE):
+            normalized = match.strip().casefold().replace("ё", "е")
+            recognized = {
+                f"region:{region_id}"
+                for city in launch_rules.cities
+                for region_id in (launch_rules.cities[city],)
+                if re.search(rf"(?<!\w){re.escape(city)}(?!\w)", normalized, re.IGNORECASE)
+            }
+            explicit_cities.update(recognized or {f"unknown:{normalized}"})
+        if len(mentioned_cities | explicit_cities) > 1:
+            items.append(
+                {
+                    "key": "launch_plan",
+                    "ok": False,
+                    "text": (
+                        "В адресе профиля указано несколько городов. Оставьте один город "
+                        "и регион, чтобы не запустить рекламу не там."
+                    ),
+                }
+            )
+            return items, None, login
+        known_region = region_of(address, launch_rules)
+        if known_region is not None:
+            known_city = next(
+                (
+                    city
+                    for city in sorted(launch_rules.cities, key=len, reverse=True)
+                    if launch_rules.cities[city] == known_region
+                    and city.casefold().replace("ё", "е") in address.casefold().replace("ё", "е")
+                ),
+                "",
+            )
+            inputs = replace(inputs, region_id=known_region, city_name=known_city)
+        elif platform is not None and hasattr(platform, "resolve_city_region"):
+            try:
+                resolved = await platform.resolve_city_region(login, address)
+            except DirectGeoRegionAmbiguous:
+                items.append(
+                    {
+                        "key": "launch_plan",
+                        "ok": False,
+                        "text": (
+                            "Нашёл несколько городов с таким названием. Уточните город и область "
+                            "в адресе профиля."
+                        ),
+                    }
+                )
+                return items, None, login
+            except Exception as error:
+                logger.warning(
+                    "Не удалось проверить город в справочнике Директа: %s",
+                    type(error).__name__,
+                )
+                items.append(
+                    {
+                        "key": "launch_plan",
+                        "ok": False,
+                        "text": (
+                            "Не удалось проверить город в Яндекс Директе. "
+                            "Нажмите «Проверить снова»."
+                        ),
+                    }
+                )
+                return items, None, login
+            if resolved is not None:
+                inputs = replace(inputs, region_id=resolved[0], city_name=resolved[1])
+        budget_rules = load_budget_rules("budget-1")
+        now = _now(request)
+        preflight = preview(inputs, launch_rules, budget_rules, now)
+        if preflight.problem is not None:
+            items.append(_plan_item(preflight, inputs.city_name))
+            return items, None, login
         model = getattr(request.app.state, "text_model", None) or getattr(
             request.app.state, "command_model", None
         )
@@ -336,18 +437,9 @@ def launch_router() -> APIRouter:
             niche=found[0].niche,
             address=found[0].address,
         )
-        inputs = LaunchInputs(
-            title=found[0].name,
-            account=login,
-            monthly=plan,
-            ads=tuple(NewAd(draft.headline, draft.text) for draft in chosen),
-            href=site,
-            address=found[0].address,
-            counters=tuple(counters),
-            keywords=keywords,
-        )
-        planned = preview(inputs, load_launch_rules(), load_budget_rules("budget-1"), _now(request))
-        items.append(_plan_item(planned))
+        inputs = replace(inputs, keywords=keywords)
+        planned = preview(inputs, launch_rules, budget_rules, now)
+        items.append(_plan_item(planned, inputs.city_name))
         return items, inputs if planned.problem is None else None, login
 
     @router.get("/launch-check")
@@ -427,7 +519,7 @@ def launch_router() -> APIRouter:
     return router
 
 
-def _plan_item(planned: LaunchPlan) -> dict[str, Any]:
+def _plan_item(planned: LaunchPlan, city_name: str = "") -> dict[str, Any]:
     if planned.problem is LaunchProblem.BELOW_PLATFORM_MIN:
         minimum = _rub((planned.minimum_monthly or 0) // MICROS_PER_RUB)
         text = (
@@ -436,7 +528,10 @@ def _plan_item(planned: LaunchPlan) -> dict[str, Any]:
         )
         return {"key": "launch_plan", "ok": False, "text": text}
     if planned.problem is LaunchProblem.NO_CITY:
-        text = "Не понял город из адреса профиля: допишите город, например «Москва, ул. …»"
+        text = (
+            "Не нашёл город в адресе профиля или справочнике Директа: "
+            "укажите город и регион в адресе профиля"
+        )
         return {"key": "launch_plan", "ok": False, "text": text}
     if planned.problem is LaunchProblem.NO_SITE:
         text = "Пока запускаю только с сайтом: объявлению нужна страница, куда ведёт ссылка"
@@ -454,7 +549,8 @@ def _plan_item(planned: LaunchPlan) -> dict[str, Any]:
     return {
         "key": "launch_plan",
         "ok": True,
-        "text": f"Запуск: {count} {word} ({parts}) до {until}, 10% бюджета в резерве",
+        "text": f"Запуск: {count} {word} ({parts}) до {until}, 10% бюджета в резерве"
+        + (f". Город показа: {city_name}" if city_name else ""),
     }
 
 

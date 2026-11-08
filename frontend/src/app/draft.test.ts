@@ -67,6 +67,29 @@ describe("черновик запуска", () => {
     });
   });
 
+  it("город из старого разбора site-3 переносится в адрес профиля", () => {
+    const profile = draftProfile({
+      site: "https://example.ru",
+      facts: [{ id: "city", label: "Особенность", value: "г. Тольятти", source: "сайт", field: "feature" }],
+      budget: 0,
+    });
+    expect(profile.address).toBe("г. Тольятти");
+    expect(profile.features).toEqual([]);
+  });
+
+  it("не выбирает один из нескольких найденных городов автоматически", () => {
+    const profile = draftProfile({
+      site: "https://example.ru",
+      facts: [
+        { id: "city-1", label: "Особенность", value: "г. Тольятти", source: "сайт", field: "feature" },
+        { id: "city-2", label: "Особенность", value: "г. Самара", source: "сайт", field: "feature" },
+      ],
+      budget: 0,
+    });
+    expect(profile.address).toBe("");
+    expect(profile.features).toEqual(["г. Тольятти", "г. Самара"]);
+  });
+
   it("имя бизнеса берётся с адреса сайта, без сайта из вида деятельности", () => {
     expect(businessName(draft)).toBe("nogti.ru");
     expect(businessName({ ...draft, site: "" })).toBe("Маникюр");

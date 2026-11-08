@@ -217,7 +217,24 @@ def test_site_3_asks_for_price_pairs_promotions_and_place() -> None:
     assert "Записаться" in prompt and "price = null" in prompt
     assert "Акция" in prompt and "условие или срок" in prompt
     assert "метро" in prompt and "Телефоны" in prompt
-    assert load_site_rules().version == "site-3"
+    assert load_site_rules().version == "site-4"
+
+
+def test_site_4_assigns_city_to_profile_address() -> None:
+    prompt = load_site_rules().system_prompt
+    assert "Город записывай в address" in prompt
+    assert "город, район, метро и ориентир — отдельные feature" not in prompt
+
+
+def test_site_4_keeps_city_only_as_profile_address() -> None:
+    page = Page("https://podolog.ru/", "г. Тольятти")
+    facts, problems = check_facts(
+        [fact("address", "г. Тольятти", "г. Тольятти")],
+        [page],
+        load_site_rules(),
+    )
+    assert [item.value for item in facts] == ["г. Тольятти"]
+    assert problems == {}
 
 
 def test_promotion_and_place_from_card_layout_are_kept() -> None:
