@@ -307,6 +307,8 @@ def control_router() -> APIRouter:
             False,
             request_id,
         )
+        if done is None:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NO_ANSWER)
         if done == "failed":
             raise HTTPException(status.HTTP_409_CONFLICT, "Яндекс не принял это изменение")
 

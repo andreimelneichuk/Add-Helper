@@ -188,11 +188,21 @@ class SqlWizardAds:
             return ()
         drafts = _view(row).drafts
         raw = row.drafts or []
-        return tuple(
-            drafts[i]
-            for i in row.kept or []
-            if 0 <= i < len(drafts) and not (i < len(raw) and bool(raw[i].get("archived", False)))
-        )
+        chosen_items: list[WizardDraft] = []
+        for i in row.kept or []:
+            if 0 <= i < len(drafts) and not (i < len(raw) and bool(raw[i].get("archived", False))):
+                d = drafts[i]
+                raw_d = raw[i]
+                if not d.sources and raw_d.get("sources"):
+                    from adhelper.creatives.domain.wizard import FactSource
+
+                    custom_sources = tuple(
+                        FactSource(s.get("label", "Ваш текст"), s.get("quote", ""))
+                        for s in raw_d.get("sources", [])
+                    )
+                    d = WizardDraft(d.headline, d.text, sources=custom_sources)
+                chosen_items.append(d)
+        return tuple(chosen_items)
 
     async def all_ads(self) -> list[WizardAdItem]:
         statement = (
@@ -213,13 +223,15 @@ class SqlWizardAds:
             raw = row.drafts[i] if i < len(row.drafts) else {}
             is_archived = bool(raw.get("archived", False))
             is_active = (i in kept_set) and not is_archived
+            raw_sources = tuple(s.get("label", "") for s in raw.get("sources", []))
+            facts = tuple(source.label for source in d.sources) or raw_sources or ("Ваш текст",)
             items.append(
                 WizardAdItem(
                     id=f"w{i}",
                     index=i,
                     headline=d.headline,
                     text=d.text,
-                    facts=tuple(source.label for source in d.sources),
+                    facts=facts,
                     active=is_active,
                     archived=is_archived,
                 )
