@@ -12,6 +12,21 @@ import { Settings } from "./Settings";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("настройки на настоящих данных", () => {
+  it("показывает проверку Метрики в настройках и обновляет её по кнопке", async () => {
+    const found = { status: "found" as const, url: "https://salon.ru/", counters: [123456], problem: null };
+    const api = fakeApi({
+      profile: vi.fn(async () => ({ services: [{ name: "Маникюр", price: 1200 }], address: "Москва", features: [], niche: "", website: "salon.ru" })),
+      tagCheck: vi.fn(async () => ({ check: null, site: "https://salon.ru/" })),
+      requestTagCheck: vi.fn(async () => ({ check: found, site: "https://salon.ru/" })),
+    } as Partial<Api>);
+    render(<Settings store={await open(api)} />);
+    const metrica = screen.getByRole("region", { name: "Код статистики на сайте" });
+    expect(await within(metrica).findByText(/Запустить рекламу можно и без Метрики|Код ещё не проверяли/)).toBeInTheDocument();
+    await userEvent.click(within(metrica).getByRole("button", { name: "Проверить установку" }));
+    expect(await within(metrica).findByText("Код найден, счётчик 123456.")).toBeInTheDocument();
+    expect(api.requestTagCheck).toHaveBeenCalledOnce();
+  });
+
   it("правка профиля уходит в API и перечитывает данные экранов", async () => {
     const api = fakeApi();
     render(<Settings store={await open(api)} />);

@@ -1,7 +1,7 @@
 // Настройки на настоящих данных: профиль, уведомления, кабинет Яндекса и выход.
 // Правка профиля не трогает площадку, поэтому идёт прямо в API, а не через журнал.
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AdAccount, Api, Business, Channels as ChannelsData, Display, Photos as PhotosData, Profile, SiteImage, SiteFact, SiteRead } from "../../api";
+import type { AdAccount, Api, Business, Channels as ChannelsData, Display, Photos as PhotosData, Profile, SiteImage, SiteFact, SiteRead, TagCheckView } from "../../api";
 import { rub } from "../data";
 import { MICROS_PER_RUBLE } from "../money";
 import * as v from "valibot";
@@ -31,6 +31,69 @@ export const CONNECT_RESULT: Record<string, string> = {
 };
 
 const message = (e: unknown) => (e instanceof Error ? e.message : "Сервис не ответил. Попробуйте позже.");
+
+function MetricaSettings({ api }: { api: Api }) {
+  const [view, setView] = useState<TagCheckView | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const load = useCallback(async () => {
+    try {
+      setView(await api.tagCheck());
+      setError("");
+    } catch (e) {
+      setError(message(e));
+    }
+  }, [api]);
+
+  useEffect(() => { void load(); }, [load]);
+  const check = view?.check && view.check.url === view.site ? view.check : null;
+  const waiting = check?.status === "queued" || check?.status === "running";
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = window.setTimeout(() => { void load(); }, WAIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [waiting, load, view]);
+
+  const run = async () => {
+    if (busy) return;
+    if (!view) {
+      await load();
+      return;
+    }
+    if (!view.site) return;
+    setBusy(true);
+    setError("");
+    try {
+      setView(await api.requestTagCheck());
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  let status = "Загружаю состояние проверки…";
+  if (view && !view.site) status = "Добавьте адрес сайта в профиле бизнеса, чтобы проверить установленный код. Запустить рекламу можно и без Метрики.";
+  else if (waiting) status = "Проверяю сайт. Обычно это занимает до минуты.";
+  else if (check?.status === "found") status = `Код найден, счётчик ${check.counters.join(", ")}.`;
+  else if (check?.status === "missing") status = "Код Метрики на главной странице не найден. Если он установлен через Google Tag Manager, эта проверка его не увидит.";
+  else if (check?.status === "failed") status = "Сайт не открылся при проверке. Попробуйте ещё раз позже.";
+  else if (view?.site) status = "Код ещё не проверяли. Проверка необязательна для запуска рекламы.";
+
+  return (
+    <section className="ah-panel set-section" aria-labelledby="set-metrica-title">
+      <h2 id="set-metrica-title" className="ah-panel-title">Код статистики на сайте</h2>
+      <p className="set-hint">Проверю, установлен ли код Метрики. Без него реклама запустится, но обращения на сайте могут не учитываться. Создание счётчика и целей в сервисе пока недоступно.</p>
+      <p className="set-hint">{status}</p>
+      {error && <p className="ah-error" role="alert">{error}</p>}
+      <div className="set-actions">
+        <button type="button" className="ah-btn" disabled={(view !== null && !view.site) || busy || waiting} onClick={() => void run()}>
+          {busy || waiting ? "Проверяю…" : error ? "Попробовать снова" : check ? "Проверить снова" : "Проверить установку"}
+        </button>
+      </div>
+    </section>
+  );
+}
 
 /** До запуска периода нет: показываем план из мастера. Лимиты в Яндексе из него ставятся только при запуске. */
 function PlanForm({ api, businesses }: { api: Api; businesses?: Business[] }) {
@@ -1026,6 +1089,7 @@ function SiteSettings({ store, api }: { store: Store; api: Api }) {
   return (
     <div className="set">
       <div className="set-main">
+        <MetricaSettings api={api} />
         <section className="ah-panel set-section" aria-labelledby="set-title">
           <h2 id="set-title" className="ah-panel-title">Бюджет</h2>
           <BudgetForm store={store as LiveStore} />

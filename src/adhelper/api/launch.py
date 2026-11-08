@@ -127,19 +127,29 @@ async def _site(request: Request, business_id: Any) -> str:
 
 def _counter_item(has_profile: bool, site: str, check: StoredTagCheck | None) -> tuple[bool, str]:
     if not has_profile:
-        return False, "Код Метрики проверю, когда будет профиль с адресом сайта"
+        return True, (
+            "Код статистики можно проверить после добавления сайта; запуск от этого не зависит"
+        )
     if not site:
-        return True, NO_SITE
+        return True, f"{NO_SITE}; Метрика для запуска не обязательна"
     if check is None or check.url != site:
-        return False, "Код Метрики на сайте ещё не проверен"
+        return True, (
+            "Код Метрики ещё не проверен; запуск возможен, "
+            "но обращения на сайте могут не учитываться"
+        )
     if check.status is TagStatus.FOUND:
         numbers = ", ".join(str(n) for n in check.counters)
         return True, f"Код Метрики на сайте есть, счётчик {numbers}"
     if check.status in (TagStatus.QUEUED, TagStatus.RUNNING):
-        return False, "Проверяю код Метрики на сайте"
+        return True, (
+            "Проверяю код Метрики на сайте; запуск возможен, обращения могут не учитываться"
+        )
     if check.status is TagStatus.MISSING:
-        return False, "Кода Метрики на главной странице сайта нет"
-    return False, "Сайт не открылся при проверке кода. Проверьте ещё раз"
+        return True, (
+            "Кода Метрики на главной странице не нашла; запуск возможен, "
+            "обращения могут не учитываться"
+        )
+    return True, "Сайт не открылся при проверке Метрики; можно запустить рекламу и проверить позже"
 
 
 def _store(request: Request, business_id: Any) -> SqlMarking:
@@ -312,7 +322,11 @@ def launch_router() -> APIRouter:
         ]
         if not all(item["ok"] for item in items) or found is None or plan is None or not login:
             return items, None, login
-        counters = tag.counters if tag is not None and tag.status is TagStatus.FOUND else ()
+        counters = (
+            tag.counters
+            if tag is not None and tag.url == site and tag.status is TagStatus.FOUND
+            else ()
+        )
         model = getattr(request.app.state, "text_model", None) or getattr(
             request.app.state, "command_model", None
         )

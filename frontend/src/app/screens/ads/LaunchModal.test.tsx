@@ -41,7 +41,9 @@ describe("Модальное окно запуска рекламы (LaunchModal
       startLaunch,
     };
 
-    render(<LaunchModal isOpen={true} onClose={vi.fn()} store={store} />);
+    const { container } = render(<LaunchModal isOpen={true} onClose={vi.fn()} store={store} />);
+    expect(container.querySelector(".ah-modal-overlay")).toBeInTheDocument();
+    expect(container.querySelector(".ah-modal")).toBeInTheDocument();
 
     expect(screen.getByRole("status")).toHaveTextContent(/Проверяю готовность/);
 

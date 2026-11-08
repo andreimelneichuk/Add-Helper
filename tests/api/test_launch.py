@@ -105,6 +105,7 @@ async def _make_ready(
     sessions: Sessions,
     provider: FakeProvider,
     rubles: int = 20_000,
+    check_counter: bool = True,
 ) -> None:
     """Всё, что мастер собирает до запуска: профиль, бюджет, кабинет, код, объявления."""
     headers = {"X-CSRF-Token": csrf}
@@ -117,8 +118,9 @@ async def _make_ready(
         headers=headers,
     )
     await _connect(client, provider, csrf, str(business_id), ANNA)
-    await client.post(f"{base}/tag-check", headers=headers)
-    await _worker(sessions, [98765432])
+    if check_counter:
+        await client.post(f"{base}/tag-check", headers=headers)
+        await _worker(sessions, [98765432])
     set_id, token = await written(client, sessions)
     await client.post(
         f"{base}/creative-sets/adopt",
@@ -141,7 +143,7 @@ async def test_launch_check_lists_what_is_missing(
         "plan": False,
         "account": False,
         "marking": False,
-        "counter": False,
+        "counter": True,
         "ads": False,
     }
     assert empty["ready"] is False
@@ -161,6 +163,53 @@ async def test_launch_check_lists_what_is_missing(
     assert "20 000 ₽" in texts and "98765432" in texts and LEGAL_INN not in texts
     assert "Объявления: выбрано 2" in texts
     assert "Запуск: 1 кампания (поиск и сайты — 18 000 ₽)" in texts
+
+
+async def test_launch_is_available_without_a_metrica_check(
+    anna: Anna,  # noqa: F811
+    sessions: Sessions,
+    provider: FakeProvider,
+) -> None:
+    client, csrf, business_id = anna
+    base = f"/api/businesses/{business_id}"
+    await _make_ready(client, csrf, business_id, sessions, provider, check_counter=False)
+    platform = FakePlatform([], NOW)
+    _with_platform(client, platform)
+
+    check = (await client.get(f"{base}/launch-check")).json()
+    counter = next(item for item in check["items"] if item["key"] == "counter")
+    assert counter["ok"] is True
+    assert "обращения на сайте могут не учитываться" in counter["text"]
+    assert check["launch_available"] is True
+
+    launched = await client.post(f"{base}/launch", headers={"X-CSRF-Token": csrf})
+    assert launched.status_code == 200, launched.text
+    assert platform.create_calls == 1
+    campaign = next(iter(platform.created.values())).campaign
+    assert campaign.counters == ()
+
+
+async def test_launch_does_not_reuse_counter_from_previous_site(
+    anna: Anna,  # noqa: F811
+    sessions: Sessions,
+    provider: FakeProvider,
+) -> None:
+    client, csrf, business_id = anna
+    base = f"/api/businesses/{business_id}"
+    await _make_ready(client, csrf, business_id, sessions, provider)
+    await _profile(client, csrf, business_id, "new-site.ru")
+    platform = FakePlatform([], NOW)
+    _with_platform(client, platform)
+
+    check = (await client.get(f"{base}/launch-check")).json()
+    counter = next(item for item in check["items"] if item["key"] == "counter")
+    assert counter["ok"] is True
+    assert "ещё не проверен" in counter["text"]
+
+    launched = await client.post(f"{base}/launch", headers={"X-CSRF-Token": csrf})
+    assert launched.status_code == 200, launched.text
+    campaign = next(iter(platform.created.values())).campaign
+    assert campaign.counters == ()
 
 
 def _with_platform(client: httpx.AsyncClient, platform: FakePlatform | None) -> None:

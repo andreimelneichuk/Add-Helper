@@ -87,7 +87,7 @@ export function LaunchModal({ isOpen, onClose, store, api: propsApi }: LaunchMod
         }
       }}
     >
-      <div className="ah-modal-card" style={{ maxWidth: 540 }}>
+      <div className="ah-modal" style={{ maxWidth: 540 }}>
         <div className="ah-modal-head">
           <h2 id="launch-modal-title" style={{ margin: 0, fontSize: "18px", fontWeight: 700 }}>
             {answer ? (answer.status === "done" ? "Реклама запущена" : "Запуск ещё не завершён") : "Запуск рекламы"}
