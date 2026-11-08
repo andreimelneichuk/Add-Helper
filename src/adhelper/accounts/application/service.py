@@ -3,7 +3,7 @@ import hashlib
 import logging
 import secrets
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from uuid import UUID
 
@@ -277,14 +277,7 @@ class AccountsService:
                         )
                     except DecryptionFailed:
                         await tokens.mark_needs_reconnect(account.login)
-                        account = AdAccount(
-                            account.id,
-                            account.business_id,
-                            account.platform,
-                            account.login,
-                            account.scopes,
-                            AccountState.NEEDS_RECONNECT,
-                        )
+                        account = replace(account, state=AccountState.NEEDS_RECONNECT)
             result.append(account)
         return result
 
@@ -335,3 +328,8 @@ class AccountsService:
         )
         logger.info("Подключён ручной токен кабинета %s для бизнеса %s", login, business_id)
         return account
+
+    async def save_account_balance(
+        self, business_id: UUID, login: str, balance_micros: int, checked_at: datetime
+    ) -> None:
+        await self._tokens_for(business_id).save_balance(login, balance_micros, checked_at)

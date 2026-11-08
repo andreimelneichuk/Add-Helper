@@ -85,6 +85,10 @@ class AdAccountRow(Base):
     token_version: Mapped[int] = mapped_column(BigInteger, server_default=text("1"))
     scopes: Mapped[list[str]] = mapped_column(ARRAY(Text))
     state: Mapped[str] = mapped_column(Text)
+    last_balance_micros: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    balance_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class SessionRow(Base):
@@ -125,6 +129,8 @@ def _account(row: AdAccountRow) -> AdAccount:
         row.external_login,
         tuple(row.scopes),
         AccountState(row.state),
+        last_balance_micros=row.last_balance_micros,
+        balance_checked_at=row.balance_checked_at,
     )
 
 
@@ -404,6 +410,17 @@ class SqlAccountTokens:
                     AdAccountRow.external_login == login,
                 )
                 .values(state=AccountState.NEEDS_RECONNECT.value)
+            )
+
+    async def save_balance(self, login: str, balance_micros: int, checked_at: datetime) -> None:
+        async with self._sessions.begin() as session:
+            await session.execute(
+                update(AdAccountRow)
+                .where(
+                    AdAccountRow.business_id == self._business_id,
+                    AdAccountRow.external_login == login,
+                )
+                .values(last_balance_micros=balance_micros, balance_checked_at=checked_at)
             )
 
 

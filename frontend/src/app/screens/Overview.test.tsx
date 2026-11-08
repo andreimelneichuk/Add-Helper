@@ -6,7 +6,7 @@ const { DAYS } = mockFixtures;
 import type { Situation } from "../data";
 import { initialState, week} from "../store";
 import { MockStore } from "../../mock/MockStore";
-import { fakeApi, open } from "../testLive";
+import { fakeApi, open, overview } from "../testLive";
 import { Overview } from "./Overview";
 
 function show(situation: Situation = "running") {
@@ -181,6 +181,36 @@ describe("остальные блоки", () => {
     show("budget");
     expect(DAYS.budget).toHaveLength(27);
     expect(screen.getByText(/^На счёте 900 ₽\. Сверка: разница 0 ₽, сегодня в 9:40\./)).toBeInTheDocument();
+  });
+
+  it("в живом режиме показывает баланс аккаунта до запуска рекламы", async () => {
+    const api = fakeApi({
+      overview: vi.fn(async () => ({
+        ...overview(),
+        money: [],
+        campaigns: [],
+        account_balance_micros: 12_500 * 1_000_000,
+        account_login: "anna",
+      })),
+    });
+    const store = await open(api);
+    render(<Overview store={store} />);
+    expect(screen.getByText(/На счёте 12\s?500\s?₽\. Сверка начнётся после запуска рекламы\./)).toBeInTheDocument();
+  });
+
+  it("в живом режиме 0 ₽ отображается корректно и не считается отсутствием данных", async () => {
+    const api = fakeApi({
+      overview: vi.fn(async () => ({
+        ...overview(),
+        money: [],
+        campaigns: [],
+        account_balance_micros: 0,
+        account_login: "anna",
+      })),
+    });
+    const store = await open(api);
+    render(<Overview store={store} />);
+    expect(screen.getByText(/На счёте 0\s?₽\. Сверка начнётся после запуска рекламы\./)).toBeInTheDocument();
   });
 });
 

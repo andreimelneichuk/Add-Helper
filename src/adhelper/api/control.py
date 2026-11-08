@@ -194,7 +194,9 @@ def control_router() -> APIRouter:
     router = APIRouter(prefix="/api/businesses/{business_id}")
 
     @router.get("/accounts/{account}/balance")
-    async def get_balance(request: Request, business_id: Owned, account: str) -> dict[str, Any]:
+    async def get_balance(
+        request: Request, business_id: Owned, account: str, service: Service
+    ) -> dict[str, Any]:
         """Остаток на счёте в Директе: чтение, площадку оно не меняет. Причина без остатка
         называется словами владельца, а не кодом ошибки."""
         platform = request.app.state.platform_for(business_id, account)
@@ -218,6 +220,8 @@ def control_router() -> APIRouter:
             if "shared account" in str(error):
                 return {"balance_micros": None, "problem": BALANCE_NO_SHARED}
             return {"balance_micros": None, "problem": BALANCE_FAILED}
+        if service is not None:
+            await service.save_account_balance(business_id, account, micros, _now(request))
         return {"balance_micros": micros, "problem": None}
 
     @router.post("/ads/{account}/{ad_id}/state")

@@ -41,6 +41,21 @@ describe("живые данные", () => {
     const store = await open(fakeApi({ overview: vi.fn(async () => overview([alert])) } as Partial<Api>));
     expect(statusText(store.state)).toBe("Показы остановлены");
   });
+
+  it("берёт баланс аккаунта из overview, когда реклама ещё не запущена", async () => {
+    const api = fakeApi({
+      overview: vi.fn(async () => ({
+        ...overview(),
+        money: [],
+        campaigns: [],
+        account_balance_micros: 12_500 * 1_000_000,
+        account_login: "anna",
+      })),
+    } as unknown as Partial<Api>);
+    const store = await open(api);
+    expect(store.state.live?.balance).toBe(12500);
+    expect(store.state.live?.account).toBe("anna");
+  });
 });
 
 describe("действия идут через сервис", () => {

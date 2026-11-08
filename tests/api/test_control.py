@@ -609,6 +609,17 @@ async def test_balance_shows_account_money_without_changing_anything(
     got = await client.get(f"/api/businesses/{business}/accounts/{LOGIN}/balance")
     assert got.json() == {"balance_micros": 12_500_000_000, "problem": None}
     assert await _rows(sessions, business) == []
+    async with sessions() as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT last_balance_micros FROM ad_accounts"
+                    " WHERE business_id = :b AND external_login = :l"
+                ),
+                {"b": business, "l": LOGIN},
+            )
+        ).scalar_one()
+    assert row == 12_500_000_000
 
 
 async def test_balance_names_the_reason_in_owner_words(anna: Anna) -> None:

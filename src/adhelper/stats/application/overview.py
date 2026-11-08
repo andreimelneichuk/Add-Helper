@@ -90,6 +90,8 @@ class Overview:
     previous: Totals
     campaigns: list[tuple[CampaignLine, Ratios]]
     days: list[DayLine]
+    account_balance_micros: int | None = None
+    account_login: str | None = None
 
 
 @dataclass(frozen=True)
@@ -176,6 +178,9 @@ async def overview(
     period = window(today, since, until, days)
     campaigns = await dashboard.campaigns(period.since, period.until)
     totals = _sum([c.totals for c in campaigns])
+    account_info = await dashboard.account_balance()
+    account_login = account_info[0] if account_info else None
+    account_balance_micros = account_info[1] if account_info else None
     return Overview(
         today=today,
         since=period.since,
@@ -189,6 +194,8 @@ async def overview(
         previous=await _previous(dashboard, period, WHOLE),
         campaigns=[(c, ratios(c.totals)) for c in campaigns],
         days=await dashboard.days(period.since, period.until, WHOLE),
+        account_balance_micros=account_balance_micros,
+        account_login=account_login,
     )
 
 

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AdAccount, Api, Business, Channels as ChannelsData, Display, Photos as PhotosData, Profile, SiteImage, SiteFact, SiteRead } from "../../api";
 import { rub } from "../data";
+import { MICROS_PER_RUBLE } from "../money";
 import * as v from "valibot";
 import { PriceSchema, planProblem } from "../schemas";
 import { isAbort } from "../polling";
@@ -653,12 +654,16 @@ function Channels({ api }: { api: Api }) {
   );
 }
 
-/** Остаток на счёте в Директе: читается из Яндекса при открытии, сохраняется только в плане бюджета. */
-function Balance({ api, login }: { api: Api; login: string }) {
-  const [text, setText] = useState("Смотрю остаток в Директе…");
+/** Остаток на счёте в Директе: читается из Яндекса при открытии, сохраняется в базе данных. */
+function Balance({ api, login, initialBalance }: { api: Api; login: string; initialBalance?: number | null }) {
+  const [text, setText] = useState(() =>
+    initialBalance !== null && initialBalance !== undefined
+      ? `На счёте в Директе: ${rub(Math.round(initialBalance / MICROS_PER_RUBLE))}`
+      : "Смотрю остаток в Директе…"
+  );
   useEffect(() => {
     api.balance(login).then(
-      (b) => setText(b.balance_micros !== null ? `На счёте в Директе: ${rub(Math.round(b.balance_micros / 1_000_000))}` : (b.problem ?? "Остаток сейчас недоступен.")),
+      (b) => setText(b.balance_micros !== null ? `На счёте в Директе: ${rub(Math.round(b.balance_micros / MICROS_PER_RUBLE))}` : (b.problem ?? "Остаток сейчас недоступен.")),
       (e: unknown) => setText(message(e)),
     );
   }, [api, login]);
@@ -747,7 +752,7 @@ function Accounts({ api, store }: { api: Api; store?: Store }) {
       )}
       {accounts?.map((a) => (
         <div key={a.id} className="set-row">
-          <div><strong>{a.login}</strong><p className="set-hint">Яндекс Директ</p>{a.state === "connected" && (a as { status?: string }).status !== "needs_reconnect" && <Balance api={api} login={a.login} />}</div>
+          <div><strong>{a.login}</strong><p className="set-hint">Яндекс Директ</p>{a.state === "connected" && (a as { status?: string }).status !== "needs_reconnect" && <Balance api={api} login={a.login} initialBalance={a.last_balance_micros} />}</div>
           <span className={a.state === "connected" && (a as { status?: string }).status !== "needs_reconnect" ? "ah-tag ah-tag-good" : "ah-tag ah-tag-bad"}>{ACCOUNT_STATE[a.state] ?? a.state}</span>
         </div>
       ))}

@@ -77,6 +77,14 @@ CREATIVES = table(
     column("ad_id", Text),
     column("image_id", BigInteger),
 )
+AD_ACCOUNTS = table(
+    "ad_accounts",
+    column("business_id", Uuid),
+    column("external_login", Text),
+    column("state", Text),
+    column("last_balance_micros", BigInteger),
+    column("balance_checked_at", DateTime(timezone=True)),
+)
 CLIENTS = table(
     "client_answers",
     column("business_id", Uuid),
@@ -367,6 +375,23 @@ class SqlDashboard:
         )
         async with self._sessions() as session:
             return [AlertLine(*row) for row in await session.execute(statement)]
+
+    async def account_balance(self) -> tuple[str, int] | None:
+        statement = (
+            select(AD_ACCOUNTS.c.external_login, AD_ACCOUNTS.c.last_balance_micros)
+            .where(
+                AD_ACCOUNTS.c.business_id == self._business_id,
+                AD_ACCOUNTS.c.state == "connected",
+                AD_ACCOUNTS.c.last_balance_micros.is_not(None),
+            )
+            .order_by(AD_ACCOUNTS.c.balance_checked_at.desc().nulls_last())
+            .limit(1)
+        )
+        async with self._sessions() as session:
+            row = (await session.execute(statement)).first()
+            if row is None or row[1] is None:
+                return None
+            return (str(row[0]), int(row[1]))
 
     async def campaigns(self, since: date, until: date) -> list[CampaignLine]:
         sums = (

@@ -39,6 +39,8 @@ class AdAccount:
     login: str
     scopes: tuple[str, ...]
     state: AccountState
+    last_balance_micros: int | None = None
+    balance_checked_at: datetime | None = None
 
 
 @dataclass(frozen=True)

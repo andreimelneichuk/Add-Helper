@@ -111,6 +111,12 @@ def _account_view(account: Any) -> dict[str, Any]:
         "login": account.login,
         "scopes": list(account.scopes),
         "state": state_str,
+        "last_balance_micros": getattr(account, "last_balance_micros", None),
+        "balance_checked_at": (
+            account.balance_checked_at.isoformat()
+            if getattr(account, "balance_checked_at", None)
+            else None
+        ),
     }
     if state_str == AccountState.NEEDS_RECONNECT.value:
         view["status"] = "needs_reconnect"

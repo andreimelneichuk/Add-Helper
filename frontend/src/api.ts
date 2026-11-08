@@ -59,6 +59,8 @@ export type Overview = {
   days: Day[];
   /** Последний ответ владельца о клиентах. */
   clients: ClientAnswer | null;
+  account_balance_micros?: number | null;
+  account_login?: string | null;
 };
 
 export type ClientAnswer = { since: string; until: string; leads: number; clients: number };
@@ -192,7 +194,15 @@ export type AdDraftProfile = Omit<Profile, "website"> & { force?: boolean };
 export type AdsChoice = { id: number; token: string; kept: number[] };
 
 export type Business = { id: string; name: string };
-export type AdAccount = { id: string; platform: string; login: string; scopes: string[]; state: string };
+export type AdAccount = {
+  id: string;
+  platform: string;
+  login: string;
+  scopes: string[];
+  state: string;
+  last_balance_micros?: number | null;
+  balance_checked_at?: string | null;
+};
 export type AccountBalance = { balance_micros: number | null; problem: string | null };
 export type Me = { email: string | null; csrf_token: string };
 
@@ -451,8 +461,10 @@ export type LaunchAnswer = { status: "done" | "pending"; campaigns: { name: stri
 
 export async function openSession(): Promise<{ me: Me; businesses: Business[] } | null> {
   try {
-    const me = await request<Me>("/api/me");
-    const businesses = await request<Business[]>("/api/businesses");
+    const [me, businesses] = await Promise.all([
+      request<Me>("/api/me"),
+      request<Business[]>("/api/businesses"),
+    ]);
     return { me, businesses };
   } catch {
     // Нет сервиса или входа: открываем запуск с первого шага.

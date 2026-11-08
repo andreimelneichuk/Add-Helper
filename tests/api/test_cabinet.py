@@ -130,6 +130,35 @@ async def test_overview_shows_money_reconciliation_and_campaigns(
     assert [d["day"] for d in body["days"]] == ["2026-11-09", "2026-11-10"]
 
 
+async def test_overview_shows_saved_account_balance_when_no_periods(
+    anna: tuple[httpx.AsyncClient, str, uuid.UUID], sessions: Sessions
+) -> None:
+    client, _, business_id = anna
+    async with sessions.begin() as session:
+        await session.execute(
+            text(
+                "UPDATE ad_accounts SET last_balance_micros = 15000000000, "
+                "balance_checked_at = NOW() WHERE business_id = :b"
+            ),
+            {"b": business_id},
+        )
+    body = (await client.get(f"/api/businesses/{business_id}/overview")).json()
+    assert body["account_balance_micros"] == 15_000_000_000
+    assert body["account_login"] == "anna-direct"
+
+    # Граничный случай: 0 ₽ является валидным балансом и не превращается в None
+    async with sessions.begin() as session:
+        await session.execute(
+            text(
+                "UPDATE ad_accounts SET last_balance_micros = 0, "
+                "balance_checked_at = NOW() WHERE business_id = :b"
+            ),
+            {"b": business_id},
+        )
+    body = (await client.get(f"/api/businesses/{business_id}/overview")).json()
+    assert body["account_balance_micros"] == 0
+
+
 async def _seed_ads(sessions: Sessions, business_id: uuid.UUID) -> None:
     async with sessions.begin() as session:
         await session.execute(

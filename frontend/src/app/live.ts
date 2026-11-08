@@ -139,22 +139,35 @@ function profileLines(profile: Profile | null): [string, string][] {
   return lines.filter(([, value]) => value);
 }
 
+export function platformToday(): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
 export async function loadLive(api: Api, name: string): Promise<Partial<State>> {
-  const { today } = await api.overview();
-  const monthStart = `${today.slice(0, 8)}01`;
-  const weekStart = dayAt(dayNumber(today) - 6);
-  const trailStart = dayAt(dayNumber(today) - 13);
-  const since = monthStart < trailStart ? monthStart : trailStart;
+  const currentToday = platformToday();
+  const estMonthStart = `${currentToday.slice(0, 8)}01`;
+  const estWeekStart = dayAt(dayNumber(currentToday) - 6);
+  const estTrailStart = dayAt(dayNumber(currentToday) - 13);
+  const estSince = estMonthStart < estTrailStart ? estMonthStart : estTrailStart;
   const [overview, adsWeek, adsMonth, history, profile, today_, plan] = await Promise.all([
-    api.overview({ since, until: today }),
-    api.ads({ since: weekStart, until: today }),
-    api.ads({ since: monthStart, until: today }),
+    api.overview({ since: estSince, until: currentToday }),
+    api.ads({ since: estWeekStart, until: currentToday }),
+    api.ads({ since: estMonthStart, until: currentToday }),
     api.history(),
     api.profile().catch(() => null),
     // Без ленты сервиса экран соберёт вывод сам из тех же данных.
     api.today().catch(() => null),
     api.budgetPlan ? api.budgetPlan().catch(() => null) : Promise.resolve(null),
   ]);
+  const today = overview.today || currentToday;
+  const monthStart = `${today.slice(0, 8)}01`;
+  const weekStart = dayAt(dayNumber(today) - 6);
+  const trailStart = dayAt(dayNumber(today) - 13);
+  const since = monthStart < trailStart ? monthStart : trailStart;
   const month = Number(today.slice(5, 7)) - 1;
   const year = Number(today.slice(0, 4));
   const all = fillDays(overview, since, today);
@@ -199,9 +212,11 @@ export async function loadLive(api: Api, name: string): Promise<Partial<State>> 
     trail: all.slice(-14),
     spent: money && money.period.spent !== null ? sumMoney(overview.money, (m) => m.period.spent) : null,
     budget: sumMoney(overview.money, (m) => m.period.hard_limit),
-    balance: money ? rublesOrNull(money.period.last_balance) : null,
+    balance: money && money.period.last_balance !== null
+      ? rublesOrNull(money.period.last_balance)
+      : rublesOrNull(overview.account_balance_micros),
     gap: money ? rublesOrNull(money.balance_gap) : null,
-    account: money?.period.account ?? null,
+    account: money?.period.account ?? overview.account_login ?? null,
     hasCampaigns: running.length > 0,
     planBudget: plan?.rubles ?? null,
     alerts,
@@ -430,10 +445,16 @@ export class LiveStore extends Store {
         return stopped.length ? "Поставил на паузу. Настройки сохранены, запись в истории." : "Идущих показов нет, останавливать нечего.";
       }
       case "ad": {
+        if (a.value.startsWith("w")) {
+          return "Это объявление готово к запуску, но пока не создано в Директе. Завершите запуск рекламы, чтобы управлять показами.";
+        }
         const [account, adId] = a.value.split("/");
+        if (!account || !adId) {
+          return "Объявление ещё не создано в Директе.";
+        }
         const active = !!s.adsOff[a.value];
         const name = s.ads.find((x) => x.id === a.value)?.name ?? "";
-        const { status } = await this.api.setAdState(account!, adId!, active, crypto.randomUUID());
+        const { status } = await this.api.setAdState(account, adId, active, crypto.randomUUID());
         if (status === "pending") return `Запрос про «${name}» записан, Яндекс ещё применяет его.`;
         return `${active ? "Включил" : "Отключил"} «${name}». Общий бюджет не изменился. Запись в истории.`;
       }
@@ -523,7 +544,16 @@ export class LiveStore extends Store {
       case "pause":
       case "resume":
         // Без направлений в Директе нечего ни останавливать, ни включать: говорим сразу, без «Применить?».
-        if (s.live && !s.live.hasCampaigns) return this.say(NOT_LAUNCHED, { label: "Открыть настройки", view: "settings" });
+        if (s.live && !s.live.hasCampaigns) {
+          const isConnected = !!(s.live.account || s.yandex);
+          const hasDraftAds = s.ads.some((a) => a.id.startsWith("w") || a.tag === "готово к запуску");
+          const text = isConnected
+            ? (hasDraftAds
+              ? "Объявления готовы к запуску, но кампании в Директе ещё не созданы. Чтобы начать показы, завершите запуск рекламы."
+              : "Кабинет Директа подключён, но реклама ещё не создана. Чтобы создать кампании и начать показы, завершите запуск рекламы.")
+            : NOT_LAUNCHED;
+          return this.say(text, { label: isConnected ? "Запустить рекламу" : "Открыть настройки", view: isConnected ? "overview" : "settings" });
+        }
         if (c.kind === "resume") {
           if (!s.paused) return this.say("Реклама и так идёт, включать нечего.");
           return this.offer(c.confirm, { action: "pause" });
