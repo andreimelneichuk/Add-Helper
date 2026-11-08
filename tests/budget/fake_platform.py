@@ -8,6 +8,7 @@ from adhelper.budget.domain.watch import SpendSnapshot
 from adhelper.campaigns.domain.launch import NewCampaign
 from adhelper.campaigns.domain.ports import CreatedCampaign, Targeting
 from adhelper.campaigns.domain.targeting import Schedule
+from adhelper.platforms.adapters.direct.transport import DirectRejected
 from adhelper.platforms.domain.ports import (
     AdDay,
     AdImage,
@@ -45,6 +46,7 @@ class FakePlatform:
         self.balance = balance
         self.faults_for_balance = False
         self.unavailable = False
+        self.rejects_creates = False
         self.stats_frozen_at: datetime | None = None
         self.faults: list[Fault] = []
         self.ads: dict[str, bool] = {}
@@ -139,6 +141,9 @@ class FakePlatform:
 
     async def create_campaign(self, account: str, campaign: NewCampaign) -> None:
         self._check_fault("create_campaign", after_apply=False)
+        if self.rejects_creates:
+            # Директ отказал по объекту: ответ пришёл, действие не выполнено.
+            raise DirectRejected(8000, "Указан неизвестный параметр")
         self.create_calls += 1
         campaign_id = str(900 + len(self.created) + 1)
         ad_ids = tuple(f"{campaign_id}0{i + 1}" for i in range(len(campaign.ads)))

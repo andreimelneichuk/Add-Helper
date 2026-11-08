@@ -13,6 +13,10 @@ class PlatformUnavailable(Exception):
     """Площадка не ответила; применилось ли действие, неизвестно."""
 
 
+class PlatformRejected(Exception):
+    """Площадка ответила и отказала по объекту: действие не выполнено (не сбой связи)."""
+
+
 class PlatformAuthError(PlatformUnavailable):
     """Токен отозван или нет доступа: требуется действие владельца по переподключению."""
 

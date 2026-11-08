@@ -14,6 +14,7 @@ from adhelper.ledger.domain.model import (
 )
 from adhelper.ledger.domain.ports import (
     AccountLock,
+    ChangeRejected,
     ChangeRepository,
     GatewayUnavailable,
     PlatformGateway,
@@ -126,9 +127,23 @@ class Ledger:
                 _log_outcome(change, ChangeStatus.FAILED, reason)
                 return True
         applying = await self._repository.mark_applying(change)
-        await self._gateway.apply(
-            applying.account, applying.kind, applying.target_ref, applying.planned
-        )
+        try:
+            await self._gateway.apply(
+                applying.account, applying.kind, applying.target_ref, applying.planned
+            )
+        except ChangeRejected as error:
+            # Площадка ответила отказом: повтор без изменения причины бесполезен.
+            logger.warning(
+                "Яндекс отклонил изменение %s (%s, %s): %s",
+                applying.id,
+                applying.kind,
+                applying.target_ref,
+                error,
+            )
+            await self._repository.finish(
+                applying, ChangeStatus.FAILED, actual, "rejected_by_yandex"
+            )
+            return True
         result = await self._gateway.read(applying.account, applying.target_ref)
         if not plan_reached(applying.planned, result):
             logger.info(

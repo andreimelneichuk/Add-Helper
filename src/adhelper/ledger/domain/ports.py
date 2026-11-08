@@ -10,6 +10,10 @@ class GatewayUnavailable(Exception):
     """Площадка не ответила; применилось ли действие, неизвестно."""
 
 
+class ChangeRejected(Exception):
+    """Площадка ответила отказом по объекту: действие не выполнено, повтор без правки бесполезен."""
+
+
 class PlatformGateway(Protocol):
     async def read(self, account: str, target_ref: str) -> Mapping[str, Any]: ...
     async def apply(

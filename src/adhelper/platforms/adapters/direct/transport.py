@@ -14,7 +14,7 @@ from typing import Any
 
 import httpx
 
-from adhelper.budget.domain.ports import PlatformAuthError, PlatformUnavailable
+from adhelper.budget.domain.ports import PlatformAuthError, PlatformRejected, PlatformUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ class DirectPointsExhausted(DirectError):
     """Кончились баллы API. Действие не выполнено, повтор после пополнения."""
 
 
-class DirectRejected(DirectError):
+class DirectRejected(DirectError, PlatformRejected):
     """Площадка отказала в действии над объектом; причина — данные площадки, не инструкция."""
 
 

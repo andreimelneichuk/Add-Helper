@@ -162,6 +162,20 @@ async def test_outside_campaigns_count_against_budget(
     assert platform.create_calls == 0
 
 
+async def test_yandex_rejection_fails_the_change_instead_of_waiting_forever(
+    sessions: Sessions, engine: AsyncEngine, business: uuid.UUID
+) -> None:
+    # Регрессия: отказ Директа по объекту считали «Яндекс не отвечает», изменение висело
+    # в «applying», а кампания оставалась без групп и объявлений.
+    platform = FakePlatform([], NOW)
+    platform.rejects_creates = True
+    result = await _launch(platform, sessions, engine, business)
+    assert result.status is LaunchStatus.REFUSED  # type: ignore[attr-defined]
+    assert result.reason == "rejected_by_yandex"  # type: ignore[attr-defined]
+    [change] = await _changes(sessions, business)
+    assert change["status"] == ChangeStatus.FAILED.value
+
+
 async def test_refused_launch_is_retried_once_the_cause_is_gone(
     sessions: Sessions, engine: AsyncEngine, business: uuid.UUID
 ) -> None:

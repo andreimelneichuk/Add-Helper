@@ -1,7 +1,7 @@
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
-from adhelper.budget.domain.ports import PlatformUnavailable
+from adhelper.budget.domain.ports import PlatformRejected, PlatformUnavailable
 from adhelper.campaigns.domain.launch import LAUNCH_PREFIX, NewCampaign
 from adhelper.campaigns.domain.ports import (
     TARGETING_PREFIX,
@@ -10,7 +10,7 @@ from adhelper.campaigns.domain.ports import (
 )
 from adhelper.campaigns.domain.targeting import Schedule
 from adhelper.ledger.domain.model import ChangeKind
-from adhelper.ledger.domain.ports import GatewayUnavailable, PlatformGateway
+from adhelper.ledger.domain.ports import ChangeRejected, GatewayUnavailable, PlatformGateway
 from adhelper.platforms.domain.ports import (
     CLIENT_PREFIX,
     AdControl,
@@ -203,9 +203,12 @@ class RoutingGateway:
             if target_ref.startswith(TARGETING_PREFIX):
                 await self._apply_targeting(account, kind, target_ref, planned)
                 return
+            await self._campaigns.apply(account, kind, target_ref, planned)
+        except PlatformRejected as error:
+            # Ответ пришёл: отказ по объекту, а не «не ответил».
+            raise ChangeRejected(str(error)) from error
         except PlatformUnavailable as error:
             raise GatewayUnavailable(str(error)) from error
-        await self._campaigns.apply(account, kind, target_ref, planned)
 
     async def _apply_targeting(
         self, account: str, kind: ChangeKind, target_ref: str, planned: Mapping[str, Any]
