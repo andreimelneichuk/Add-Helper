@@ -22,6 +22,7 @@ from adhelper.accounts.application.service import (
 from adhelper.accounts.domain.ports import TokenCipher
 from adhelper.config import Settings
 from adhelper.ledger.adapters.sql import SqlChangeRepository
+from adhelper.platforms.adapters.direct.geo_cache_sql import SqlGeoRegionCache
 from adhelper.platforms.adapters.direct.platform import DirectPlatform
 from adhelper.platforms.adapters.direct.transport import (
     DirectAuthError,
@@ -74,6 +75,7 @@ class DirectPlatforms:
         self._provider = provider
         self._cipher = cipher
         self._clock = clock
+        self._geo_region_cache = SqlGeoRegionCache(sessions)
 
     def _tokens(self, business_id: UUID) -> TokenSource:
         vault = TokenVault(
@@ -119,6 +121,7 @@ class DirectPlatforms:
             self._clock,
             campaign_ids_for,
             campaign_targets_for,
+            self._geo_region_cache,
         )
 
     async def aclose(self) -> None:

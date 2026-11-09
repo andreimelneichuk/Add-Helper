@@ -254,7 +254,14 @@ def cabinet_router() -> APIRouter:
         if found is None:
             return {"services": [], "address": "", "features": [], "niche": "", "website": ""}
         profile, website = found
-        return {**asdict(profile), "website": website}
+        target_region = await SqlProfiles(_sessions(request), business_id).target_region()
+        return {
+            **asdict(profile),
+            "website": website,
+            "target_region_id": target_region[0] if target_region else None,
+            "target_city_name": target_region[1] if target_region else None,
+            "target_region_display": target_region[2] if target_region else None,
+        }
 
     @router.put("/profile")
     async def put_profile(

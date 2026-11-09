@@ -32,7 +32,6 @@ from adhelper.platforms.adapters.direct.platform import (
 from adhelper.platforms.adapters.direct.transport import (
     DirectAuthError,
     DirectError,
-    DirectGeoRegionAmbiguous,
     DirectHttpClient,
     DirectPointsExhausted,
     DirectRejected,
@@ -86,9 +85,11 @@ async def _token(account: str) -> str:
     return f"token-{account}"
 
 
-def _platform(transport: httpx.AsyncBaseTransport) -> tuple[DirectPlatform, DirectHttpClient]:
+def _platform(
+    transport: httpx.AsyncBaseTransport, geo_region_cache: Any | None = None
+) -> tuple[DirectPlatform, DirectHttpClient]:
     client = DirectHttpClient(transport=transport, sleep=_no_sleep)
-    return DirectPlatform(client, _token, lambda: NOW), client
+    return DirectPlatform(client, _token, lambda: NOW, geo_region_cache=geo_region_cache), client
 
 
 @pytest.fixture
@@ -103,93 +104,83 @@ async def platform(direct: FakeDirect) -> AsyncIterator[DirectPlatform]:
     await client.aclose()
 
 
-async def test_city_region_uses_exact_russian_direct_dictionary(
+async def test_city_region_uses_full_tree_and_checks_parent_ids(
     platform: DirectPlatform, direct: FakeDirect
 ) -> None:
-    direct.geo_regions = [
+    direct.geo_regions = json.loads((RECORDED / "geo_regions_excerpt.json").read_text())
+
+    choices = await platform.resolve_city_region_choices(ACCOUNT, "г. Пермь, ул. Ленина, 1")
+    assert [choice.as_dict() for choice in choices] == [
         {
-            "GeoRegionId": 999_999,
-            "GeoRegionName": "Тольятти",
-            "ParentGeoRegionNames": {"Items": ["Самарская область", "Россия"]},
+            "region_id": 50,
+            "city": "Пермь",
+            "display": "Пермь, Пермский край",
+            "subject": "Пермский край",
         }
     ]
-
-    assert await platform.resolve_city_region(ACCOUNT, "г. Тольятти, ул. Мира, 1") == (
-        999_999,
-        "Тольятти",
-    )
-    request = direct.requests[-1]
-    assert request["name"] == "dictionaries.getGeoRegions"
-    assert request["body"]["params"]["SelectionCriteria"] == {"ExactNames": ["Тольятти"]}
+    assert direct.requests[0]["name"] == "dictionaries.get"
+    assert direct.requests[0]["body"]["params"] == {"DictionaryNames": ["GeoRegions"]}
 
 
-async def test_city_region_falls_back_to_name_search_but_keeps_exact_russian_match(
-    platform: DirectPlatform, direct: FakeDirect
-) -> None:
-    direct.geo_exact_names_empty = True
+async def test_city_tree_is_cached_after_first_direct_fetch(direct: FakeDirect) -> None:
+    class Cache:
+        rows: list[dict[str, Any]] | None = None
+
+        async def get(self) -> list[dict[str, Any]] | None:
+            return self.rows
+
+        async def put(self, regions: list[dict[str, Any]]) -> None:
+            self.rows = regions
+
     direct.geo_regions = [
+        {"GeoRegionId": 0, "GeoRegionName": "Все", "GeoRegionType": "World", "ParentId": None},
+        {"GeoRegionId": 225, "GeoRegionName": "Россия", "GeoRegionType": "Country", "ParentId": 0},
         {
-            "GeoRegionId": 50,
-            "GeoRegionName": "Пермь",
-            "ParentGeoRegionNames": {"Items": ["Пермский край", "Россия"]},
-        },
-        {
-            "GeoRegionId": 51,
+            "GeoRegionId": 11108,
             "GeoRegionName": "Пермский край",
-            "ParentGeoRegionNames": {"Items": ["Россия"]},
+            "GeoRegionType": "Federation subject",
+            "ParentId": 225,
         },
+        {"GeoRegionId": 50, "GeoRegionName": "Пермь", "GeoRegionType": "City", "ParentId": 11108},
     ]
+    platform, client = _platform(direct.transport(), Cache())
+    try:
+        await platform.resolve_city_region_choices(ACCOUNT, "Пермь")
+        await platform.resolve_city_region_choices(ACCOUNT, "Пермь")
+    finally:
+        await client.aclose()
+    assert direct.calls == ["dictionaries.get"]
 
-    assert await platform.resolve_city_region(
-        ACCOUNT, "г. Пермь, ул. Комсомольский проспект, 71"
-    ) == (
-        50,
-        "Пермь",
+
+async def test_city_region_returns_duplicate_choices_and_address_can_disambiguate(
+    platform: DirectPlatform, direct: FakeDirect
+) -> None:
+    direct.geo_regions = json.loads((RECORDED / "geo_regions_excerpt.json").read_text())
+
+    choices = await platform.resolve_city_region_choices(ACCOUNT, "Киров")
+    assert {choice.region_id for choice in choices} == {46, 20200}
+    narrowed = await platform.resolve_city_region_choices(
+        ACCOUNT, "г. Киров, Калужская область, ул. Ленина, 1"
     )
-    assert [request["body"]["params"]["SelectionCriteria"] for request in direct.requests] == [
-        {"ExactNames": ["Пермь"]},
-        {"Name": "Пермь"},
+    assert [(choice.region_id, choice.display) for choice in narrowed] == [
+        (20200, "Киров, Калужская область")
     ]
 
 
-async def test_city_region_refuses_duplicate_russian_names(
+async def test_city_region_ignores_city_outside_russia(
     platform: DirectPlatform, direct: FakeDirect
 ) -> None:
     direct.geo_regions = [
+        {"GeoRegionId": 0, "GeoRegionName": "Все", "GeoRegionType": "World", "ParentId": None},
         {
-            "GeoRegionId": 1,
-            "GeoRegionName": "Александровка",
-            "ParentGeoRegionNames": {"Items": ["Россия"]},
+            "GeoRegionId": 1000,
+            "GeoRegionName": "Россиянск",
+            "GeoRegionType": "Country",
+            "ParentId": 0,
         },
-        {
-            "GeoRegionId": 2,
-            "GeoRegionName": "Александровка",
-            "ParentGeoRegionNames": {"Items": ["Россия"]},
-        },
+        {"GeoRegionId": 3, "GeoRegionName": "Тольятти", "GeoRegionType": "City", "ParentId": 1000},
     ]
-
-    with pytest.raises(DirectGeoRegionAmbiguous):
-        await platform.resolve_city_region(ACCOUNT, "Александровка")
-
-    direct.geo_regions[1]["ParentGeoRegionNames"] = {"Items": ["Самарская область", "Россия"]}
-    assert await platform.resolve_city_region(ACCOUNT, "г. Александровка, Самарская область") == (
-        2,
-        "Александровка",
-    )
-
-
-async def test_city_region_ignores_exact_match_outside_russia(
-    platform: DirectPlatform, direct: FakeDirect
-) -> None:
-    direct.geo_regions = [
-        {
-            "GeoRegionId": 3,
-            "GeoRegionName": "Тольятти",
-            "ParentGeoRegionNames": {"Items": ["Kazakhstan"]},
-        }
-    ]
-
-    assert await platform.resolve_city_region(ACCOUNT, "Тольятти") is None
+    assert await platform.resolve_city_region_choices(ACCOUNT, "Тольятти") == ()
 
 
 def launch(placement: Placement = Placement.SEARCH, limit: int = 2_700 * RUB) -> NewCampaign:

@@ -9,6 +9,7 @@ from adhelper.budget.domain.limits import CampaignBudget
 from adhelper.business.adapters.rules_file import load_tag_rules
 from adhelper.business.adapters.tag_checks import SqlTagCheckQueue
 from adhelper.business.application.tag import run_tag_checks
+from adhelper.platforms.adapters.direct.geo_regions import GeoRegionChoice
 from tests.accounts.fake_provider import FakeProvider
 from tests.accounts.test_flow import ANNA, BORIS, Browser, _connect, _login
 from tests.accounts.test_marking import LEGAL_INN
@@ -189,6 +190,62 @@ async def test_launch_is_available_without_a_metrica_check(
     assert platform.create_calls == 1
     campaign = next(iter(platform.created.values())).campaign
     assert campaign.counters == ()
+
+
+async def test_launch_requires_user_choice_for_duplicate_city_and_persists_it(
+    anna: Anna,  # noqa: F811
+    sessions: Sessions,
+    provider: FakeProvider,
+) -> None:
+    client, csrf, business_id = anna
+    base = f"/api/businesses/{business_id}"
+    await _make_ready(client, csrf, business_id, sessions, provider)
+    profile = (await client.get(f"{base}/profile")).json()
+    profile["address"] = "Киров"
+    await client.put(f"{base}/profile", json=profile, headers={"X-CSRF-Token": csrf})
+    platform = FakePlatform([], NOW)
+    platform.resolve_city_region_choices = AsyncMock(  # type: ignore[attr-defined]
+        return_value=(
+            GeoRegionChoice(46, "Киров", "Киров, Кировская область", "Кировская область"),
+            GeoRegionChoice(20200, "Киров", "Киров, Калужская область", "Калужская область"),
+        )
+    )
+    _with_platform(client, platform)
+
+    check = (await client.get(f"{base}/launch-check")).json()
+    geo = next(item for item in check["items"] if item["key"] == "launch_plan")
+    assert check["launch_available"] is False
+    assert [choice["display"] for choice in geo["geo_regions"]] == [
+        "Киров, Кировская область",
+        "Киров, Калужская область",
+    ]
+
+    invalid = await client.post(
+        f"{base}/launch-region",
+        json={"region_id": 999999},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert invalid.status_code == 422
+
+    selected = await client.post(
+        f"{base}/launch-region",
+        json={"region_id": 20200},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert selected.status_code == 200, selected.text
+    assert selected.json()["display"] == "Киров, Калужская область"
+    saved = (await client.get(f"{base}/profile")).json()
+    assert saved["target_region_id"] == 20200
+    assert saved["target_region_display"] == "Киров, Калужская область"
+
+    check = (await client.get(f"{base}/launch-check")).json()
+    assert check["launch_available"] is True
+    assert any("Город показа: Киров, Калужская область" in item["text"] for item in check["items"])
+
+    launched = await client.post(f"{base}/launch", headers={"X-CSRF-Token": csrf})
+    assert launched.status_code == 200, launched.text
+    campaign = next(iter(platform.created.values())).campaign
+    assert campaign.regions == (20200,)
 
 
 async def test_launch_does_not_reuse_counter_from_previous_site(
@@ -465,7 +522,7 @@ async def test_launch_without_advertiser_returns_409_conflict(
     assert "маркировки" in res.json()["detail"].lower()
 
 
-async def test_launch_uses_fallback_region_when_city_not_found(
+async def test_launch_blocks_when_city_is_not_found(
     anna: Anna,  # noqa: F811
     sessions: Sessions,
     provider: FakeProvider,
@@ -486,10 +543,9 @@ async def test_launch_uses_fallback_region_when_city_not_found(
     _with_platform(client, platform)
 
     check = (await client.get(f"{base}/launch-check")).json()
-    assert check["launch_available"] is True
-    assert any("Город показа: Россия" in item["text"] for item in check["items"])
+    assert check["launch_available"] is False
+    assert any("Не нашёл город" in item["text"] for item in check["items"])
 
     result = await client.post(f"{base}/launch", headers={"X-CSRF-Token": csrf})
-    assert result.status_code == 200, result.text
-    campaign = next(iter(platform.created.values())).campaign
-    assert campaign.regions == (225,)
+    assert result.status_code == 409, result.text
+    assert platform.create_calls == 0

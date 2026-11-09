@@ -385,6 +385,8 @@ export function createApi(businessId: string, csrf: string) {
     tagCheck: (init?: RequestInit) => request<TagCheckView>(`${base}/tag-check`, init),
     requestTagCheck: () => request<TagCheckView>(`${base}/tag-check`, { method: "POST" }, csrf),
     launchCheck: (init?: RequestInit) => request<LaunchCheck>(`${base}/launch-check`, init),
+    chooseLaunchRegion: (region_id: number) =>
+      request<LaunchGeoRegion>(`${base}/launch-region`, { method: "POST", body: JSON.stringify({ region_id }) }, csrf),
     startLaunch: () => request<LaunchAnswer>(`${base}/launch`, { method: "POST" }, csrf),
     adoptAds: (choice: AdsChoice) =>
       request<{ kept: number }>(`${base}/creative-sets/adopt`, { method: "POST", body: JSON.stringify(choice) }, csrf),
@@ -473,7 +475,8 @@ export type MarkingInput = { kind: AdvertiserKind; inn: string; name: string; ph
 export type MarkingView = { kind: AdvertiserKind; inn: string; name: string; phone: string | null; okved: string | null };
 export type TagCheck = { status: "queued" | "running" | "found" | "missing" | "failed"; url: string; counters: number[]; problem: string | null };
 export type TagCheckView = { check: TagCheck | null; site: string };
-export type LaunchItem = { key: "profile" | "plan" | "account" | "marking" | "counter" | "ads" | "launch_plan"; ok: boolean; text: string };
+export type LaunchGeoRegion = { region_id: number; city: string; display: string; subject: string };
+export type LaunchItem = { key: "profile" | "plan" | "account" | "marking" | "counter" | "ads" | "launch_plan"; ok: boolean; text: string; geo_regions?: LaunchGeoRegion[] };
 export type LaunchCheck = {
   items: LaunchItem[];
   ready: boolean;

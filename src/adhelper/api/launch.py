@@ -10,6 +10,7 @@ from dataclasses import replace
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, HTTPException, Request, status
+from pydantic import BaseModel, Field
 
 from adhelper.accounts.adapters.sql import SqlMarking, account_states
 from adhelper.accounts.application.marking import (
@@ -70,6 +71,10 @@ MARKING_PROBLEMS = {
 }
 
 logger = logging.getLogger(__name__)
+
+
+class LaunchRegionBody(BaseModel):
+    region_id: int = Field(gt=0)
 
 
 def _text(raw: dict[str, Any], key: str) -> str:
@@ -403,38 +408,12 @@ def launch_router() -> APIRouter:
                 }
             )
             return items, None, login
-        known_region = region_of(address, launch_rules)
-        if known_region is not None:
-            known_city = next(
-                (
-                    city
-                    for city in sorted(launch_rules.cities, key=len, reverse=True)
-                    if launch_rules.cities[city] == known_region
-                    and city.casefold().replace("ё", "е") in address.casefold().replace("ё", "е")
-                ),
-                "",
-            )
-            inputs = replace(inputs, region_id=known_region, city_name=known_city)
-        elif platform is not None and hasattr(platform, "resolve_city_region"):
+        profiles = SqlProfiles(sessions, business_id)
+        if platform is not None and hasattr(platform, "resolve_city_region_choices"):
             try:
-                resolved = await platform.resolve_city_region(login, address)
-            except DirectGeoRegionAmbiguous:
-                items.append(
-                    {
-                        "key": "launch_plan",
-                        "ok": False,
-                        "text": (
-                            "Нашёл несколько городов с таким названием. Уточните город и область "
-                            "в адресе профиля."
-                        ),
-                    }
-                )
-                return items, None, login
+                choices = await platform.resolve_city_region_choices(login, address)
             except Exception as error:
-                logger.warning(
-                    "Не удалось проверить город в справочнике Директа: %s",
-                    type(error).__name__,
-                )
+                logger.warning("Не удалось прочитать дерево георегионов: %s", type(error).__name__)
                 items.append(
                     {
                         "key": "launch_plan",
@@ -446,15 +425,65 @@ def launch_router() -> APIRouter:
                     }
                 )
                 return items, None, login
-            if resolved is not None:
-                inputs = replace(inputs, region_id=resolved[0], city_name=resolved[1])
-            elif launch_rules.fallback_region_id is not None:
-                # Временно: город не найден, регион из правил (вся Россия).
-                inputs = replace(
-                    inputs,
-                    region_id=launch_rules.fallback_region_id,
-                    city_name="Россия (город не найден, временно)",
+            saved = await profiles.target_region()
+            selected = next(
+                (choice for choice in choices if saved and choice.region_id == saved[0]), None
+            )
+            if selected is None and len(choices) == 1:
+                selected = choices[0]
+            if selected is None:
+                items.append(
+                    {
+                        "key": "launch_plan",
+                        "ok": False,
+                        "text": "Уточните адрес профиля."
+                        if not choices
+                        else "Выберите город и область из списка.",
+                        "geo_regions": [choice.as_dict() for choice in choices],
+                    }
                 )
+                return items, None, login
+            inputs = replace(inputs, region_id=selected.region_id, city_name=selected.display)
+        elif platform is not None and hasattr(platform, "resolve_city_region"):
+            # Legacy adapter support for non-production test integrations.
+            try:
+                resolved = await platform.resolve_city_region(login, address)
+            except DirectGeoRegionAmbiguous:
+                items.append(
+                    {"key": "launch_plan", "ok": False, "text": "Выберите точный город из списка."}
+                )
+                return items, None, login
+            if resolved is None:
+                items.append(
+                    {
+                        "key": "launch_plan",
+                        "ok": False,
+                        "text": "Не нашёл город в справочнике Директа. Уточните адрес профиля.",
+                    }
+                )
+                return items, None, login
+            inputs = replace(inputs, region_id=resolved[0], city_name=resolved[1])
+        else:
+            known_region = region_of(address, launch_rules)
+            if known_region is None:
+                items.append(
+                    {
+                        "key": "launch_plan",
+                        "ok": False,
+                        "text": "Для проверки города подключите Яндекс Директ.",
+                    }
+                )
+                return items, None, login
+            known_city = next(
+                (
+                    city
+                    for city in sorted(launch_rules.cities, key=len, reverse=True)
+                    if launch_rules.cities[city] == known_region
+                    and city.casefold().replace("ё", "е") in address.casefold().replace("ё", "е")
+                ),
+                "",
+            )
+            inputs = replace(inputs, region_id=known_region, city_name=known_city)
         budget_rules = load_budget_rules("budget-1")
         now = _now(request)
         preflight = preview(inputs, launch_rules, budget_rules, now)
@@ -503,6 +532,32 @@ def launch_router() -> APIRouter:
             "launched": launched,
             "launch_text": text,
         }
+
+    @router.post("/launch-region")
+    async def choose_launch_region(
+        request: Request, body: LaunchRegionBody, business_id: OwnedChecked
+    ) -> dict[str, Any]:
+        sessions = _sessions(request)
+        profiles = SqlProfiles(sessions, business_id)
+        found = await profiles.get()
+        if found is None or not found[0].address.strip():
+            raise HTTPException(status.HTTP_409_CONFLICT, "Сначала укажите адрес бизнеса в профиле")
+        accounts = await account_states(sessions, business_id)
+        login = next((name for name, state in accounts if state is AccountState.CONNECTED), None)
+        platform = request.app.state.platform_for(business_id, login) if login else None
+        if platform is None or not hasattr(platform, "resolve_city_region_choices"):
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE, "Не удалось проверить город в Директе"
+            )
+        choices = await platform.resolve_city_region_choices(login, found[0].address)
+        selected = next((choice for choice in choices if choice.region_id == body.region_id), None)
+        if selected is None:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "Выберите город из актуального списка",
+            )
+        await profiles.save_target_region(selected.region_id, selected.city, selected.display)
+        return {"region_id": selected.region_id, "city": selected.city, "display": selected.display}
 
     @router.post("/launch")
     async def post_launch(request: Request, business_id: OwnedChecked) -> dict[str, Any]:

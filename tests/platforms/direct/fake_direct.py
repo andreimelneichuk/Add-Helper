@@ -36,6 +36,11 @@ class FakeDirect:
     report_queue: int = 0
     next_id: int = 100
 
+    def _dictionaries_get(self, params: dict[str, Any]) -> dict[str, Any]:
+        if params.get("DictionaryNames") == ["GeoRegions"]:
+            return {"GeoRegions": self.geo_regions}
+        return {}
+
     def _dictionaries_getGeoRegions(self, params: dict[str, Any]) -> dict[str, Any]:
         criteria = params["SelectionCriteria"]
         if criteria.get("ExactNames"):

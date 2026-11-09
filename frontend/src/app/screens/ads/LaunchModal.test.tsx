@@ -105,6 +105,40 @@ describe("Модальное окно запуска рекламы (LaunchModal
     expect(await screen.findByText(/Город показа: Тольятти/)).toBeInTheDocument();
   });
 
+  it("просит выбрать одноимённый город и повторно проверяет запуск после выбора", async () => {
+    const user = userEvent.setup();
+    const store = new MockStore(initialState("work"));
+    const ambiguous: LaunchCheck = {
+      ...readyCheck,
+      ready: false,
+      launch_available: false,
+      items: [{
+        key: "launch_plan",
+        ok: false,
+        text: "Выберите город и область из списка.",
+        geo_regions: [
+          { region_id: 46, city: "Киров", display: "Киров, Кировская область", subject: "Кировская область" },
+          { region_id: 20200, city: "Киров", display: "Киров, Калужская область", subject: "Калужская область" },
+        ],
+      }],
+    };
+    const launchCheck = vi.fn()
+      .mockResolvedValueOnce(ambiguous)
+      .mockResolvedValueOnce({
+        ...readyCheck,
+        items: [{ key: "launch_plan", ok: true, text: "Город показа: Киров, Калужская область" }],
+      });
+    const chooseLaunchRegion = vi.fn().mockResolvedValue({});
+    const api = { launchCheck, chooseLaunchRegion, startLaunch: vi.fn() };
+
+    render(<LaunchModal isOpen={true} onClose={vi.fn()} store={store} api={api} />);
+    await user.click(await screen.findByRole("button", { name: "Киров, Калужская область" }));
+
+    await waitFor(() => expect(chooseLaunchRegion).toHaveBeenCalledWith(20200));
+    expect(await screen.findByText("Город показа: Киров, Калужская область")).toBeInTheDocument();
+    expect(launchCheck).toHaveBeenCalledTimes(2);
+  });
+
   it("показывает лимит каждой кампании за весь 30-дневный период", async () => {
     const user = userEvent.setup();
     const store = new MockStore(initialState("work"));

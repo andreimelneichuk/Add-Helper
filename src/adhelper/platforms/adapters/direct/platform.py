@@ -11,7 +11,7 @@ import json
 import logging
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from datetime import UTC, date, datetime, time, timedelta
-from typing import Any
+from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
 from adhelper.budget.domain.limits import CampaignBudget, LimitChange, LimitDecision
@@ -19,6 +19,7 @@ from adhelper.budget.domain.watch import SpendSnapshot
 from adhelper.campaigns.domain.launch import LAUNCH_PREFIX, NewAd, NewCampaign, Placement
 from adhelper.campaigns.domain.ports import CreatedCampaign, Targeting
 from adhelper.campaigns.domain.targeting import Schedule
+from adhelper.platforms.adapters.direct.geo_regions import GeoRegionChoice, resolve_city_choices
 from adhelper.platforms.adapters.direct.transport import (
     DirectError,
     DirectGeoRegionAmbiguous,
@@ -63,6 +64,14 @@ MODERATION_STATES = {
     "ACCEPTED": ModerationState.ACCEPTED,
     "REJECTED": ModerationState.REJECTED,
 }
+
+
+class GeoRegionCache(Protocol):
+    async def get(self) -> list[dict[str, Any]] | None: ...
+
+    async def put(self, regions: Sequence[Mapping[str, Any]]) -> None: ...
+
+
 logger = logging.getLogger(__name__)
 # Директ допускает не более трёх комбинаторных объявлений в группе.
 MAX_COMBINATORIAL_ADS_PER_GROUP = 3
@@ -242,12 +251,14 @@ class DirectPlatform:
         clock: Callable[[], datetime],
         campaign_ids_for: Callable[[str], Awaitable[Sequence[str]]] | None = None,
         campaign_targets_for: Callable[[str], Awaitable[Sequence[str]]] | None = None,
+        geo_region_cache: GeoRegionCache | None = None,
     ) -> None:
         self._client = client
         self._token_for = token_for
         self._clock = clock
         self._campaign_ids_for = campaign_ids_for
         self._campaign_targets_for = campaign_targets_for
+        self._geo_region_cache = geo_region_cache
 
     async def _managed_campaigns(self, account: str) -> list[Mapping[str, Any]]:
         if self._campaign_ids_for is None:
@@ -270,86 +281,40 @@ class DirectPlatform:
         token = await self._token_for(account)
         return parse_report(await self._client.report(account, token, definition))
 
-    async def resolve_city_region(self, account: str, city: str) -> tuple[int, str] | None:
-        """Находит однозначный город России по актуальному справочнику Директа."""
-        import re
-
-        normalized_address = city.strip()
-        explicit_city = re.search(
-            r"(?:г(?:ород)?\.?\s*)([^,;]+)", normalized_address, flags=re.IGNORECASE
-        )
-        if explicit_city:
-            query = explicit_city.group(1).strip()
-        else:
-            query = normalized_address.split(",", 1)[0].strip()
-            if re.search(r"\b(?:ул\.?|улица|проспект|пр-т|дом|д\.)\b", query, re.IGNORECASE):
-                return None
-        if not query:
-            return None
-        normalized = query.casefold().replace("ё", "е")
-        fields = ["GeoRegionId", "GeoRegionName", "ParentGeoRegionNames"]
-
-        def exact_russian_matches(
-            result: Mapping[str, Any],
-        ) -> dict[int, tuple[str, tuple[str, ...]]]:
-            found: dict[int, tuple[str, tuple[str, ...]]] = {}
-            for region in result.get("GeoRegions") or []:
-                if not isinstance(region, Mapping):
-                    continue
-                name = str(region.get("GeoRegionName") or "").strip()
-                parents = (region.get("ParentGeoRegionNames") or {}).get("Items") or []
-                if name.casefold().replace("ё", "е") != normalized:
-                    continue
-                parent_names = tuple(str(parent) for parent in parents)
-                if not any(parent.casefold() in {"россия", "russia"} for parent in parent_names):
-                    continue
-                try:
-                    found[int(region["GeoRegionId"])] = (name, parent_names)
-                except (KeyError, TypeError, ValueError):
-                    continue
-            return found
-
-        request = {
-            "Page": {"Limit": 1000, "Offset": 0},
-            "FieldNames": fields,
-        }
+    async def geo_region_tree(self, account: str) -> list[dict[str, Any]]:
+        """Read the shared cache or fetch the complete official Direct dictionary."""
+        cached = await self._geo_region_cache.get() if self._geo_region_cache is not None else None
+        if cached is not None:
+            return cached
         result = await self._call(
-            account,
-            "dictionaries",
-            "getGeoRegions",
-            {**request, "SelectionCriteria": {"ExactNames": [query]}},
+            account, "dictionaries", "get", {"DictionaryNames": ["GeoRegions"]}
         )
-        matches = exact_russian_matches(result)
-        if not matches:
-            # ExactNames иногда не возвращает город из пользовательского адреса.
-            # Fallback ищет похожие записи, но ниже всё равно пропускается только
-            # точное совпадение российского города.
-            result = await self._call(
-                account,
-                "dictionaries",
-                "getGeoRegions",
-                {**request, "SelectionCriteria": {"Name": query}},
-            )
-            matches = exact_russian_matches(result)
-        if len(matches) > 1:
-            context = normalized_address.casefold().replace("ё", "е")
-            narrowed = {
-                region_id: (name, parents)
-                for region_id, (name, parents) in matches.items()
-                if any(
-                    parent.casefold() not in {"россия", "russia"}
-                    and parent.casefold().replace("ё", "е") in context
-                    for parent in parents
-                )
-            }
-            if len(narrowed) == 1:
-                matches = narrowed
-            else:
-                raise DirectGeoRegionAmbiguous(None, "ambiguous Russian city")
-        if not matches:
+        regions = result.get("GeoRegions")
+        required = {"GeoRegionId", "GeoRegionName", "GeoRegionType", "ParentId"}
+        if (
+            not isinstance(regions, list)
+            or not regions
+            or any(not isinstance(row, Mapping) or not required.issubset(row) for row in regions)
+        ):
+            raise DirectError(None, "Direct GeoRegions dictionary is empty or malformed")
+        normalized = [dict(row) for row in regions]
+        if self._geo_region_cache is not None:
+            await self._geo_region_cache.put(normalized)
+        return normalized
+
+    async def resolve_city_region_choices(
+        self, account: str, address: str
+    ) -> tuple[GeoRegionChoice, ...]:
+        return resolve_city_choices(address, await self.geo_region_tree(account))
+
+    async def resolve_city_region(self, account: str, address: str) -> tuple[int, str] | None:
+        """Return a city only when exact matching and address context leave one choice."""
+        choices = await self.resolve_city_region_choices(account, address)
+        if len(choices) > 1:
+            raise DirectGeoRegionAmbiguous(None, "ambiguous Russian city")
+        if not choices:
             return None
-        region_id, (name, _parents) = next(iter(matches.items()))
-        return region_id, name
+        return choices[0].region_id, choices[0].display
 
     # --- Кампании ---
 

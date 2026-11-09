@@ -18,6 +18,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     and_,
+    case,
     column,
     func,
     or_,
@@ -102,6 +103,9 @@ class BusinessProfileRow(Base):
     features: Mapped[list[str]] = mapped_column(JSONB)
     niche: Mapped[str] = mapped_column(Text)
     website: Mapped[str] = mapped_column(Text)
+    target_region_id: Mapped[int | None] = mapped_column(BigInteger)
+    target_city_name: Mapped[str | None] = mapped_column(Text)
+    target_region_display: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[Any] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -334,14 +338,70 @@ class SqlProfiles:
             "niche": profile.niche,
             "website": website,
             "updated_at": func.now(),
+            # Keep a confirmed target when unrelated profile fields change. Changing the
+            # address invalidates it, so launch must resolve the new address again.
+            "target_region_id": None,
+            "target_city_name": None,
+            "target_region_display": None,
         }
         statement = (
             insert(BusinessProfileRow)
             .values(business_id=self._business_id, **values)
-            .on_conflict_do_update(index_elements=["business_id"], set_=values)
+            .on_conflict_do_update(
+                index_elements=["business_id"],
+                set_={
+                    **values,
+                    "target_region_id": case(
+                        (
+                            BusinessProfileRow.address == profile.address,
+                            BusinessProfileRow.target_region_id,
+                        ),
+                        else_=None,
+                    ),
+                    "target_city_name": case(
+                        (
+                            BusinessProfileRow.address == profile.address,
+                            BusinessProfileRow.target_city_name,
+                        ),
+                        else_=None,
+                    ),
+                    "target_region_display": case(
+                        (
+                            BusinessProfileRow.address == profile.address,
+                            BusinessProfileRow.target_region_display,
+                        ),
+                        else_=None,
+                    ),
+                },
+            )
         )
         async with self._sessions.begin() as session:
             await session.execute(statement)
+
+    async def save_target_region(self, region_id: int, city_name: str, display: str) -> None:
+        """Persist the user's validated city choice for this business only."""
+        async with self._sessions.begin() as session:
+            await session.execute(
+                update(BusinessProfileRow)
+                .where(BusinessProfileRow.business_id == self._business_id)
+                .values(
+                    target_region_id=region_id,
+                    target_city_name=city_name,
+                    target_region_display=display,
+                    updated_at=func.now(),
+                )
+            )
+
+    async def target_region(self) -> tuple[int, str, str] | None:
+        async with self._sessions() as session:
+            row = await session.get(BusinessProfileRow, self._business_id)
+        if row is None or row.target_region_id is None:
+            return None
+        return (
+            row.target_region_id,
+            row.target_city_name or "",
+            row.target_region_display or row.target_city_name or "",
+        )
 
 
 class SqlProfileSource:

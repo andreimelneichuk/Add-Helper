@@ -7,7 +7,7 @@ type LaunchModalProps = {
   isOpen: boolean;
   onClose: () => void;
   store: Store;
-  api?: Pick<Api, "launchCheck" | "startLaunch"> | null;
+  api?: Pick<Api, "launchCheck" | "startLaunch"> & Partial<Pick<Api, "chooseLaunchRegion">> | null;
 };
 
 export function LaunchModal({ isOpen, onClose, store, api: propsApi }: LaunchModalProps) {
@@ -15,6 +15,7 @@ export function LaunchModal({ isOpen, onClose, store, api: propsApi }: LaunchMod
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [launching, setLaunching] = useState(false);
   const [check, setCheck] = useState<LaunchCheck | null>(null);
   const [answer, setAnswer] = useState<LaunchAnswer | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -63,12 +64,28 @@ export function LaunchModal({ isOpen, onClose, store, api: propsApi }: LaunchMod
   const handleLaunch = async () => {
     if (!api || busy) return;
     setBusy(true);
+    setLaunching(true);
     setError(null);
     try {
       const res: LaunchAnswer = await api.startLaunch();
       setAnswer(res);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Не удалось запустить рекламу. Попробуйте позже.");
+    } finally {
+      setLaunching(false);
+      setBusy(false);
+    }
+  };
+
+  const handleChooseRegion = async (regionId: number) => {
+    if (!api?.chooseLaunchRegion || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.chooseLaunchRegion(regionId);
+      loadCheck();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Не удалось сохранить город. Попробуйте снова.");
     } finally {
       setBusy(false);
     }
@@ -198,6 +215,21 @@ export function LaunchModal({ isOpen, onClose, store, api: propsApi }: LaunchMod
                     {item.ok ? "✓" : "!"}
                   </span>
                   <span style={{ color: "var(--ink)", flex: 1 }}>{item.text}</span>
+                  {item.geo_regions && item.geo_regions.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
+                      {item.geo_regions.map((region) => (
+                        <button
+                          type="button"
+                          className="ah-btn"
+                          key={region.region_id}
+                          onClick={() => handleChooseRegion(region.region_id)}
+                          disabled={busy || !api?.chooseLaunchRegion}
+                        >
+                          {region.display}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -208,7 +240,7 @@ export function LaunchModal({ isOpen, onClose, store, api: propsApi }: LaunchMod
               </p>
             )}
 
-            {busy && (
+            {launching && (
               <div
                 role="status"
                 aria-live="polite"

@@ -30,7 +30,4 @@ def load_launch_rules(version: str = CURRENT_LAUNCH_RULES) -> LaunchRules:
         split_from_monthly_rubles=raw["split_from_monthly_rubles"],
         max_ads_per_campaign=raw["max_ads_per_campaign"],
         cities={str(name): int(region) for name, region in raw["cities"].items()},
-        fallback_region_id=(
-            int(raw["fallback_region_id"]) if raw.get("fallback_region_id") is not None else None
-        ),
     )

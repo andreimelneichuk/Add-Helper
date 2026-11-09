@@ -1,0 +1,21 @@
+[
+  {"GeoRegionId": 0, "GeoRegionName": "Все", "GeoRegionType": "World", "ParentId": null},
+  {"GeoRegionId": 225, "GeoRegionName": "Россия", "GeoRegionType": "Country", "ParentId": 0},
+  {"GeoRegionId": 40, "GeoRegionName": "Поволжье", "GeoRegionType": "Federal district", "ParentId": 225},
+  {"GeoRegionId": 3, "GeoRegionName": "Центр", "GeoRegionType": "Federal district", "ParentId": 225},
+  {"GeoRegionId": 11108, "GeoRegionName": "Пермский край", "GeoRegionType": "Federation subject", "ParentId": 40},
+  {"GeoRegionId": 50, "GeoRegionName": "Пермь", "GeoRegionType": "City", "ParentId": 11108},
+  {"GeoRegionId": 10693, "GeoRegionName": "Калужская область", "GeoRegionType": "Federation subject", "ParentId": 3},
+  {"GeoRegionId": 98822, "GeoRegionName": "Кировский район", "GeoRegionType": "Federal subject district", "ParentId": 10693},
+  {"GeoRegionId": 20200, "GeoRegionName": "Киров", "GeoRegionType": "City", "ParentId": 98822},
+  {"GeoRegionId": 11070, "GeoRegionName": "Кировская область", "GeoRegionType": "Federation subject", "ParentId": 40},
+  {"GeoRegionId": 46, "GeoRegionName": "Киров", "GeoRegionType": "City", "ParentId": 11070},
+  {"GeoRegionId": 11375, "GeoRegionName": "Амурская область", "GeoRegionType": "Federation subject", "ParentId": 73},
+  {"GeoRegionId": 73, "GeoRegionName": "Дальний Восток", "GeoRegionType": "Federal district", "ParentId": 225},
+  {"GeoRegionId": 77, "GeoRegionName": "Благовещенск", "GeoRegionType": "City", "ParentId": 11375},
+  {"GeoRegionId": 10705, "GeoRegionName": "Курская область", "GeoRegionType": "Federation subject", "ParentId": 3},
+  {"GeoRegionId": 10710, "GeoRegionName": "Железногорск", "GeoRegionType": "City", "ParentId": 10705},
+  {"GeoRegionId": 11309, "GeoRegionName": "Красноярский край", "GeoRegionType": "Federation subject", "ParentId": 59},
+  {"GeoRegionId": 59, "GeoRegionName": "Сибирь", "GeoRegionType": "Federal district", "ParentId": 225},
+  {"GeoRegionId": 20086, "GeoRegionName": "Железногорск", "GeoRegionType": "City", "ParentId": 11309}
+]
