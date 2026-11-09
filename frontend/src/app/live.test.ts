@@ -51,7 +51,7 @@ describe("живые данные", () => {
     const store = await open(fakeApi());
     expect(store.state.ads.map((a) => a.name)).toEqual(["Маникюр"]);
     expect(store.state.hist.map((h) => h.id)).toEqual(["change-5"]);
-    expect(store.state.hist[0]).toMatchObject({ kind: "yours", canUndo: true, about: "anna/11" });
+    expect(store.state.hist[0]).toMatchObject({ kind: "ads", mine: true, canUndo: true, about: "anna/11" });
   });
 
   it("объявление с картинкой показывает её, без картинки — только текст", async () => {

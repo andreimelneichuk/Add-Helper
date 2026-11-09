@@ -88,7 +88,6 @@ function toAd(line: AdLine, photoUrl: (id: number) => string): Ad {
 }
 
 function kindOf(line: HistoryLine): HistoryKind {
-  if (line.source === "user" || line.source === "rollback") return "yours";
   if (line.source === "experiment") return "tests";
   return line.kind === "set_limit" || line.kind === "pause" ? "money" : "ads";
 }
@@ -100,6 +99,7 @@ function toEntry(line: HistoryLine, ads: Ad[]): HistoryEntry {
   return {
     id: line.ref,
     kind: kindOf(line),
+    mine: line.source === "user" || line.source === "rollback",
     when,
     title: (line.source === "rollback" ? "Отмена. " : "") + (about ? `${KIND_TITLE[line.kind] ?? "Изменил"}: «${about.name}»` : (KIND_TITLE[line.kind] ?? "Оценил результат")),
     why: line.explanation,
