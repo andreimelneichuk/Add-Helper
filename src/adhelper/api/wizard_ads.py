@@ -6,12 +6,17 @@
 """
 
 import secrets
+from collections.abc import Mapping
+from hashlib import sha256
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field, field_validator
 
+from adhelper.accounts.adapters.sql import account_states
+from adhelper.accounts.domain.model import AccountState
 from adhelper.api.cabinet import Owned, OwnedChecked, _now, _sessions
+from adhelper.api.control import _ledger
 from adhelper.api.site import _guest_key, _token_hash
 from adhelper.campaigns.application.launch import generate_keywords
 from adhelper.creatives.adapters.rules_file import load_wizard_rules
@@ -33,6 +38,9 @@ from adhelper.creatives.application.wizard import (
     draft_profile,
     kept_is_valid,
 )
+from adhelper.ledger.adapters.sql import SqlChangeRepository
+from adhelper.ledger.domain.failures import failure_text
+from adhelper.ledger.domain.model import ChangeKind, ChangeSource, ChangeStatus, ProposedChange
 
 DRAFT_PROBLEMS = {
     DraftProblem.NO_SERVICES: "Добавьте хотя бы одну услугу: объявления пишу по услугам",
@@ -87,6 +95,10 @@ class CreateWizardAdBody(WizardAdBody):
 
 class WizardAdArchiveBody(BaseModel):
     archived: bool = True
+
+
+class WizardAdPublishBody(BaseModel):
+    grouping: str = Field(default="services", pattern="^(services|general)$")
 
 
 def _draft(draft: WizardDraft) -> dict[str, Any]:
@@ -213,6 +225,7 @@ def wizard_ads_router() -> APIRouter:
                 "active": item.active,
                 "archived": item.archived,
                 "submitted": item.submitted,
+                "services": list(item.services),
             }
             for item in items
         ]
@@ -251,6 +264,116 @@ def wizard_ads_router() -> APIRouter:
             "facts": list(item.facts),
             "active": item.active,
             "archived": item.archived,
+        }
+
+    @router.post("/wizard-ads/{ad_id}/publish")
+    async def publish_wizard_ad(
+        request: Request, ad_id: str, body: WizardAdPublishBody, business_id: OwnedChecked
+    ) -> dict[str, Any]:
+        """Отправляет сохранённый черновик в последнюю кампанию через журнал изменений."""
+        idx_str = ad_id.removeprefix("w")
+        if not idx_str.isdigit():
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
+        item = next(
+            (
+                ad
+                for ad in await SqlWizardAds(_sessions(request), business_id).all_ads()
+                if ad.id == f"w{idx_str}"
+            ),
+            None,
+        )
+        if item is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
+        if item.submitted:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Объявление уже отправлено в Яндекс")
+        if not item.active or item.archived:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Объявление отключено или в архиве")
+
+        sessions = _sessions(request)
+        repo = SqlChangeRepository(sessions, business_id)
+        connected = [
+            login
+            for login, state in await account_states(sessions, business_id)
+            if state is AccountState.CONNECTED
+        ]
+        candidates: list[tuple[int, str, str, Mapping[str, Any]]] = []
+        for login in connected:
+            for target in await repo.campaign_targets_for(sessions, business_id, login):
+                changes = await repo.on_target(login, target)
+                applied = [
+                    change
+                    for change in changes
+                    if change.kind is ChangeKind.CREATE_CAMPAIGN
+                    and change.status is ChangeStatus.APPLIED
+                    and change.after
+                ]
+                if applied:
+                    change = max(applied, key=lambda row: row.id)
+                    candidates.append(
+                        (change.id, login, str(change.after["campaign_id"]), change.planned)
+                    )
+        if not candidates:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Сначала запустите кампанию в Директе")
+        _, login, campaign_id, plan = max(candidates, key=lambda candidate: candidate[0])
+        platform = request.app.state.platform_for(business_id, login)
+        if platform is None:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Кабинет Директа не подключён")
+
+        profile_rows = await SqlProfiles(sessions, business_id).get()
+        profile = profile_rows[0] if profile_rows else None
+        services = tuple(
+            service
+            for service in (profile.services if profile else ())
+            if body.grouping == "services" and service.name in item.services
+        )
+        group_name = (
+            " + ".join(service.name for service in services) if services else "Общие услуги"
+        )
+        keywords = tuple(
+            generate_keywords(services, niche=profile.niche, address=profile.address)
+            if services and profile
+            else ()
+        )
+        ad_digest = sha256(item.headline.encode() + b"\0" + item.text.encode()).hexdigest()[:10]
+        marker = f"wizard-{business_id.hex[:8]}-{idx_str}-{ad_digest}"
+        change = ProposedChange(
+            account=login,
+            source=ChangeSource.USER,
+            kind=ChangeKind.CREATE_AD,
+            target_ref=f"newad:{marker}",
+            planned={
+                "campaign_id": campaign_id,
+                "headline": item.headline,
+                "text": item.text,
+                "href": str(plan.get("href") or ""),
+                "group_name": group_name,
+                "keywords": list(keywords),
+            },
+            explanation=(
+                f"Отправил объявление «{item.headline}» в группу «{group_name}» "
+                "на проверку Яндексу."
+                " Лимит кампании не меняется; показы начнутся после одобрения."
+            ),
+            idempotency_key=f"wizard-publish:{business_id.hex}:{idx_str}:{marker}",
+        )
+        ledger = _ledger(request, business_id, platform)
+        submitted = await ledger.submit(change)
+        await ledger.execute_pending(login)
+        final = await ledger.get_change(submitted.id)
+        if final is not None and final.status in {
+            ChangeStatus.FAILED,
+            ChangeStatus.REJECTED,
+            ChangeStatus.CONFLICT,
+        }:
+            return {
+                "status": "refused",
+                "group": group_name,
+                "text": failure_text(final.failure_reason),
+            }
+        return {
+            "status": "applied" if final and final.status is ChangeStatus.APPLIED else "pending",
+            "group": group_name,
+            "text": None,
         }
 
     @router.put("/wizard-ads/{ad_id}")

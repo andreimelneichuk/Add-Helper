@@ -868,15 +868,86 @@ class DirectPlatform:
         href: str,
         group_id: str | None = None,
         image_hash: str | None = None,
+        group_name: str | None = None,
+        keywords: Sequence[str] = (),
     ) -> None:
         groups = await self._groups(account, int(campaign_id))
         ids = [int(group["Id"]) for group in groups]
         if not ids:
             raise DirectRejected(None, f"campaign {campaign_id} has no ad groups")
-        # Вариант A/B-теста встаёт в группу контроля: Директ делит показы внутри группы.
-        if group_id is not None and int(group_id) not in ids:
-            raise DirectRejected(None, f"group {group_id} is not in campaign {campaign_id}")
-        target = int(group_id) if group_id is not None else ids[0]
+        if group_id is not None:
+            # Вариант A/B-теста встаёт в группу контроля: Директ делит показы внутри группы.
+            if int(group_id) not in ids:
+                raise DirectRejected(None, f"group {group_id} is not in campaign {campaign_id}")
+            target = int(group_id)
+        else:
+            # У Яндекса лимит относится к неархивным объявлениям группы. Приостановленное
+            # объявление продолжает занимать слот; архивное — нет. После трёх создаём группу.
+            counts: dict[int, int] = {}
+            for group in groups:
+                group_ref = int(group["Id"])
+                existing = await self._ads(account, {"AdGroupIds": [group_ref]})
+                counts[group_ref] = sum(ad.get("State") != "ARCHIVED" for ad in existing)
+            group_name = (group_name or "").strip()
+            wanted_name = group_name or f"Дополнительные объявления {campaign_id}"
+            named_prefix = f"AH {wanted_name[:180]} "
+            same = [g for g in groups if str(g.get("Name") or "").startswith(named_prefix)]
+            target = next(
+                (
+                    int(g["Id"])
+                    for g in same
+                    if counts[int(g["Id"])] < MAX_COMBINATORIAL_ADS_PER_GROUP
+                ),
+                0,
+            )
+            if not target and not group_name:
+                target = next(
+                    (
+                        group_ref
+                        for group_ref in ids
+                        if counts[group_ref] < MAX_COMBINATORIAL_ADS_PER_GROUP
+                    ),
+                    0,
+                )
+            if not target:
+                # «Общие услуги» остаются в базовой группе; именованные направления получают
+                # отдельную группу даже при наличии свободных слотов в общей.
+                if group_name == "Общие услуги":
+                    target = next(
+                        (
+                            group_ref
+                            for group_ref in ids
+                            if counts[group_ref] < MAX_COMBINATORIAL_ADS_PER_GROUP
+                        ),
+                        0,
+                    )
+                if not target:
+                    base = next((g for g in groups if counts[int(g["Id"])] > 0), groups[0])
+                    suffix = len(same) + 1
+                    name = f"{named_prefix}{suffix}"[:255]
+                    result = await self._call(
+                        account,
+                        "adgroups",
+                        "add",
+                        {
+                            "AdGroups": [
+                                {
+                                    "Name": name,
+                                    "CampaignId": int(campaign_id),
+                                    "RegionIds": list(base.get("RegionIds") or [0]),
+                                    "UnifiedAdGroup": {"OfferRetargeting": "NO"},
+                                }
+                            ]
+                        },
+                    )
+                    target = check_results(result.get("AddResults") or [])[0]
+                    group_keywords = list(keywords) or await self._keywords(
+                        account, int(base["Id"])
+                    )
+                    if group_keywords:
+                        await self._add_keywords(account, target, group_keywords)
+            elif keywords:
+                await self._add_keywords(account, target, keywords)
         added = await self._add_text_ads(
             account, target, [(headline, text, mark_href(href, marker))], image_hash
         )
@@ -1080,25 +1151,79 @@ class DirectPlatform:
                     ]
                 },
             )
-            group_id = check_results(result.get("AddResults") or [])[0]
-        else:
-            group_id = int(groups[0]["Id"])
-        if campaign.keywords:
-            await self._add_keywords(account, group_id, campaign.keywords)
-        present = [
+            check_results(result.get("AddResults") or [])
+            groups = await self._groups(account, campaign_id)
+        if not groups:
+            raise DirectRejected(None, f"campaign {campaign_id} has no ad groups")
+
+        existing = await self._ads_of_campaigns(account, [campaign_id])
+        present = {
             (str((ad.get("TextAd") or {}).get("Title")), str((ad.get("TextAd") or {}).get("Text")))
-            for ad in await self._ads_of_campaigns(account, [campaign_id])
-        ]
-        missing = [ad for ad in campaign.ads if (ad.headline, ad.text) not in present]
-        # В уже существующей кампании могут быть чужие/тестовые объявления. Не отправляем
-        # запрос, который заведомо превысит лимит Директа; повтор запуска останется идемпотентным.
-        slots = max(0, MAX_COMBINATORIAL_ADS_PER_GROUP - len(present))
-        missing = missing[:slots]
-        # Метка в ссылке — та же, что у объявлений вручную: по ней ищем и читаем обратно.
+            for ad in existing
+            if ad.get("State") != "ARCHIVED"
+        }
+        counts: dict[int, int] = {}
+        for group in groups:
+            group_ref = int(group["Id"])
+            items = await self._ads(account, {"AdGroupIds": [group_ref]})
+            counts[group_ref] = sum(ad.get("State") != "ARCHIVED" for ad in items)
+
+        async def create_group(label: str, ordinal: int) -> int:
+            base = groups[0]
+            name = f"AH {label} {ordinal}"[:255]
+            result = await self._call(
+                account,
+                "adgroups",
+                "add",
+                {
+                    "AdGroups": [
+                        {
+                            "Name": name,
+                            "CampaignId": campaign_id,
+                            "RegionIds": list(base.get("RegionIds") or campaign.regions),
+                            "UnifiedAdGroup": {"OfferRetargeting": "NO"},
+                        }
+                    ]
+                },
+            )
+            group_ref = check_results(result.get("AddResults") or [])[0]
+            groups.append({"Id": group_ref, "Name": name, "RegionIds": base.get("RegionIds")})
+            counts[group_ref] = 0
+            return group_ref
+
         href = mark_href(campaign.href, campaign.marker)
-        await self._add_text_ads(
-            account, group_id, [(ad.headline, ad.text, href) for ad in missing]
-        )
+        for ad in campaign.ads:
+            if (ad.headline, ad.text) in present:
+                continue
+            label = (ad.group.strip() or "Общие услуги")[:180]
+            named_prefix = f"AH {label} "
+            matching = [g for g in groups if str(g.get("Name") or "").startswith(named_prefix)]
+            if label == "Общие услуги":
+                target = next(
+                    (
+                        int(g["Id"])
+                        for g in groups
+                        if counts[int(g["Id"])] < MAX_COMBINATORIAL_ADS_PER_GROUP
+                    ),
+                    0,
+                )
+            else:
+                target = next(
+                    (
+                        int(g["Id"])
+                        for g in matching
+                        if counts[int(g["Id"])] < MAX_COMBINATORIAL_ADS_PER_GROUP
+                    ),
+                    0,
+                )
+            if not target:
+                target = await create_group(label, len(matching) + 1)
+            group_keywords = ad.keywords or campaign.keywords
+            if group_keywords:
+                await self._add_keywords(account, target, group_keywords)
+            await self._add_text_ads(account, target, [(ad.headline, ad.text, href)])
+            present.add((ad.headline, ad.text))
+            counts[target] += 1
         await self._moderate(account, await self._ads_of_campaigns(account, [campaign_id]))
 
     # --- Маркировка (AdvertiserRegistry) ---

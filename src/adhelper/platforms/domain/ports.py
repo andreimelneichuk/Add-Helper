@@ -88,10 +88,13 @@ class AdPublisher(Protocol):
         href: str,
         group_id: str | None = None,
         image_hash: str | None = None,
+        group_name: str | None = None,
+        keywords: Sequence[str] = (),
     ) -> None:
         """Без `group_id` объявление встаёт в первую группу кампании.
 
         `image_hash` — номер картинки, уже загруженной на площадку (`ImageUploader`).
+        `group_name` и `keywords` задают отдельное направление объявлений.
         """
         ...
 

@@ -47,6 +47,7 @@ from adhelper.campaigns.application.launch import (
     UnregisteredAdvertiserError,
     expand_keywords_with_model,
     failure_message,
+    generate_keywords,
     launch,
     launch_state,
     preview,
@@ -342,7 +343,33 @@ def launch_router() -> APIRouter:
             title=found[0].name,
             account=login,
             monthly=plan,
-            ads=tuple(NewAd(draft.headline, draft.text) for draft in chosen),
+            ads=tuple(
+                NewAd(
+                    draft.headline,
+                    draft.text,
+                    group=" + ".join(service.name for service in services_for_draft)
+                    or "Общие услуги",
+                    keywords=tuple(
+                        generate_keywords(
+                            services_for_draft or found[0].services,
+                            niche=found[0].niche,
+                            address=found[0].address,
+                        )
+                    ),
+                )
+                for draft in chosen
+                for services_for_draft in [
+                    [
+                        service
+                        for service in found[0].services
+                        if any(
+                            source.key in {f"service:{service.name}"}
+                            or source.key.startswith(f"price:{service.name}:")
+                            for source in draft.sources
+                        )
+                    ]
+                ]
+            ),
             href=site,
             address=address,
             counters=tuple(counters),

@@ -62,6 +62,8 @@ class UnregisteredAdvertiserError(Exception):
 class NewAd:
     headline: str
     text: str
+    group: str = "Общие услуги"
+    keywords: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -91,7 +93,15 @@ class NewCampaign:
             "regions": list(self.regions),
             "href": self.href,
             "counters": list(self.counters),
-            "ads": [{"headline": ad.headline, "text": ad.text} for ad in self.ads],
+            "ads": [
+                {
+                    "headline": ad.headline,
+                    "text": ad.text,
+                    **({"group": ad.group} if ad.group != "Общие услуги" else {}),
+                    **({"keywords": list(ad.keywords)} if ad.keywords else {}),
+                }
+                for ad in self.ads
+            ],
         }
         if self.keywords:
             data["keywords"] = list(self.keywords)
@@ -108,7 +118,15 @@ class NewCampaign:
             regions=tuple(int(r) for r in planned["regions"]),
             href=str(planned["href"]),
             counters=tuple(int(c) for c in planned["counters"]),
-            ads=tuple(NewAd(str(a["headline"]), str(a["text"])) for a in planned["ads"]),
+            ads=tuple(
+                NewAd(
+                    str(a["headline"]),
+                    str(a["text"]),
+                    str(a.get("group") or "Общие услуги"),
+                    tuple(str(k) for k in a.get("keywords", ())),
+                )
+                for a in planned["ads"]
+            ),
             keywords=tuple(str(k) for k in planned.get("keywords", ())),
         )
 
@@ -181,7 +199,8 @@ def plan_launch(
             LaunchProblem.BELOW_PLATFORM_MIN,
             minimum_monthly(period.reserve_bp, rules),
         )
-    chosen = tuple(ads[: rules.max_ads_per_campaign])
+    # Лимит действует на группу, а площадка позволяет создавать новые группы кампании.
+    chosen = tuple(ads)
     campaigns = tuple(
         NewCampaign(
             marker=f"ah-{launch_key}-{index + 1}",

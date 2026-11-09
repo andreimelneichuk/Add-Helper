@@ -174,6 +174,7 @@ class WizardAdItem:
     text: str
     facts: tuple[str, ...]
     active: bool
+    services: tuple[str, ...] = ()
     archived: bool = False
     submitted: bool = False
 
@@ -277,6 +278,17 @@ class SqlWizardAds:
                     headline=d.headline,
                     text=d.text,
                     facts=facts,
+                    services=tuple(
+                        dict.fromkeys(
+                            (
+                                source.key.removeprefix("service:")
+                                if source.key.startswith("service:")
+                                else source.key.removeprefix("price:").rsplit(":", 1)[0]
+                            )
+                            for source in d.sources
+                            if source.key.startswith("service:") or source.key.startswith("price:")
+                        )
+                    ),
                     active=is_active,
                     archived=is_archived,
                     submitted=is_submitted,

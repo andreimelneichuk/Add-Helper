@@ -38,6 +38,12 @@ function Card({ store, s, ad }: { store: Store; s: AdsView; ad: Ad }) {
         <div className="ann-facts">{ad.facts}</div>
         <div className="ann-foot">
           <button type="button" className="ah-btn" aria-label={`Открыть «${name}»`} onClick={() => store.openAdScreen(ad.id)}>Открыть</button>
+          {ad.tag === "готово к запуску" && s.live?.hasCampaigns && (
+            <>
+              <button type="button" className="ah-btn ah-btn-primary" aria-label={`Опубликовать «${name}» по услугам`} onClick={() => store.ask({ action: "adPublish", value: ad.id, grouping: "services" })}>По услугам</button>
+              <button type="button" className="ah-btn" aria-label={`Опубликовать «${name}» общей темой`} onClick={() => store.ask({ action: "adPublish", value: ad.id, grouping: "general" })}>Общая тема</button>
+            </>
+          )}
           {isArchived ? (
             <button type="button" className="ah-btn" aria-label={`Вернуть «${name}» из архива`} onClick={() => store.ask({ action: "adRestore", value: ad.id })}>Восстановить</button>
           ) : (

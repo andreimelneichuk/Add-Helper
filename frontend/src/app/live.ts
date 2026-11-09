@@ -476,6 +476,17 @@ export class LiveStore extends Store {
         if (status === "pending") return `Запрос про «${name}» записан, Яндекс ещё применяет его.`;
         return `${active ? "Включил" : "Отключил"} «${name}». Общий бюджет не изменился. Запись в истории.`;
       }
+      case "adPublish": {
+        if (!this.api.publishWizardAd) throw new Error("Не удалось отправить объявление. Обновите страницу и попробуйте ещё раз.");
+        const ad = s.ads.find((x) => x.id === a.value);
+        if (!ad) throw new Error("Объявление уже изменилось. Обновите страницу.");
+        const result = await this.api.publishWizardAd(a.value, a.grouping);
+        await this.refresh();
+        if (result.status === "refused") return result.text ?? "Яндекс не принял объявление. Подробности доступны в истории.";
+        return result.status === "pending"
+          ? `Запрос на публикацию «${ad.name}» записан. Яндекс ещё применяет его.`
+          : `Отправил «${ad.name}» в группу «${result.group}» на проверку Яндексу. Показы начнутся после одобрения.`;
+      }
       case "adSave": {
         const ad = a.value;
         const isNew = !s.ads.some((x) => x.id === ad.id);

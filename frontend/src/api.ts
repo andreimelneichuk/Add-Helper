@@ -179,7 +179,7 @@ export type SiteRead = {
 };
 
 /** Объявление писателя в мастере: facts — на какие поля черновика оно опирается. */
-export type WizardAd = { id?: string; headline: string; text: string; facts: string[]; active?: boolean; archived?: boolean; submitted?: boolean };
+export type WizardAd = { id?: string; headline: string; text: string; facts: string[]; services?: string[]; active?: boolean; archived?: boolean; submitted?: boolean };
 export type AdSet = {
   id: number;
   status: "queued" | "running" | "ready" | "failed";
@@ -402,6 +402,8 @@ export function createApi(businessId: string, csrf: string) {
       request<{ status: string; active: boolean }>(`${base}/wizard-ads/${part(id)}/state`, { method: "POST", body: JSON.stringify({ active }) }, csrf),
     archiveWizardAd: (id: string, archived: boolean = true) =>
       request<{ status: string; archived: boolean }>(`${base}/wizard-ads/${part(id)}/archive`, { method: "POST", body: JSON.stringify({ archived }) }, csrf),
+    publishWizardAd: (id: string, grouping: "services" | "general") =>
+      request<{ status: "applied" | "pending" | "refused"; group: string; text: string | null }>(`${base}/wizard-ads/${part(id)}/publish`, { method: "POST", body: JSON.stringify({ grouping }) }, csrf),
     deleteWizardAd: (id: string) =>
       request<{ status: string }>(`${base}/wizard-ads/${part(id)}`, { method: "DELETE" }, csrf),
     archiveAd: (account: string, adId: string) =>

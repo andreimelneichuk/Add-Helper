@@ -22,6 +22,7 @@ export class MockStore extends Store {
       case "balance": return { text: "" };
       case "chat":
       case "test": return { text: "Это действие работает только на настоящих данных." };
+      case "adPublish": return { text: "Публикация работает только в настоящем кабинете Директа." };
       case "pause": {
         const paused = !s.paused;
         return { paused, hist: [this.entry(paused ? "Поставил рекламу на паузу" : "Включил рекламу", "Вы попросили.", "Настройки сохранены.", "yours"), ...s.hist], text: paused ? "Поставил на паузу. Показы остановятся примерно через 5 минут, настройки сохранены." : "Включил. Показы начнутся примерно через 5 минут." };

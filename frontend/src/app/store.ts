@@ -17,6 +17,7 @@ type Pending =
   | { action: "undo"; value: string; whole?: boolean }
   | { action: "price"; value: number }
   | { action: "ad"; value: string }
+  | { action: "adPublish"; value: string; grouping: "services" | "general" }
   | { action: "adSave"; value: Ad }
   | { action: "adArchive"; value: string }
   | { action: "adRestore"; value: string }
@@ -263,6 +264,7 @@ export function confirmText(s: State, a: Pending): string {
     case "ad": if (s.live) return `Отключить «${adName(s, a.value)}»? Общий бюджет не изменится. Отменить можно в истории.`; return `Отключить «${adName(s, a.value)}»? ${inTest(s, a.value) ? "Идёт проверка вариантов, она закончится раньше срока. " : ""}Его деньги перераспределю между остальными. Отменить можно в истории.`;
     case "adArchive": return `Отправить «${adName(s, a.value)}» в архив? В любой момент можно вернуть обратно из вкладки «В архиве».`;
     case "adRestore": return `Вернуть «${adName(s, a.value)}» из архива?`;
+    case "adPublish": return `Отправить «${adName(s, a.value)}» в Яндекс на проверку? ${a.grouping === "general" ? "Положу его в общую группу услуг." : "Подберу группу по услугам, на которые опирается текст."} Лимит кампании не изменится; показы начнутся после одобрения.`;
     case "adSave": {
       const isPrelaunch = s.live ? !s.live.hasCampaigns : s.situation === "first";
       if (!s.ads.some((x) => x.id === a.value.id)) {

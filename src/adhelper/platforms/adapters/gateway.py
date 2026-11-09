@@ -192,6 +192,8 @@ class RoutingGateway:
                     str(planned["href"]),
                     group_id=str(planned["group_id"]) if planned.get("group_id") else None,
                     image_hash=image_hash,
+                    group_name=str(planned["group_name"]) if planned.get("group_name") else None,
+                    keywords=tuple(str(k) for k in planned.get("keywords", ())),
                 )
                 return
             if target_ref.startswith(CLIENT_PREFIX):
