@@ -52,7 +52,9 @@ async def check_health(engine: AsyncEngine) -> tuple[int, dict[str, Any]]:
     return status.HTTP_200_OK, {"status": "ok"}
 
 
+# Внешние мониторы ходят и на /api/healthz: без него шумят в логах 404 и 405.
 @router.api_route("/healthz", methods=["GET", "HEAD", "POST"])
+@router.api_route("/api/healthz", methods=["GET", "HEAD", "POST"], include_in_schema=False)
 async def healthz(request: Request) -> JSONResponse:
     code, payload = await check_health(request.app.state.engine)
     return JSONResponse(payload, status_code=code)

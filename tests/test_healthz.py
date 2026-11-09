@@ -2,6 +2,7 @@ from pathlib import Path
 
 import httpx
 import psycopg
+import pytest
 from alembic.command import check, upgrade
 from alembic.config import Config
 from alembic.script import ScriptDirectory
@@ -40,6 +41,21 @@ async def test_healthz_ok_when_database_is_available(settings: Settings) -> None
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+@pytest.mark.parametrize("method", ["GET", "HEAD", "POST"])
+async def test_healthz_answers_under_api_prefix_for_external_monitors(
+    settings: Settings, method: str
+) -> None:
+    app = create_app(settings)
+    transport = httpx.ASGITransport(app=app)
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.request(method, "/api/healthz")
+    finally:
+        await app.state.engine.dispose()
+
+    assert response.status_code == 200
 
 
 async def test_healthz_unavailable_when_database_is_down(settings: Settings) -> None:
