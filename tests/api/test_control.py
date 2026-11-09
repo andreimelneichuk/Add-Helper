@@ -77,8 +77,8 @@ async def test_repeated_request_does_not_change_twice(
     client, csrf, business = anna
     _app(client).state.platform_for = lambda _b, _a: platform
     url = f"/api/businesses/{business}/ads/{LOGIN}/11/state"
-    for _ in range(2):
-        response = await client.post(url, json={"active": False, "request_id": "r1"}, headers=csrf)
+    for request_id in ("r1", "r2"):
+        response = await client.post(url, json={"active": False, "request_id": request_id}, headers=csrf)
         assert response.status_code == 200
     assert len(await _rows(sessions, business)) == 1
 

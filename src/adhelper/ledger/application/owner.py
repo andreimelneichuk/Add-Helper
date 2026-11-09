@@ -35,6 +35,12 @@ async def set_ad_active(
             and row.status in {ChangeStatus.PLANNED, ChangeStatus.APPLYING}
         ), None)
         if change is None:
+            # Между действиями другой вкладки целевое состояние могло уже
+            # измениться. Не создаём новую строку журнала, если запрос уже
+            # соответствует фактическому состоянию объявления.
+            current = await ledger.read_target(account, target_ref)
+            if current.get("active") is active:
+                return "applied"
             change = await ledger.submit(
                 ProposedChange(
                     account=account,
