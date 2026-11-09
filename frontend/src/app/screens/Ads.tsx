@@ -62,7 +62,7 @@ function Card({ store, s, ad }: { store: Store; s: AdsView; ad: Ad }) {
   );
 }
 
-type Filter = "all" | "on" | "ready" | "off" | "archived";
+type Filter = "all" | "on" | "moderation" | "ready" | "off" | "archived";
 
 export function Ads({ store }: { store: Store }) {
   const s = useStore(store, (x): AdsView => ({ price: x.price, ads: x.ads, adsOff: x.adsOff, situation: x.situation, live: x.live, openAd: x.openAd, working: x.working }));
@@ -106,6 +106,7 @@ export function Ads({ store }: { store: Store }) {
   const groups: Record<Filter, Ad[]> = {
     all: s.ads.filter((a) => !isArchived(a)),
     on: s.ads.filter(isOn),
+    moderation: s.ads.filter((a) => !isArchived(a) && a.tag === "на проверке Яндекса"),
     ready: s.ads.filter(isReady),
     off: s.ads.filter(isOff),
     archived: s.ads.filter(isArchived),
@@ -113,6 +114,7 @@ export function Ads({ store }: { store: Store }) {
   const filters: [Filter, string][] = [
     ["all", "Все"],
     ["on", isPrelaunch ? "К запуску" : "Работают"],
+    ["moderation", "На проверке Яндекса"],
     ...(!isPrelaunch ? [["ready", "К запуску"] as [Filter, string]] : []),
     ["off", "Отключены"],
     ["archived", "В архиве"],
@@ -153,6 +155,8 @@ export function Ads({ store }: { store: Store }) {
             ? "Отключённых объявлений нет."
             : filter === "archived"
             ? "В архиве пока ничего нет."
+            : filter === "moderation"
+            ? "Объявлений на проверке Яндекса нет."
             : isPrelaunch
             ? "Нет объявлений, готовых к запуску."
             : "Сейчас ни одно объявление не показывается."}

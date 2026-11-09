@@ -122,6 +122,19 @@ describe("экран рекламы", () => {
     expect(screen.queryByRole("button", { name: "Открыть объявление «Первый визит со скидкой»" })).toBeNull();
   });
 
+  it("отдельно показывает объявления, которые Яндекс проверяет", async () => {
+    const state = initialState("work", "running");
+    state.ads = state.ads.map((ad, index) => index === 1
+      ? { ...ad, tag: "на проверке Яндекса", tagTone: "accent" }
+      : ad);
+    render(<Ads store={new MockStore(state)} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "На проверке Яндекса 1" }));
+
+    expect(screen.getByRole("button", { name: /Открыть объявление «Маникюр от 1/ })).toHaveTextContent("На проверке Яндекса");
+    expect(screen.queryByRole("button", { name: "Открыть объявление «Педикюр рядом с домом»" })).toBeNull();
+  });
+
   it("показывает сообщения при пустых списках фильтров и открывает AdMaker", async () => {
     // filter "off" когда нет отключённых
     const store = new MockStore();
