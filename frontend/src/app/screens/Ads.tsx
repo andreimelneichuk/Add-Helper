@@ -138,9 +138,12 @@ export function Ads({ store }: { store: Store }) {
           <button type="button" className="ah-btn" onClick={() => setGenModalOpen(true)}>
             Сгенерировать объявления
           </button>
-          <button type="button" className="ah-btn" onClick={() => store.openAdScreen("new")}>
-            Новое объявление
-          </button>
+          {/* В кабинете автор объявлений один: генератор по профилю; экран с заглушкой там не нужен. */}
+          {!s.live && (
+            <button type="button" className="ah-btn" onClick={() => store.openAdScreen("new")}>
+              Новое объявление
+            </button>
+          )}
         </div>
       </div>
       <p className="ann-list-lead">Выберите объявление, чтобы посмотреть его и управлять им.</p>
