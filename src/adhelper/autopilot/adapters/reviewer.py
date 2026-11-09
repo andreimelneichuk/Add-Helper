@@ -8,12 +8,12 @@ from adhelper.autopilot.domain.review import (
     Candidate,
     ReviewResult,
     build_request,
+    max_tokens_for,
     nothing_passed,
     parse_reply,
 )
 
 logger = logging.getLogger(__name__)
-MAX_TOKENS = 600
 
 
 class _Reply(Protocol):
@@ -40,7 +40,7 @@ class ModelReviewer:
             return ReviewResult(frozenset())
         try:
             reply = await self._model.complete_json(
-                SYSTEM, build_request(candidates), REPLY_SCHEMA, MAX_TOKENS
+                SYSTEM, build_request(candidates), REPLY_SCHEMA, max_tokens_for(len(candidates))
             )
         except Exception as error:
             logger.warning("Рецензент недоступен: %s", type(error).__name__)

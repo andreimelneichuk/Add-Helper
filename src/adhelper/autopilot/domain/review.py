@@ -67,6 +67,11 @@ class Reviewer(Protocol):
     async def review(self, candidates: Sequence[Candidate]) -> ReviewResult: ...
 
 
+def max_tokens_for(candidates: int) -> int:
+    """Ответ короткий: вердикт и причина на кандидата. Лишнее место только тратит деньги."""
+    return 80 + 60 * candidates
+
+
 def build_request(candidates: Sequence[Candidate]) -> str:
     """Вход модели: номера, вид действия и целые числа. Ничего другого сюда не попадает."""
     items = []
