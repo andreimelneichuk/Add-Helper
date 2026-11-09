@@ -13,9 +13,11 @@ from adhelper.accounts.adapters.crypto import AesGcmCipher
 from adhelper.autopilot.adapters.data import SqlAutopilotData, autopilot_accounts
 from adhelper.autopilot.adapters.ledgered import LedgeredActions
 from adhelper.autopilot.adapters.rules_file import load_rules as load_autopilot_rules
+from adhelper.autopilot.adapters.settings import SqlAutopilotSettings, settings_of_businesses
 from adhelper.autopilot.adapters.sql import SqlDecisionLog
 from adhelper.autopilot.adapters.tests import SqlTestPlanner
-from adhelper.autopilot.application.cycle import SCHEDULED_MODE, AutopilotCycle
+from adhelper.autopilot.application.cycle import AutopilotCycle
+from adhelper.autopilot.application.settings import DEFAULT_SETTINGS, cycle_mode, is_due
 from adhelper.autopilot.application.visits import WithVisits
 from adhelper.budget.adapters.ledgered import (
     LedgeredBudgetPlatform,
@@ -109,7 +111,7 @@ CURRENT_EXPERIMENT_RULES = "experiments-2"
 
 
 async def _increase_needs_owner(account: str, campaign_id: str, new_limit: int) -> str:
-    # Лимит автопилот сейчас только предлагает: см. SCHEDULED_MODE.
+    # Лимит автопилот сейчас только предлагает, даже в режиме «Сам»: деньги до этапа 9 не трогает.
     return "awaiting_confirmation"
 
 
@@ -139,6 +141,8 @@ class Runtime:
     cabinet_url: str = "http://localhost:8000"
     # Визиты Метрики (T6); без источника проверки визитов в автопилоте пропускаются.
     visits_for: Callable[[UUID], Any] = lambda _business_id: None
+    # Разрешение владельца проекта на режим «Сам» (AUTOPILOT_AUTO_ALLOWED); false — «Предлагает».
+    auto_allowed: bool = False
 
     def ledger_for(self, business_id: UUID, account: str) -> Ledger:
         platform = self.platform_for(business_id, account)
@@ -425,14 +429,31 @@ class Runtime:
         return saved
 
     async def autopilot_run(self, only: UUID | None = None) -> int:
-        """Раз в сутки: анализ по отчётам и предложения владельцу. Возвращает число кабинетов."""
+        """Раз в час: разбирает кабинеты, которым пора по настройкам. Возвращает их число.
+
+        Бизнес без записи настроек живёт по умолчанию: раз в сутки, «Предлагает». Повтор
+        в тот же слот ничего не делает: слот закрывает отметка последнего разбора.
+        """
+        now = self.clock()
+        accounts = [
+            item
+            for item in await autopilot_accounts(self.sessions)
+            if only is None or item[0] == only
+        ]
+        stored = await settings_of_businesses(self.sessions, sorted({b for b, _, _ in accounts}))
         done = 0
-        for business_id, account, goal in await autopilot_accounts(self.sessions):
-            if only is not None and business_id != only:
+        for business_id, account, goal in accounts:
+            settings = stored.get(business_id, DEFAULT_SETTINGS)
+            if only is None and not is_due(settings, now):
                 continue
-            if self.platform_for(business_id, account) is None:
+            if settings.stopped_at is not None or self.platform_for(business_id, account) is None:
                 continue
-            await self.autopilot_cycle(business_id, account).run(account, goal, SCHEDULED_MODE)
+            mode = cycle_mode(settings.mode, auto_allowed=self.auto_allowed)
+            await self.autopilot_cycle(business_id, account).run(
+                account, goal, mode, settings.allowed_actions
+            )
+            # Слот закрывается сразу после разбора: сбой на следующем кабинете его не открывает.
+            await SqlAutopilotSettings(self.sessions, business_id).mark_run(settings, now)
             done += 1
         return done
 
@@ -578,6 +599,7 @@ async def open_runtime(settings: Settings) -> AsyncIterator[Runtime]:
             email=_email(settings),
             telegram=_telegram(settings),
             cabinet_url=settings.public_base_url,
+            auto_allowed=settings.autopilot_auto_allowed,
         )
     finally:
         if platforms is not None:

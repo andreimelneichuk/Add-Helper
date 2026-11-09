@@ -1,4 +1,5 @@
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -75,7 +76,14 @@ class AutopilotCycle:
         self._clock = clock
         self._rules = rules
 
-    async def run(self, account: str, target: int, mode: Mode) -> None:
+    async def run(
+        self,
+        account: str,
+        target: int,
+        mode: Mode,
+        allowed: frozenset[ActionKind] | None = None,
+    ) -> None:
+        """`allowed` — что вправе сделать сам режим «Сам»; остальное только предлагается."""
         now = self._clock()
         data = await self._data.load(account, now)
         health = check_health(
@@ -118,6 +126,8 @@ class AutopilotCycle:
                     now,
                 )
         for action in plan.actions:
+            if allowed is not None and action.kind not in allowed:
+                action = replace(action, needs_confirmation=True)
             await self._execute(account, action, now)
 
     async def _execute(self, account: str, action: Action, now: datetime) -> None:

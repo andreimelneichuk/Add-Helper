@@ -16,6 +16,7 @@ x-app: &app
     YANDEX_DIRECT_CLIENT_SECRET: ${YANDEX_DIRECT_CLIENT_SECRET:-}
     YANDEX_MANUAL_CLIENT_ID: ${YANDEX_MANUAL_CLIENT_ID:-}
     DIRECT_ENABLED: ${DIRECT_ENABLED:-false}
+    AUTOPILOT_AUTO_ALLOWED: ${AUTOPILOT_AUTO_ALLOWED:-false}
     DIRECT_API_URL: ${DIRECT_API_URL:-https://api.direct.yandex.com}
     DIRECT_LIVE_URL: ${DIRECT_LIVE_URL:-https://api.direct.yandex.ru/live/v4/json/}
     TEXT_MODEL_BASE_URL: ${TEXT_MODEL_BASE_URL:-https://openrouter.ai/api/v1}

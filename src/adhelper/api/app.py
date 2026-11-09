@@ -18,6 +18,7 @@ from adhelper.accounts.adapters.sql import SqlAccountTokens, SqlIdentityStore, S
 from adhelper.accounts.adapters.unconfigured import UnconfiguredProvider
 from adhelper.accounts.application.service import AccountsService, OAuthProvider, TokenInvalid
 from adhelper.api.accounts import accounts_router
+from adhelper.api.autopilot import autopilot_router
 from adhelper.api.cabinet import cabinet_router
 from adhelper.api.chat import chat_router
 from adhelper.api.control import control_router
@@ -193,12 +194,15 @@ def create_app(
     app.include_router(guest_ads_router())
     app.include_router(wizard_ads_router())
     app.include_router(experiments_router())
+    app.include_router(autopilot_router())
     app.state.guest_secret = _guest_secret(settings)
     # Без DIRECT_ENABLED действия с площадкой честно отвечают 503.
     platforms = build_direct_platforms(
         settings, sessions, oauth_provider, app.state.cipher, _utc_now
     )
     app.state.platform_for = platforms or _no_platform
+    # Режим «Сам» у автопилота до ворот этапа 9 закрыт (docs/17-autopilot-plan.md).
+    app.state.autopilot_auto_allowed = settings.autopilot_auto_allowed
     app.include_router(notifications_router())
     app.include_router(chat_router())
     app.include_router(images_router())

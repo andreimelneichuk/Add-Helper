@@ -269,3 +269,18 @@ async def test_decisions_are_append_only(sessions: Sessions, engine: AsyncEngine
 def test_explain_refuses_to_invent_missing_numbers() -> None:
     with pytest.raises(KeyError):
         explain("pause_ad", {})
+
+
+async def test_auto_mode_only_does_what_the_owner_allowed(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    from adhelper.autopilot.domain.decide import ActionKind
+
+    platform = fake()
+    cycle = build(data([BAD, GOOD]), platform, sessions, engine, 10**10)
+
+    await cycle.run("acc", TARGET, Mode.AUTO, frozenset({ActionKind.START_TEST}))
+
+    assert platform.ads == {"ad:bad": True, "ad:good": True}  # паузу владелец не разрешал
+    logged = await SqlDecisionLog(sessions, BUSINESS).latest("acc", "ad:bad")
+    assert logged is not None and logged.status == "awaiting_confirmation"

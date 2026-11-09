@@ -1,11 +1,14 @@
 """Суточный цикл автопилота в воркере: анализ по витрине и предложение теста владельцу."""
 
 import uuid
-from datetime import UTC, datetime
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from adhelper.autopilot.adapters.settings import SqlAutopilotSettings
 from adhelper.autopilot.adapters.sql import SqlDecisionLog
+from adhelper.autopilot.domain.settings import DEFAULT_SETTINGS, AutopilotMode, Cadence
 from adhelper.business.adapters.sql import SqlLeadGoal
 from adhelper.creatives.adapters.sql import SqlProfiles
 from adhelper.creatives.domain.model import BusinessProfile, Service
@@ -102,3 +105,73 @@ async def test_metrika_without_data_keeps_cycle_as_before(
     assert await worker.autopilot_run() == 1
     decision = await SqlDecisionLog(sessions, BUSINESS).latest("acc", "ad:1")
     assert decision is not None and decision.action == "start_test"
+
+
+async def _borderline(sessions: Sessions) -> None:
+    await SqlLeadGoal(sessions, BUSINESS).set(90_000_000)
+    await SqlProfiles(sessions, BUSINESS).save(
+        BusinessProfile("Лак", (Service("Маникюр", 1500),)), ""
+    )
+
+
+async def _decision(sessions: Sessions) -> object:
+    return await SqlDecisionLog(sessions, BUSINESS).latest("acc", "ad:1")
+
+
+async def test_a_second_tick_in_the_same_slot_does_nothing(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    await _borderline(sessions)
+    worker = runtime(sessions, engine, {BUSINESS})
+    assert await worker.autopilot_run() == 1
+    assert await worker.autopilot_run() == 0
+    stored = await SqlAutopilotSettings(sessions, BUSINESS).get()
+    assert stored is not None and stored.last_run_at == NOW
+    assert stored.mode is AutopilotMode.CONFIRM
+
+
+async def test_weekly_cadence_waits_for_the_week(sessions: Sessions, engine: AsyncEngine) -> None:
+    await _borderline(sessions)
+    store = SqlAutopilotSettings(sessions, BUSINESS)
+    await store.save(replace(DEFAULT_SETTINGS, cadence=Cadence.WEEKLY), [])
+    worker = runtime(sessions, engine, {BUSINESS})
+    assert await worker.autopilot_run() == 1
+    worker.clock = lambda: NOW + timedelta(days=6)
+    assert await worker.autopilot_run() == 0
+    worker.clock = lambda: NOW + timedelta(days=7)
+    assert await worker.autopilot_run() == 1
+
+
+async def test_stopped_autopilot_does_not_run(sessions: Sessions, engine: AsyncEngine) -> None:
+    await _borderline(sessions)
+    await SqlAutopilotSettings(sessions, BUSINESS).save(
+        replace(DEFAULT_SETTINGS, stopped_at=NOW), []
+    )
+    assert await runtime(sessions, engine, {BUSINESS}).autopilot_run() == 0
+    assert await _decision(sessions) is None
+
+
+async def test_watch_mode_only_analyses_and_proposes_nothing(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    await _borderline(sessions)
+    await SqlAutopilotSettings(sessions, BUSINESS).save(
+        replace(DEFAULT_SETTINGS, mode=AutopilotMode.WATCH), []
+    )
+    assert await runtime(sessions, engine, {BUSINESS}).autopilot_run() == 1
+    decision = await SqlDecisionLog(sessions, BUSINESS).latest("acc", "ad:1")
+    assert decision is not None and decision.action is None
+
+
+async def test_auto_mode_in_the_database_still_only_proposes_while_not_allowed(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    await _borderline(sessions)
+    await SqlAutopilotSettings(sessions, BUSINESS).save(
+        replace(DEFAULT_SETTINGS, mode=AutopilotMode.AUTO), []
+    )
+    worker = runtime(sessions, engine, {BUSINESS})
+    assert worker.auto_allowed is False
+    await worker.autopilot_run()
+    decision = await SqlDecisionLog(sessions, BUSINESS).latest("acc", "ad:1")
+    assert decision is not None and decision.status == "awaiting_confirmation"

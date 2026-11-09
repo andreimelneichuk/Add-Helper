@@ -18,7 +18,7 @@ PERIODIC_TASKS = (
     "telegram.poll",
     "site.read",
     "site.tag_check",
-    "autopilot.run",
+    "autopilot.tick",
     "experiments.run",
     "experiments.stats",
     "stats.sync",
@@ -112,9 +112,10 @@ async def site_tag_check(timestamp: int) -> None:
         await runtime.site_tag_check()
 
 
-# Раз в сутки после ночной сверки отчётов: 06:20 по Москве, отчёты за вчера уже есть.
-@app.periodic(cron="20 3 * * *")
-@app.task(name="autopilot.run", queue=CREATIVES_QUEUE, queueing_lock="autopilot.run")
+# Каждый час в :20: разбирает кабинеты, которым пора по настройкам (по умолчанию раз в сутки
+# в 06:20 по Москве, после ночной сверки отчётов). Повтор в тот же слот ничего не делает.
+@app.periodic(cron="20 * * * *")
+@app.task(name="autopilot.tick", queue=CREATIVES_QUEUE, queueing_lock="autopilot.tick")
 async def autopilot_run(timestamp: int) -> None:
     async with open_runtime(Settings()) as runtime:
         await runtime.autopilot_run()
