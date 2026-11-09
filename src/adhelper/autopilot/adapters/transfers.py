@@ -1,13 +1,28 @@
 """Хранилище переносов лимита. Каждый запрос ограничен business_id."""
 
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import BigInteger, DateTime, Text, Uuid, column, func, select, table, update
+from sqlalchemy import (
+    BigInteger,
+    DateTime,
+    Text,
+    Uuid,
+    and_,
+    column,
+    func,
+    or_,
+    select,
+    table,
+    update,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from adhelper.autopilot.domain.transfers import TransferRecord, TransferState
+
+_EPOCH = datetime.min.replace(tzinfo=UTC)
 
 TRANSFERS = table(
     "autopilot_transfers",
@@ -86,14 +101,56 @@ class SqlTransferStore:
         async with self._sessions() as session:
             return [_record(row) for row in await session.execute(statement)]
 
-    async def set_state(self, transfer_id: str, state: TransferState) -> None:
+    def _claimable(self, lease: timedelta) -> Any:
+        stale = TRANSFERS.c.updated_at < func.now() - lease
+        return or_(
+            TRANSFERS.c.status == TransferState.OPEN.value,
+            and_(TRANSFERS.c.status == TransferState.RUNNING.value, stale),
+        )
+
+    async def claim_open(self, lease: timedelta) -> list[TransferRecord]:
+        # Один UPDATE ... RETURNING: две службы не возьмут одну запись, повтор после сбоя безопасен.
+        statement = (
+            update(TRANSFERS)
+            .where(TRANSFERS.c.business_id == self._business_id, self._claimable(lease))
+            .values(status=TransferState.RUNNING.value, updated_at=func.now())
+            .returning(*TRANSFERS.c)
+        )
+        async with self._sessions() as session, session.begin():
+            rows = list(await session.execute(statement))
+        return sorted((_record(row) for row in rows), key=lambda r: r.created_at or _EPOCH)
+
+    async def claim(
+        self, transfer_id: str, allowed: frozenset[TransferState], lease: timedelta
+    ) -> TransferRecord | None:
+        stale = and_(
+            TRANSFERS.c.status == TransferState.RUNNING.value,
+            TRANSFERS.c.updated_at < func.now() - lease,
+        )
         statement = (
             update(TRANSFERS)
             .where(
                 TRANSFERS.c.business_id == self._business_id,
                 TRANSFERS.c.id == UUID(transfer_id),
+                or_(TRANSFERS.c.status.in_([state.value for state in allowed]), stale),
+            )
+            .values(status=TransferState.RUNNING.value, updated_at=func.now())
+            .returning(*TRANSFERS.c)
+        )
+        async with self._sessions() as session, session.begin():
+            row = (await session.execute(statement)).one_or_none()
+        return _record(row) if row else None
+
+    async def set_state(self, transfer_id: str, state: TransferState) -> bool:
+        statement = (
+            update(TRANSFERS)
+            .where(
+                TRANSFERS.c.business_id == self._business_id,
+                TRANSFERS.c.id == UUID(transfer_id),
+                TRANSFERS.c.status == TransferState.RUNNING.value,
             )
             .values(status=state.value, updated_at=func.now())
         )
         async with self._sessions() as session, session.begin():
-            await session.execute(statement)
+            result = await session.execute(statement)
+        return bool(result.rowcount)  # type: ignore[attr-defined]

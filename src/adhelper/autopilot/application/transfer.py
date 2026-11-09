@@ -11,8 +11,8 @@
 
 import uuid
 from collections.abc import Mapping
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass, field, replace
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Protocol
 
@@ -50,6 +50,8 @@ class PolicyFacts:
     moved_this_week: int
     data_alert: bool
     api_points_rest: int | None
+    # Последнее изменение лимита по журналу, рост или снижение (в том числе снижение донора).
+    last_limit_change: Mapping[str, datetime] = field(default_factory=dict)
 
 
 class TransferResult(StrEnum):
@@ -60,6 +62,7 @@ class TransferResult(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
+TRANSFER_CHANGES = 2
 _ISSUE = object()
 
 
@@ -89,6 +92,11 @@ class TransferOutcome:
     policy: PolicyDecision | None = None
     authorized: AuthorizedTransfer | None = None
     reason: str | None = None
+
+
+def _latest(*moments: datetime | None) -> datetime | None:
+    known = [m for m in moments if m is not None]
+    return max(known) if known else None
 
 
 async def authorize_transfer(
@@ -121,7 +129,8 @@ async def authorize_transfer(
                 campaign_id=campaign.campaign_id,
                 allowed=facts.allowed,
                 now=now,
-                changes_today=facts.changes_today,
+                # Перенос — два изменения лимита (снижение и рост): оба должны вписаться в сутки.
+                changes_today=facts.changes_today + TRANSFER_CHANGES - 1,
                 moved_this_week=facts.moved_this_week,
                 amount=amount,
                 operating_budget=period.operating_budget,
@@ -129,7 +138,9 @@ async def authorize_transfer(
                 ad_in_learning=False,
                 campaign_in_learning=known.in_learning,
                 auto_strategy=known.auto_strategy,
-                last_limit_change_at=campaign.last_increase_at,
+                last_limit_change_at=_latest(
+                    campaign.last_increase_at, facts.last_limit_change.get(campaign.campaign_id)
+                ),
                 data_alert=facts.data_alert,
                 api_points_rest=facts.api_points_rest,
             ),
@@ -174,6 +185,10 @@ class TransferPlatform(BudgetPlatform, Protocol):
     def for_transfer(self, transfer_id: str) -> BudgetPlatform: ...
 
 
+# Захваченный перенос считается чужим, пока не прошла аренда; после сбоя его берёт следующий тик.
+CLAIM_LEASE = timedelta(minutes=15)
+CANCELLABLE = frozenset({TransferState.OPEN, TransferState.DONE, TransferState.STUCK})
+
 _STATE = {
     TransferStatus.DONE: TransferState.DONE,
     TransferStatus.REJECTED: TransferState.REJECTED,
@@ -205,7 +220,21 @@ def _record(transfer_id: str, account: str, authorized: AuthorizedTransfer) -> T
 
 
 def restore_transfer(record: TransferRecord) -> AuthorizedTransfer:
-    """Разрешение из записи: берём то, что решила политика, а не пересобираем план."""
+    """Разрешение из записи: берём то, что решила политика, а не пересобираем план.
+
+    Запись из базы не доверенная: перед исполнением проверяем, что она сама себе не противоречит.
+    """
+    version = record.decision.get("rules_version")
+    if not isinstance(version, str) or not version:
+        raise ValueError("В записи переноса нет версии правил политики")
+    if (
+        record.amount <= 0
+        or record.donor_id == record.recipient_id
+        or record.donor_start - record.amount != record.donor_target
+        or record.recipient_target - record.amount < 0
+        or record.donor_target < 0
+    ):
+        raise ValueError("Запись переноса противоречива")
     decision = PolicyDecision(
         reason=None,
         rules_version=str(record.decision["rules_version"]),
@@ -234,7 +263,8 @@ async def run_transfer(
 ) -> tuple[str, TransferStatus]:
     """Записывает намерение, затем доводит перенос; все лимиты идут под одним идентификатором."""
     transfer_id = str(uuid.uuid4())
-    await store.add(_record(transfer_id, account, authorized))
+    # Запись сразу «выполняется»: часовой доводчик не должен взять её, пока мы идём по шагам.
+    await store.add(replace(_record(transfer_id, account, authorized), state=TransferState.RUNNING))
     status = await resume_transfer(
         platform.for_transfer(transfer_id), account, period, authorized, burn, now, rules, policy
     )
@@ -246,15 +276,22 @@ async def finish_open_transfers(
     store: TransferStore,
     platform: TransferPlatform,
     period: BudgetPeriod,
-    burn: BurnRate,
+    burn: BurnRate | None,
     now: datetime,
     rules: BudgetRules,
     policy: PolicyRules,
 ) -> dict[str, TransferStatus]:
     """После сбоя: открытый перенос доводим, а если разрешение устарело, откатываем."""
+    # Скорость расхода при восстановлении неизвестна: нулевая; шаги всё равно идут под стражем.
+    burn = burn or BurnRate.zero()
     outcome: dict[str, TransferStatus] = {}
-    for record in await store.open_transfers():
-        authorized = restore_transfer(record)
+    for record in await store.claim_open(CLAIM_LEASE):
+        try:
+            authorized = restore_transfer(record)
+        except ValueError:
+            await store.set_state(record.id, TransferState.STUCK)
+            outcome[record.id] = TransferStatus.STUCK
+            continue
         if authorized.decision.rules_version != policy.version:
             outcome[record.id] = await _cancel(store, platform, period, record, burn, now, rules)
             continue
@@ -312,12 +349,8 @@ async def cancel_transfer(
     rules: BudgetRules,
 ) -> TransferStatus | None:
     """«Отменить перенос»: сначала получатель, затем донор. None — такого переноса нет."""
-    record = await store.get(transfer_id)
-    if record is None or record.state in {
-        TransferState.ROLLED_BACK,
-        TransferState.REJECTED,
-        TransferState.CANCELLED,
-    }:
+    record = await store.claim(transfer_id, CANCELLABLE, CLAIM_LEASE)
+    if record is None:
         return None
     return await _cancel(store, platform, period, record, burn, now, rules)
 

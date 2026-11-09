@@ -1,13 +1,15 @@
 """Запись переноса лимита: намерение живёт в базе, пока перенос не доведён или не отменён."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Any, Protocol
 
 
 class TransferState(StrEnum):
     OPEN = "open"
+    # Перенос исполняется прямо сейчас; запись захвачена, чужой доводчик её не берёт.
+    RUNNING = "running"
     DONE = "done"
     REJECTED = "rejected"
     ROLLED_BACK = "rolled_back"
@@ -45,4 +47,16 @@ class TransferStore(Protocol):
 
     async def open_transfers(self) -> list[TransferRecord]: ...
 
-    async def set_state(self, transfer_id: str, state: TransferState) -> None: ...
+    async def claim_open(self, lease: timedelta) -> list[TransferRecord]:
+        """Захватывает открытые записи (и «выполняется» с истёкшей арендой) одним запросом."""
+        ...
+
+    async def claim(
+        self, transfer_id: str, allowed: frozenset[TransferState], lease: timedelta
+    ) -> TransferRecord | None:
+        """Захватывает одну запись, если она в одном из допустимых состояний."""
+        ...
+
+    async def set_state(self, transfer_id: str, state: TransferState) -> bool:
+        """Ставит итог только захваченной записи; False — запись уже не наша."""
+        ...

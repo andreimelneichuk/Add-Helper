@@ -172,14 +172,21 @@ async def drive_transfer(
     Не вызывать мимо `autopilot.application.transfer`: там политика и долговременная запись.
     """
     try:
-        first = next_step(plan, await _read_limits(platform, account))
+        limits = await _read_limits(platform, account)
+        # Кампания исчезла с площадки (архив, удаление): шаги не строим, возвращаем донору лимит.
+        if plan.donor_id not in limits or plan.recipient_id not in limits:
+            return await compensate_transfer(platform, account, period, plan)
+        first = next_step(plan, limits)
         donor_first = first is not None and first.campaign_id == plan.donor_id
         if donor_first and not await _precheck_recipient(
             platform, account, period, plan, burn, now, rules
         ):
             return TransferStatus.REJECTED
         for _ in range(MAX_TRANSFER_ITERATIONS):
-            step = next_step(plan, await _read_limits(platform, account))
+            limits = await _read_limits(platform, account)
+            if plan.donor_id not in limits or plan.recipient_id not in limits:
+                return await compensate_transfer(platform, account, period, plan)
+            step = next_step(plan, limits)
             if step is None:
                 return TransferStatus.DONE
             decision = await check_change(platform, account, period, step, burn, now, rules)

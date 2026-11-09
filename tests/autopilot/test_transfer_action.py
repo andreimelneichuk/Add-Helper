@@ -4,7 +4,8 @@ import asyncio
 import uuid
 from collections.abc import Mapping
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 from hypothesis import given, settings
@@ -103,6 +104,43 @@ async def test_transfer_over_weekly_share_is_denied() -> None:
     assert platform.set_limit_calls == []
 
 
+async def test_transfer_counts_as_two_changes_against_the_daily_limit() -> None:
+    platform = FakePlatform([campaign("a", 500_000), campaign("b", 100_000)], NOW)
+    room_for_one = replace(FACTS, changes_today=POLICY.max_changes_per_day - 1)
+    room_for_two = replace(FACTS, changes_today=POLICY.max_changes_per_day - 2)
+
+    denied = await authorize(platform, 10_000, room_for_one)
+    allowed = await authorize(platform, 10_000, room_for_two)
+
+    assert denied.result is TransferResult.DENIED
+    assert denied.policy is not None
+    assert denied.policy.reason is PolicyReason.DAILY_LIMIT
+    assert allowed.result is TransferResult.AUTHORIZED
+    assert platform.set_limit_calls == []
+
+
+async def test_recent_decrease_of_a_campaign_counts_as_a_limit_change() -> None:
+    old = NOW - timedelta(days=60)
+    platform = FakePlatform(
+        [
+            CampaignBudget("a", 500_000, 0, True, old),
+            CampaignBudget("b", 100_000, 0, True, old),
+        ],
+        NOW,
+    )
+    auto = {"a": CampaignTraits(True, False), "b": CampaignTraits(True, False)}
+
+    calm = await authorize(platform, 10_000, traits=auto)
+    # Получатель недавно был донором и снижался: автостратегию не дёргаем.
+    recent = replace(FACTS, last_limit_change={"b": NOW - timedelta(hours=1)})
+    denied = await authorize(platform, 10_000, recent, auto)
+
+    assert calm.result is TransferResult.AUTHORIZED
+    assert denied.result is TransferResult.DENIED
+    assert denied.policy is not None
+    assert denied.policy.reason is PolicyReason.AUTO_STRATEGY_INTERVAL
+
+
 async def test_unknown_traits_are_treated_as_learning_and_refused() -> None:
     platform = FakePlatform([campaign("a", 500_000), campaign("b", 100_000)], NOW)
 
@@ -138,6 +176,48 @@ async def test_allowed_transfer_decreases_before_increasing_and_keeps_the_sum() 
     assert status is TransferStatus.DONE
     assert [c.campaign_id for c in platform.set_limit_calls] == ["a", "b"]
     assert max(platform.limit_sums) <= PERIOD.operating_budget
+
+
+async def test_campaign_gone_mid_transfer_does_not_crash_and_keeps_money_safe() -> None:
+    # Получатель исчез до первого шага: ничего не меняем, донор остаётся при своём лимите.
+    platform = FakePlatform([campaign("a", 500_000), campaign("b", 100_000)], NOW)
+    outcome = await authorize(platform, 50_000)
+    assert outcome.authorized is not None
+    del platform.campaigns["b"]
+
+    status = await resume_transfer(
+        platform, "acc", PERIOD, outcome.authorized, ZERO, NOW, BUDGET_RULES, POLICY
+    )
+
+    assert status is TransferStatus.ROLLED_BACK
+    assert platform.set_limit_calls == []
+    assert platform.campaigns["a"].limit == 500_000
+
+    # Донор исчез: сообщаем «застрял», человек увидит, исключения нет.
+    platform = FakePlatform([campaign("a", 500_000), campaign("b", 100_000)], NOW)
+    outcome = await authorize(platform, 50_000)
+    assert outcome.authorized is not None
+    del platform.campaigns["a"]
+    status = await resume_transfer(
+        platform, "acc", PERIOD, outcome.authorized, ZERO, NOW, BUDGET_RULES, POLICY
+    )
+    assert status is TransferStatus.STUCK
+
+
+async def test_campaign_gone_between_steps_is_compensated_not_crashed() -> None:
+    platform = FakePlatform([campaign("a", 500_000), campaign("b", 100_000)], NOW)
+    outcome = await authorize(platform, 50_000)
+    assert outcome.authorized is not None
+    # Донор уже снижен, а получатель пропал с площадки.
+    platform.campaigns["a"] = campaign("a", 450_000)
+    del platform.campaigns["b"]
+
+    status = await resume_transfer(
+        platform, "acc", PERIOD, outcome.authorized, ZERO, NOW, BUDGET_RULES, POLICY
+    )
+
+    assert status is TransferStatus.ROLLED_BACK
+    assert platform.campaigns["a"].limit == 500_000
 
 
 async def test_resume_after_break_finishes_without_repeating_the_donor_decrease() -> None:
@@ -394,6 +474,117 @@ async def test_open_transfer_is_finished_after_a_crash(
     assert platform.campaigns["a"].limit == 450_000
     assert platform.campaigns["b"].limit == 150_000
     assert await store.open_transfers() == []
+
+
+async def test_open_transfer_is_claimed_by_one_worker_at_a_time(
+    sessions: Sessions, engine: AsyncEngine, _owner: None
+) -> None:
+    platform = FakePlatform([campaign("a", 500_000), campaign("b", 100_000)], NOW)
+    ledgered = LedgeredBudgetPlatform(
+        platform, ledger_for(platform, sessions, engine), ChangeSource.AUTOPILOT
+    )
+    store = SqlTransferStore(sessions, BUSINESS)
+    outcome = await authorize(platform, 50_000)
+    assert outcome.authorized is not None
+    outage_after_first_limit(platform)
+    transfer_id, _ = await run_transfer(
+        store, ledgered, "acc", PERIOD, outcome.authorized, ZERO, NOW, BUDGET_RULES, POLICY
+    )
+    platform.unavailable = False
+
+    first = await store.claim_open(timedelta(minutes=10))
+    second = await store.claim_open(timedelta(minutes=10))
+    expired = await store.claim_open(timedelta(0))
+
+    assert [r.id for r in first] == [transfer_id]
+    assert second == []
+    assert [r.id for r in expired] == [transfer_id]
+
+
+async def test_two_finishers_do_not_both_drive_the_same_transfer(
+    sessions: Sessions, engine: AsyncEngine, _owner: None
+) -> None:
+    platform = FakePlatform([campaign("a", 500_000), campaign("b", 100_000)], NOW)
+    ledgered = LedgeredBudgetPlatform(
+        platform, ledger_for(platform, sessions, engine), ChangeSource.AUTOPILOT
+    )
+    store = SqlTransferStore(sessions, BUSINESS)
+    outcome = await authorize(platform, 50_000)
+    assert outcome.authorized is not None
+    outage_after_first_limit(platform)
+    await run_transfer(
+        store, ledgered, "acc", PERIOD, outcome.authorized, ZERO, NOW, BUDGET_RULES, POLICY
+    )
+    platform.unavailable = False
+    platform.set_limit_calls.clear()
+
+    results = await asyncio.gather(
+        finish_open_transfers(store, ledgered, PERIOD, ZERO, NOW, BUDGET_RULES, POLICY),
+        finish_open_transfers(store, ledgered, PERIOD, ZERO, NOW, BUDGET_RULES, POLICY),
+    )
+
+    assert sorted(len(r) for r in results) == [0, 1]
+    assert [c.campaign_id for c in platform.set_limit_calls] == ["b"]
+
+
+async def test_finished_state_is_not_overwritten_by_a_late_writer(
+    sessions: Sessions, _owner: None
+) -> None:
+    from adhelper.autopilot.domain.transfers import TransferRecord
+
+    store = SqlTransferStore(sessions, BUSINESS)
+    record = TransferRecord(
+        str(uuid.uuid4()), "acc", "a", "b", 500_000, 450_000, 150_000, 50_000,
+        {"reason": None, "rules_version": "policy-1", "inputs": {}},
+        state=TransferState.RUNNING,
+    )  # fmt: skip
+    await store.add(record)
+
+    assert await store.set_state(record.id, TransferState.DONE) is True
+    assert await store.set_state(record.id, TransferState.STUCK) is False
+    done = await store.get(record.id)
+    assert done is not None and done.state is TransferState.DONE
+
+
+async def test_corrupted_open_record_is_marked_stuck_not_driven(
+    sessions: Sessions, engine: AsyncEngine, _owner: None
+) -> None:
+    from adhelper.autopilot.domain.transfers import TransferRecord
+
+    platform = FakePlatform([campaign("a", 500_000), campaign("b", 100_000)], NOW)
+    ledgered = LedgeredBudgetPlatform(
+        platform, ledger_for(platform, sessions, engine), ChangeSource.AUTOPILOT
+    )
+    store = SqlTransferStore(sessions, BUSINESS)
+    # Цель донора не равна «старт минус сумма»: такую запись нельзя исполнять.
+    bad = TransferRecord(
+        str(uuid.uuid4()), "acc", "a", "b", 500_000, 100_000, 150_000, 50_000,
+        {"reason": None, "rules_version": "policy-1", "inputs": {}},
+    )  # fmt: skip
+    await store.add(bad)
+
+    result = await finish_open_transfers(store, ledgered, PERIOD, ZERO, NOW, BUDGET_RULES, POLICY)
+
+    assert result == {bad.id: TransferStatus.STUCK}
+    assert platform.set_limit_calls == []
+    stored = await store.get(bad.id)
+    assert stored is not None and stored.state is TransferState.STUCK
+
+
+def test_restore_refuses_an_inconsistent_record() -> None:
+    from adhelper.autopilot.domain.transfers import TransferRecord
+
+    decision: dict[str, Any] = {"reason": None, "rules_version": "policy-1", "inputs": {}}
+    for donor_target, recipient_target, amount in (
+        (100_000, 150_000, 50_000),  # снижение не равно сумме
+        (450_000, 20_000, 50_000),  # лимит получателя до переноса был бы отрицательным
+        (500_000, 100_000, 0),  # пустой перенос
+    ):
+        record = TransferRecord(
+            "x", "acc", "a", "b", 500_000, donor_target, recipient_target, amount, decision
+        )
+        with pytest.raises(ValueError):
+            restore_transfer(record)
 
 
 async def test_stale_open_transfer_is_cancelled_by_reverse_transfer(
