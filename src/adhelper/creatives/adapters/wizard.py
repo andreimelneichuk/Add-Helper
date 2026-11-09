@@ -237,7 +237,7 @@ class SqlWizardAds:
                 return []
             publication_rows = (
                 await session.execute(
-                    select(ChangeRow.kind, ChangeRow.status, ChangeRow.planned)
+                    select(ChangeRow.kind, ChangeRow.status, ChangeRow.planned, ChangeRow.after)
                     .where(
                         ChangeRow.business_id == self._business_id,
                         ChangeRow.created_at >= row.created_at,
@@ -249,27 +249,32 @@ class SqlWizardAds:
                 )
             ).all()
         publication_statuses: dict[tuple[str, str], list[str]] = {}
-        for kind, status, planned in publication_rows:
+        for kind, status, planned, after in publication_rows:
             # Кампания считается отправленной только после подтверждения Direct.
             # Отдельное объявление блокируем уже при постановке в очередь: повторный
             # клик не должен породить ещё одну попытку, пока первая не завершилась.
-            if kind == ChangeKind.CREATE_CAMPAIGN.value and status != ChangeStatus.APPLIED.value:
-                continue
-            if kind == ChangeKind.CREATE_AD.value and status not in {
-                ChangeStatus.PLANNED.value,
-                ChangeStatus.APPLYING.value,
-                ChangeStatus.APPLIED.value,
-            }:
+            # Failed с сохранённым AdId тоже блокируем: Direct мог создать объявление,
+            # хотя сверка журнала завершилась ошибкой.
+            if kind == ChangeKind.CREATE_CAMPAIGN.value:
+                if status != ChangeStatus.APPLIED.value:
+                    continue
+                publication_status = "submitted"
+            elif kind == ChangeKind.CREATE_AD.value:
+                if status in {ChangeStatus.PLANNED.value, ChangeStatus.APPLYING.value}:
+                    publication_status = "pending"
+                elif status == ChangeStatus.APPLIED.value or (
+                    status == ChangeStatus.FAILED.value and (after or {}).get("ad_id")
+                ):
+                    publication_status = "submitted"
+                else:
+                    continue
+            else:
                 continue
             for ad in planned.get("ads", [planned]):
                 if "headline" not in ad or "text" not in ad:
                     continue
                 key = (str(ad["headline"]), str(ad["text"]))
-                publication_statuses.setdefault(key, []).append(
-                    "pending"
-                    if status in {ChangeStatus.PLANNED.value, ChangeStatus.APPLYING.value}
-                    else "submitted"
-                )
+                publication_statuses.setdefault(key, []).append(publication_status)
         view = _view(row)
         drafts = view.drafts
         kept_set = set(row.kept or [])
@@ -285,12 +290,12 @@ class SqlWizardAds:
             raw_sources = tuple(s.get("label", "") for s in raw.get("sources", []))
             facts = tuple(source.label for source in d.sources) or raw_sources or ("Ваш текст",)
             text_key = (d.headline, d.text)
-            publication_status = (
+            item_publication_status = (
                 publication_remaining.get(text_key, []).pop(0)
                 if publication_remaining.get(text_key)
                 else None
             )
-            is_submitted = publication_status == "submitted"
+            is_submitted = item_publication_status == "submitted"
             items.append(
                 WizardAdItem(
                     id=f"w{i}",
@@ -312,7 +317,7 @@ class SqlWizardAds:
                     active=is_active,
                     archived=is_archived,
                     submitted=is_submitted,
-                    publication_status=publication_status,
+                    publication_status=item_publication_status,
                 )
             )
         return items

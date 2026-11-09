@@ -301,9 +301,9 @@ def control_router() -> APIRouter:
         request: Request,
         account: str,
         ad_id: str,
-        body: ArchiveBody,
         business_id: OwnedChecked,
         period: Period,
+        body: ArchiveBody | None = None,
     ) -> dict[str, str]:
         wizard_idx = _parse_wizard_ad_index(account, ad_id)
         if wizard_idx is not None:
@@ -312,6 +312,9 @@ def control_router() -> APIRouter:
             if ok:
                 return {"status": "applied"}
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
+
+        if body is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "request_id обязателен")
 
         view = await ad_detail(
             SqlDashboard(_sessions(request), business_id), period, account, ad_id

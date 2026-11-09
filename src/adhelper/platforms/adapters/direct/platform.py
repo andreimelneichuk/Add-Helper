@@ -1156,10 +1156,10 @@ class DirectPlatform:
         if not groups:
             raise DirectRejected(None, f"campaign {campaign_id} has no ad groups")
 
-        existing = await self._ads_of_campaigns(account, [campaign_id])
+        existing_ads = await self._ads_of_campaigns(account, [campaign_id])
         present = {
             (str((ad.get("TextAd") or {}).get("Title")), str((ad.get("TextAd") or {}).get("Text")))
-            for ad in existing
+            for ad in existing_ads
             if ad.get("State") != "ARCHIVED"
         }
         counts: dict[int, int] = {}

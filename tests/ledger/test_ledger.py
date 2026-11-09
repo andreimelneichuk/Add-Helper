@@ -53,6 +53,49 @@ def proposal(target: str = "a", limit: int = 400, key: str | None = None) -> Pro
     )
 
 
+def new_ad_proposal() -> ProposedChange:
+    return ProposedChange(
+        account="acc",
+        source=ChangeSource.USER,
+        kind=ChangeKind.CREATE_AD,
+        target_ref="newad:wizard-test",
+        planned={
+            "campaign_id": "123",
+            "headline": "Title",
+            "text": "Text",
+            "href": "https://example.com/",
+            "group_name": "Services",
+            "keywords": ["service"],
+        },
+        explanation="Publish ad",
+        idempotency_key="new-ad:test",
+    )
+
+
+class DirectLikeAdGateway:
+    """Models ads.get, which omits the group name and keywords used by ads.add."""
+
+    def __init__(self, state: dict[str, dict[str, Any]] | None = None) -> None:
+        self.state = state or {}
+        self.apply_calls: list[str] = []
+
+    async def read(self, account: str, target_ref: str) -> Mapping[str, Any]:
+        return dict(self.state.get(target_ref, {}))
+
+    async def apply(
+        self, account: str, kind: ChangeKind, target_ref: str, planned: Mapping[str, Any]
+    ) -> None:
+        self.apply_calls.append(target_ref)
+        self.state[target_ref] = {
+            "campaign_id": planned["campaign_id"],
+            "headline": planned["headline"],
+            "text": planned["text"],
+            "href": planned["href"],
+            "ad_id": "456",
+            "group_id": "789",
+        }
+
+
 def ledger(
     sessions: Sessions, engine: AsyncEngine, gateway: Any, repo: Any = None, preflight: Any = None
 ) -> Ledger:
@@ -195,6 +238,49 @@ async def test_lost_response_finishes_without_second_apply(
     await service.execute_pending("acc")
     assert (await SqlChangeRepository(sessions, BUSINESS).all())[0].status is ChangeStatus.APPLIED
     assert len(gateway.apply_calls) == 1
+
+
+async def test_created_ad_finishes_when_direct_omits_creation_only_fields(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    gateway = DirectLikeAdGateway()
+    service = ledger(sessions, engine, gateway)
+    await service.submit(new_ad_proposal())
+
+    await service.execute_pending("acc")
+
+    change = (await SqlChangeRepository(sessions, BUSINESS).all())[0]
+    assert change.status is ChangeStatus.APPLIED
+    assert change.after == gateway.state["newad:wizard-test"]
+    assert gateway.apply_calls == ["newad:wizard-test"]
+
+
+async def test_reconcile_does_not_create_ad_already_visible_in_direct(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    target = "newad:wizard-test"
+    gateway = DirectLikeAdGateway(
+        {
+            target: {
+                "campaign_id": "123",
+                "headline": "Title",
+                "text": "Text",
+                "href": "https://example.com/",
+                "ad_id": "456",
+                "group_id": "789",
+            }
+        }
+    )
+    repo = SqlChangeRepository(sessions, BUSINESS)
+    await repo.add(new_ad_proposal(), {}, ChangeStatus.APPLYING)
+    service = ledger(sessions, engine, gateway)
+
+    await service.execute_pending("acc")
+
+    change = (await repo.all())[0]
+    assert change.status is ChangeStatus.APPLIED
+    assert change.after == gateway.state[target]
+    assert gateway.apply_calls == []
 
 
 async def test_platform_down_keeps_change_open_then_gives_up(

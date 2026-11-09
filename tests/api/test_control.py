@@ -78,7 +78,9 @@ async def test_repeated_request_does_not_change_twice(
     _app(client).state.platform_for = lambda _b, _a: platform
     url = f"/api/businesses/{business}/ads/{LOGIN}/11/state"
     for request_id in ("r1", "r2"):
-        response = await client.post(url, json={"active": False, "request_id": request_id}, headers=csrf)
+        response = await client.post(
+            url, json={"active": False, "request_id": request_id}, headers=csrf
+        )
         assert response.status_code == 200
     assert len(await _rows(sessions, business)) == 1
 
@@ -649,7 +651,9 @@ async def test_platform_ad_archive_stops_platform_and_notes_archived_state(
     _app(client).state.platform_for = lambda _b, _a: platform
     base = f"/api/businesses/{business}"
 
-    done = await client.post(f"{base}/ads/{LOGIN}/11/archive", headers=csrf, json={"request_id": "archive-11"})
+    done = await client.post(
+        f"{base}/ads/{LOGIN}/11/archive", headers=csrf, json={"request_id": "archive-11"}
+    )
     assert done.status_code == 200
     assert done.json() == {"status": "applied"}
     assert platform.ads["ad:11"] is False
@@ -663,6 +667,18 @@ async def test_platform_ad_archive_stops_platform_and_notes_archived_state(
             )
         ).scalar_one()
     assert ad_state == "archived"
+
+
+async def test_platform_ad_archive_still_requires_request_id(
+    anna: Anna, platform: FakePlatform
+) -> None:
+    client, csrf, business = anna
+    _app(client).state.platform_for = lambda _b, _a: platform
+
+    response = await client.post(f"/api/businesses/{business}/ads/{LOGIN}/11/archive", headers=csrf)
+
+    assert response.status_code == 422
+    assert platform.ads["ad:11"] is True
 
 
 @pytest.mark.parametrize("creative_state", ["running", "moderation"])
@@ -684,7 +700,9 @@ async def test_service_ad_stays_archived_after_owner_stop(
         )
     for _ in range(2):
         response = await client.post(
-            f"/api/businesses/{business}/ads/{LOGIN}/11/archive", headers=csrf, json={"request_id": "archive-11"}
+            f"/api/businesses/{business}/ads/{LOGIN}/11/archive",
+            headers=csrf,
+            json={"request_id": "archive-11"},
         )
         assert response.json() == {"status": "applied"}
         assert platform.ads["ad:11"] is False
@@ -709,12 +727,16 @@ async def test_platform_ad_archive_conflict_when_platform_fails(
     base = f"/api/businesses/{business}"
 
     monkeypatch.setattr(control_module, "set_ad_active", AsyncMock(return_value="failed"))
-    response = await client.post(f"{base}/ads/{LOGIN}/11/archive", headers=csrf, json={"request_id": "archive-11"})
+    response = await client.post(
+        f"{base}/ads/{LOGIN}/11/archive", headers=csrf, json={"request_id": "archive-11"}
+    )
     assert response.status_code == 409
     assert "Яндекс не принял" in response.json()["detail"]
 
     monkeypatch.setattr(control_module, "set_ad_active", AsyncMock(return_value=None))
-    resp_unavailable = await client.post(f"{base}/ads/{LOGIN}/11/archive", headers=csrf, json={"request_id": "archive-11"})
+    resp_unavailable = await client.post(
+        f"{base}/ads/{LOGIN}/11/archive", headers=csrf, json={"request_id": "archive-11"}
+    )
     assert resp_unavailable.status_code == 503
 
 

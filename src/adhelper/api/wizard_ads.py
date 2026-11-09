@@ -309,10 +309,16 @@ def wizard_ads_router() -> APIRouter:
                     and change.after
                 ]
                 if applied:
-                    change = max(applied, key=lambda row: row.id)
-                    candidates.append(
-                        (change.id, login, str(change.after["campaign_id"]), change.planned)
-                    )
+                    campaign_change = max(applied, key=lambda row: row.id)
+                    if campaign_change.after is not None:
+                        candidates.append(
+                            (
+                                campaign_change.id,
+                                login,
+                                str(campaign_change.after["campaign_id"]),
+                                campaign_change.planned,
+                            )
+                        )
         if not candidates:
             raise HTTPException(status.HTTP_409_CONFLICT, "Сначала запустите кампанию в Директе")
         _, login, campaign_id, plan = max(candidates, key=lambda candidate: candidate[0])
@@ -337,7 +343,7 @@ def wizard_ads_router() -> APIRouter:
         )
         ad_digest = sha256(item.headline.encode() + b"\0" + item.text.encode()).hexdigest()[:10]
         marker = f"wizard-{business_id.hex[:8]}-{idx_str}-{ad_digest}"
-        change = ProposedChange(
+        proposed = ProposedChange(
             account=login,
             source=ChangeSource.USER,
             kind=ChangeKind.CREATE_AD,
@@ -358,7 +364,7 @@ def wizard_ads_router() -> APIRouter:
             idempotency_key=f"wizard-publish:{business_id.hex}:{idx_str}:{marker}",
         )
         ledger = _ledger(request, business_id, platform)
-        submitted = await ledger.submit(change)
+        submitted = await ledger.submit(proposed)
         await ledger.execute_pending(login)
         final = await ledger.get_change(submitted.id)
         if final is not None and final.status in {

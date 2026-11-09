@@ -13,6 +13,7 @@ from adhelper.platforms.domain.ports import (
     AdDay,
     AdImage,
     Advertiser,
+    CampaignDay,
     ModerationState,
     ModerationVerdict,
     PublishedAd,
@@ -55,6 +56,8 @@ class FakePlatform:
         # Отчёт по объявлениям и запросы к нему: (кабинет, кампании, с, по).
         self.ad_report: list[AdDay] = []
         self.ad_report_calls: list[tuple[str, tuple[str, ...], date, date]] = []
+        self.campaign_report: list[CampaignDay] = []
+        self.campaign_report_calls: list[tuple[str, tuple[str, ...], date, date]] = []
         # Только изменённые; остальные кампании показываются по DEFAULT_TARGETING.
         self.targeting: dict[str, Targeting] = {}
         self.schedule_calls = 0
@@ -169,6 +172,8 @@ class FakePlatform:
         href: str,
         group_id: str | None = None,
         image_hash: str | None = None,
+        group_name: str | None = None,
+        keywords: Sequence[str] = (),
     ) -> None:
         self._check_fault("create_ad", after_apply=False)
         if image_hash is not None and image_hash not in self.images:
@@ -288,6 +293,13 @@ class FakePlatform:
         self._check_fault("ad_days", after_apply=False)
         self.ad_report_calls.append((account, tuple(campaign_ids), since, until))
         return [row for row in self.ad_report if since <= row.day <= until]
+
+    async def campaign_days(
+        self, account: str, campaign_ids: Sequence[str], since: date, until: date
+    ) -> list[CampaignDay]:
+        self._check_fault("campaign_days", after_apply=False)
+        self.campaign_report_calls.append((account, tuple(campaign_ids), since, until))
+        return [row for row in self.campaign_report if since <= row.day <= until]
 
     async def ad_visits(self, counter: str, since: date, until: date) -> int | None:
         self.visit_calls.append((counter, since, until))

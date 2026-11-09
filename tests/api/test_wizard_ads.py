@@ -196,6 +196,47 @@ async def test_wizard_ads_identify_confirmed_submissions(
     ]
 
 
+async def test_failed_publication_with_direct_ad_id_stays_blocked(
+    anna: Anna,  # noqa: F811
+    sessions: Sessions,
+    provider: FakeProvider,
+) -> None:
+    client, csrf, business_id = anna
+    await _connect(client, provider, csrf, str(business_id), ANNA)
+    headers = {"X-CSRF-Token": csrf}
+    url = f"/api/businesses/{business_id}/wizard-ads"
+    created = await client.post(
+        url,
+        json={"headline": "Уже создано в Direct", "text": "Запишитесь"},
+        headers=headers,
+    )
+    assert created.status_code == 201
+
+    proposed = ProposedChange(
+        account="anna-direct",
+        source=ChangeSource.USER,
+        kind=ChangeKind.CREATE_AD,
+        target_ref="newad:wizard-failed",
+        planned={"headline": "Уже создано в Direct", "text": "Запишитесь"},
+        explanation="Publication attempt",
+        idempotency_key="wizard-failed-publication",
+    )
+    repo = SqlChangeRepository(sessions, business_id)
+    change = await repo.add(proposed, {}, ChangeStatus.PLANNED)
+    await repo.finish(
+        change,
+        ChangeStatus.FAILED,
+        {"ad_id": "1926518978391880146"},
+        "attempts_exhausted",
+    )
+
+    saved = (await client.get(url)).json()["ads"][0]
+    assert saved["submitted"] is True
+    assert saved["publication_status"] == "submitted"
+    retry = await client.post(f"{url}/{created.json()['id']}/publish", json={}, headers=headers)
+    assert retry.status_code == 409
+
+
 async def test_custom_ad_retry_is_idempotent_even_when_first_requests_overlap(
     anna: Anna,  # noqa: F811
 ) -> None:

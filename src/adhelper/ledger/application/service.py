@@ -105,8 +105,18 @@ class Ledger:
 
     async def _execute(self, change: Change) -> bool:
         actual = await self._gateway.read(change.account, change.target_ref)
+        verification_plan = change.planned
+        if change.kind is ChangeKind.CREATE_AD and change.target_ref.startswith("newad:"):
+            # These values direct creation, but ads.get does not return them. Comparing them
+            # with the read result makes a successfully created ad look missing and retries
+            # the non-idempotent ads.add call.
+            verification_plan = {
+                key: value
+                for key, value in change.planned.items()
+                if key not in {"group_name", "keywords"}
+            }
         step = decide_execution(
-            change.before, change.planned, actual, change.attempts, self._max_attempts
+            change.before, verification_plan, actual, change.attempts, self._max_attempts
         )
         if step is ExecutionStep.FINISH:
             await self._repository.finish(change, ChangeStatus.APPLIED, actual)
@@ -146,10 +156,9 @@ class Ledger:
             )
             return True
         result = await self._gateway.read(applying.account, applying.target_ref)
-        reached = plan_reached(applying.planned, result)
-        is_launch = (
-            applying.kind is ChangeKind.CREATE_CAMPAIGN
-            and applying.target_ref.startswith("launch:")
+        reached = plan_reached(verification_plan, result)
+        is_launch = applying.kind is ChangeKind.CREATE_CAMPAIGN and applying.target_ref.startswith(
+            "launch:"
         )
         if is_launch:
             # Запуск считается состоявшимся, если Direct подтвердил кампанию с реальными
