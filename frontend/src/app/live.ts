@@ -182,11 +182,11 @@ export async function loadLive(api: Api, name: string): Promise<Partial<State>> 
       const wizard = await api.wizardAds(true);
       if (wizard?.ads?.length) {
         ads = [...ads, ...wizard.ads.flatMap((w, i) => {
-          if (w.submitted) return [];
           const isArchived = !!w.archived;
           const isActive = w.active !== false && !isArchived;
-          const tag = isArchived ? "в архиве" : isActive ? "готово к запуску" : "отключено";
-          const tagTone: Ad["tagTone"] = isArchived ? "neutral" : isActive ? "accent" : "neutral";
+          const publicationStatus = w.publication_status ?? (w.submitted ? "submitted" : null);
+          const tag = isArchived ? "в архиве" : publicationStatus === "pending" ? "отправляется" : publicationStatus === "submitted" ? "на проверке Яндекса" : isActive ? "готово к запуску" : "отключено";
+          const tagTone: Ad["tagTone"] = isArchived || publicationStatus ? "neutral" : isActive ? "accent" : "neutral";
           return {
             id: w.id || `w${i}`,
             name: w.headline,

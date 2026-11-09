@@ -225,6 +225,8 @@ export function adStat(s: Pick<State, "adsOff" | "situation">, ad: Ad) {
   if (ad.tag === "в архиве" || ad.tag === "заменено") return "В архиве";
   if (s.adsOff[ad.id] || ad.tag === "отключено") return "Отключено";
   if (ad.tag === "готово к запуску") return "Готово к запуску";
+  if (ad.tag === "отправляется") return "Отправляется в Яндекс";
+  if (ad.tag === "на проверке Яндекса") return "На проверке Яндекса";
   // В первые дни показатели карточки ещё не накоплены: суммы из данных относятся к работающей рекламе.
   if (s.situation === "first" || ad.leads <= 0) return "Собираю данные";
   return `${ad.leads} ${leadsWord(ad.leads)}, по ${rub(ad.cost / ad.leads)}`;

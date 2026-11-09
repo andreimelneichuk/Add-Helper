@@ -179,7 +179,7 @@ export type SiteRead = {
 };
 
 /** Объявление писателя в мастере: facts — на какие поля черновика оно опирается. */
-export type WizardAd = { id?: string; headline: string; text: string; facts: string[]; services?: string[]; active?: boolean; archived?: boolean; submitted?: boolean };
+export type WizardAd = { id?: string; headline: string; text: string; facts: string[]; services?: string[]; active?: boolean; archived?: boolean; submitted?: boolean; publication_status?: "pending" | "submitted" | null };
 export type AdSet = {
   id: number;
   status: "queued" | "running" | "ready" | "failed";
