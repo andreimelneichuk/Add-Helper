@@ -61,6 +61,24 @@ describe("живые данные", () => {
     expect(store.state.ads.find((a) => a.id === "anna/12")?.photo).toBeUndefined();
   });
 
+  it("обновляет статусы Direct у уже открытых карточек", async () => {
+    let current = [line({ state: "moderation" })];
+    const api = fakeApi({ ads: vi.fn(async () => current) } as Partial<Api>);
+    const store = await open(api);
+    expect(store.state.ads[0]?.tag).toBe("на проверке Яндекса");
+
+    current = [
+      line({ state: "archived" }),
+      line({ ad_id: "12", title: "Новое объявление", state: "moderation" }),
+    ];
+    await store.refreshAds();
+
+    expect(store.state.ads.map(({ id, tag }) => [id, tag])).toEqual([
+      ["anna/11", "заменено"],
+      ["anna/12", "на проверке Яндекса"],
+    ]);
+  });
+
   it("тревогу показывает в состоянии", async () => {
     const alert = { kind: "zero_balance", details: {}, created_at: "2026-11-15T00:00:00Z" };
     const store = await open(fakeApi({ overview: vi.fn(async () => overview([alert])) } as Partial<Api>));

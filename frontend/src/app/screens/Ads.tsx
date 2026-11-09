@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Ad } from "../data";
 import { adName, adShown, adStat, useStore } from "../store";
 import type { State, Store } from "../store";
 import { liveApi } from "../live";
-import type { LiveStore } from "../live";
+import { LiveStore } from "../live";
 import { AdArt, AdDetail, AdMaker } from "./AdDetail";
 import { Decisions } from "./Decisions";
 import { GenerateAdsModal } from "./ads/GenerateAdsModal";
@@ -69,6 +69,31 @@ export function Ads({ store }: { store: Store }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [genModalOpen, setGenModalOpen] = useState(false);
   const [launchModalOpen, setLaunchModalOpen] = useState(false);
+  const liveStore = store instanceof LiveStore ? store : null;
+  const refreshingAds = useRef(false);
+  const refreshAds = useCallback(async () => {
+    if (!liveStore || refreshingAds.current) return;
+    refreshingAds.current = true;
+    try {
+      await liveStore.refreshAds();
+    } catch { /* Сохраняем последний известный список, если сеть недоступна. */ }
+    finally { refreshingAds.current = false; }
+  }, [liveStore]);
+  useEffect(() => {
+    if (!liveStore) return;
+    void refreshAds();
+    const timer = window.setInterval(() => void refreshAds(), 60_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void refreshAds();
+    };
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [liveStore, refreshAds]);
   if (s.openAd === "new") return <AdMaker store={store} />;
   if (s.openAd && s.ads.some((a) => a.id === s.openAd)) return <AdDetail store={store} id={s.openAd} />;
 

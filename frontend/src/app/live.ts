@@ -149,39 +149,28 @@ export function platformToday(): string {
   }
 }
 
-export async function loadLive(api: Api, name: string): Promise<Partial<State>> {
-  const currentToday = platformToday();
-  const estMonthStart = `${currentToday.slice(0, 8)}01`;
-  const estWeekStart = dayAt(dayNumber(currentToday) - 6);
-  const estTrailStart = dayAt(dayNumber(currentToday) - 13);
-  const estSince = estMonthStart < estTrailStart ? estMonthStart : estTrailStart;
-  const [overview, adsWeek, adsMonth, history, profile, today_, plan] = await Promise.all([
-    api.overview({ since: estSince }),
-    api.ads({ since: estWeekStart }),
-    api.ads({ since: estMonthStart }),
-    api.history(),
-    api.profile().catch(() => null),
-    // Без ленты сервиса экран соберёт вывод сам из тех же данных.
-    api.today().catch(() => null),
-    api.budgetPlan ? api.budgetPlan().catch(() => null) : Promise.resolve(null),
-  ]);
-  const today = overview.today || currentToday;
-  const monthStart = `${today.slice(0, 8)}01`;
+async function loadAds(api: Api) {
+  const today = platformToday();
   const weekStart = dayAt(dayNumber(today) - 6);
-  const trailStart = dayAt(dayNumber(today) - 13);
-  const since = monthStart < trailStart ? monthStart : trailStart;
-  const month = Number(today.slice(5, 7)) - 1;
-  const year = Number(today.slice(0, 4));
-  const all = fillDays(overview, since, today);
-  const money = overview.money[0];
-  const seen = new Set(adsWeek.map((a) => a.ad_id));
-  const lines = [...adsWeek, ...adsMonth.filter((a) => !seen.has(a.ad_id)).map((a) => ({ ...a, totals: { impressions: 0, clicks: 0, cost: 0, conversions: 0 } }))];
+  const monthStart = `${today.slice(0, 8)}01`;
+  const [adsWeek, adsMonth] = await Promise.all([
+    api.ads({ since: weekStart }),
+    api.ads({ since: monthStart }),
+  ]);
+  const seen = new Set(adsWeek.map((ad) => ad.ad_id));
+  const lines = [
+    ...adsWeek,
+    ...adsMonth.filter((ad) => !seen.has(ad.ad_id)).map((ad) => ({
+      ...ad,
+      totals: { impressions: 0, clicks: 0, cost: 0, conversions: 0 },
+    })),
+  ];
   let ads = lines.map((line) => toAd(line, api.photoUrl));
   if (api.wizardAds) {
     try {
       const wizard = await api.wizardAds(true);
       if (wizard?.ads?.length) {
-        ads = [...ads, ...wizard.ads.flatMap((w, i) => {
+        ads = [...ads, ...wizard.ads.map((w, i) => {
           const isArchived = !!w.archived;
           const isActive = w.active !== false && !isArchived;
           const publicationStatus = w.publication_status ?? (w.submitted ? "submitted" : null);
@@ -203,6 +192,34 @@ export async function loadLive(api: Api, name: string): Promise<Partial<State>> 
       }
     } catch { /* без мастера */ }
   }
+  return { ads, adsWeek, adsMonth };
+}
+
+export async function loadLive(api: Api, name: string): Promise<Partial<State>> {
+  const currentToday = platformToday();
+  const estMonthStart = `${currentToday.slice(0, 8)}01`;
+  const estTrailStart = dayAt(dayNumber(currentToday) - 13);
+  const estSince = estMonthStart < estTrailStart ? estMonthStart : estTrailStart;
+  const [overview, adSnapshot, history, profile, today_, plan] = await Promise.all([
+    api.overview({ since: estSince }),
+    loadAds(api),
+    api.history(),
+    api.profile().catch(() => null),
+    // Без ленты сервиса экран соберёт вывод сам из тех же данных.
+    api.today().catch(() => null),
+    api.budgetPlan ? api.budgetPlan().catch(() => null) : Promise.resolve(null),
+  ]);
+  const { ads: adCards, adsWeek, adsMonth } = adSnapshot;
+  const today = overview.today || currentToday;
+  const monthStart = `${today.slice(0, 8)}01`;
+  const weekStart = dayAt(dayNumber(today) - 6);
+  const trailStart = dayAt(dayNumber(today) - 13);
+  const since = monthStart < trailStart ? monthStart : trailStart;
+  const month = Number(today.slice(5, 7)) - 1;
+  const year = Number(today.slice(0, 4));
+  const all = fillDays(overview, since, today);
+  const money = overview.money[0];
+  const ads = adCards;
   const running = overview.campaigns.filter((c) => c.state !== "archived");
   const alerts = overview.alerts.map((a) => alertOf(a, money));
   const stats: Record<Period, PeriodStats> = {
@@ -299,6 +316,14 @@ export class LiveStore extends Store {
   /** Перечитать данные после действия, которое прошло мимо журнала: профиль, решения по объявлениям. */
   async refresh() {
     this.set(await loadLive(this.api, this.state.live?.name ?? ""));
+  }
+
+  async refreshAds() {
+    const { ads } = await loadAds(this.api);
+    this.set({
+      ads,
+      adsOff: Object.fromEntries(ads.filter((ad) => ad.tag === "отключено").map((ad) => [ad.id, true])),
+    });
   }
 
   /**
