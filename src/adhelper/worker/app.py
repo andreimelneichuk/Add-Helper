@@ -138,8 +138,8 @@ async def experiments_stats(timestamp: int) -> None:
         await runtime.experiments_stats()
 
 
-# Обновляем статистику всех сервисных кампаний и объявлений четырежды в сутки.
-@app.periodic(cron="10 */6 * * *")
+# Обновляем статистику сервисных кампаний и объявлений раз в 15 минут.
+@app.periodic(cron="*/15 * * * *")
 @app.task(name="stats.sync", queue=CREATIVES_QUEUE, queueing_lock="stats.sync")
 async def stats_sync(timestamp: int) -> None:
     async with open_runtime(Settings()) as runtime:
