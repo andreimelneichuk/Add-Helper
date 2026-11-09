@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 
 from adhelper.commands.adapters.rules_file import load_rules
 from adhelper.commands.application.service import CallBudget, interpret
-from adhelper.commands.domain.model import Kind, Known, KnownAd
+from adhelper.commands.domain.model import Command, Kind, Known, KnownAd
 from adhelper.creatives.domain.model import ModelReply, ModelUnavailable
 
 KNOWN = Known((KnownAd("acc/1", "Маникюр у метро"),), ("Маникюр",))
@@ -93,3 +93,98 @@ async def test_two_requests_get_two_confirmations() -> None:
     assert "«Педикюр у метро»" in answer.more[0].confirm
     assert answer.rules == "commands-2"
     assert model.seen == []
+
+
+async def test_free_reply_cannot_claim_an_action_or_invent_numbers() -> None:
+    from unittest.mock import AsyncMock
+
+    from adhelper.commands.application.langchain_agent import AgentResult, LangChainChatAgent
+
+    agent = AsyncMock(spec=LangChainChatAgent)
+    agent.invoke.return_value = AgentResult(
+        Command(Kind.UNKNOWN), "Принял! Устанавливаю бюджет 777 ₽. Сейчас всё настрою!"
+    )
+    answer = await interpret(
+        "бюджет как у соседа", KNOWN, RULES, None, always, langchain_agent=agent
+    )
+    assert answer.command.kind is Kind.UNKNOWN
+    assert "Принял" not in answer.reply and "777" not in answer.reply
+    agent.invoke.assert_not_called()
+
+
+async def test_small_talk_reply_with_foreign_numbers_is_replaced() -> None:
+    from unittest.mock import AsyncMock
+
+    from adhelper.commands.application.langchain_agent import AgentResult, LangChainChatAgent
+
+    agent = AsyncMock(spec=LangChainChatAgent)
+    agent.invoke.return_value = AgentResult(Command(Kind.UNKNOWN), "Привет! У вас 5 объявлений.")
+    answer = await interpret("привет", KNOWN, RULES, None, always, langchain_agent=agent)
+    assert "5" not in answer.reply
+    agent.invoke.return_value = AgentResult(Command(Kind.UNKNOWN), "Привет! Чем помочь?")
+    answer = await interpret("привет", KNOWN, RULES, None, always, langchain_agent=agent)
+    assert answer.reply == "Привет! Чем помочь?"
+
+
+def _ctx(budget: int | None = 15_000):  # type: ignore[no-untyped-def]
+    from adhelper.commands.application.analytics import AnalyticsContext
+
+    return AnalyticsContext(
+        period_label="За 7 дней",
+        cost_micros=0,
+        impressions=0,
+        clicks=0,
+        conversions=0,
+        budget_rubles=budget,
+        spent_rubles=225,
+    )
+
+
+async def test_budget_multiplied_is_computed_by_code_from_current_budget() -> None:
+    answer = await interpret(
+        "Увеличь бюджет в два раза", KNOWN, RULES, None, always, analytics_context=_ctx()
+    )
+    assert answer.command.kind is Kind.SET_BUDGET and answer.command.rubles == 30_000
+    confirm = answer.confirm.replace("\xa0", " ")
+    assert "30 000 ₽" in confirm and "сейчас 15 000 ₽" in confirm
+    half = await interpret(
+        "уменьши бюджет вдвое", KNOWN, RULES, None, always, analytics_context=_ctx()
+    )
+    assert half.command.rubles == 7_500
+    # Без известного бюджета кратность не считаем, спрашиваем сумму.
+    none = await interpret(
+        "увеличь бюджет в два раза", KNOWN, RULES, None, always, analytics_context=_ctx(None)
+    )
+    assert none.command.kind is Kind.UNKNOWN and "сумм" in none.reply
+
+
+async def test_new_ad_request_explains_where_and_checks_the_profile() -> None:
+    known = Known(KNOWN.ads, ("Маникюр", "Окрашивание"))
+    ok = await interpret("Запусти новую рекламу про окрашивание", known, RULES, None, always)
+    assert ok.command.kind is Kind.UNKNOWN and "«Реклама»" in ok.reply
+    missing = await interpret("Запусти новую рекламу про окрашивание", KNOWN, RULES, None, always)
+    assert missing.command.kind is Kind.UNKNOWN and "профил" in missing.reply
+
+
+async def test_delete_ads_is_refused_with_the_safe_alternative() -> None:
+    answer = await interpret("Удали все объявления", KNOWN, RULES, None, always)
+    assert answer.command.kind is Kind.UNKNOWN
+    assert "не удаляю" in answer.reply and "пауз" in answer.reply
+
+
+async def test_small_talk_uses_the_interface_word_for_leads() -> None:
+    from unittest.mock import AsyncMock
+
+    from adhelper.commands.application.langchain_agent import AgentResult, LangChainChatAgent
+
+    agent = AsyncMock(spec=LangChainChatAgent)
+    agent.invoke.return_value = AgentResult(Command(Kind.UNKNOWN), "Привет! Новые заявки ждут.")
+    answer = await interpret("привет", KNOWN, RULES, None, always, langchain_agent=agent)
+    assert "заявк" not in answer.reply and "обращения" in answer.reply
+
+
+def test_zero_budget_is_refused() -> None:
+    from adhelper.commands.domain.parse import by_rules
+
+    parsed = by_rules("бюджет 0", KNOWN, 300)
+    assert parsed.command.kind is Kind.UNKNOWN and "больше нуля" in parsed.question

@@ -20,6 +20,8 @@ class Kind(StrEnum):
     UNDO_LAST = "undo_last"
     STATS = "stats"
     HISTORY = "history"
+    # Справка о бюджете: ответ пишет код по данным кабинета, команды на площадку нет.
+    BUDGET = "budget"
     UNKNOWN = "unknown"
 
 
@@ -77,6 +79,10 @@ class CommandRules:
     model_calls_per_day: int
     # Просьб в одном сообщении; в commands-1 — одна.
     max_requests: int = 1
+    # Бюджет месяца выше этой суммы из чата не ставим: скорее всего, лишний ноль.
+    max_budget: int = 500_000
+    # Сколько секунд вопрос «Применить?» остаётся в силе: потом данные могли измениться.
+    confirm_ttl_seconds: int = 600
 
 
 @dataclass(frozen=True)

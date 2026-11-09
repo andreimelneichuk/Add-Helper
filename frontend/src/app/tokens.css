@@ -148,7 +148,7 @@
 
 /* Меню телефона */
 .ah-nav { display: none; flex: none; gap: 2px; margin: 0 var(--gutter) var(--gap); padding: 4px; border-radius: var(--r-surface); background: var(--panel); }
-.ah-nav button { display: flex; flex: 1 1 0; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-width: 0; min-height: 48px; padding: 0 2px; border: 0; border-radius: var(--r-field); background: none; color: var(--muted); font-size: var(--t-caption); cursor: pointer; }
+.ah-nav button { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; letter-spacing: -0.01em; display: flex; flex: 1 1 0; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-width: 0; min-height: 48px; padding: 0 2px; border: 0; border-radius: var(--r-field); background: none; color: var(--muted); font-size: var(--t-caption); cursor: pointer; }
 .ah-nav button[aria-current="page"] { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
 @media (max-width: 767px) {
   .ah-rail { display: none; }

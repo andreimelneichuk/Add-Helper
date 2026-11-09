@@ -119,3 +119,11 @@ async def test_chat_langchain_agent_handles_conversational_greeting(anna: Anna) 
     assert answer["kind"] == "unknown"
     assert answer["reply"] == expected_reply
     assert answer["confirm"] == ""
+
+
+async def test_every_answer_tells_how_long_the_question_stays_valid(
+    anna: Anna,  # noqa: F811
+) -> None:
+    client, csrf, business = anna
+    answer = await _say(client, csrf, business, "пауза")
+    assert answer["expires_in"] == 600

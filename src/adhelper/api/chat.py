@@ -35,7 +35,7 @@ class CommandBody(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
 
 
-def _shown(answer: Answer) -> dict[str, Any]:
+def _shown(answer: Answer, ttl: int) -> dict[str, Any]:
     command = answer.command
     return {
         "kind": command.kind.value,
@@ -48,6 +48,7 @@ def _shown(answer: Answer) -> dict[str, Any]:
         "reply": answer.reply,
         "source": answer.source,
         "rules": answer.rules,
+        "expires_in": ttl,
     }
 
 
@@ -99,8 +100,13 @@ def chat_router() -> APIRouter:
             }
             for h in history_lines
         )
+        open_periods = [p for p in await dashboard.periods(now) if p.starts_at <= now < p.ends_at]
+        working = sum(p.hard_limit - p.hard_limit * p.reserve_bp // 10_000 for p in open_periods)
+        spent_micros = sum(p.spent or 0 for p in open_periods)
         analytics_context = AnalyticsContext(
             period_label="За 7 дней",
+            budget_rubles=working // 1_000_000 if open_periods else None,
+            spent_rubles=spent_micros // 1_000_000 if open_periods else None,
             cost_micros=cost_micros,
             impressions=impressions,
             clicks=clicks,
@@ -124,6 +130,7 @@ def chat_router() -> APIRouter:
             analytics_context=analytics_context,
             langchain_agent=getattr(request.app.state, "langchain_agent", None),
         )
-        return {**_shown(answer), "next": [_shown(more) for more in answer.more]}
+        ttl = rules.confirm_ttl_seconds
+        return {**_shown(answer, ttl), "next": [_shown(more, ttl) for more in answer.more]}
 
     return router

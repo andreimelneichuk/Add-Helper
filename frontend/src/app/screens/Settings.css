@@ -44,8 +44,7 @@
 @media (max-width: 767px) {
   .set-title { font-size: 22px; }
   .set-summary { grid-template-columns: minmax(0, 1fr); }
-  .set-service { grid-template-columns: minmax(0, 1fr) auto; }
-  .set-service > :first-child { grid-column: 1 / -1; }
+  .set-service { grid-template-columns: minmax(0, 1fr) 84px auto; }
 }
 .set-site { display: grid; gap: 8px; }
 .set-site > .ah-btn { justify-self: start; }
@@ -79,3 +78,5 @@
 .set-details > summary { font-weight: 600; }
 .set-field { display: flex; flex-direction: column; }
 
+.set-nav { scrollbar-width: none; }
+.set-nav::-webkit-scrollbar { display: none; }

@@ -16,6 +16,8 @@ const KIND_TITLE: Record<string, string> = { set_limit: "Изменил днев
 const UNDOABLE = new Set(["set_limit", "resume", "pause_ad", "resume_ad", "set_schedule", "set_regions"]);
 const STATUS_WORD: Record<string, string> = { planned: "Запланировано", applying: "Применяется", failed: "Не удалось", rejected: "Отклонено правилами", conflict: "Изменено кем-то ещё" };
 const DAY_NAMES = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"];
+const SLOW_MS = 15_000;
+const SLOW_ANSWER = "Долго отвечаю. Ничего не изменено, можно повторить.";
 const NO_ANSWER = "Сервис не ответил. Ничего не изменилось, попробуйте позже.";
 const quote = (ad: OutdatedAd) => `«${ad.headline}» (${ad.numbers.join(", ")})`;
 
@@ -660,12 +662,19 @@ export class LiveStore extends Store {
   /** Сервис переводит сообщение в команду из закрытого набора; меняющие ждут «да». */
   private async understand(text: string) {
     let c: ChatCommand;
+    this.set({ thinking: true });
+    // Модель отвечает долго; если больше 15 секунд, честно говорим, что ничего не менялось.
+    const slow = setTimeout(() => this.say(SLOW_ANSWER), SLOW_MS);
     try {
       c = await this.api.command(text);
     } catch (error) {
       this.say(error instanceof ApiError ? error.message : NO_ANSWER);
       return;
+    } finally {
+      clearTimeout(slow);
+      this.set({ thinking: false });
     }
+    this.pendingTtl = c.expires_in ?? 600;
     // Предел суммы из правил плана: тот же, что предупреждает о лишнем нуле в мастере.
     if ([c, ...(c.next ?? [])].some((x) => x.kind === "set_budget") && this.budgetMax === null) {
       this.budgetMax = await createGuestApi().budgetOptions().then((o) => o.max, () => null);
@@ -712,7 +721,8 @@ export class LiveStore extends Store {
         const huge = this.budgetMax !== null && amount > this.budgetMax
           ? ` Это больше ${rub(this.budgetMax)}: проверьте, нет ли лишнего нуля.`
           : "";
-        return this.offer(`Понял так: бюджет ${rub(amount)} в месяц.${huge}${lower ? " Сначала снижу лимиты в Яндексе, потом сменю бюджет." : ""} Применить?`, { action: "setting", value: ["budget", amount] });
+        const was = budgetOf(s) > 0 ? ` (сейчас ${rub(budgetOf(s))})` : "";
+        return this.offer(`Понял так: бюджет ${rub(amount)} в месяц${was}.${huge}${lower ? " Сначала снижу лимиты в Яндексе, потом сменю бюджет." : ""} Применить?`, { action: "setting", value: ["budget", amount] });
       }
       case "ad_off":
       case "ad_on": {
@@ -747,8 +757,18 @@ export class LiveStore extends Store {
     this.set({ msgs: [...this.state.msgs, msg("ai", text, link)] });
   }
 
+  private pendingTtl = 600;
+
+  /** Вопрос из чата старше срока из правил: данные могли измениться, выполнять нельзя. */
+  private expired(userText: string): boolean {
+    const { pending, pendingAt, pendingTtl } = this.state;
+    if (!pending || pendingAt === null || Date.now() - pendingAt <= pendingTtl * 1000) return false;
+    this.set({ input: "", pending: null, pendingAt: null, msgs: [...this.state.msgs, msg("me", userText), msg("ai", "Вопрос устарел, ничего не изменено. Напишите просьбу ещё раз.")] });
+    return true;
+  }
+
   private offer(text: string, pending: NonNullable<State["pending"]>, link?: Message["link"]) {
-    this.set({ pending, msgs: [...this.state.msgs, msg("ai", text, link)] });
+    this.set({ pendingAt: Date.now(), pendingTtl: this.pendingTtl, pending, msgs: [...this.state.msgs, msg("ai", text, link)] });
   }
 
   override run(a: State["pending"] & object, userText?: string) {
@@ -787,17 +807,24 @@ export class LiveStore extends Store {
   override send(raw: string) {
     const text = raw.trim();
     if (!text) return;
+    if (this.state.thinking) return;
+    if (this.expired(text)) return;
     const s = this.state;
     const t = text.toLowerCase();
     if (s.pending) {
-      if (/(^|\s)(нет|не|отмен\S*|оставь)(\s|$)/.test(t)) {
+      // Ответ на вопрос «Применить?» — короткое слово. Новая просьба вроде «Не показывай рекламу
+      // по выходным» содержит «не», но отказом не является.
+      const short = t.split(/\s+/).length <= 3;
+      if (short && /(^|\s)(нет|не|отмен\S*|оставь)(\s|$)/.test(t)) {
         this.reply(text, this.queue.length ? "Хорошо, это не меняю." : "Хорошо, ничего не меняю.", { pending: null });
         return this.nextRequest();
       }
-      if (/(^|\s)(да|примени\S*|подтвер\S*)(\s|$)/.test(t)) { this.set({ input: "" }); return this.run(s.pending, text); }
+      if (short && /(^|\s)(да|примени\S*|подтвер\S*)(\s|$)/.test(t)) { this.set({ input: "" }); return this.run(s.pending, text); }
     }
     this.queue = [];
-    this.set({ input: "", pending: null, msgs: [...s.msgs, msg("me", text)] });
+    // Старый вопрос «Применить?» больше без кнопок: говорим, что он не применён.
+    const dropped = s.pending ? [msg("note", "Прошлый вопрос не применён.")] : [];
+    this.set({ input: "", pending: null, msgs: [...s.msgs, ...dropped, msg("me", text)] });
     void this.understand(text);
   }
 }

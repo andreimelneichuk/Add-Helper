@@ -293,6 +293,8 @@ export type ChatCommand = {
   reply: string;
   source: "rules" | "model";
   rules: string;
+  /** Сколько секунд вопрос «Применить?» остаётся в силе. */
+  expires_in?: number;
   /** Остальные просьбы того же сообщения, по очереди после этой. */
   next?: ChatCommand[];
 };

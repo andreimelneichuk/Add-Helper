@@ -24,3 +24,7 @@
 @media (max-width: 767px) {
   .ah-chat { --chat-x: 16px; }
 }
+
+.ah-chat-thinking { color: var(--muted); animation: ah-chat-pulse 1.2s ease-in-out infinite; }
+@keyframes ah-chat-pulse { 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .ah-chat-thinking { animation: none; } }

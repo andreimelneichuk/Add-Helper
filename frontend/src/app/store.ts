@@ -59,6 +59,11 @@ export type SessionState = {
 export type ChatState = {
   input: string;
   msgs: Message[];
+  /** Сервис разбирает сообщение: показываем «Думаю…» и не берём второе. */
+  thinking: boolean;
+  /** Когда задан вопрос «Применить?» и сколько секунд он в силе; null — вопрос не из чата. */
+  pendingAt: number | null;
+  pendingTtl: number;
 };
 
 /** Мастер запуска: шаги, факты о бизнесе, подключения. */
@@ -185,7 +190,7 @@ const GREETING = "Здравствуйте! Я веду рекламу мало�
 
 export function initialState(stage: State["stage"] = "work", situation: Situation = "running"): State {
   return {
-    live: null, stage, situation, mode: "panel", view: "overview", notice: "", pending: null, working: null, price: null, step: 0, input: "",
+    live: null, stage, situation, mode: "panel", view: "overview", notice: "", pending: null, working: null, price: null, step: 0, input: "", thinking: false, pendingAt: null, pendingTtl: 600,
     msgs: [msg("ai", stage === "start" ? GREETING : fixtures.OPENING[situation])],
     hist: fixtures.histFor(situation), undone: {}, undoing: {}, asked: {}, undoInfo: {}, adsOff: {}, ads: fixtures.ADS, openAd: null, paused: false, topped: false, decided: null, extra: 0,
     metric: "cost", selDay: null, period: "week", filter: "all", clientsInput: "", clients: null,

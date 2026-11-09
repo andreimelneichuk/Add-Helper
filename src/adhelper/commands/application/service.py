@@ -6,6 +6,7 @@
 
 import json
 import logging
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 
@@ -21,7 +22,15 @@ from adhelper.commands.domain.model import (
     Parsed,
     Source,
 )
-from adhelper.commands.domain.parse import SCHEMA, from_model, parse_all
+from adhelper.commands.domain.parse import (
+    QUESTION_BUDGET,
+    QUESTION_CEILING,
+    SCHEMA,
+    from_model,
+    normalize,
+    parse_all,
+    scaled_budget,
+)
 from adhelper.commands.domain.words import REFUSAL, meaning, refusal
 from adhelper.creatives.domain.model import BusinessProfile, ModelUnavailable, TextModel
 
@@ -40,6 +49,57 @@ SYSTEM = (
     "переделать текст объявления; undo_last — отменить последнее изменение; stats — "
     "цифры и итоги; history — что сделано; unknown — всё остальное."
 )
+
+
+SMALL_TALK_FALLBACK = (
+    "Я помогаю с рекламой в Яндекс Директе: могу показать цифры, поменять бюджет, "
+    "паузу или объявления. Что нужно?"
+)
+# Слова, по которым сообщение — просьба или вопрос о рекламе: разбирает код, а не свободная
+# беседа. Модель не должна отвечать «Принял, устанавливаю» вместо команды с подтверждением.
+COMMAND_LIKE = re.compile(
+    r"бюджет|цен[аыуе]\b|стоимост|пауз|останов|объявлен|реклам|скидк|акци|включ|выключ|отключ"
+    r"|удали|запусти|передел|отмени|услуг|показ|трат|расход|клик|заяв|обращен|клиент"
+)
+# Свободный ответ не вправе говорить, что действие выполнено: выполняет только подтверждение.
+ACTION_CLAIM = re.compile(
+    r"принял|устанавлива|настро[юи]|поставил|выполнил|отключил|включил|сделал"
+)
+
+
+def _leads_word(match: re.Match[str]) -> str:
+    word = match.group(0).lower()
+    if word.endswith("ок"):
+        return "обращений"
+    return "обращение" if word.endswith(("а", "у")) else "обращения"
+
+
+def safe_small_talk(reply: str, message: str) -> str:
+    """Ответ свободной беседы без чисел, которых нет в сообщении, и без обещаний действий.
+
+    Слово интерфейса — «обращения», а не «заявки» (спецификация, словарь).
+    """
+    reply = re.sub(r"[Зз]аявк\w*", _leads_word, reply)
+    allowed = set(re.findall(r"\d+", message))
+    if set(re.findall(r"\d+", reply)) - allowed or ACTION_CLAIM.search(reply.lower()):
+        return SMALL_TALK_FALLBACK
+    return reply
+
+
+def budget_reply(context: AnalyticsContext | None) -> str:
+    """Бюджет месяца словами владельца, числа из кабинета подставляет код."""
+    if context is None or context.budget_rubles is None:
+        return "Бюджет месяца ещё не задан. Напишите, например, «бюджет 15 000»."
+    spent = context.spent_rubles or 0
+    left = max(context.budget_rubles - spent, 0)
+    return (
+        f"Бюджет на месяц: {_money(context.budget_rubles)}, потрачено {_money(spent)}, "
+        f"осталось {_money(left)}."
+    )
+
+
+def _money(value: int) -> str:
+    return f"{value:,}".replace(",", " ") + " ₽"
 
 
 @dataclass(frozen=True)
@@ -102,7 +162,7 @@ async def _ask_model(model: TextModel, message: str, known: Known, rules: Comman
         return Parsed(Command(Kind.UNKNOWN), Source.MODEL)
     if not isinstance(data, dict):
         return Parsed(Command(Kind.UNKNOWN), Source.MODEL)
-    return from_model(data, message, known)
+    return from_model(data, message, known, rules.max_budget)
 
 
 async def interpret(
@@ -116,28 +176,47 @@ async def interpret(
 ) -> Answer:
     found = parse_all(message, known, rules)
     first = found[0]
+    asked, scaled = scaled_budget(normalize(message), _budget_now(analytics_context))
+    if asked:
+        # «Увеличь бюджет в два раза»: сумму считает код из текущего бюджета, а не модель.
+        if scaled is None:
+            first = Parsed(Command(Kind.UNKNOWN), Source.RULES, QUESTION_BUDGET)
+        elif scaled > rules.max_budget:
+            limit = f"{rules.max_budget:,}".replace(",", " ")
+            first = Parsed(
+                Command(Kind.UNKNOWN), Source.RULES, QUESTION_CEILING.format(limit=limit)
+            )
+        else:
+            first = Parsed(Command(Kind.SET_BUDGET, rubles=scaled), Source.RULES)
+        found = (first,)
 
-    # Полноценный LangChain агент для свободного диалога, приветствий, консультаций и управления
+    text = message.lower().replace("ё", "е")
+    if first.command.kind is Kind.BUDGET:
+        first = Parsed(Command(Kind.STATS), Source.RULES, reply=budget_reply(analytics_context))
+        return _single(first, message, rules)
+
+    # Свободная беседа (приветствие, «что умеешь», шутка) — только для сообщений, в которых нет
+    # слов о рекламе и деньгах. Она ничего не меняет, а её ответ проходит `safe_small_talk`.
     if (
         langchain_agent
+        and first.command.kind is Kind.UNKNOWN
+        and not first.question
+        and not COMMAND_LIKE.search(text)
         and may_call_model()
-        and (first.command.kind is Kind.UNKNOWN or first.command.kind in (Kind.STATS, Kind.HISTORY))
     ):
         res = await langchain_agent.invoke(message, known, analytics_context)
         if res is not None:
-            if res.command.kind in CHANGING:
-                confirm = f"Понял так: {meaning(res.command)} Применить?"
-                return Answer(
-                    res.command, res.source, rules.version, confirm=confirm, reply=res.reply
-                )
-            return Answer(res.command, res.source, rules.version, confirm="", reply=res.reply)
+            reply = safe_small_talk(res.reply, message)
+            return Answer(Command(Kind.UNKNOWN), res.source, rules.version, confirm="", reply=reply)
 
     specific_refusal = refusal(message)
     if first.command.kind is Kind.UNKNOWN and not first.question and specific_refusal != REFUSAL:
         first = Parsed(Command(Kind.UNKNOWN), Source.RULES, reply=specific_refusal)
     elif len(found) == 1 and first.command.kind in (Kind.STATS, Kind.HISTORY) and analytics_context:
-        agent = AnalyticsAgent(model if (model and may_call_model()) else None)
-        ans = await agent.answer(message, analytics_context, target_kind=first.command.kind)
+        # Цифры и история — только кодом: числа и оценки от модели бывают неверны.
+        ans = await AnalyticsAgent(None).answer(
+            message, analytics_context, target_kind=first.command.kind
+        )
         first = Parsed(Command(ans.kind), ans.source, reply=ans.reply)
     elif (
         len(found) == 1
@@ -148,12 +227,33 @@ async def interpret(
     ):
         first = await _ask_model(model, message, known, rules)
         if first.command.kind in (Kind.STATS, Kind.HISTORY) and analytics_context:
-            agent = AnalyticsAgent(model if may_call_model() else None)
-            ans = await agent.answer(message, analytics_context, target_kind=first.command.kind)
+            ans = await AnalyticsAgent(None).answer(
+                message, analytics_context, target_kind=first.command.kind
+            )
             first = Parsed(Command(ans.kind), ans.source, reply=ans.reply)
 
-    answers = [_answer(parsed, message, rules) for parsed in (first, *found[1:])]
+    answers = [
+        _with_current(_answer(parsed, message, rules), analytics_context)
+        for parsed in (first, *found[1:])
+    ]
     return replace(answers[0], more=tuple(answers[1:]))
+
+
+def _budget_now(context: AnalyticsContext | None) -> int | None:
+    return context.budget_rubles if context else None
+
+
+def _with_current(answer: Answer, context: AnalyticsContext | None) -> Answer:
+    """В вопросе о бюджете показываем, что было: «было → стало» из кабинета, а не от модели."""
+    now = _budget_now(context)
+    if answer.command.kind is Kind.SET_BUDGET and now is not None and answer.confirm:
+        confirm = answer.confirm.replace(" Применить?", f" (сейчас {_money(now)}) Применить?")
+        return replace(answer, confirm=confirm)
+    return answer
+
+
+def _single(parsed: Parsed, message: str, rules: CommandRules) -> Answer:
+    return _answer(parsed, message, rules)
 
 
 def _answer(parsed: Parsed, message: str, rules: CommandRules) -> Answer:

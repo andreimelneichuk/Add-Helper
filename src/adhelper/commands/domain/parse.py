@@ -48,6 +48,22 @@ QUESTION_ONE_EACH = (
     "Здесь несколько похожих просьб. Напишите их по одной, например «бюджет 20 000», "
     "а следующим сообщением «отключи объявление про педикюр»."
 )
+QUESTION_NEGATIVE = (
+    "Бюджет не может быть отрицательным. Напишите сумму в месяц, например «бюджет 20 000»."
+)
+QUESTION_CEILING = (
+    "Бюджет больше {limit} ₽ из чата не ставлю: проверьте, нет ли лишнего нуля. "
+    "Если сумма верна, поменяйте её в настройках."
+)
+QUESTION_ZERO = "Бюджет должен быть больше нуля. Чтобы остановить показы, напишите «пауза»."
+QUESTION_DELETE = (
+    "Объявления не удаляю: они отключаются или архивируются, чтобы всё можно было вернуть. "
+    "Напишите «пауза» для всей рекламы или «отключи объявление про …» для одного."
+)
+NEW_AD_WHERE = (
+    "Новые объявления создаются в разделе «Реклама», и тексты берутся только из профиля. "
+    "Сам ничего не изменил."
+)
 QUESTION_ALL_DAYS = (
     "Без показов во все дни — это пауза. Напишите «пауза», если нужно остановить всё."
 )
@@ -57,20 +73,102 @@ def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text.lower().replace("ё", "е")).strip()
 
 
+_WORD_VALUES = {
+    **{
+        w: v
+        for v, w in enumerate(
+            ("один", "два", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять"), 1
+        )
+    },
+    "одна": 1,
+    "две": 2,
+    "десять": 10,
+    "одиннадцать": 11,
+    "двенадцать": 12,
+    "тринадцать": 13,
+    "четырнадцать": 14,
+    "пятнадцать": 15,
+    "шестнадцать": 16,
+    "семнадцать": 17,
+    "восемнадцать": 18,
+    "девятнадцать": 19,
+    "двадцать": 20,
+    "тридцать": 30,
+    "сорок": 40,
+    "пятьдесят": 50,
+    "шестьдесят": 60,
+    "семьдесят": 70,
+    "восемьдесят": 80,
+    "девяносто": 90,
+    "сто": 100,
+    "двести": 200,
+    "триста": 300,
+    "четыреста": 400,
+    "пятьсот": 500,
+    "шестьсот": 600,
+    "семьсот": 700,
+    "восемьсот": 800,
+    "девятьсот": 900,
+}
+_WORDS = "|".join(sorted(_WORD_VALUES, key=len, reverse=True))
+_WORD_THOUSANDS = re.compile(rf"\b((?:(?:{_WORDS})\s+)+)(?:тысяч\S*|тыс\b)")
+_DIGITS = re.compile(
+    r"(\d{1,3}(?:[  ]\d{3})+|\d+(?:[.,]\d+)?)\s*(тыс\S*|млн\S*|к\b|k\b)?"
+    r"(?:\s+(\d{1,3})(?=\s*(?:руб|₽|р\b|$|[,.;?!])))?"
+)
+
+
 def amounts(text: str) -> tuple[int, ...]:
-    """Суммы в рублях, как их пишут люди: «15 000», «15000 ₽», «15 тыс», «15к», «1,5 тыс»."""
-    found: list[int] = []
-    pattern = r"(\d{1,3}(?:[  ]\d{3})+|\d+(?:[.,]\d+)?)\s*(тыс\S*|к\b|k\b)?"
-    for match in re.finditer(pattern, text):
-        digits, thousands = match.group(1), match.group(2)
-        if thousands:
-            value = float(digits.replace(" ", "").replace(" ", "").replace(",", "."))
-            found.append(round(value * 1000))
+    """Суммы в рублях, как их пишут люди: «15 000», «15 тыс», «15к», «1,5 млн», «сто тысяч»,
+    «15 тысяч 500 рублей». Дробь без «тыс» и «млн» — не сумма."""
+    found: list[tuple[int, int]] = []
+    for match in _WORD_THOUSANDS.finditer(text):
+        words = match.group(1).split()
+        found.append((match.start(), sum(_WORD_VALUES[w] for w in words) * 1000))
+    for match in _DIGITS.finditer(text):
+        digits, unit, tail = match.group(1), match.group(2), match.group(3)
+        number = digits.replace(" ", "").replace(" ", "").replace(",", ".")
+        if unit and unit.startswith("млн"):
+            value = round(float(number) * 1_000_000)
+        elif unit:
+            value = round(float(number) * 1000)
+            if unit.startswith("тыс") and tail:
+                value += int(tail)
         elif "," in digits or "." in digits:
             continue
         else:
-            found.append(int(digits.replace(" ", "").replace(" ", "")))
-    return tuple(found)
+            value = int(number)
+        found.append((match.start(), value))
+    return tuple(value for _, value in sorted(found))
+
+
+def scaled_budget(text: str, current: int | None) -> tuple[bool, int | None]:
+    """«Увеличь бюджет в два раза»: (просьба есть, новая сумма). Сумму считает код.
+
+    Без известного бюджета суммы нет: спрашиваем её у владельца, а не гадаем.
+    """
+    if not re.search(r"бюджет", text):
+        return False, None
+    match = re.search(r"в\s+(\d+|два|три|четыре|полтора)\s+раз|\b(вдвое|втрое)\b", text)
+    if match is None:
+        return False, None
+    word = match.group(1) or match.group(2)
+    times = {"два": 2, "вдвое": 2, "три": 3, "втрое": 3, "четыре": 4}.get(word)
+    if word == "полтора":
+        factor = (3, 2)
+    elif times:
+        factor = (times, 1)
+    elif word.isdigit() and int(word) > 0:
+        factor = (int(word), 1)
+    else:
+        return True, None
+    if current is None:
+        return True, None
+    if re.search(r"уменьш|убав|сниз|сократ|урез|меньш", text):
+        return True, current * factor[1] // factor[0]
+    if re.search(r"увелич|подним|повыс|больш|добав", text):
+        return True, current * factor[0] // factor[1]
+    return True, None
 
 
 def days_in(text: str) -> tuple[int, ...]:
@@ -117,7 +215,7 @@ def _unknown(question: str = "") -> Parsed:
     return Parsed(Command(Kind.UNKNOWN), Source.RULES, question)
 
 
-def by_rules(message: str, known: Known, max_chars: int) -> Parsed:
+def by_rules(message: str, known: Known, max_chars: int, max_budget: int = 500_000) -> Parsed:
     """Разбор правилами. UNKNOWN без вопроса значит «правила не узнали, можно спросить модель»."""
     if len(message) > max_chars:
         return _unknown(QUESTION_LONG)
@@ -140,15 +238,32 @@ def by_rules(message: str, known: Known, max_chars: int) -> Parsed:
             if skip:
                 return Parsed(Command(Kind.SKIP_DAYS, days=skip), Source.RULES)
 
+    if re.search(r"удал\S*", text) and re.search(r"объявлен|реклам", text):
+        return _unknown(QUESTION_DELETE)
+
     if re.search(r"передел|перепиш|короче|другой текст|измени текст", text):
         ad = find_ad(text, known.ads)
         if ad is None:
             return _unknown(QUESTION_AD)
         return Parsed(Command(Kind.REWORK_AD, ad=ad, wish=message.strip()), Source.RULES)
 
+    asks_budget = re.search(r"какой|каков\S*|сколько|остал\S*|текущ\S*|покажи", text)
+    sets_budget = re.search(
+        r"постав|установ|смени|измени|сделай|увелич|уменьш|убав|подним|снизь", text
+    )
+    if re.search(r"бюджет", text) and asks_budget and not sets_budget and not numbers:
+        return Parsed(Command(Kind.BUDGET), Source.RULES)
     if re.search(r"бюджет|тратить|трать", text):
+        if scaled_budget(text, None)[0]:
+            return _unknown(QUESTION_BUDGET)
+        if re.search(r"(?<![\w])-\s?\d|минус", text):
+            return _unknown(QUESTION_NEGATIVE)
         if not numbers:
             return _unknown(QUESTION_BUDGET)
+        if numbers[0] <= 0:
+            return _unknown(QUESTION_ZERO)
+        if numbers[0] > max_budget:
+            return _unknown(QUESTION_CEILING.format(limit=f"{max_budget:,}".replace(",", " ")))
         return Parsed(Command(Kind.SET_BUDGET, rubles=numbers[0]), Source.RULES)
 
     service = find_service(text, known.services)
@@ -157,6 +272,17 @@ def by_rules(message: str, known: Known, max_chars: int) -> Parsed:
         if not numbers:
             return _unknown(QUESTION_PRICE.format(service=service.lower()))
         return Parsed(Command(Kind.SET_PRICE, service=service, rubles=numbers[0]), Source.RULES)
+
+    new_ad = re.search(
+        r"(запусти|создай|сделай|добавь|напиши)\S*\s+(?:нов\S+\s+)?(?:реклам|объявлен)\S*"
+        r"(?:\s+(?:про|на|для|по|о)\s+(.+))?",
+        text,
+    )
+    if new_ad and ("нов" in new_ad.group(0) or new_ad.group(2)):
+        tail = new_ad.group(2)
+        if tail and find_service(tail, known.services) is None:
+            return _unknown(QUESTION_SERVICE)
+        return _unknown(NEW_AD_WHERE)
 
     # «Отключи рекламу с педикюром» — про одно объявление, а не про всю рекламу.
     qualified = _qualified_ad(text, known)
@@ -225,13 +351,13 @@ def parse_all(message: str, known: Known, rules: CommandRules) -> tuple[Parsed, 
     одна просьба. Часть с уточнением останавливает всё сообщение: половину не выполняем.
     Две команды одного вида или больше max_requests — просим писать по одной.
     """
-    whole = by_rules(message, known, rules.max_chars)
+    whole = by_rules(message, known, rules.max_chars, rules.max_budget)
     if rules.max_requests <= 1 or len(message) > rules.max_chars:
         return (whole,)
     parts = [part for part in SPLIT.split(normalize(message)) if part]
     parsed: list[Parsed] = []
     for i, part in enumerate(parts):
-        one = by_rules(part, known, rules.max_chars)
+        one = by_rules(part, known, rules.max_chars, rules.max_budget)
         if one.command.kind is Kind.REWORK_AD:
             # Переделка забирает остаток как пожелание: «… и сделай короче» — не вторая просьба.
             if i == 0:
@@ -239,7 +365,7 @@ def parse_all(message: str, known: Known, rules: CommandRules) -> tuple[Parsed, 
             # Части взяты из нормализованного текста, хвост — оттуда же, с запятыми.
             text = normalize(message)
             tail = text[text.rfind(part) :]
-            parsed.append(by_rules(tail, known, rules.max_chars))
+            parsed.append(by_rules(tail, known, rules.max_chars, rules.max_budget))
             break
         parsed.append(one)
     if len(parsed) < 2:
@@ -279,7 +405,9 @@ def _int(value: object) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
-def from_model(answer: Mapping[str, object], message: str, known: Known) -> Parsed:
+def from_model(
+    answer: Mapping[str, object], message: str, known: Known, max_budget: int = 500_000
+) -> Parsed:
     """Проверить ответ модели. Всё, что не подтверждается сообщением и списками, — UNKNOWN."""
     try:
         kind = Kind(str(answer.get("command")))
@@ -299,11 +427,16 @@ def from_model(answer: Mapping[str, object], message: str, known: Known) -> Pars
     def unknown(question: str = "") -> Parsed:
         return Parsed(Command(Kind.UNKNOWN), Source.MODEL, question)
 
+    if kind is Kind.BUDGET:
+        return unknown()
     if kind in (Kind.SET_BUDGET, Kind.SET_PRICE):
         # Суммы не додумываем: число должно стоять в сообщении.
         if rubles is None or rubles not in amounts(text):
             return unknown(QUESTION_BUDGET if kind is Kind.SET_BUDGET else "")
         if kind is Kind.SET_BUDGET:
+            if rubles > max_budget:
+                limit = f"{max_budget:,}".replace(",", " ")
+                return unknown(QUESTION_CEILING.format(limit=limit))
             return Parsed(Command(kind, rubles=rubles), Source.MODEL)
         if not isinstance(service, str) or service not in known.services:
             return unknown(QUESTION_SERVICE)

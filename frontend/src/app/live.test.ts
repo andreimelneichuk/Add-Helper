@@ -668,6 +668,101 @@ describe("сетевые ошибки и граничные сценарии (50
     expect(store.state.msgs.at(-1)?.text).toContain("ничего не меняю");
   });
 
+  it("новая просьба со словом «не» при ожидающем вопросе уходит в разбор, а не считается отказом", async () => {
+    const api = fakeApi();
+    const store = await open(api);
+    store.set({ pending: { action: "pause" } });
+    vi.mocked(api.command).mockResolvedValueOnce(
+      said({ kind: "skip_days", days: [6, 7], confirm: "Понял так: не показывать рекламу по выходным. Применить?" }),
+    );
+    store.send("Не показывай рекламу по выходным");
+    await settled();
+    expect(api.command).toHaveBeenCalledWith("Не показывай рекламу по выходным");
+    expect(store.state.msgs.some((m) => m.text.includes("ничего не меняю"))).toBe(false);
+    expect(store.state.pending?.action).not.toBe("pause");
+  });
+
+  it("в вопросе о бюджете показывает, что было", async () => {
+    const api = fakeApi();
+    const store = await open(api);
+    const now = rub(store.state.live?.budget ?? 0);
+    vi.mocked(api.command).mockResolvedValueOnce(said({ kind: "set_budget", rubles: 20000, confirm: "x" }));
+    store.send("бюджет 20 тысяч");
+    await settled();
+    const text = store.state.msgs.at(-1)?.text ?? "";
+    expect(text).toContain(`сейчас ${now}`);
+  });
+
+  it("новая просьба при неотвеченном вопросе помечает прошлый вопрос снятым", async () => {
+    const api = fakeApi();
+    const store = await open(api);
+    store.set({ pending: { action: "pause" } });
+    store.send("как дела?");
+    await settled();
+    expect(store.state.msgs.some((m) => m.text.includes("Прошлый вопрос не применён"))).toBe(true);
+  });
+
+  it("устаревший вопрос «Применить?» не выполняется и просит написать заново", async () => {
+    vi.useFakeTimers();
+    try {
+      const api = fakeApi();
+      const store = await open(api);
+      vi.mocked(api.command).mockResolvedValueOnce(said({ kind: "pause", confirm: "Остановить все показы? Применить?", expires_in: 600 }));
+      store.send("пауза");
+      await vi.advanceTimersByTimeAsync(10);
+      expect(store.state.pending?.action).toBe("pause");
+      await vi.advanceTimersByTimeAsync(601_000);
+      store.send("да");
+      await vi.advanceTimersByTimeAsync(10);
+      expect(api.pause).not.toHaveBeenCalled();
+      expect(store.state.pending).toBeNull();
+      expect(store.state.msgs.at(-1)?.text).toContain("Вопрос устарел");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("свежий вопрос выполняется как раньше", async () => {
+    const api = fakeApi();
+    const store = await open(api);
+    vi.mocked(api.command).mockResolvedValueOnce(said({ kind: "pause", confirm: "Остановить? Применить?", expires_in: 600 }));
+    store.send("пауза");
+    await settled();
+    store.send("да");
+    await settled();
+    expect(api.pause).toHaveBeenCalled();
+  });
+
+  it("пока сервис разбирает сообщение, чат показывает «Думаю…» и не берёт второе", async () => {
+    const api = fakeApi();
+    const store = await open(api);
+    let release: (c: ReturnType<typeof said>) => void = () => {};
+    vi.mocked(api.command).mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    store.send("как дела?");
+    await settled();
+    expect(store.state.thinking).toBe(true);
+    store.send("и ещё вопрос");
+    expect(api.command).toHaveBeenCalledTimes(1);
+    release(said({ reply: "Привет" }));
+    await settled();
+    expect(store.state.thinking).toBe(false);
+    expect(store.state.msgs.at(-1)?.text).toBe("Привет");
+  });
+
+  it("если ответа нет 15 секунд, говорит, что ничего не изменено", async () => {
+    vi.useFakeTimers();
+    try {
+      const api = fakeApi();
+      const store = await open(api);
+      vi.mocked(api.command).mockImplementationOnce(() => new Promise(() => {}));
+      store.send("как дела?");
+      await vi.advanceTimersByTimeAsync(16_000);
+      expect(store.state.msgs.some((m) => m.text.includes("Долго отвечаю. Ничего не изменено"))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("проверяет ветки kindOf, toEntry, toAd и profile failure", async () => {
     const historyLines = [
       { ref: "change-1", at: "2026-11-01T10:00:00Z", source: "experiment", kind: "test", target: "ad:99", status: "applied", explanation: "Тест", before: {}, after: {}, rules_version: null },

@@ -228,3 +228,39 @@ def test_unclear_part_stops_the_whole_message() -> None:
     assert len(same) == 1 and same[0].question == QUESTION_ONE_EACH
     many = parse_all("пауза, включи, бюджет 10к, как дела", KNOWN, RULES2)
     assert len(many) == 1 and many[0].question == QUESTION_ONE_EACH
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("бюджет 15 тысяч 500 рублей", (15500,)),
+        ("бюджет 15 тыс 500", (15500,)),
+        ("поставь бюджет 1,5 млн", (1_500_000,)),
+        ("бюджет 2 млн", (2_000_000,)),
+        ("бюджет сто тысяч", (100_000,)),
+        ("бюджет двадцать тысяч", (20_000,)),
+        ("бюджет пятьдесят пять тысяч", (55_000,)),
+    ],
+)
+def test_amounts_compound_millions_and_words(text: str, expected: tuple[int, ...]) -> None:
+    assert amounts(text) == expected
+
+
+@pytest.mark.parametrize("text", ["поставь бюджет -5000", "бюджет минус 5000"])
+def test_negative_budget_is_refused_not_made_positive(text: str) -> None:
+    parsed = parse(text)
+    assert parsed.command.kind is Kind.UNKNOWN
+    assert "отрицательн" in parsed.question
+
+
+def test_budget_above_ceiling_is_a_question_not_a_command() -> None:
+    parsed = by_rules("бюджет 1000000", KNOWN, RULES2.max_chars, RULES2.max_budget)
+    assert parsed.command.kind is Kind.UNKNOWN
+    assert "500 000" in parsed.question
+    ok = by_rules("бюджет 500000", KNOWN, RULES2.max_chars, RULES2.max_budget)
+    assert ok.command.rubles == 500_000
+
+
+def test_budget_question_is_not_a_set_budget() -> None:
+    for text in ("Какой у меня сейчас бюджет?", "сколько осталось бюджета"):
+        assert parse(text).command.kind is Kind.BUDGET
