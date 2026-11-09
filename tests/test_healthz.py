@@ -130,6 +130,8 @@ async def test_spa_prevents_path_traversal(settings: Settings) -> None:
             start = await client.get("/start")
             assert start.status_code == 200
             assert "text/html" in start.headers.get("content-type", "")
+            # После выкладки страница должна перечитываться, иначе браузер покажет старый интерфейс.
+            assert start.headers.get("cache-control") == "no-cache"
 
             # Попытки выхода за границы frontend/dist не должны отдавать целевой файл
             traversal = await client.get("/../../pyproject.toml")

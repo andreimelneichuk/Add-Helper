@@ -242,6 +242,8 @@ def create_app(
             candidate = (root / full_path).resolve()
             if full_path and candidate.is_relative_to(root) and candidate.is_file():
                 return FileResponse(candidate)
-            return FileResponse(root / "index.html")
+            # Страница ссылается на файлы с хешем в имени: без этого заголовка браузер держит старую
+            # страницу и после выкладки показывает прежний интерфейс.
+            return FileResponse(root / "index.html", headers={"Cache-Control": "no-cache"})
 
     return app
