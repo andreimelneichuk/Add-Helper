@@ -367,7 +367,8 @@ export class Store {
   }
   confirm = () => { if (this.state.pending) this.run(this.state.pending); };
   decline = () => this.set({ pending: null });
-  goView = (view: View) => this.set({ view, mode: "panel", openAd: null });
+  // Итог действия относится к экрану, где его сделали: на другом разделе он только мешает.
+  goView = (view: View) => this.set({ view, mode: "panel", openAd: null, ...(view !== this.state.view ? { notice: "" } : {}) });
   openAdScreen = (id: string): void => this.set({ view: "ads", mode: "panel", openAd: id, notice: "" });
   // Вопрос с панели не переносим в чат: там он не был задан словами.
   openChat = (input = "") => this.set({ mode: "chat", notice: "", input, pending: this.state.mode === "panel" ? null : this.state.pending });

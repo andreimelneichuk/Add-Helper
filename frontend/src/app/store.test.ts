@@ -877,3 +877,14 @@ describe("хранилище прототипа", () => {
     expect(store.state.step).toBe(2);
   });
 });
+
+describe("итог действия при смене раздела", () => {
+  it("сообщение об итоге уходит при переходе на другой раздел и остаётся на том же", () => {
+    const store = new MockStore();
+    store.set({ view: "ads", notice: "Отправил объявление в архив." });
+    store.goView("ads");
+    expect(store.state.notice).toBe("Отправил объявление в архив.");
+    store.goView("stats");
+    expect(store.state.notice).toBe("");
+  });
+});
