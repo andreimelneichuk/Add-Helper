@@ -177,6 +177,58 @@ function BudgetStep({ store, s }: StepProps) {
   );
 }
 
+const MODES: { id: "watch" | "confirm"; name: string; hint: string }[] = [
+  { id: "watch", name: "Смотрит", hint: "Только показывает, что бы я сделал. Ничего не меняю." },
+  { id: "confirm", name: "Предлагает", hint: "Предлагаю действия, вы подтверждаете каждое." },
+];
+
+function AutopilotStep({ store, s }: StepProps) {
+  const [check, setCheck] = useState("");
+  const [note, setNote] = useState("");
+  const ap = s.autopilot;
+  const set = (patch: Partial<typeof ap>) => store.set({ autopilot: { ...ap, ...patch }, block: "" });
+  const estimate = async () => {
+    const n = Number(check);
+    if (!Number.isInteger(n) || n < 1) { setNote("Укажите средний чек в рублях."); return; }
+    if (n > 1_000_000) { setNote("Чек больше миллиона рублей я посчитать не могу, введите цену обращения сами."); return; }
+    try {
+      const r = await store.reader?.economicsEstimate?.(n);
+      if (r?.goal_rubles) { if (ap.goal) setNote(`${r.how} Вашу цифру не меняю.`); else { set({ goal: String(r.goal_rubles) }); setNote(r.how); } } else setNote("Не удалось посчитать, введите сумму сами.");
+    } catch { setNote("Не удалось посчитать, введите сумму сами."); }
+  };
+  return (
+    <>
+      <div className="st-budgets" role="radiogroup" aria-label="Как работать с рекламой">
+        {MODES.map((m) => (
+          <button key={m.id} type="button" role="radio" aria-checked={ap.mode === m.id} className="st-budget" onClick={() => set({ mode: m.id })}>
+            <strong>{m.name}</strong>
+            <span>{m.hint}</span>
+          </button>
+        ))}
+      </div>
+      <p className="ah-muted">Режим «Сам» включается отдельно, когда накопится история работы.</p>
+      <div className="st-budgets" role="radiogroup" aria-label="Как часто смотреть">
+        {([["daily", "Каждый день"], ["weekly", "Раз в неделю"]] as const).map(([id, name]) => (
+          <button key={id} type="button" role="radio" aria-checked={ap.cadence === id} className="st-budget" onClick={() => set({ cadence: id })}>
+            <strong>{name}</strong>
+          </button>
+        ))}
+      </div>
+      <label className="st-budget-own">
+        <span className="ah-label">Сколько готовы платить за одно обращение, ₽</span>
+        <input className="ah-input" inputMode="numeric" autoComplete="off" value={ap.goal} onChange={(e) => set({ goal: e.target.value.replace(/\D/g, "").slice(0, 7) })} />
+      </label>
+      <label className="st-budget-own">
+        <span className="ah-label">Или назовите средний чек, подскажу, ₽</span>
+        <input className="ah-input" inputMode="numeric" autoComplete="off" value={check} onChange={(e) => setCheck(e.target.value.replace(/\D/g, "").slice(0, 7))} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void estimate(); } }} />
+      </label>
+      <button type="button" className="ah-btn" onClick={estimate}>Подсказать</button>
+      {note && <p className="ah-muted">{note}</p>}
+      <p className="ah-muted">Без этой цифры мне не с чем сравнивать результат, поэтому шаг без неё не пройти.</p>
+    </>
+  );
+}
+
 function AdsStep({ store, s }: StepProps) {
   if (store.writer) return <RealAds store={store} s={s} />;
   return <MockAds store={store} s={s} />;
@@ -319,6 +371,7 @@ const BODIES: Record<keyof typeof STEP, ComponentType<StepProps>> = {
   site: AboutStep,
   profile: ProfileStep,
   budget: BudgetStep,
+  autopilot: AutopilotStep,
   ads: AdsStep,
   cabinet: YandexStep,
   marking: InnStep,

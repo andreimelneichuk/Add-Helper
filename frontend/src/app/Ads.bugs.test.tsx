@@ -67,7 +67,7 @@ describe("Объявления и генерация: регрессии (BUG-�
       const store = new MockStore(initialState("start"));
       store.set({
         site: "salon.ru",
-        step: 3,
+        step: 4,
         ads: [{ tag: "", tagTone: "accent", leads: 0, cost: 0, id: "a1", name: "Реклама 1", title: "Заголовок 1", hook: "Крючок", text: "Текст", facts: "Факты" }],
         draftOff: {},
       });
@@ -83,7 +83,7 @@ describe("Объявления и генерация: регрессии (BUG-�
     it("26.1: renders explicit status badges for kept and dropped ads", () => {
       const store = new MockStore(initialState("start"));
       store.set({
-        step: 3,
+        step: 4,
         ads: [
           { tag: "", tagTone: "accent", leads: 0, cost: 0, id: "a1", name: "Объявление 1", title: "Объявление 1", hook: "Крючок", text: "Текст 1", facts: "Факты" },
           { tag: "", tagTone: "accent", leads: 0, cost: 0, id: "a2", name: "Объявление 2", title: "Объявление 2", hook: "Крючок", text: "Текст 2", facts: "Факты" },
@@ -101,12 +101,12 @@ describe("Объявления и генерация: регрессии (BUG-�
       const store = new MockStore(initialState("start"));
       store.writer = {} as any;
       store.set({
-        step: 3,
+        step: 4,
         ads: [],
         block: "Лимит на генерацию объявлений исчерпан. Попробуйте позже.",
       });
       store.next();
-      expect(store.state.step).toBe(4);
+      expect(store.state.step).toBe(5);
     });
   });
 
@@ -118,7 +118,7 @@ describe("Объявления и генерация: регрессии (BUG-�
         writeAds: async (p: unknown) => { capturedProfile = p; return { id: 10, token: "tok", status: "ready" }; },
         adSet: async () => ({ id: 10, status: "ready", source: "model", template: false, needs_review: false, problem_text: null, ads: [] }),
       } as any;
-      store.set({ step: 3, ads: [{ tag: "", tagTone: "accent", leads: 0, cost: 0, id: "a1", name: "Реклама 1", title: "Заголовок", hook: "", text: "", facts: "" }] });
+      store.set({ step: 4, ads: [{ tag: "", tagTone: "accent", leads: 0, cost: 0, id: "a1", name: "Реклама 1", title: "Заголовок", hook: "", text: "", facts: "" }] });
       await store.writeAds(true);
       expect(capturedProfile?.force).toBe(true);
     });

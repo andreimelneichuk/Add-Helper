@@ -38,7 +38,9 @@ function GuestStart() {
         site: draft.site || savedSite,
         facts: draft.facts,
         f: { ...initialState("start").f, budget: draft.budget },
-        step: draft.step ?? STEP.site,
+        // Черновик старого порядка шагов (без версии): после «Бюджета» появился «Автопилот».
+        step: draft.v === 2 || draft.step === undefined || draft.step <= STEP.budget ? (draft.step ?? STEP.site) : draft.step + 1,
+        ...(draft.autopilot ? { autopilot: { ...initialState("start").autopilot, ...draft.autopilot, goal: String(draft.autopilot.goal) } } : {}),
         draftOff: draft.draftOff ?? {},
         createAsNew: isNew ? true : draft.createAsNew,
       } : {}),

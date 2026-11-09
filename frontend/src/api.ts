@@ -320,6 +320,8 @@ export function createGuestApi() {
     siteRead: (id: number, token: string, init?: RequestInit) =>
       request<SiteRead>(`/api/site-reads/${id}`, { ...init, headers: { "X-Read-Token": token } }),
     budgetOptions: () => request<{ min: number; max: number; presets: number[] }>("/api/budget-plan/options"),
+    /** Допустимая цена обращения по ориентирам: считает сервис, до входа. */
+    economicsEstimate: (check: number) => request<{ check_rubles: number; goal_rubles: number | null; how: string }>(`/api/economics/estimate?check=${check}`),
     writeAds: (profile: AdDraftProfile) =>
       request<{ id: number; token: string; status: string }>("/api/creative-sets", { method: "POST", body: JSON.stringify(profile) }),
     adSet: (id: number, token: string, init?: RequestInit) =>

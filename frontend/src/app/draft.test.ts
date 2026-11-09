@@ -27,6 +27,24 @@ function deps(over: Partial<TransferDeps> = {}) {
 }
 
 describe("черновик запуска", () => {
+  it("настройки автопилота и цена обращения переживают вход", async () => {
+    const saveAutopilot = vi.fn(async () => ({}));
+    const setGoal = vi.fn(async () => ({}));
+    const { full } = deps({ business: () => ({ saveProfile: vi.fn(), saveBudgetPlan: vi.fn(), saveAutopilot, setGoal }) });
+    await transferDraft(full, { ...draft, autopilot: { mode: "watch", cadence: "weekly", goal: 450 } });
+    expect(saveAutopilot).toHaveBeenCalledWith({ mode: "watch", cadence: "weekly" });
+    expect(setGoal).toHaveBeenCalledWith(450);
+  });
+
+  it("без шага автопилота (старый черновик) настройки не трогаются", async () => {
+    const saveAutopilot = vi.fn(async () => ({}));
+    const setGoal = vi.fn(async () => ({}));
+    const { full } = deps({ business: () => ({ saveProfile: vi.fn(), saveBudgetPlan: vi.fn(), saveAutopilot, setGoal }) });
+    await transferDraft(full, draft);
+    expect(saveAutopilot).not.toHaveBeenCalled();
+    expect(setGoal).not.toHaveBeenCalled();
+  });
+
   it("свои выключенные объявления переносятся без включения, а правки не меняют выбор", async () => {
     const createWizardAd = vi.fn().mockResolvedValue({ id: "w1" });
     const updateWizardAd = vi.fn().mockResolvedValue({ id: "w0" });

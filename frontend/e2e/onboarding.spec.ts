@@ -136,7 +136,14 @@ test.describe("Задача 15. Онбординг клиента (onboarding.sp
     await expect(page.getByRole("heading", { level: 1, name: "Сколько готовы тратить в месяц?" })).toBeVisible();
     await page.getByRole("button", { name: "Продолжить" }).click();
 
-    // === ШАГ 3: «Реклама» ===
+    // === ШАГ 3: «Автопилот» ===
+    await expect(page.getByRole("heading", { level: 1, name: "Как мне работать с вашей рекламой?" })).toBeVisible();
+    await page.getByRole("button", { name: "Продолжить" }).click();
+    await expect(page.getByRole("alert")).toContainText("за одно обращение");
+    await page.getByLabel("Сколько готовы платить за одно обращение, ₽").fill("500");
+    await page.getByRole("button", { name: "Продолжить" }).click();
+
+    // === ШАГ 4: «Реклама» ===
     await expect(page.getByRole("heading", { level: 1, name: "Вот ваши объявления" })).toBeVisible();
 
     // 16. Ожидание завершения генерации объявлений
@@ -163,11 +170,15 @@ test.describe("Задача 15. Онбординг клиента (onboarding.sp
       await expect(ads.nth(i)).not.toHaveClass(/is-off/);
     }
 
-    // 18. Кнопка «Назад» на шаге рекламы возвращает на шаг бюджета
+    // 18. «Назад» с рекламы ведёт на автопилот, ещё раз «Назад» на бюджет; введённая цена обращения не теряется
+    await page.getByRole("button", { name: "Назад" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Как мне работать с вашей рекламой?" })).toBeVisible();
+    await expect(page.getByLabel("Сколько готовы платить за одно обращение, ₽")).toHaveValue("500");
     await page.getByRole("button", { name: "Назад" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Сколько готовы тратить в месяц?" })).toBeVisible();
 
     // Возврат на шаг рекламы
+    await page.getByRole("button", { name: "Продолжить" }).click();
     await page.getByRole("button", { name: "Продолжить" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Вот ваши объявления" })).toBeVisible();
 
@@ -194,6 +205,9 @@ test.describe("Задача 15. Онбординг клиента (onboarding.sp
 
     // 3. Выбор бюджета
     await expect(page.getByRole("heading", { level: 1, name: "Сколько готовы тратить в месяц?" })).toBeVisible();
+    await page.getByRole("button", { name: "Продолжить" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Как мне работать с вашей рекламой?" })).toBeVisible();
+    await page.getByLabel("Сколько готовы платить за одно обращение, ₽").fill("500");
     await page.getByRole("button", { name: "Продолжить" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Вот ваши объявления" })).toBeVisible();
 

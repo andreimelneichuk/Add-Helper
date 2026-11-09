@@ -23,7 +23,7 @@ from adhelper.api.cabinet import cabinet_router
 from adhelper.api.chat import chat_router
 from adhelper.api.control import control_router
 from adhelper.api.display import display_router
-from adhelper.api.economics import economics_router
+from adhelper.api.economics import economics_router, public_economics_router
 from adhelper.api.experiments import experiments_router
 from adhelper.api.healthz import router as healthz_router
 from adhelper.api.images import images_router
@@ -197,6 +197,7 @@ def create_app(
     app.include_router(experiments_router())
     app.include_router(autopilot_router())
     app.include_router(economics_router())
+    app.include_router(public_economics_router())
     app.state.guest_secret = _guest_secret(settings)
     # Без DIRECT_ENABLED действия с площадкой честно отвечают 503.
     platforms = build_direct_platforms(

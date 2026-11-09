@@ -37,6 +37,28 @@ describe("экран запуска", () => {
     expect(store.state.f.budget).toBe(32000);
   });
 
+  it("шаг «Автопилот»: без цены обращения не пройти, с ней идём к объявлениям и положение запоминается", async () => {
+    const { store, user } = setup({ step: 3 });
+    expect(screen.getByRole("radio", { name: /Предлагает/ })).toBeChecked();
+    await user.click(screen.getByRole("radio", { name: /Смотрит/ }));
+    await user.click(button("Продолжить"));
+    expect(store.state.step).toBe(3);
+    expect(screen.getByRole("alert")).toHaveTextContent("за одно обращение");
+    await user.type(screen.getByLabelText("Сколько готовы платить за одно обращение, ₽"), "450");
+    await user.click(button("Продолжить"));
+    expect(store.state.step).toBe(4);
+    expect(store.state.autopilot).toMatchObject({ mode: "watch", cadence: "daily", goal: "450" });
+  });
+
+  it("шаг «Автопилот»: ориентир по среднему чеку считает сервис и подставляет в поле", async () => {
+    const { store, user } = setup({ step: 3 });
+    store.reader = { readSite: vi.fn(), siteRead: vi.fn(), economicsEstimate: vi.fn(async () => ({ check_rubles: 3000, goal_rubles: 420, how: "Чек × доли." })) };
+    await user.type(screen.getByLabelText("Или назовите средний чек, подскажу, ₽"), "3000");
+    await user.click(button("Подсказать"));
+    expect(await screen.findByText("Чек × доли.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Сколько готовы платить за одно обращение, ₽")).toHaveValue("420");
+  });
+
   it("факт можно изменить прямо в карточке: источник меняется, Enter не уводит с шага", async () => {
     const { store, user } = setup({ step: 1 });
     await user.click(button("Изменить: Когда работаете"));
@@ -92,6 +114,9 @@ describe("экран запуска", () => {
     heading("Сколько готовы тратить в месяц?");
     expect(document.activeElement).toBe(heading("Сколько готовы тратить в месяц?"));
     await user.click(button("Продолжить"));
+    heading("Как мне работать с вашей рекламой?");
+    await user.type(screen.getByLabelText("Сколько готовы платить за одно обращение, ₽"), "500");
+    await user.click(button("Продолжить"));
     heading("Вот ваши объявления");
     await user.click(button("Нравится"));
     heading("Подключите кабинет Яндекса");
@@ -111,48 +136,48 @@ describe("экран запуска", () => {
   });
 
   it("кнопка «Назад» возвращает на шаг и снимает причину блокировки", async () => {
-    const { store, user } = setup({ step: 4, block: "Подключите кабинет Яндекса." });
+    const { store, user } = setup({ step: 5, block: "Подключите кабинет Яндекса." });
     await user.click(button("Назад"));
-    expect(store.state.step).toBe(3);
+    expect(store.state.step).toBe(4);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("каждое подключение это свой шаг, без него дальше не пройти", async () => {
-    const { store, user } = setup({ step: 4 });
+    const { store, user } = setup({ step: 5 });
     const blocked = async (step: number, why: string) => {
       await user.click(button("Продолжить"));
       expect(store.state.step).toBe(step);
       expect(screen.getByRole("alert")).toHaveTextContent(why);
     };
-    await blocked(4, "Подключите кабинет");
+    await blocked(5, "Подключите кабинет");
     await user.click(button("Подключено"));
     expect(screen.getByText(/логин salon-primer/)).toBeInTheDocument();
     await user.click(button("Продолжить"));
 
-    await blocked(5, "10 или 12 цифр");
+    await blocked(6, "10 или 12 цифр");
     const inn = screen.getByLabelText("ИНН для маркировки");
     expect(inn).toHaveAttribute("inputmode", "numeric");
     await user.type(inn, "77a01б");
     expect(inn).toHaveValue("7701");
-    await blocked(5, "10 или 12 цифр");
+    await blocked(6, "10 или 12 цифр");
     await user.type(inn, "234567");
     await user.click(button("Продолжить"));
 
-    await blocked(6, "Проверьте установку");
+    await blocked(7, "Проверьте установку");
     await user.click(button("Проверить установку"));
     await user.click(button("Продолжить"));
-    expect(store.state.step).toBe(7);
+    expect(store.state.step).toBe(8);
   });
 
   it("письмо разработчику можно скопировать, его текст виден на экране", async () => {
-    const { user } = setup({ step: 6 });
+    const { user } = setup({ step: 7 });
     await user.click(button("Скопировать письмо разработчику"));
     expect(button("Письмо скопировано")).toBeInTheDocument();
     expect(screen.getByText(/код статистики Яндекс Метрики/)).toBeInTheDocument();
   });
 
   it("в сводке запуска есть счёт", () => {
-    setup({ step: 7 });
+    setup({ step: 8 });
     expect(launch().getByText("На счёте в Яндексе")).toBeInTheDocument();
   });
 
@@ -165,6 +190,8 @@ describe("экран запуска", () => {
     expect(screen.queryByText(/Примерно/)).not.toBeInTheDocument();
     expect(screen.getByText(/Прогноз обращений покажу/)).toBeInTheDocument();
     await user.click(button("Продолжить"));
+    await user.type(screen.getByLabelText("Сколько готовы платить за одно обращение, ₽"), "500");
+    await user.click(button("Продолжить"));
 
     await user.click(button(/^Убрать «Маникюр от 1\s200\s₽»$/));
     await user.click(button("Убрать «Педикюр рядом с домом»"));
@@ -172,7 +199,7 @@ describe("экран запуска", () => {
     expect(store.state.draftOff).toEqual({ a2: true, a3: false });
     await user.click(button("Нравится"));
 
-    act(() => store.set({ yandex: true, inn: "7701234567", metrica: true, step: 7 }));
+    act(() => store.set({ yandex: true, inn: "7701234567", metrica: true, step: 8 }));
 
     expect(launch().getByText(/25 000.*в месяц/)).toBeInTheDocument();
     expect(launch().getByText("2")).toBeInTheDocument();
@@ -181,14 +208,14 @@ describe("экран запуска", () => {
   });
 
   it("без объявлений дальше не пускает", async () => {
-    const { store, user } = setup({ step: 3, draftOff: { a1: true, a2: true, a3: true } });
+    const { store, user } = setup({ step: 4, draftOff: { a1: true, a2: true, a3: true } });
     await user.click(button("Нравится"));
-    expect(store.state.step).toBe(3);
+    expect(store.state.step).toBe(4);
     expect(screen.getByRole("alert")).toHaveTextContent("Оставьте хотя бы одно объявление.");
     await user.click(button("Вернуть «Первый визит со скидкой»"));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     await user.click(button("Нравится"));
-    expect(store.state.step).toBe(4);
+    expect(store.state.step).toBe(5);
   });
 
   it("чат и подсказка 'Можно спросить в чате' отключены на этапе онбординга", () => {
@@ -332,7 +359,7 @@ describe("бюджет и вход в настоящем запуске", () => 
   });
 
   it("вход уносит черновик с собой и возвращает в запуск", async () => {
-    const { store, user } = real({ step: 4, f: { ...initialState().f, budget: 30000 } });
+    const { store, user } = real({ step: 5, f: { ...initialState().f, budget: 30000 } });
     await user.click(button("Продолжить"));
     expect(screen.getByRole("alert")).toHaveTextContent("Войдите через Яндекс");
     await user.click(button("Войти через Яндекс"));
@@ -352,7 +379,7 @@ describe("бюджет и вход в настоящем запуске", () => 
       business: vi.fn(() => ({ saveProfile, saveBudgetPlan })),
     };
     await act(() => store.resume(deps, null));
-    expect(store.state.step).toBe(4);
+    expect(store.state.step).toBe(5);
     expect(saveBudgetPlan).toHaveBeenCalledWith(30000);
     expect(screen.getByText(/Вы вошли: anna@example.ru/)).toBeInTheDocument();
     expect(screen.getByText(/профиль и бюджет сохранены/i)).toBeInTheDocument();
@@ -380,7 +407,7 @@ describe("бюджет и вход в настоящем запуске", () => 
     saveDraft({ site: "https://nogti.ru/", facts, budget: 30000 });
     const deps: TransferDeps = { session: vi.fn(async () => null), createBusiness: vi.fn(), business: vi.fn() };
     await act(() => store.resume(deps, "denied"));
-    expect(store.state.step).toBe(4);
+    expect(store.state.step).toBe(5);
     expect(store.state.facts).toEqual(facts);
     expect(screen.getByRole("alert")).toHaveTextContent("Вход не состоялся");
     expect(loadDraft()).not.toBeNull();
@@ -454,13 +481,13 @@ describe("шаги после входа на сервисе", () => {
     expect(loadWizard()).toBe("b1");
     await waitFor(() => expect(screen.getByText("Кабинет подключён: anna")).toBeInTheDocument());
     await userEvent.click(button("Продолжить"));
-    expect(store.state.step).toBe(5);
+    expect(store.state.step).toBe(6);
     expect(store.navigate).not.toHaveBeenCalled();
   });
 
   it("кабинет подключается через Яндекс с возвратом в мастер", async () => {
     const api = wizardApi();
-    const { store, user } = wizard(4, api);
+    const { store, user } = wizard(5, api);
     await user.click(await screen.findByRole("button", { name: "Подключить кабинет" }));
     expect(api.connect).toHaveBeenCalledWith("start");
     expect(store.navigate).toHaveBeenCalledWith("https://oauth.yandex.ru/authorize?x=1");
@@ -468,7 +495,7 @@ describe("шаги после входа на сервисе", () => {
 
   it("кабинет подключается через ручной токен доступа", async () => {
     const api = wizardApi();
-    const { store, user } = wizard(4, api);
+    const { store, user } = wizard(5, api);
     const tokenInput = await screen.findByPlaceholderText("Вставьте токен доступа из адресной строки");
     await user.type(tokenInput, "y0_manual_token_secret");
     await user.click(screen.getByRole("button", { name: "Сохранить токен" }));
@@ -479,15 +506,15 @@ describe("шаги после входа на сервисе", () => {
 
   it("на шаге 4 блокирует переход без подключения кабинета", async () => {
     const api = wizardApi();
-    const { store, user } = wizard(4, api);
+    const { store, user } = wizard(5, api);
     await user.click(button("Продолжить"));
-    expect(store.state.step).toBe(4);
+    expect(store.state.step).toBe(5);
     expect(await screen.findByRole("alert")).toHaveTextContent("Подключите кабинет Директа");
   });
 
   it("подключённый кабинет виден по логину и считается в подключениях", async () => {
     const api = wizardApi({ accounts: vi.fn(async () => [{ id: "a", platform: "yandex_direct", login: "anna-direct", scopes: [], state: "connected" }]) });
-    wizard(4, api);
+    wizard(5, api);
     expect(await screen.findByText("Кабинет подключён: anna-direct")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Сохранить токен" })).not.toBeInTheDocument();
     expect(side().getByText("1 из 3")).toBeInTheDocument();
@@ -495,12 +522,12 @@ describe("шаги после входа на сервисе", () => {
 
   it("отсутствие реквизитов маркировки в Директе держит на шаге и предлагает перейти в Яндекс", async () => {
     const api = wizardApi({ marking: vi.fn(async () => ({ saved: null })) });
-    const { store, user } = wizard(5, api);
+    const { store, user } = wizard(6, api);
     expect(await screen.findByText("Реквизиты рекламодателя для маркировки")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Перейти в Яндекс Директ" })).toBeInTheDocument();
     await user.click(button("Продолжить"));
     expect(await screen.findByRole("alert")).toHaveTextContent("Укажите реквизиты рекламодателя в кабинете Директа");
-    expect(store.state.step).toBe(5);
+    expect(store.state.step).toBe(6);
   });
 
   it("реквизиты из Директа отображаются подтверждёнными и позволяют идти дальше", async () => {
@@ -509,18 +536,18 @@ describe("шаги после входа на сервисе", () => {
         saved: { kind: "legal" as const, inn: "••••3893", name: "ООО «Ноготки»", phone: null, okved: "96.02" },
       })),
     });
-    const { store, user } = wizard(5, api);
+    const { store, user } = wizard(6, api);
     expect(await screen.findByText(/Реквизиты указаны в Директе: ИНН ••••3893/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Проверено" })).toBeInTheDocument();
     await user.click(button("Продолжить"));
-    expect(store.state.step).toBe(6);
+    expect(store.state.step).toBe(7);
   });
 
   it("код статистики проверяет сервис и ждёт воркер", async () => {
     let calls = 0;
     const tagCheck = vi.fn(async () => (calls++ === 0 ? { check: null, site: "https://nogti.ru/" } : { check: found, site: "https://nogti.ru/" }));
     const api = wizardApi({ tagCheck });
-    const { store, user } = wizard(6, api);
+    const { store, user } = wizard(7, api);
     await user.click(await screen.findByRole("button", { name: "Проверить установку" }));
     expect(api.requestTagCheck).toHaveBeenCalled();
     expect(await screen.findByText(/Код найден на сайте, счётчик 98765432/)).toBeInTheDocument();
@@ -529,14 +556,14 @@ describe("шаги после входа на сервисе", () => {
 
   it("кода нет: честно про Tag Manager, письмо с адресом сайта", async () => {
     const api = wizardApi({ tagCheck: vi.fn(async () => ({ check: { ...found, status: "missing" as const, counters: [] }, site: "https://nogti.ru/" })) });
-    const { user } = wizard(6, api);
+    const { user } = wizard(7, api);
     expect(await screen.findByText(/Google Tag Manager/)).toBeInTheDocument();
     await user.click(button("Скопировать письмо разработчику"));
     expect(screen.getByText(/на сайт https:\/\/nogti.ru\/ код счётчика/)).toBeInTheDocument();
   });
 
   it("без сайта код не нужен", async () => {
-    const { store } = wizard(6, wizardApi({ tagCheck: vi.fn(async () => ({ check: null, site: "" })) }));
+    const { store } = wizard(7, wizardApi({ tagCheck: vi.fn(async () => ({ check: null, site: "" })) }));
     expect(await screen.findByText(/В профиле нет сайта/)).toBeInTheDocument();
     expect(store.state.metrica).toBe(true);
   });
@@ -552,7 +579,7 @@ describe("шаги после входа на сервисе", () => {
       launch_text: "Создавать кампании в Яндексе сервис начнёт, когда Яндекс откроет доступ к API.",
     }));
     const { saveDraft } = await import("../draft");
-    const { store, user } = wizard(7, wizardApi({ launchCheck }));
+    const { store, user } = wizard(8, wizardApi({ launchCheck }));
     saveDraft({ site: "x", facts: [], budget: 1 });
     expect(heading("Что готово к запуску")).toBeInTheDocument();
     const list = within(await screen.findByRole("list", { name: "Готовность к запуску" }));
@@ -572,7 +599,7 @@ describe("шаги после входа на сервисе", () => {
       .mockResolvedValueOnce({ items: [ready], ready: true, launch_available: true, launched: null, launch_text: "Нажмите «Запустить рекламу»" })
       .mockResolvedValueOnce({ items: [ready], ready: true, launch_available: false, launched: "done", launch_text: "Реклама запущена: Яндекс проверяет объявления" });
     const startLaunch = vi.fn(async () => ({ status: "done" as const, campaigns: [{ name: "Ноготок: поиск и сайты (ah-1-1)", limit_rubles: 18000 }], text: "" }));
-    const { user } = wizard(7, wizardApi({ launchCheck, startLaunch }));
+    const { user } = wizard(8, wizardApi({ launchCheck, startLaunch }));
     await user.click(await screen.findByRole("button", { name: "Запустить рекламу" }));
     expect(startLaunch).toHaveBeenCalledTimes(1);
     const made = within(await screen.findByRole("list", { name: "Созданные кампании" }));
@@ -586,7 +613,7 @@ describe("шаги после входа на сервисе", () => {
     const startLaunch = vi.fn(async () => {
       throw new Error("В кабинете Яндекса уже есть кампании с лимитами");
     });
-    const { user } = wizard(7, wizardApi({ launchCheck, startLaunch }));
+    const { user } = wizard(8, wizardApi({ launchCheck, startLaunch }));
     await user.click(await screen.findByRole("button", { name: "Запустить рекламу" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("уже есть кампании");
     expect(screen.getByRole("button", { name: "Запустить рекламу" })).toBeEnabled();
@@ -603,7 +630,7 @@ describe("шаги после входа на сервисе", () => {
     const session = vi.fn(async () => ({ me: { email: "anna@example.ru", csrf_token: "c" }, businesses: [{ id: "other", name: "x" }, { id: "b1", name: "nogti.ru" }] }));
     await act(() => store.resumeConnect({ session, open }, "Подключить не получилось: ссылка устарела или Яндекс отказал."));
     expect(open).toHaveBeenCalledWith("b1", "c");
-    expect(store.state.step).toBe(4);
+    expect(store.state.step).toBe(5);
     expect(screen.getByRole("alert")).toHaveTextContent("Подключить не получилось");
   });
 
@@ -637,7 +664,7 @@ describe("объявления мастера на сервисе", () => {
       adSet: vi.fn(async () => written),
       ...over,
     };
-    const store = new MockStore({ ...initialState("start"), facts, site: "https://nogti.ru/", step: 2, ...patch });
+    const store = new MockStore({ ...initialState("start"), facts, site: "https://nogti.ru/", step: 3, autopilot: { ...initialState("start").autopilot, goal: "500" }, ...patch });
     store.reader = { readSite: vi.fn(), siteRead: vi.fn() };
     store.writer = writer;
     store.navigate = vi.fn();
@@ -653,7 +680,7 @@ describe("объявления мастера на сервисе", () => {
       niche: "маникюр", address: "", services: [{ name: "Маникюр", price: 1500 }], features: [],
     });
     expect(await screen.findByText("Маникюр за 1500 ₽")).toBeInTheDocument();
-    expect(store.state.step).toBe(3);
+    expect(store.state.step).toBe(4);
     expect(screen.getByText(/цена услуги «Маникюр», услуга из профиля/)).toBeInTheDocument();
     // Изображений у настоящих объявлений пока нет: подпись шага этого не обещает.
     expect(screen.getByText(/Изображения добавлю позже/)).toBeInTheDocument();
@@ -668,7 +695,7 @@ describe("объявления мастера на сервисе", () => {
     await user.click(button("Продолжить"));
     expect(await screen.findByText(/Пишу объявления по вашим фактам/)).toBeInTheDocument();
     await user.click(button("Нравится"));
-    expect(store.state.step).toBe(3);
+    expect(store.state.step).toBe(4);
     expect(screen.getByRole("alert")).toHaveTextContent("ещё пишутся");
     await act(async () => finish(written));
     expect(await screen.findByText("Маникюр рядом с домом")).toBeInTheDocument();
@@ -702,10 +729,10 @@ describe("объявления мастера на сервисе", () => {
     const { store, writer, user } = withWriter();
     await user.click(button("Продолжить"));
     await screen.findByText("Маникюр за 1500 ₽");
-    act(() => store.set({ step: 2 }));
+    act(() => store.set({ step: 3 }));
     await user.click(button("Продолжить"));
     expect(writer.writeAds).toHaveBeenCalledTimes(1);
-    act(() => store.set({ step: 2, facts: [...facts, { id: "n1", label: "Вы добавили", value: "Парковка", source: "от вас" }] }));
+    act(() => store.set({ step: 3, facts: [...facts, { id: "n1", label: "Вы добавили", value: "Парковка", source: "от вас" }] }));
     await user.click(button("Продолжить"));
     expect(writer.writeAds).toHaveBeenCalledTimes(2);
   });
@@ -715,7 +742,7 @@ describe("объявления мастера на сервисе", () => {
     await user.click(button("Продолжить"));
     await user.click(await screen.findByRole("button", { name: "Убрать «Маникюр за 1500 ₽»" }));
     await user.click(button("Нравится"));
-    expect(store.state.step).toBe(4);
+    expect(store.state.step).toBe(5);
     await user.click(button("Войти через Яндекс"));
     expect(loadDraft()?.ads).toEqual({ id: 7, token: "k", kept: [1] });
   });
@@ -752,7 +779,7 @@ describe("объявления мастера на сервисе", () => {
   });
 
   it("на шаге объявлений при ошибке есть кнопка возврата в профиль", async () => {
-    const { store, user } = setup({ step: 3, ads: [], block: "Добавьте хотя бы одну услугу: объявления пишу по услугам" });
+    const { store, user } = setup({ step: 4, ads: [], block: "Добавьте хотя бы одну услугу: объявления пишу по услугам" });
     expect(screen.getByText("К услугам")).toBeInTheDocument();
     await user.click(screen.getByText("К услугам"));
     expect(store.state.step).toBe(1);

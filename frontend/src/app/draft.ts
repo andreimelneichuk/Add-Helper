@@ -21,6 +21,10 @@ export type StartDraft = {
   customAds?: { id: string; headline: string; text: string; facts: string[] }[];
   /** Создать как новый бизнес, даже если у пользователя уже есть бизнесы. */
   createAsNew?: boolean;
+  /** Шаг «Автопилот»: положение, расписание и цена обращения в рублях. */
+  autopilot?: { mode: "watch" | "confirm"; cadence: "daily" | "weekly"; goal: number };
+  /** Версия порядка шагов: 2 — после «Бюджета» есть «Автопилот». */
+  v?: number;
 };
 
 export type TransferDeps = {
@@ -29,6 +33,8 @@ export type TransferDeps = {
   business: (id: string, csrf: string) => {
     saveProfile: (profile: Profile) => Promise<unknown>;
     saveBudgetPlan: (rubles: number) => Promise<unknown>;
+    saveAutopilot?: (body: { mode?: "watch" | "confirm"; cadence?: "daily" | "weekly" }) => Promise<unknown>;
+    setGoal?: (rubles: number) => Promise<unknown>;
     adoptAds?: (choice: AdsChoice) => Promise<unknown>;
     createWizardAd?: (body: { headline: string; text: string; active?: boolean; client_id?: string }) => Promise<unknown>;
     updateWizardAd?: (id: string, body: { headline: string; text: string }) => Promise<unknown>;
@@ -188,6 +194,11 @@ export async function transferDraft(deps: TransferDeps, draft: StartDraft): Prom
   saveDraft(progress);
   await api.saveProfile(draftProfile(draft));
   await api.saveBudgetPlan(draft.budget);
+  // Настройки автопилота и цена обращения переживают вход вместе с остальным черновиком.
+  if (draft.autopilot) {
+    await api.saveAutopilot?.({ mode: draft.autopilot.mode, cadence: draft.autopilot.cadence });
+    await api.setGoal?.(draft.autopilot.goal);
+  }
   if (draft.ads && api.adoptAds) {
     try {
       await api.adoptAds(draft.ads);

@@ -47,7 +47,7 @@ async def test_owner_check_replaces_profile_average_and_confirmation_is_explicit
     assert done.status_code == 200
     body = done.json()
     assert (body["check_rubles"], body["check_from_profile"]) == (3000, False)
-    assert body["goal_rubles"] == 175 or body["goal_rubles"] == 176  # 175,5 ₽
+    assert body["goal_rubles"] == 176  # 175,5 ₽ округляется к рублю вверх
     assert body["confirmed"] is True
     # Смена любого числа без повторного подтверждения возвращает «ориентир».
     again = await client.put(url, json={"margin_bp": 4000}, headers=csrf)
@@ -116,3 +116,13 @@ async def test_numbers_with_profile_prices_are_read_back(anna: Anna) -> None:
     done = (await client.put(url, json={**body, "confirm": True}, headers=csrf)).json()
     assert done["margin_bp"] == 4000
     assert (await client.get(url)).json()["margin_bp"] == 4000
+
+
+async def test_estimate_is_open_before_login_and_uses_the_same_formula(anna: Anna) -> None:
+    client, _, _ = anna
+    client.cookies.clear()
+    body = (await client.get("/api/economics/estimate?check=3000")).json()
+    assert body["goal_rubles"] == 176  # 175,5 ₽ округляется к рублю вверх
+    assert "3 000 ₽" in body["how"]
+    for bad in ("0", "-5", "abc", "2000000"):
+        assert (await client.get(f"/api/economics/estimate?check={bad}")).status_code == 422

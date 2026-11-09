@@ -23,7 +23,7 @@ import {
 
 describe("хранилище прототипа", () => {
   it("повтор сохранения нового сайта не переносит уже подтверждённое объявление заново", async () => {
-    const store = new Store({ ...initialState("start"), step: 4, account: { email: "anna@example.ru" } });
+    const store = new Store({ ...initialState("start"), step: 5, account: { email: "anna@example.ru" } });
     const createWizardAd = vi.fn().mockResolvedValueOnce({ id: "w0" }).mockRejectedValueOnce(new Error("Сеть недоступна")).mockResolvedValue({ id: "w1" });
     const createBusiness = vi.fn(async () => ({ id: "new", name: "Салон" }));
     store.reader = { readSite: vi.fn(), siteRead: vi.fn() };
@@ -46,7 +46,7 @@ describe("хранилище прототипа", () => {
   });
 
   it("новый сайт вошедшего владельца переносит свои объявления, правки и пустой выбор набора", async () => {
-    const store = new Store({ ...initialState("start"), step: 4, account: { email: "anna@example.ru" } });
+    const store = new Store({ ...initialState("start"), step: 5, account: { email: "anna@example.ru" } });
     const createWizardAd = vi.fn().mockResolvedValue({ id: "w1" });
     const updateWizardAd = vi.fn().mockResolvedValue({ id: "w0" });
     const adoptAds = vi.fn().mockResolvedValue({ kept: 0 });
@@ -103,24 +103,24 @@ describe("хранилище прототипа", () => {
 
   it("запуск не идёт дальше без кабинета, ИНН и кода", () => {
     const store = new MockStore(initialState("start"));
-    store.set({ site: "salon-primer.ru", step: 4 });
+    store.set({ site: "salon-primer.ru", step: 5 });
     store.next();
-    expect(store.state.step).toBe(4);
+    expect(store.state.step).toBe(5);
     expect(store.state.block).not.toBe("");
     store.set({ yandex: true, inn: "7700000000", metrica: true });
     store.next();
     store.next();
     store.next();
-    expect(store.state.step).toBe(7);
+    expect(store.state.step).toBe(8);
     store.next();
     expect(store.state.stage).toBe("work");
   });
 
   it("запуск из чата не проходит, если сняты все объявления", () => {
     const store = new MockStore(initialState("start"));
-    store.set({ step: 3, draftOff: { a1: true, a2: true, a3: true } });
+    store.set({ step: 4, draftOff: { a1: true, a2: true, a3: true } });
     store.send("нравится");
-    expect(store.state.step).toBe(3);
+    expect(store.state.step).toBe(4);
     expect(store.state.block).not.toBe("");
   });
 
@@ -175,7 +175,7 @@ describe("хранилище прототипа", () => {
     expect(store.state.block).toContain("Больше 100 000 ₽ в месяц здесь не ставлю");
 
     // Шаг 3 с писателем объявлений
-    store.set({ step: 3, budgetDraft: null });
+    store.set({ step: 4, budgetDraft: null });
     store.writer = { writeAds: vi.fn(), adSet: vi.fn() };
     store.set({ writing: "asking" });
     store.next();
@@ -199,28 +199,28 @@ describe("хранилище прототипа", () => {
     store.navigate = vi.fn();
 
     // Шаг 4 без входа
-    store.set({ step: 4, account: null });
+    store.set({ step: 5, account: null });
     store.next();
     expect(store.state.block).toContain("Войдите через Яндекс");
 
     // Шаг 4 без wizard -> редирект
-    store.set({ step: 4, account: { email: "anna@ya.ru" } });
+    store.set({ step: 5, account: { email: "anna@ya.ru" } });
     store.wizard = null;
     store.next();
     expect(store.navigate).toHaveBeenCalledWith("/");
 
     // Шаг 5 сохранение маркировки
     store.wizard = { accounts: vi.fn(), availableAccounts: vi.fn(), attachAccount: vi.fn(), connect: vi.fn(), marking: vi.fn(), saveMarking, tagCheck: vi.fn(), requestTagCheck: vi.fn(), launchCheck: vi.fn(), startLaunch: vi.fn(), wizardAds: vi.fn(), manualTokenLink: vi.fn(), saveManualToken: vi.fn() };
-    store.set({ step: 5, inn: "7701234567", advertiser: { kind: "legal", name: "ООО Салон", phone: "", okved: "96.02" } });
+    store.set({ step: 6, inn: "7701234567", advertiser: { kind: "legal", name: "ООО Салон", phone: "", okved: "96.02" } });
     store.next();
     await new Promise((r) => setTimeout(r, 10));
     expect(saveMarking).toHaveBeenCalledWith({ kind: "legal", inn: "7701234567", name: "ООО Салон", okved: "96.02" });
     expect(store.state.marked).toBe(true);
-    expect(store.state.step).toBe(6);
+    expect(store.state.step).toBe(7);
 
     // Шаг 6 переход к сводке
     store.next();
-    expect(store.state.step).toBe(7);
+    expect(store.state.step).toBe(8);
 
     // Последний шаг мастера
     store.next();
@@ -270,7 +270,7 @@ describe("хранилище прототипа", () => {
     const store2 = new MockStore(initialState("start"));
     window.localStorage.setItem("adhelper.startDraft", JSON.stringify({ site: "test.ru", facts: [], budget: 10000 }));
     await store2.resume({ session: vi.fn(async () => null), createBusiness: vi.fn(), business: vi.fn() } as any, null);
-    expect(store2.state.step).toBe(4);
+    expect(store2.state.step).toBe(5);
 
     // resumeConnect когда бизнес не найден
     const store3 = new MockStore(initialState("start"));
@@ -664,38 +664,38 @@ describe("хранилище прототипа", () => {
 
     // Шаг 3: writer в процессе генерации, пустые объявления, все объявления отключены
     store.writer = { writeAds: vi.fn(), adSet: vi.fn() };
-    store.set({ step: 3, writing: { id: 1, token: "tok" }, ads: [] });
+    store.set({ step: 4, writing: { id: 1, token: "tok" }, ads: [] });
     store.next();
     expect(store.state.block).toContain("Объявления ещё пишутся");
 
-    store.set({ step: 3, writing: null, ads: [] });
+    store.set({ step: 4, writing: null, ads: [] });
     store.next();
     expect(store.state.block).toContain("Объявлений пока нет");
 
-    store.set({ step: 3, writing: null, ads: [{ id: "a1", name: "1" } as any], draftOff: { a1: true } });
+    store.set({ step: 4, writing: null, ads: [{ id: "a1", name: "1" } as any], draftOff: { a1: true } });
     store.next();
     expect(store.state.block).toContain("Оставьте хотя бы одно объявление");
 
     // Шаги nextReal: 4 без account, 4 без wizard, 5 с marked: true, 5 с person (phone), 6, и финал
-    store.set({ step: 4, account: null, draftOff: {} });
+    store.set({ step: 5, account: null, draftOff: {} });
     store.next();
     expect(store.state.block).toContain("Войдите через Яндекс");
 
-    store.set({ step: 4, account: { email: "a@ya.ru" } });
+    store.set({ step: 5, account: { email: "a@ya.ru" } });
     store.wizard = null;
     store.navigate = vi.fn();
     store.next();
     expect(store.navigate).toHaveBeenCalledWith("/");
 
     // nextReal шаг 5: marked: true сразу переходит дальше
-    store.set({ step: 5, marked: true });
+    store.set({ step: 6, marked: true });
     store.wizard = { saveMarking: vi.fn() } as any;
     store.next();
-    expect(store.state.step).toBe(6);
+    expect(store.state.step).toBe(7);
 
     // nextReal шаг 5: advertiser person передаёт phone и не-Error ошибка
     store.set({
-      step: 5, marked: false, inn: "123456789012",
+      step: 6, marked: false, inn: "123456789012",
       advertiser: { kind: "person", name: "Иван", phone: "+7999", okved: "" },
     });
     store.wizard = { saveMarking: vi.fn().mockRejectedValue("строковая ошибка маркировки") } as any;
@@ -704,12 +704,12 @@ describe("хранилище прототипа", () => {
     expect(store.state.block).toContain("Сервис не ответил");
 
     // nextReal шаг 6
-    store.set({ step: 6, block: "" });
+    store.set({ step: 7, block: "" });
     store.next();
-    expect(store.state.step).toBe(7);
+    expect(store.state.step).toBe(8);
 
     // nextReal финал STEPS.length - 1
-    store.set({ step: 7 }); // STEPS.length - 1
+    store.set({ step: 8 }); // STEPS.length - 1
     store.navigate = vi.fn();
     store.next();
     expect(store.navigate).toHaveBeenCalledWith("/");
@@ -750,7 +750,7 @@ describe("хранилище прототипа", () => {
       createBusiness: vi.fn().mockResolvedValue({ id: "b1", name: "Б" }),
       business: vi.fn(() => ({ saveProfile: vi.fn(), saveBudgetPlan: vi.fn() })),
     } as any, null);
-    expect(resumedStore.state.step).toBe(4);
+    expect(resumedStore.state.step).toBe(5);
 
     // Второй вызов resume игнорируется
     await resumedStore.resume({} as any, null);
@@ -775,7 +775,7 @@ describe("хранилище прототипа", () => {
     const ipStore = new MockStore(initialState("start"));
     ipStore.reader = { readSite: vi.fn(), siteRead: vi.fn() };
     ipStore.set({
-      step: 5, marked: false, inn: "1234567890",
+      step: 6, marked: false, inn: "1234567890",
       advertiser: { kind: "ip", name: "ИП", phone: "", okved: "96.02" },
     });
     const mockSaveMarking = vi.fn().mockResolvedValue({});
@@ -849,7 +849,7 @@ describe("хранилище прототипа", () => {
     const mockSaveMarking = vi.fn().mockResolvedValue({});
     store.wizard = { saveMarking: mockSaveMarking } as any;
     store.set({
-      step: 5,
+      step: 6,
       marked: false,
       inn: "770708389380",
       advertiser: { kind: "person", name: "Иванов", phone: "+79991234567", okved: "" },

@@ -30,6 +30,7 @@ function summary(s: State, real: boolean) {
     { label: "Сайт", value: siteDisplay, title: site || undefined, on: !!site },
     { label: "Профиль", value: s.step > STEP.profile ? "подтверждён" : s.step === STEP.profile ? "на проверке" : "пока нет", on: s.step > STEP.profile },
     { label: "Бюджет", value: s.step > STEP.budget ? `${rub(Number(s.f.budget))} в месяц` : "пока нет", on: s.step > STEP.budget },
+    { label: "Автопилот", value: s.step > STEP.autopilot ? `${s.autopilot.mode === "watch" ? "смотрит" : "предлагает"}, ${Number(s.autopilot.goal) >= 1 ? `цена обращения ${rub(Number(s.autopilot.goal))}` : "цена не названа"}` : "пока нет", on: s.step > STEP.autopilot },
     { label: "Объявления", value: adsOn ? `${adsCount} готово` : "пока нет", on: adsOn },
     { label: "Подключения", value: `${links} из 3`, on: links === 3 },
   ];

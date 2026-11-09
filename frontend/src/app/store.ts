@@ -3,7 +3,7 @@ import { ApiError } from "../api";
 import type { AdDraftProfile, AdSet, AdvertiserKind, Api, ChatCommand, Me, Business, SiteFact, SiteRead, UndoPreview, WizardAd } from "../api";
 import { pollUntil } from "./polling";
 import { clearDraft, clearStartReading, clearWizard, draftProfile, loadDraft, loadWizard, saveDraft, saveStartReading, saveStartSite, transferDraft } from "./draft";
-import type { TransferDeps } from "./draft";
+import type { StartDraft, TransferDeps } from "./draft";
 import { leadsWord, MIN_BUDGET, rub, STEP, STEPS } from "./data";
 import { fixtures } from "./fixtures";
 import type { Ad, Day, Fact, HistoryEntry, HistoryKind, Live, Period, PeriodStats, SettingKey, Situation, View } from "./data";
@@ -93,6 +93,8 @@ export type WizardState = {
   writing: { id: number; token: string } | "asking" | null;
   /** Готовый набор мастера; facts — по каким фактам писали, чтобы не писать заново без правок. */
   adSet: { id: number; token: string; template: boolean; needsReview: boolean; facts: string } | null;
+  /** Шаг «Автопилот»: положение, расписание, цена обращения (текст поля) и ориентир сервиса. */
+  autopilot: { mode: "watch" | "confirm"; cadence: "daily" | "weekly"; goal: string };
 };
 
 /** Кабинет: объявления, история, период и настройки на экранах. */
@@ -142,6 +144,7 @@ const LOGIN_FAILED_OTHER = "Вход не состоялся. Черновик �
 export type GuestReader = {
   readSite: (url: string) => Promise<{ id: number; token: string; status: string; url: string }>;
   siteRead: (id: number, token: string, init?: RequestInit) => Promise<SiteRead>;
+  economicsEstimate?: (check: number) => Promise<{ check_rubles: number; goal_rubles: number | null; how: string }>;
 };
 
 /** Писатель объявлений до входа: POST /api/creative-sets и GET /api/creative-sets/{id}. */
@@ -195,7 +198,7 @@ export function initialState(stage: State["stage"] = "work", situation: Situatio
     hist: fixtures.histFor(situation), undone: {}, undoing: {}, asked: {}, undoInfo: {}, adsOff: {}, ads: fixtures.ADS, openAd: null, paused: false, topped: false, decided: null, extra: 0,
     metric: "cost", selDay: null, period: "week", filter: "all", clientsInput: "", clients: null,
     f: { services: "маникюр и педикюр", area: fixtures.TEXT.area, hours: "в часы работы", goal: 400, budget: 20000 },
-    site: "", codeCopied: false, inn: "", yandex: false, metrica: false, block: "", draftOff: {}, budgetDraft: null, facts: fixtures.FACTS, factEdit: null, reading: null, budgetOptions: null, account: null, advertiser: { kind: "legal", name: "", phone: "", okved: "" }, marked: false, writing: null, adSet: null,
+    site: "", codeCopied: false, inn: "", yandex: false, metrica: false, block: "", draftOff: {}, budgetDraft: null, facts: fixtures.FACTS, factEdit: null, reading: null, budgetOptions: null, account: null, advertiser: { kind: "legal", name: "", phone: "", okved: "" }, marked: false, writing: null, adSet: null, autopilot: { mode: "confirm", cadence: "daily", goal: "" },
     businesses: [], activeBusinessId: null, budgetMode: "separate", sharedBudget: null,
   };
 }
@@ -210,6 +213,12 @@ export function week(s: State) {
 }
 export const daysOf = (s: State): Day[] => s.live?.days ?? fixtures.DAYS[s.situation];
 export const statsOf = (s: State, period: Period): PeriodStats => s.live?.stats[period] ?? fixtures.STATS[period];
+/** Настройки автопилота в черновик: пока цена обращения не названа, их нет. */
+export const autopilotDraft = (s: WizardState): { autopilot?: StartDraft["autopilot"] } => {
+  const goal = Number(s.autopilot.goal);
+  return Number.isInteger(goal) && goal >= 1 ? { autopilot: { mode: s.autopilot.mode, cadence: s.autopilot.cadence, goal } } : {};
+};
+
 export const budgetOf = (s: State) => s.live?.budget ?? Number(s.f.budget) + s.extra;
 export const spentOf = (s: State) => (s.live ? (s.live.spent ?? 0) : fixtures.DAYS[s.situation].reduce((x, d) => x + d[0], 0));
 const STOPPING = new Set(["zero_balance", "balance_mismatch", "budget_stopped"]);
@@ -339,6 +348,8 @@ export class Store {
       facts: s.facts,
       budget: Number(s.f.budget),
       step: s.step,
+      v: 2,
+      ...autopilotDraft(s),
       draftOff: s.draftOff,
       customAds: s.ads.map((a) => ({ id: a.id, headline: a.title, text: a.text, facts: a.facts ? a.facts.split(", ") : [] })),
       ...(s.createAsNew || loadDraft()?.createAsNew ? { createAsNew: true } : {}),
@@ -533,7 +544,8 @@ export class Store {
     // Повтор после сбоя идёт в уже созданный бизнес, а не создаёт второй.
     const saved = loadDraft();
     const draft = saved?.businessId ? saved : {
-      site: s.site, facts: s.facts, budget: Number(s.f.budget), createAsNew: true,
+      site: s.site, facts: s.facts, budget: Number(s.f.budget), createAsNew: true, v: 2,
+      ...autopilotDraft(s),
       draftOff: s.draftOff,
       customAds: s.ads.map((a) => ({ id: a.id, headline: a.title, text: a.text, facts: a.facts ? a.facts.split(", ") : [] })),
       ...ads,
@@ -665,7 +677,11 @@ export class Store {
     if (s.step === STEP.profile && !s.facts.some((f) => f.field === "service" || f.id === "prices")) {
       return this.set({ block: "Добавьте хотя бы одну услугу: объявления пишу по услугам." });
     }
-    if (s.step === STEP.budget && this.writer) { this.advance("Пишу объявления по вашим фактам. Посмотрите их на вкладке «Настройка» и уберите лишние."); void this.writeAds(); return; }
+    if (s.step === STEP.autopilot) {
+      const goal = Number(s.autopilot.goal);
+      if (!Number.isInteger(goal) || goal < 1) return this.set({ block: "Укажите, сколько готовы платить за одно обращение: без этого мне не с чем сравнивать." });
+    }
+    if (s.step === STEP.autopilot && this.writer) { this.advance("Пишу объявления по вашим фактам. Посмотрите их на вкладке «Настройка» и уберите лишние."); void this.writeAds(); return; }
     if (s.step === STEP.ads && this.writer && s.writing) return this.set({ block: "Объявления ещё пишутся: это обычно меньше минуты." });
     if (s.step === STEP.ads && this.writer && !s.ads.length) {
       if (/писали|перегружен|лимит/i.test(s.block)) {

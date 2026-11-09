@@ -4,10 +4,10 @@
 «ориентиром». Площадку этот маршрут не затрагивает. docs/17-autopilot-plan.md, этап 3.
 """
 
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
 from adhelper.api.cabinet import Owned, OwnedChecked, _now, _sessions
@@ -74,6 +74,18 @@ async def _view(request: Request, business_id: UUID) -> dict[str, Any]:
     prices = [(s.name, s.price) for s in services if s.price]
     view = build_view(economics, stored.avg_check_micros if stored else None, prices)
     return _shown(view, economics)
+
+
+def public_economics_router() -> APIRouter:
+    """Ориентир до входа: шаг «Автопилот» мастера идёт раньше входа через Яндекс."""
+    router = APIRouter(prefix="/api/economics")
+
+    @router.get("/estimate")
+    async def estimate(check: Annotated[int, Query(ge=1, le=1_000_000)]) -> dict[str, Any]:
+        view = build_view(reference(load_economics_rules()), None, [("", check)])
+        return {"check_rubles": check, "goal_rubles": view.goal_rubles, "how": view.how}
+
+    return router
 
 
 def economics_router() -> APIRouter:

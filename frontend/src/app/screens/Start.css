@@ -118,7 +118,8 @@
 .st-budget { display: flex; flex-direction: column; gap: 4px; padding: var(--pad); border: 1px solid var(--line-strong); border-radius: var(--r-field); background: var(--panel); text-align: left; cursor: pointer; }
 .st-budget:hover { border-color: var(--muted); }
 .st-budget strong { font-size: var(--t-head); font-weight: 600; }
-.st-budget[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.st-budget[aria-pressed="true"],
+.st-budget[aria-checked="true"] { border-color: var(--accent); background: var(--accent-soft); }
 .st-budget-own { display: flex; flex-direction: column; gap: 4px; max-width: 320px; }
 .ah .st-budget-own.is-on .ah-input { border-color: var(--accent); }
 

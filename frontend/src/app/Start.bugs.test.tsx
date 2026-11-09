@@ -65,19 +65,19 @@ describe("Мастер и первый запуск: регрессии (BUG-…
       store.wizard = { saveMarking } as any;
 
       // Navigate to step 5 (Marking) without verified requisites
-      store.set({ step: 5, marked: false });
+      store.set({ step: 6, marked: false });
 
       store.next();
 
       // wizard.saveMarking must NOT have been called
       expect(saveMarking).not.toHaveBeenCalled();
-      expect(store.state.step).toBe(5);
+      expect(store.state.step).toBe(6);
       expect(store.state.block).toMatch(/реквизиты рекламодателя в кабинете Директа/);
 
       // Once marked in Direct, step 5 advances
       store.set({ marked: true });
       store.next();
-      expect(store.state.step).toBe(6);
+      expect(store.state.step).toBe(7);
     });
   });
 
@@ -87,12 +87,12 @@ describe("Мастер и первый запуск: регрессии (BUG-…
         site: "example.com",
         facts: [{ id: "f1", label: "Услуга", value: "Стрижка", source: "от вас" }],
         budget: 25000,
-        step: 3,
+        step: 4,
         draftOff: { a1: true, a2: false },
       });
       const restored = loadDraft();
       expect(restored).not.toBeNull();
-      expect(restored?.step).toBe(3);
+      expect(restored?.step).toBe(4);
       expect(restored?.draftOff).toEqual({ a1: true, a2: false });
       expect(restored?.budget).toBe(25000);
     });
@@ -136,7 +136,7 @@ describe("Мастер и первый запуск: регрессии (BUG-…
 
   describe("BUG-043: при исчерпанном лимите шаг «Кабинет» не тупик", () => {
     it("43.1: без объявлений «Продолжить» не требует оставить объявление", async () => {
-      const { store, user } = signedWizard(4);
+      const { store, user } = signedWizard(5);
       await user.click(screen.getByRole("button", { name: "Продолжить" }));
       await waitFor(() => expect(store.wizard).not.toBeNull());
       expect(store.state.block).not.toContain("Оставьте хотя бы одно объявление");
@@ -145,7 +145,7 @@ describe("Мастер и первый запуск: регрессии (BUG-…
 
   describe("BUG-044 и BUG-042: вошедший владелец сохраняет мастер как новый сайт", () => {
     it("44.1: «Продолжить» на шаге «Кабинет» создаёт бизнес с профилем и бюджетом, а не выбрасывает черновик", async () => {
-      const { store, deps, business, user } = signedWizard(4);
+      const { store, deps, business, user } = signedWizard(5);
       expect(screen.getByText("Вход выполнен")).toBeInTheDocument();
       expect(screen.queryByText("Вход через Яндекс")).toBeNull();
       expect(screen.queryByText(/Профиль и бюджет сохранены/)).toBeNull();

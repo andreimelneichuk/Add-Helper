@@ -214,7 +214,7 @@ describe("факты только из профиля", () => {
 describe("запуск", () => {
   it("объявление можно переделать до запуска, без подтверждения и записи в историю", async () => {
     const store = new MockStore(initialState("start"));
-    act(() => store.set({ step: 3 }));
+    act(() => store.set({ step: 4 }));
     const before = store.state.hist.length;
     render(<AppShell store={store} />);
     await userEvent.click(button("Переделать «Первый визит со скидкой»"));
