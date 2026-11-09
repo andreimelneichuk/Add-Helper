@@ -11,7 +11,7 @@ from adhelper.budget.adapters.ledgered import PlatformChangeGateway
 from adhelper.budget.adapters.rules_file import load_rules
 from adhelper.budget.adapters.sql import SqlPeriodStore
 from adhelper.budget.application.preflight import StoredPeriodPreflight
-from adhelper.budget.domain.limits import CampaignBudget
+from adhelper.budget.domain.limits import BudgetPeriod, CampaignBudget
 from adhelper.campaigns.adapters.launch_sql import SqlLaunches
 from adhelper.campaigns.adapters.rules_file import load_launch_rules
 from adhelper.campaigns.application.launch import (
@@ -24,7 +24,7 @@ from adhelper.campaigns.domain.launch import LaunchProblem, NewAd, UnregisteredA
 from adhelper.ledger.adapters.sql import PostgresAccountLock, SqlChangeRepository
 from adhelper.ledger.application.rollback import RollbackStatus, rollback_change
 from adhelper.ledger.application.service import Ledger
-from adhelper.ledger.domain.model import ChangeKind, ChangeStatus
+from adhelper.ledger.domain.model import Change, ChangeKind, ChangeSource, ChangeStatus
 from adhelper.platforms.adapters.gateway import RoutingGateway
 from adhelper.platforms.domain.ports import Advertiser
 from tests.budget.fake_platform import FakePlatform, Fault
@@ -160,6 +160,38 @@ async def test_outside_campaigns_count_against_budget(
     assert result.status is LaunchStatus.REFUSED  # type: ignore[attr-defined]
     assert result.reason == "exceeds_operating_budget"  # type: ignore[attr-defined]
     assert platform.create_calls == 0
+
+
+async def test_retry_does_not_double_count_its_existing_campaign(
+    sessions: Sessions, business: uuid.UUID
+) -> None:
+    period = BudgetPeriod(20_000 * MICROS, 1000, NOW, NOW.replace(day=30))
+    store = SqlPeriodStore(sessions)
+    await store.add(business, "acc", period, "budget-1", None, NOW)
+    platform = FakePlatform([CampaignBudget("77", 18_000 * MICROS, 0, False, None)], NOW)
+
+    async def existing_campaign_id(_account: str, _target_ref: str) -> str:
+        return "77"
+
+    preflight = StoredPeriodPreflight(
+        store, platform, business, lambda: NOW, load_rules, existing_campaign_id
+    )
+    change = Change(
+        id=1,
+        account="acc",
+        source=ChangeSource.USER,
+        kind=ChangeKind.CREATE_CAMPAIGN,
+        target_ref="launch:ah-existing-1",
+        before={},
+        planned={"limit": 18_000 * MICROS, "ends_at": NOW.replace(day=30).isoformat()},
+        after=None,
+        status=ChangeStatus.APPLYING,
+        explanation="retry",
+        attempts=1,
+        failure_reason=None,
+    )
+
+    assert await preflight(change) is None
 
 
 async def test_yandex_rejection_fails_the_change_instead_of_waiting_forever(

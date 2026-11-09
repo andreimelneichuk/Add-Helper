@@ -13,11 +13,13 @@ from sqlalchemy import (
     Text,
     Uuid,
     column,
+    exists,
     func,
     literal,
     select,
     table,
     true,
+    union_all,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -206,13 +208,61 @@ class SqlDashboard:
         self._sessions = sessions
         self._business_id = business_id
 
-    async def leads(self, since: date, until: date) -> int:
-        """Обращения по статистике площадки за окно дат включительно."""
-        statement = select(func.coalesce(func.sum(STATS.c.conversions), 0)).where(
+    def _campaign_day_stats(self, since: date, until: date) -> Any:
+        """Use campaign reports when present; fill missing campaign-days from ad reports."""
+        campaign_rows = select(
+            STATS.c.business_id,
+            STATS.c.account,
+            STATS.c.campaign_id,
+            STATS.c.day,
+            STATS.c.impressions,
+            STATS.c.clicks,
+            STATS.c.cost_micros,
+            STATS.c.conversions,
+        ).where(
             STATS.c.business_id == self._business_id,
             STATS.c.day >= since,
             STATS.c.day <= until,
         )
+        ad_rows = (
+            select(
+                AD_STATS.c.business_id,
+                AD_STATS.c.account,
+                ADS.c.campaign_id,
+                AD_STATS.c.day,
+                AD_STATS.c.impressions,
+                AD_STATS.c.clicks,
+                AD_STATS.c.cost_micros,
+                AD_STATS.c.conversions,
+            )
+            .select_from(
+                AD_STATS.join(
+                    ADS,
+                    (ADS.c.business_id == AD_STATS.c.business_id)
+                    & (ADS.c.account == AD_STATS.c.account)
+                    & (ADS.c.ad_id == AD_STATS.c.ad_id),
+                )
+            )
+            .where(
+                AD_STATS.c.business_id == self._business_id,
+                AD_STATS.c.day >= since,
+                AD_STATS.c.day <= until,
+                ~exists(
+                    select(1).where(
+                        STATS.c.business_id == AD_STATS.c.business_id,
+                        STATS.c.account == AD_STATS.c.account,
+                        STATS.c.campaign_id == ADS.c.campaign_id,
+                        STATS.c.day == AD_STATS.c.day,
+                    )
+                ),
+            )
+        )
+        return union_all(campaign_rows, ad_rows).subquery("campaign_day_stats")
+
+    async def leads(self, since: date, until: date) -> int:
+        """Обращения по статистике площадки за окно дат включительно."""
+        source = self._campaign_day_stats(since, until)
+        statement = select(func.coalesce(func.sum(source.c.conversions), 0))
         async with self._sessions() as session:
             return int(await session.scalar(statement) or 0)
 
@@ -400,14 +450,10 @@ class SqlDashboard:
             return (str(row[0]), int(row[1]))
 
     async def campaigns(self, since: date, until: date) -> list[CampaignLine]:
+        source = self._campaign_day_stats(since, until)
         sums = (
-            select(STATS.c.account, STATS.c.campaign_id, *_sums())
-            .where(
-                STATS.c.business_id == self._business_id,
-                STATS.c.day >= since,
-                STATS.c.day <= until,
-            )
-            .group_by(STATS.c.account, STATS.c.campaign_id)
+            select(source.c.account, source.c.campaign_id, *_sums(source))
+            .group_by(source.c.account, source.c.campaign_id)
             .subquery()
         )
         statement = (
@@ -503,7 +549,7 @@ class SqlDashboard:
     async def days(self, since: date, until: date, scope: Scope) -> list[DayLine]:
         # Объявление — из его отчёта; бизнес и направление — из отчёта кампаний,
         # потому что деньги берём из того же отчёта, что и сводку.
-        source = AD_STATS if scope.ad_id is not None else STATS
+        source = AD_STATS if scope.ad_id is not None else self._campaign_day_stats(since, until)
         statement = (
             select(source.c.day, *_sums(source))
             .where(

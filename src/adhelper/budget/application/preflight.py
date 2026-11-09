@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
@@ -53,6 +53,7 @@ class StoredPeriodPreflight:
     business_id: UUID
     clock: Callable[[], datetime]
     rules_for: Callable[[str], BudgetRules]
+    existing_campaign_id: Callable[[str, str], Awaitable[str | None]] | None = None
 
     async def __call__(self, change: Change) -> str | None:
         if change.kind is ChangeKind.RESUME:
@@ -94,7 +95,16 @@ class StoredPeriodPreflight:
             record.period.starts_at,
             record.period.ends_at,
         )
-        total = sum(c.limit for c in campaigns) + int(change.planned["limit"])
+        existing_id = (
+            await self.existing_campaign_id(change.account, change.target_ref)
+            if self.existing_campaign_id is not None
+            else None
+        )
+        existing = next((c for c in campaigns if c.campaign_id == existing_id), None)
+        # A retry may find a campaign the previous attempt created before failing. Count its
+        # current limit once, using the larger of current and planned limits for a safe ceiling.
+        total = sum(c.limit for c in campaigns if c is not existing)
+        total += max(existing.limit if existing is not None else 0, int(change.planned["limit"]))
         if total > aggregate_period.operating_budget:
             return "exceeds_operating_budget"
         return None

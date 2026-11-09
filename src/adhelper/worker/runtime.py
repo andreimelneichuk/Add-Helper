@@ -154,7 +154,12 @@ class Runtime:
             lock=PostgresAccountLock(self.engine),
             max_attempts=MAX_CHANGE_ATTEMPTS,
             preflight=StoredPeriodPreflight(
-                SqlPeriodStore(self.sessions), platform, business_id, self.clock, load_rules
+                SqlPeriodStore(self.sessions),
+                platform,
+                business_id,
+                self.clock,
+                load_rules,
+                getattr(platform, "existing_campaign_id", None),
             ),
         )
 

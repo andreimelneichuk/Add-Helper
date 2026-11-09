@@ -127,6 +127,7 @@ def _ledger(
             business_id,
             lambda: _now(request),
             load_rules,
+            getattr(platform, "existing_campaign_id", None),
         ),
     )
 

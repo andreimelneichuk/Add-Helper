@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 from adhelper.budget.domain.limits import CampaignBudget, LimitChange, LimitDecision
 from adhelper.budget.domain.watch import SpendSnapshot
-from adhelper.campaigns.domain.launch import NewAd, NewCampaign, Placement
+from adhelper.campaigns.domain.launch import LAUNCH_PREFIX, NewAd, NewCampaign, Placement
 from adhelper.campaigns.domain.ports import CreatedCampaign, Targeting
 from adhelper.campaigns.domain.targeting import Schedule
 from adhelper.platforms.adapters.direct.transport import (
@@ -419,6 +419,13 @@ class DirectPlatform:
             )
             for campaign in campaigns
         ]
+
+    async def existing_campaign_id(self, account: str, target_ref: str) -> str | None:
+        """Return the Direct id when a retried launch already created its marked campaign."""
+        if not target_ref.startswith(LAUNCH_PREFIX):
+            return None
+        campaign = await self._launch_campaign(account, target_ref.removeprefix(LAUNCH_PREFIX))
+        return str(campaign["Id"]) if campaign is not None else None
 
     async def fetch_spend(self, account: str) -> SpendSnapshot:
         if self._campaign_ids_for is None:

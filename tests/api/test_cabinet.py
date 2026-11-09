@@ -130,6 +130,39 @@ async def test_overview_shows_money_reconciliation_and_campaigns(
     assert [d["day"] for d in body["days"]] == ["2026-11-09", "2026-11-10"]
 
 
+async def test_overview_uses_ad_report_when_campaign_report_is_missing(
+    anna: tuple[httpx.AsyncClient, str, uuid.UUID], sessions: Sessions
+) -> None:
+    client, _, business_id = anna
+    await _seed_ads(sessions, business_id)
+    async with sessions.begin() as session:
+        await session.execute(
+            text(
+                "INSERT INTO campaigns"
+                " (business_id, account, campaign_id, name, state)"
+                " VALUES (:b, 'anna-direct', '1', 'Маникюр — поиск', 'on')"
+            ),
+            {"b": business_id},
+        )
+
+    body = (
+        await client.get(
+            f"/api/businesses/{business_id}/overview",
+            params={"since": "2026-11-09", "until": "2026-11-10"},
+        )
+    ).json()
+
+    campaign = next(c for c in body["campaigns"] if c["campaign_id"] == "1")
+    assert campaign["totals"] == {
+        "impressions": 1500,
+        "clicks": 40,
+        "cost": 400 * RUB,
+        "conversions": 3,
+    }
+    assert body["totals"] == campaign["totals"]
+    assert [day["totals"]["clicks"] for day in body["days"]] == [10, 30]
+
+
 async def test_overview_shows_saved_account_balance_when_no_periods(
     anna: tuple[httpx.AsyncClient, str, uuid.UUID], sessions: Sessions
 ) -> None:
