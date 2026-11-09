@@ -105,6 +105,18 @@ class AdPublisher(Protocol):
 
 
 @dataclass(frozen=True)
+class CampaignDay:
+    """Строка отчёта площадки по кампании за сутки площадки. Деньги в микроединицах."""
+
+    campaign_id: str
+    day: date
+    impressions: int
+    clicks: int
+    cost: int
+    conversions: int
+
+
+@dataclass(frozen=True)
 class AdDay:
     """Строка отчёта площадки по объявлению за сутки площадки. Деньги в микроединицах."""
 
@@ -125,6 +137,10 @@ class AdReports(Protocol):
     async def ad_days(
         self, account: str, campaign_ids: Sequence[str], since: date, until: date
     ) -> Sequence[AdDay]: ...
+
+    async def campaign_days(
+        self, account: str, campaign_ids: Sequence[str], since: date, until: date
+    ) -> Sequence[CampaignDay]: ...
 
 
 # Цель записи журнала о данных рекламодателя для маркировки: одна на кабинет.

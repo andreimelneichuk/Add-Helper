@@ -2,7 +2,7 @@ import base64
 import hashlib
 import json
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -497,6 +497,27 @@ async def test_spent_counts_only_the_budget_period(
     ]
     [campaign] = await platform.read_campaigns(ACCOUNT)
     assert campaign.spent == 120 * RUB
+
+
+async def test_campaign_days_requests_campaign_report(
+    platform: DirectPlatform, direct: FakeDirect
+) -> None:
+    direct.report_rows = [("2026-11-09", "101", 57_550_000)]
+
+    rows = await platform.campaign_days(ACCOUNT, ["101"], date(2026, 11, 9), date(2026, 11, 9))
+
+    assert len(rows) == 1
+    assert (rows[0].campaign_id, rows[0].clicks, rows[0].cost) == ("101", 0, 57_550_000)
+    definition = direct.requests[-1]["body"]["params"]
+    assert definition["ReportType"] == "CAMPAIGN_PERFORMANCE_REPORT"
+    assert definition["FieldNames"] == [
+        "Date",
+        "CampaignId",
+        "Impressions",
+        "Clicks",
+        "Cost",
+        "Conversions",
+    ]
 
 
 async def test_campaign_without_period_budget_counts_as_unlimited(

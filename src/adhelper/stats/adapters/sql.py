@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.sql import ColumnElement, TableClause
 
 from adhelper.ledger.domain.failures import failure_text
+from adhelper.platforms.domain.ports import AdDay, CampaignDay
 from adhelper.stats.domain.model import (
     AdLine,
     AlertLine,
@@ -83,6 +84,7 @@ CREATIVES = table(
 AD_ACCOUNTS = table(
     "ad_accounts",
     column("business_id", Uuid),
+    column("platform", Text),
     column("external_login", Text),
     column("state", Text),
     column("last_balance_micros", BigInteger),
@@ -117,6 +119,7 @@ STATS = table(
     column("clicks", BigInteger),
     column("cost_micros", BigInteger),
     column("conversions", BigInteger),
+    column("loaded_at", DateTime(timezone=True)),
 )
 ADS = table(
     "ads",
@@ -139,6 +142,7 @@ AD_STATS = table(
     column("clicks", BigInteger),
     column("cost_micros", BigInteger),
     column("conversions", BigInteger),
+    column("loaded_at", DateTime(timezone=True)),
 )
 CHANGES = table(
     "changes",
@@ -201,6 +205,90 @@ def _totals(impressions: int, clicks: int, cost: int, conversions: int) -> Total
 
 # Статусы, у которых журнал записывает причину сбоя.
 FAILED_STATUSES = ("failed", "rejected", "conflict")
+
+
+async def report_accounts(
+    sessions: async_sessionmaker[AsyncSession],
+) -> list[tuple[UUID, str]]:
+    """Connected Direct accounts whose managed campaign reports should be refreshed."""
+    statement = (
+        select(AD_ACCOUNTS.c.business_id, AD_ACCOUNTS.c.external_login)
+        .where(AD_ACCOUNTS.c.platform == "yandex_direct", AD_ACCOUNTS.c.state == "connected")
+        .order_by(AD_ACCOUNTS.c.business_id, AD_ACCOUNTS.c.external_login)
+    )
+    async with sessions() as session:
+        return [
+            (UUID(str(business_id)), str(login))
+            for business_id, login in (await session.execute(statement)).all()
+        ]
+
+
+class SqlReportStats:
+    """Store idempotent Direct campaign and ad report rows for one business."""
+
+    def __init__(self, sessions: async_sessionmaker[AsyncSession], business_id: UUID) -> None:
+        self._sessions = sessions
+        self._business_id = business_id
+
+    async def save(self, account: str, campaigns: list[CampaignDay], ads: list[AdDay]) -> int:
+        async with self._sessions.begin() as session:
+            if campaigns:
+                statement = pg_insert(STATS).values(
+                    [
+                        {
+                            "business_id": self._business_id,
+                            "account": account,
+                            "campaign_id": row.campaign_id,
+                            "day": row.day,
+                            "impressions": row.impressions,
+                            "clicks": row.clicks,
+                            "cost_micros": row.cost,
+                            "conversions": row.conversions,
+                        }
+                        for row in campaigns
+                    ]
+                )
+                await session.execute(
+                    statement.on_conflict_do_update(
+                        index_elements=["business_id", "account", "campaign_id", "day"],
+                        set_={
+                            "impressions": statement.excluded.impressions,
+                            "clicks": statement.excluded.clicks,
+                            "cost_micros": statement.excluded.cost_micros,
+                            "conversions": statement.excluded.conversions,
+                            "loaded_at": func.now(),
+                        },
+                    )
+                )
+            if ads:
+                statement = pg_insert(AD_STATS).values(
+                    [
+                        {
+                            "business_id": self._business_id,
+                            "account": account,
+                            "ad_id": row.ad_id,
+                            "day": row.day,
+                            "impressions": row.impressions,
+                            "clicks": row.clicks,
+                            "cost_micros": row.cost,
+                            "conversions": row.conversions,
+                        }
+                        for row in ads
+                    ]
+                )
+                await session.execute(
+                    statement.on_conflict_do_update(
+                        index_elements=["business_id", "account", "ad_id", "day"],
+                        set_={
+                            "impressions": statement.excluded.impressions,
+                            "clicks": statement.excluded.clicks,
+                            "cost_micros": statement.excluded.cost_micros,
+                            "conversions": statement.excluded.conversions,
+                            "loaded_at": func.now(),
+                        },
+                    )
+                )
+        return len(campaigns) + len(ads)
 
 
 class SqlDashboard:

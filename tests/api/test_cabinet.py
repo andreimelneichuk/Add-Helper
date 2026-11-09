@@ -16,6 +16,8 @@ from adhelper.budget.domain.limits import BudgetPeriod
 from adhelper.budget.domain.watch import SpendSnapshot
 from adhelper.config import Settings
 from adhelper.notifications.adapters.sql import SqlAlerts
+from adhelper.platforms.domain.ports import AdDay, CampaignDay
+from adhelper.stats.adapters.sql import SqlReportStats
 from tests.accounts.fake_provider import FakeProvider
 from tests.accounts.test_flow import (
     ANNA,
@@ -161,6 +163,28 @@ async def test_overview_uses_ad_report_when_campaign_report_is_missing(
     }
     assert body["totals"] == campaign["totals"]
     assert [day["totals"]["clicks"] for day in body["days"]] == [10, 30]
+
+
+async def test_direct_report_rows_are_upserted_for_dashboard_and_ads(
+    anna: tuple[httpx.AsyncClient, str, uuid.UUID], sessions: Sessions
+) -> None:
+    _client, _csrf, business_id = anna
+    sink = SqlReportStats(sessions, business_id)
+    campaign = CampaignDay("42", date(2026, 11, 9), 2762, 24, 57_550_000, 12)
+    ad = AdDay("1926471958164085430", date(2026, 11, 9), 2762, 24, 57_550_000, 12)
+
+    assert await sink.save("anna-direct", [campaign], [ad]) == 2
+    assert await sink.save("anna-direct", [campaign], [ad]) == 2
+
+    async with sessions() as session:
+        counts = await session.execute(
+            text(
+                "SELECT (SELECT count(*) FROM campaign_stats WHERE business_id = :b),"
+                " (SELECT count(*) FROM ad_stats WHERE business_id = :b)"
+            ),
+            {"b": business_id},
+        )
+        assert counts.one() == (1, 1)
 
 
 async def test_overview_shows_saved_account_balance_when_no_periods(

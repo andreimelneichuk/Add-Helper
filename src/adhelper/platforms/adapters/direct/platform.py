@@ -32,6 +32,7 @@ from adhelper.platforms.domain.ports import (
     AdDay,
     AdImage,
     Advertiser,
+    CampaignDay,
     ModerationState,
     ModerationVerdict,
     PublishedAd,
@@ -427,6 +428,12 @@ class DirectPlatform:
         campaign = await self._launch_campaign(account, target_ref.removeprefix(LAUNCH_PREFIX))
         return str(campaign["Id"]) if campaign is not None else None
 
+    async def managed_campaign_ids(self, account: str) -> tuple[str, ...]:
+        """Campaign IDs owned by this business according to its applied launch journal."""
+        if self._campaign_ids_for is None:
+            return tuple(str(c["Id"]) for c in await self._campaigns(account))
+        return tuple(str(campaign_id) for campaign_id in await self._campaign_ids_for(account))
+
     async def fetch_spend(self, account: str) -> SpendSnapshot:
         if self._campaign_ids_for is None:
             return await self.fetch_account_spend(account)
@@ -524,6 +531,53 @@ class DirectPlatform:
         return [
             AdDay(
                 ad_id=row["AdId"],
+                day=date.fromisoformat(row["Date"]),
+                impressions=_count(row["Impressions"]),
+                clicks=_count(row["Clicks"]),
+                cost=_cost(row["Cost"]),
+                conversions=_count(row["Conversions"]),
+            )
+            for row in rows
+        ]
+
+    async def campaign_days(
+        self, account: str, campaign_ids: Sequence[str], since: date, until: date
+    ) -> list[CampaignDay]:
+        """Суточные метрики сервисных кампаний из `CAMPAIGN_PERFORMANCE_REPORT`."""
+        if not campaign_ids:
+            return []
+        rows = await self._report(
+            account,
+            {
+                "SelectionCriteria": {
+                    "DateFrom": since.isoformat(),
+                    "DateTo": until.isoformat(),
+                    "Filter": [
+                        {
+                            "Field": "CampaignId",
+                            "Operator": "IN",
+                            "Values": [str(c) for c in campaign_ids],
+                        }
+                    ],
+                },
+                "FieldNames": [
+                    "Date",
+                    "CampaignId",
+                    "Impressions",
+                    "Clicks",
+                    "Cost",
+                    "Conversions",
+                ],
+                "ReportType": "CAMPAIGN_PERFORMANCE_REPORT",
+                "DateRangeType": "CUSTOM_DATE",
+                "Format": "TSV",
+                "IncludeVAT": "YES",
+                "IncludeDiscount": "NO",
+            },
+        )
+        return [
+            CampaignDay(
+                campaign_id=row["CampaignId"],
                 day=date.fromisoformat(row["Date"]),
                 impressions=_count(row["Impressions"]),
                 clicks=_count(row["Clicks"]),

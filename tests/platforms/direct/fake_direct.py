@@ -315,7 +315,15 @@ class FakeDirect:
             lines.append(str(sum(cost for _, _, cost in rows)))
         else:
             for day, campaign_id, cost in rows:
-                values = {"Date": day, "CampaignId": campaign_id, "Cost": str(cost)}
+                values = {
+                    "Date": day,
+                    "CampaignId": campaign_id,
+                    "Cost": str(cost),
+                    "Impressions": "0",
+                    "Clicks": "0",
+                    "Conversions": "0",
+                    "AdId": "1010",
+                }
                 lines.append("\t".join(values[f] for f in fields))
         return httpx.Response(
             200,

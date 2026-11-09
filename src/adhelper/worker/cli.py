@@ -372,6 +372,17 @@ async def _simulate(
     return 0
 
 
+async def _sync_stats(settings: Settings) -> int:
+    try:
+        async with open_runtime(settings) as runtime:
+            saved = await runtime.stats_sync()
+    except (SQLAlchemyError, OSError) as error:
+        _say(f"Не удалось обновить статистику: {type(error).__name__}")
+        return 1
+    _say(f"Обновлено строк статистики: {saved}.")
+    return 0
+
+
 def _known_rules(version: str) -> bool:
     try:
         load_autopilot_rules(version)
@@ -384,6 +395,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="adhelper")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("check", help="Проверить настройки и базу")
+    commands.add_parser("stats-sync", help="Обновить отчёты кампаний и объявлений Директа")
     stop = commands.add_parser("emergency-stop", help="Приостановить всю рекламу бизнеса")
     stop.add_argument("--business", type=uuid.UUID, required=True)
     demo = commands.add_parser("demo-seed", help="Создать демо-кабинет для просмотра интерфейса")
@@ -402,6 +414,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     settings = Settings()
     if args.command == "check":
         return _print_checks(asyncio.run(run_checks(settings)))
+    if args.command == "stats-sync":
+        return asyncio.run(_sync_stats(settings))
     if args.command == "demo-seed":
         return asyncio.run(_demo_seed(settings, args.mismatch))
     if args.command == "simulate":

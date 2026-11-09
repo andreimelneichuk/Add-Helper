@@ -1,7 +1,8 @@
+import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -26,6 +27,8 @@ from adhelper.budget.adapters.rules_file import load_rules
 from adhelper.budget.adapters.sql import SqlPeriodStore
 from adhelper.budget.application.preflight import StoredPeriodPreflight
 from adhelper.budget.application.watch_cycle import run_watch_cycle
+from adhelper.budget.domain.calendar import platform_date
+from adhelper.budget.domain.ports import PlatformUnavailable
 from adhelper.business.adapters.browser import ChromiumRenderer
 from adhelper.business.adapters.fetcher import SafeFetcher
 from adhelper.business.adapters.rules_file import load_site_rules, load_tag_rules
@@ -96,6 +99,9 @@ from adhelper.notifications.application.service import (
 )
 from adhelper.platforms.adapters.direct.factory import build_direct_platforms, yandex_provider
 from adhelper.platforms.adapters.gateway import RoutingGateway
+from adhelper.stats.adapters.sql import SqlReportStats, report_accounts
+
+logger = logging.getLogger(__name__)
 
 MAX_CHANGE_ATTEMPTS = 3
 CURRENT_AUTOPILOT_RULES = "autopilot-2"
@@ -369,6 +375,32 @@ class Runtime:
                 SqlAdStats(self.sessions, business_id),
                 self.clock(),
             )
+        return saved
+
+    async def stats_sync(self, only: UUID | None = None) -> int:
+        """Refresh campaign and ad reports for every connected Direct business."""
+        saved = 0
+        today = platform_date(self.clock())
+        since, until = today - timedelta(days=364), today
+        for business_id, account in await report_accounts(self.sessions):
+            if only is not None and business_id != only:
+                continue
+            platform = self.platform_for(business_id, account)
+            if platform is None:
+                continue
+            try:
+                campaign_ids = await platform.managed_campaign_ids(account)
+                if not campaign_ids:
+                    continue
+                campaign_rows = await platform.campaign_days(account, campaign_ids, since, until)
+                ad_rows = await platform.ad_days(account, campaign_ids, since, until)
+                saved += await SqlReportStats(self.sessions, business_id).save(
+                    account, campaign_rows, ad_rows
+                )
+            except PlatformUnavailable as error:
+                logger.warning(
+                    "Direct report sync failed for account=%s: %s", account, type(error).__name__
+                )
         return saved
 
     async def autopilot_run(self, only: UUID | None = None) -> int:

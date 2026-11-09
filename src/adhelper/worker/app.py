@@ -21,6 +21,7 @@ PERIODIC_TASKS = (
     "autopilot.run",
     "experiments.run",
     "experiments.stats",
+    "stats.sync",
     "ads.summary",
     "cleanup.jobs",
     "worker.heartbeat",
@@ -135,6 +136,14 @@ async def experiments_run(timestamp: int) -> None:
 async def experiments_stats(timestamp: int) -> None:
     async with open_runtime(Settings()) as runtime:
         await runtime.experiments_stats()
+
+
+# Обновляем статистику всех сервисных кампаний и объявлений четырежды в сутки.
+@app.periodic(cron="10 */6 * * *")
+@app.task(name="stats.sync", queue=CREATIVES_QUEUE, queueing_lock="stats.sync")
+async def stats_sync(timestamp: int) -> None:
+    async with open_runtime(Settings()) as runtime:
+        await runtime.stats_sync()
 
 
 # Сводка «что запущено» за вчерашние московские сутки, в 10:00 по Москве (07:00 UTC).
