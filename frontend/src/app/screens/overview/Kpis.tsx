@@ -43,7 +43,7 @@ function kpisOf(s: State): Kpi[] {
   };
   if (s.live) {
     const price = (cost: number, leads: number) => (leads > 0 ? rub(cost / leads) : "—");
-    const stats = s.live.stats.week;
+    const stats = s.live.stats?.week ?? { shows: 0, clicks: 0 };
     const base: Kpi[] = [
       money,
       { label: "Показы, 7 дней", value: stats.shows.toLocaleString("ru-RU"), sub: `Клики: ${stats.clicks.toLocaleString("ru-RU")}`, ink: "muted" },

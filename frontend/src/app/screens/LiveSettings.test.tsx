@@ -49,7 +49,7 @@ describe("настройки на настоящих данных", () => {
     const address = await screen.findByLabelText("Адрес");
     await userEvent.clear(address);
     await userEvent.type(address, "г. Тюмень, ул. Ленина, 10");
-    await userEvent.click(screen.getByRole("button", { name: "Сохранить профиль" }));
+    await userEvent.click(screen.getByRole("button", { name: "Сохранить" }));
 
     expect(api.saveProfile).toHaveBeenCalledWith(expect.objectContaining({ address: "г. Тюмень, ул. Ленина, 10" }));
     expect(await screen.findByRole("status")).toHaveTextContent("Сохранил.");
@@ -223,7 +223,7 @@ describe("где и когда показывать", () => {
     const api = fakeApi({ display: vi.fn(async () => ({ ...base, campaigns: 0 })) } as Partial<Api>);
     render(<Settings store={await open(api)} />);
     const block = await screen.findByRole("region", { name: "Где и когда показывать" });
-    expect(within(block).getByText(/Кампаний пока нет/)).toHaveTextContent("поля «Адрес» в профиле");
+    expect(within(block).getByText(/Кампаний ещё нет/)).toHaveTextContent("поля «Адрес» в профиле");
     expect(within(block).queryByRole("button", { name: "Изменить регион" })).not.toBeInTheDocument();
     expect(within(block).queryByRole("button", { name: "Москва" })).not.toBeInTheDocument();
   });
@@ -389,7 +389,7 @@ describe("план бюджета до запуска", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("450 точек");
     await userEvent.upload(screen.getByLabelText("Файл фото"), file);
 
-    expect(await screen.findByRole("status")).toHaveTextContent("Фото добавил");
+    expect(await screen.findByText(/Фото добавил/)).toBeInTheDocument();
     expect(uploadPhoto).toHaveBeenLastCalledWith(file, true);
     expect(within(screen.getByRole("list", { name: "Ваши фото" })).getByAltText("Фото 1")).toHaveAttribute("src", photo.url);
   });
@@ -405,7 +405,7 @@ describe("план бюджета до запуска", () => {
     await userEvent.click(screen.getByRole("button", { name: "Убрать фото 1" }));
 
     expect(api.archivePhoto).toHaveBeenCalledWith(1);
-    expect(await screen.findByRole("status")).toHaveTextContent("работают дальше");
+    expect(await screen.findByText(/работают дальше/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Добавить фото" })).toBeInTheDocument();
     expect(screen.getByLabelText(/согласны на рекламу/)).not.toBeChecked();
   });

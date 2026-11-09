@@ -124,6 +124,20 @@ describe("действия идут через сервис", () => {
     expect(store.state.notice).toContain("Отключил «Маникюр»");
   });
 
+  it("блокирует повторное действие, пока сервис не ответил", async () => {
+    let finish!: (value: { status: "applied" }) => void;
+    const setAdState = vi.fn(() => new Promise<{ status: "applied" }>((resolve) => { finish = resolve; }));
+    const store = await open(fakeApi({ setAdState } as Partial<Api>));
+    const action = { action: "ad", value: "anna/11" } as const;
+    store.run(action);
+    expect(store.state.working).toEqual(action);
+    store.run(action);
+    expect(setAdState).toHaveBeenCalledTimes(1);
+    finish({ status: "applied" });
+    await settled();
+    expect(store.state.working).toBeNull();
+  });
+
   it("отказ сервиса показывает как есть и ничего не меняет на экране", async () => {
     const api = fakeApi({ setAdState: vi.fn(async () => { throw new ApiError(503, "Кабинет Яндекса пока не подключён, поэтому ничего не изменилось"); }) } as Partial<Api>);
     const store = await open(api);

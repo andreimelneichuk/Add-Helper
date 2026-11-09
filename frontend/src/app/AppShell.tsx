@@ -155,7 +155,7 @@ export function AppShell({ store }: { store: Store }) {
           </button>
         )}
         {!starting && <span className="ah-status" style={tone}><i aria-hidden="true" />{statusText(s)}</span>}
-        {!starting && (s.live ? s.live.hasCampaigns : true) && <button type="button" className="ah-btn ah-bar-pause" onClick={() => store.run({ action: "pause" })}>{s.paused ? "Включить" : "Пауза"}</button>}
+        {!starting && (s.live ? s.live.hasCampaigns : true) && <button type="button" className="ah-btn ah-bar-pause" disabled={!!s.working} onClick={() => store.run({ action: "pause" })}>{s.working?.action === "pause" ? (s.paused ? "Включаем…" : "Останавливаем…") : s.paused ? "Включить" : "Пауза"}</button>}
       </header>
       {!starting && !s.live && (
         <div className="ah-proto">
@@ -184,8 +184,8 @@ export function AppShell({ store }: { store: Store }) {
                 <div role="group" aria-label="Подтверждение" className="ah-confirm">
                   <p>{confirmText(s, s.pending)}</p>
                   <div className="ah-confirm-actions">
-                    <button type="button" className="ah-btn ah-btn-primary" onClick={store.confirm}>Применить</button>
-                    <button type="button" className="ah-btn" autoFocus onClick={store.decline}>Не надо</button>
+                    <button type="button" className="ah-btn ah-btn-primary" disabled={!!s.working} onClick={store.confirm}>{s.working ? "Выполняю…" : "Применить"}</button>
+                    <button type="button" className="ah-btn" autoFocus disabled={!!s.working} onClick={store.decline}>Не надо</button>
                   </div>
                 </div>
               )}

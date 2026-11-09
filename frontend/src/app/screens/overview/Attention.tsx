@@ -55,7 +55,7 @@ function cardMessage(card: TodayCard, store: Store): Message {
 
 function cardsOf(s: State): TodayCard[] {
   const cards = s.live?.cards ?? [];
-  return s.live && s.live.stats.week.shows > 0
+  return s.live && (s.live.stats?.week?.shows ?? 0) > 0
     ? cards.filter(
         (card) => !(card.kind === "summary" && card.title === "За 7 дней показов не было"),
       )
@@ -80,7 +80,7 @@ function More({ cards, store }: { cards: TodayCard[]; store: Store }) {
           return (
             <li key={card.kind + (card.ref ?? "")} className={`ov-more-item ov-more-${card.tone}`}>
               <div className="ov-more-body"><h3>{m.title}</h3>{m.text && <p>{m.text}</p>}</div>
-              {m.actions.map((a) => <button key={a.label} type="button" className="ah-btn" onClick={a.pick}>{a.label}</button>)}
+              {m.actions.map((a) => <button key={a.label} type="button" className="ah-btn" disabled={!!store.state.working} onClick={a.pick}>{a.label}</button>)}
             </li>
           );
         })}
@@ -111,7 +111,7 @@ function Main({ s, store }: { s: State; store: Store }) {
       {message.actions.length > 0 && (
         <div className="ov-attention-actions">
           {message.actions.map((a) => (
-            <button key={a.label} type="button" className={a.quiet ? "ah-btn" : "ah-btn ov-attention-do"} onClick={a.pick}>{a.label}</button>
+            <button key={a.label} type="button" className={a.quiet ? "ah-btn" : "ah-btn ov-attention-do"} disabled={!!s.working} onClick={a.pick}>{a.label}</button>
           ))}
         </div>
       )}

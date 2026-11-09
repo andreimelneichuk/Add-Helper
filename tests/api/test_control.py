@@ -649,7 +649,7 @@ async def test_platform_ad_archive_stops_platform_and_notes_archived_state(
     _app(client).state.platform_for = lambda _b, _a: platform
     base = f"/api/businesses/{business}"
 
-    done = await client.post(f"{base}/ads/{LOGIN}/11/archive", headers=csrf)
+    done = await client.post(f"{base}/ads/{LOGIN}/11/archive", headers=csrf, json={"request_id": "archive-11"})
     assert done.status_code == 200
     assert done.json() == {"status": "applied"}
     assert platform.ads["ad:11"] is False
@@ -684,7 +684,7 @@ async def test_service_ad_stays_archived_after_owner_stop(
         )
     for _ in range(2):
         response = await client.post(
-            f"/api/businesses/{business}/ads/{LOGIN}/11/archive", headers=csrf
+            f"/api/businesses/{business}/ads/{LOGIN}/11/archive", headers=csrf, json={"request_id": "archive-11"}
         )
         assert response.json() == {"status": "applied"}
         assert platform.ads["ad:11"] is False
@@ -709,12 +709,12 @@ async def test_platform_ad_archive_conflict_when_platform_fails(
     base = f"/api/businesses/{business}"
 
     monkeypatch.setattr(control_module, "set_ad_active", AsyncMock(return_value="failed"))
-    response = await client.post(f"{base}/ads/{LOGIN}/11/archive", headers=csrf)
+    response = await client.post(f"{base}/ads/{LOGIN}/11/archive", headers=csrf, json={"request_id": "archive-11"})
     assert response.status_code == 409
     assert "Яндекс не принял" in response.json()["detail"]
 
     monkeypatch.setattr(control_module, "set_ad_active", AsyncMock(return_value=None))
-    resp_unavailable = await client.post(f"{base}/ads/{LOGIN}/11/archive", headers=csrf)
+    resp_unavailable = await client.post(f"{base}/ads/{LOGIN}/11/archive", headers=csrf, json={"request_id": "archive-11"})
     assert resp_unavailable.status_code == 503
 
 
@@ -734,7 +734,8 @@ async def test_platform_ad_archive_waits_for_confirmed_stop(
     monkeypatch.setattr(control_module, "follow_owner", follow)
     url = f"/api/businesses/{business}/ads/{LOGIN}/11/archive"
 
-    waiting = await client.post(url, headers=csrf)
+    request_body = {"request_id": "archive-11"}
+    waiting = await client.post(url, headers=csrf, json=request_body)
     assert waiting.status_code == 200
     assert waiting.json() == {"status": "pending"}
     assert platform.ads["ad:11"] is True
@@ -749,9 +750,10 @@ async def test_platform_ad_archive_waits_for_confirmed_stop(
 
     # Повтор после применения остановки архивирует только подтверждённо выключенное объявление.
     monkeypatch.setattr(platform, "set_ad_active", stop)
-    done = await client.post(url, headers=csrf)
+    done = await client.post(url, headers=csrf, json={"request_id": "archive-retry-with-new-id"})
     assert done.json() == {"status": "applied"}
     assert platform.ads["ad:11"] is False
+    assert await _rows(sessions, business) == [("user", "pause_ad", "applied")]
     async with sessions() as session:
         state = await session.scalar(
             text("SELECT state FROM ads WHERE business_id = :b AND ad_id = '11'"),

@@ -212,9 +212,19 @@ export function AdDetail({ store, id }: { store: Store; id: string }) {
   const name = adName(s, id);
   const isArchived = ad.tag === "в архиве" || ad.tag === "заменено";
   const off = !isArchived && (!!s.adsOff[id] || ad.tag === "отключено");
+  const working = s.working;
+  const isWorkingOnThis = !!working && ("value" in working && working.value === id || working.action === "adSave" && working.value.id === id);
+  const actionProgress = isWorkingOnThis && working
+    ? working.action === "adPublish" ? "Публикуем объявление…"
+      : working.action === "adArchive" ? "Архивируем объявление…"
+        : working.action === "adRestore" ? "Восстанавливаем объявление…"
+          : working.action === "adSave" ? "Сохраняем объявление…"
+            : working.action === "ad" ? (off ? "Включаем объявление…" : "Отключаем объявление…") : null
+    : null;
   const { hook, title } = adShown(s, ad);
   const [composing, setComposing] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [publishOptions, setPublishOptions] = useState(false);
   const [editTitle, setEditTitle] = useState(ad.title);
   const [editText, setEditText] = useState(ad.text);
 
@@ -228,13 +238,14 @@ export function AdDetail({ store, id }: { store: Store; id: string }) {
 
   const events = s.hist.filter((h) => h.about === id || h.title.includes(`«${name}»`));
   const action = off ? "Включить" : "Отключить";
+  const status = isArchived ? ad.tag : off ? "Отключено" : ad.tag;
 
   return (
     <div className="anno-screen">
       <button type="button" className="ah-btn anno-back" onClick={() => store.set({ openAd: null })}>Все объявления</button>
       <div className="anno-head">
         <h2 className="anno-name">{name}</h2>
-        <span className={`ah-tag ah-tag-${ad.tagTone}`}>{ad.tag}</span>
+        <span className={`ah-tag ah-tag-${off ? "neutral" : ad.tagTone}`}>{status}</span>
       </div>
       {editing ? (
         <form
@@ -305,23 +316,47 @@ export function AdDetail({ store, id }: { store: Store; id: string }) {
           </div>
           <div className="anno-side">
             <section className="ah-panel anno-facts">
-              <div className="ah-panel-title">{adStat(s, ad)}</div>
+              <div className="anno-performance">
+                <span className="ah-label">Результат объявления</span>
+                <strong>{adStat(s, ad)}</strong>
+              </div>
               {inTest(s, id) && <p className="ah-muted">Идёт проверка вариантов: решу на 14-й день.</p>}
-              <div>
-                <div className="ah-label">Откуда факты</div>
+              <div className="anno-fact-source">
+                <div className="ah-label">На каких данных основано</div>
                 <div>{ad.facts || "Проверяю"}</div>
               </div>
-              <div className="anno-actions" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+            </section>
+            <section className="ah-panel anno-management">
+              <h3 className="ah-panel-title">Действия с объявлением</h3>
+              <div className="anno-actions" aria-busy={!!working}>
+                {actionProgress && <p className="ah-muted" role="status">{actionProgress} Кнопки действий временно заблокированы.</p>}
                 {isArchived ? (
-                  <button type="button" className="ah-btn ah-btn-primary" onClick={() => store.ask({ action: "adRestore", value: id })}>Вернуть из архива</button>
+                  <button type="button" className="ah-btn ah-btn-primary" disabled={!!working} onClick={() => store.ask({ action: "adRestore", value: id })}>Вернуть из архива</button>
                 ) : (
                   <>
-                    {(!s.live?.hasCampaigns || isWizardAdId(id)) && (
-                      <button type="button" className="ah-btn" onClick={() => { setEditTitle(ad.title); setEditText(ad.text); setEditing(true); }}>Редактировать</button>
+                    {ad.tag === "готово к запуску" && s.live?.hasCampaigns && (
+                      <div className="anno-publish">
+                        {!publishOptions ? (
+                          <button type="button" className="ah-btn ah-btn-primary" disabled={!!working} onClick={() => setPublishOptions(true)}>Опубликовать</button>
+                        ) : (
+                          <div className="anno-publish-picker" role="group" aria-label="Как сгруппировать объявление">
+                            <div>
+                              <strong>Как добавить в кампанию?</strong>
+                              <p className="ah-muted">Выберите, по каким группам услуг показывать это объявление.</p>
+                            </div>
+                            <button type="button" className="ah-btn ah-btn-primary" disabled={!!working} onClick={() => store.ask({ action: "adPublish", value: id, grouping: "services" })}>Разбить по услугам</button>
+                            <button type="button" className="ah-btn" disabled={!!working} onClick={() => store.ask({ action: "adPublish", value: id, grouping: "general" })}>Одна общая группа</button>
+                            <button type="button" className="ah-btn anno-publish-cancel" disabled={!!working} onClick={() => setPublishOptions(false)}>Назад</button>
+                          </div>
+                        )}
+                      </div>
                     )}
-                    {(!s.live || store.rework) && <button type="button" className="ah-btn ah-btn-primary" onClick={() => setComposing(true)}>Переделать</button>}
-                    <button type="button" className="ah-btn" onClick={() => (off ? store.run({ action: "ad", value: id }) : store.ask({ action: "ad", value: id }))}>{action}</button>
-                    <button type="button" className="ah-btn" onClick={() => store.ask({ action: "adArchive", value: id })}>В архив</button>
+                    {(!s.live?.hasCampaigns || isWizardAdId(id)) && (
+                      <button type="button" className="ah-btn" disabled={!!working} onClick={() => { setEditTitle(ad.title); setEditText(ad.text); setEditing(true); }}>Редактировать</button>
+                    )}
+                    {(!s.live || store.rework) && <button type="button" className="ah-btn" disabled={!!working} onClick={() => setComposing(true)}>Переделать</button>}
+                    <button type="button" className="ah-btn" disabled={!!working} onClick={() => (off ? store.run({ action: "ad", value: id }) : store.ask({ action: "ad", value: id }))}>{action}</button>
+                    <button type="button" className="ah-btn" disabled={!!working} onClick={() => store.ask({ action: "adArchive", value: id })}>В архив</button>
                   </>
                 )}
               </div>

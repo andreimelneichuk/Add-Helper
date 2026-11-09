@@ -280,6 +280,7 @@ const NOT_LAUNCHED = "Реклама ещё не запущена: в Дирек
 export class LiveStore extends Store {
   private queue: ChatCommand[] = [];
   private budgetMax: number | null = null;
+  private activeRequestId: string | null = null;
   public override rework: Api | null = null;
   constructor(public api: Api, loaded: Partial<State>) {
     super({ ...initialState(), msgs: [], ...loaded });
@@ -440,16 +441,17 @@ export class LiveStore extends Store {
   /** Что сделать на сервисе. Текст итога пишем только после ответа: состояние приходит с сервера. */
   private async perform(a: NonNullable<State["pending"]>): Promise<string> {
     const s = this.state;
+    const requestId = this.activeRequestId ?? crypto.randomUUID();
     switch (a.action) {
       case "pause": {
         if (s.paused) {
-          const { refused } = await this.api.resume(crypto.randomUUID());
+          const { refused } = await this.api.resume(requestId);
           const budget = budgetOf(s);
           const check = budget > 0 ? `бюджет ${rub(budget)}` : "бюджет месяца";
           const rest = refused.length ? " Часть направлений не включил: их остановили не вы, а защита бюджета." : "";
           return `Снял паузу, показы идут. Вы попросили. Перед включением проверил, что расход не выйдет за ${check}.${rest} Снова остановить можно кнопкой «Пауза».`;
         }
-        const { stopped } = await this.api.pause(crypto.randomUUID());
+        const { stopped } = await this.api.pause(requestId);
         return stopped.length ? "Поставил на паузу. Настройки сохранены, запись в истории." : "Идущих показов нет, останавливать нечего.";
       }
       case "ad": {
@@ -472,7 +474,7 @@ export class LiveStore extends Store {
         if (!account || !adId) {
           return "Объявление ещё не создано в Директе.";
         }
-        const { status } = await this.api.setAdState(account, adId, active, crypto.randomUUID());
+        const { status } = await this.api.setAdState(account, adId, active, requestId);
         if (status === "pending") return `Запрос про «${name}» записан, Яндекс ещё применяет его.`;
         return `${active ? "Включил" : "Отключил"} «${name}». Общий бюджет не изменился. Запись в истории.`;
       }
@@ -481,7 +483,6 @@ export class LiveStore extends Store {
         const ad = s.ads.find((x) => x.id === a.value);
         if (!ad) throw new Error("Объявление уже изменилось. Обновите страницу.");
         const result = await this.api.publishWizardAd(a.value, a.grouping);
-        await this.refresh();
         if (result.status === "refused") return result.text ?? "Яндекс не принял объявление. Подробности доступны в истории.";
         return result.status === "pending"
           ? `Запрос на публикацию «${ad.name}» записан. Яндекс ещё применяет его.`
@@ -530,7 +531,7 @@ export class LiveStore extends Store {
         } else {
           const [account, adId] = id.split("/");
           if (account && adId && this.api.archiveAd) {
-            const { status } = await this.api.archiveAd(account, adId);
+            const { status } = await this.api.archiveAd(account, adId, this.activeRequestId ?? crypto.randomUUID());
             if (status === "pending") {
               return `Яндекс ещё останавливает показы «${name}». Дождитесь остановки и повторите архивацию.`;
             }
@@ -552,7 +553,7 @@ export class LiveStore extends Store {
         } else {
           const [account, adId] = id.split("/");
           if (account && adId) {
-            await this.api.setAdState(account, adId, true, crypto.randomUUID());
+            await this.api.setAdState(account, adId, true, this.activeRequestId ?? crypto.randomUUID());
           }
         }
         const isLive = !!s.live?.hasCampaigns && !isWizardAdId(id);
@@ -720,9 +721,12 @@ export class LiveStore extends Store {
   }
 
   override run(a: State["pending"] & object, userText?: string) {
+    if (this.state.working) return;
+    this.activeRequestId = crypto.randomUUID();
     const msgs = userText ? [...this.state.msgs, msg("me", userText)] : this.state.msgs;
     this.set({
       pending: null,
+      working: a,
       msgs,
       asked: a.action === "undo" ? { ...this.state.asked, [a.value]: false } : this.state.asked,
       undoing: a.action === "undo" ? { ...this.state.undoing, [a.value]: true } : this.state.undoing,
@@ -739,6 +743,8 @@ export class LiveStore extends Store {
       // Отказ сервиса показываем как есть: состояние на экране не меняли, значит и врать нечему.
       text = error instanceof ApiError ? error.message : "Сервис не ответил. Ничего не изменилось, попробуйте позже.";
     } finally {
+      this.activeRequestId = null;
+      this.set({ working: null });
       if (a.action === "undo") {
         this.set({ undoing: { ...this.state.undoing, [a.value]: false } });
       }

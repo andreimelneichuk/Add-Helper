@@ -23,17 +23,29 @@ async def set_ad_active(
     if done is not None and done.status is ChangeStatus.APPLIED:
         return "applied"
     try:
-        change = await ledger.submit(
-            ProposedChange(
-                account=account,
-                source=ChangeSource.USER,
-                kind=ChangeKind.RESUME_AD if active else ChangeKind.PAUSE_AD,
-                target_ref=target_ref,
-                planned={"active": active},
-                explanation=f"{'Включил' if active else 'Отключил'} «{title}»: вы попросили.",
-                idempotency_key=key,
+        kind = ChangeKind.RESUME_AD if active else ChangeKind.PAUSE_AD
+        # Повтор незавершённого действия продолжает ту же запись, даже если клиент
+        # после таймаута прислал новый request_id. Завершённые действия не склеиваем:
+        # владелец может позже снова включить или отключить объявление.
+        change = next((
+            row for row in rows
+            if row.source is ChangeSource.USER
+            and row.kind is kind
+            and row.planned.get("active") is active
+            and row.status in {ChangeStatus.PLANNED, ChangeStatus.APPLYING}
+        ), None)
+        if change is None:
+            change = await ledger.submit(
+                ProposedChange(
+                    account=account,
+                    source=ChangeSource.USER,
+                    kind=kind,
+                    target_ref=target_ref,
+                    planned={"active": active},
+                    explanation=f"{'Включил' if active else 'Отключил'} «{title}»: вы попросили.",
+                    idempotency_key=key,
+                )
             )
-        )
         await ledger.execute_pending(account)
     except GatewayUnavailable:
         return None

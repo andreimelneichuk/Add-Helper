@@ -7,6 +7,8 @@ import { MockStore } from "../../mock/MockStore";
 import { Ads } from "./Ads";
 import { Settings } from "./Settings";
 
+const adCard = (name: string) => screen.getByRole("button", { name: `Открыть объявление «${name}»` });
+
 describe("экран рекламы", () => {
   it("свой бюджет применяется кнопкой, пишется в историю, меньше минимума нельзя", async () => {
     const store = new MockStore();
@@ -55,16 +57,17 @@ describe("экран рекламы", () => {
     const before = store.state.hist.length;
     render(<Ads store={store} />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Отключить «Педикюр рядом с домом»" }));
+    await userEvent.click(adCard("Педикюр рядом с домом"));
+    await userEvent.click(screen.getByRole("button", { name: "Отключить" }));
     expect(store.state.adsOff.a3).toBeFalsy();
     act(() => store.confirm());
 
     expect(store.state.adsOff.a3).toBe(true);
     expect(store.state.hist).toHaveLength(before + 1);
     expect(store.state.hist[0]?.title).toBe("Отключил «Педикюр рядом с домом»");
-    expect(screen.getByText("Отключено")).toBeInTheDocument();
+    expect(screen.getAllByText("Отключено")).toHaveLength(2);
 
-    await userEvent.click(screen.getByRole("button", { name: "Включить «Педикюр рядом с домом»" }));
+    await userEvent.click(screen.getByRole("button", { name: "Включить" }));
 
     expect(store.state.adsOff.a3).toBe(false);
     expect(store.state.hist).toHaveLength(before + 2);
@@ -88,8 +91,8 @@ describe("экран рекламы", () => {
     store.run({ action: "price", value: 1400 });
     render(<Ads store={store} />);
     const name = `Маникюр от ${rub(1400)}`;
-    expect(screen.getAllByText(name)).toHaveLength(2);
-    expect(screen.getByRole("button", { name: `Отключить «${name}»` })).toBeInTheDocument();
+    expect(screen.getAllByText(name)).toHaveLength(1);
+    expect(screen.getByRole("button", { name: `Открыть объявление «${name}»` })).toBeInTheDocument();
     expect(screen.queryByText("Маникюр от 1 200 ₽")).toBeNull();
     cleanup();
     render(<Settings store={store} />);
@@ -104,19 +107,19 @@ describe("экран рекламы", () => {
     expect(store.state.input).toBe("Новая цена на маникюр 1400");
   });
 
-  it("настроек на экране рекламы нет, а обводка есть у кнопки «Открыть»", () => {
+  it("список не содержит настроек объявления, а вся карточка доступна как кнопка", () => {
     render(<Ads store={new MockStore()} />);
     expect(screen.queryByRole("group", { name: "Бюджет в месяц" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Открыть «Первый визит со скидкой»" })).toHaveClass("ah-btn");
-    expect(screen.getByRole("button", { name: "Открыть «Первый визит со скидкой»" })).not.toHaveClass("ah-btn-text");
+    expect(adCard("Первый визит со скидкой")).toHaveAttribute("tabindex", "0");
+    expect(adCard("Первый визит со скидкой")).toHaveAttribute("role", "button");
   });
 
   it("список можно сузить до отключённых, счётчик совпадает", async () => {
     const store = new MockStore({ ...initialState(), adsOff: { a3: true } });
     render(<Ads store={store} />);
     await userEvent.click(screen.getByRole("button", { name: "Отключены 1" }));
-    expect(screen.getByRole("button", { name: "Включить «Педикюр рядом с домом»" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Открыть «Первый визит со скидкой»" })).toBeNull();
+    expect(adCard("Педикюр рядом с домом")).toHaveTextContent("Отключено");
+    expect(screen.queryByRole("button", { name: "Открыть объявление «Первый визит со скидкой»" })).toBeNull();
   });
 
   it("показывает сообщения при пустых списках фильтров и открывает AdMaker", async () => {

@@ -381,7 +381,7 @@ function DisplayForm({ api, store }: { api: Api; store: LiveStore }) {
       <div role="group" aria-label="Где показывать">
         <div className="ah-label">Где показывать</div>
         {noCampaigns ? (
-          <p className="set-hint">Кампаний пока нет. Этот список не задаёт город новому запуску: он берётся из поля «Адрес» в профиле. После запуска здесь можно изменить регионы уже созданных кампаний.</p>
+          <p className="set-hint">Кампаний ещё нет. Этот список не задаёт город новому запуску: он берётся из поля «Адрес» в профиле. После запуска здесь можно изменить регионы уже созданных кампаний.</p>
         ) : (
           <>
             <p className="set-hint">Сейчас: {display.regions_text ?? "у направлений разный регион или Яндекс его ещё не передал"}.</p>
@@ -633,7 +633,7 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
       </div>
       <label><span className="ah-label">Чем занимаетесь</span><input className="ah-input" value={profile.niche} placeholder="маникюр" onChange={(e) => set({ niche: e.target.value })} /></label>
       <label><span className="ah-label">Адрес</span><input className="ah-input" value={profile.address} onChange={(e) => set({ address: e.target.value })} /></label>
-      <p className="set-hint">Город для нового запуска берётся из этого поля. Укажите его в начале адреса, например: «Пермь, ул. Комсомольский проспект, 71», затем нажмите «Сохранить профиль» внизу.</p>
+      <p className="set-hint">Город для нового запуска берётся из этого поля. Укажите его в начале адреса, например: «Пермь, ул. Комсомольский проспект, 71», затем нажмите «Сохранить» внизу.</p>
       <fieldset className="set-services">
         <legend className="ah-label">Услуги и цены</legend>
         {profile.services.map((x, i) => (
@@ -672,8 +672,8 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
         />
       </label>
       <div className="set-actions set-profile-actions">
-        <button type="button" className="ah-btn ah-btn-primary" disabled={busy || !dirty} onClick={save}>Сохранить профиль</button>
-        <span role="status" className="set-hint">{dirty ? "Есть несохранённые изменения." : status ?? "Все изменения сохранены."}</span>
+        <button type="button" className="ah-btn ah-btn-primary" disabled={busy || !dirty} onClick={save}>{busy ? "Сохраняю…" : "Сохранить"}</button>
+        <span role="status" className="set-hint">{status ?? (dirty ? "Есть несохранённые изменения." : "Все изменения сохранены.")}</span>
       </div>
     </div>
   );

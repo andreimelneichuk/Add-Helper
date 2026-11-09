@@ -1,5 +1,4 @@
 import logging
-import secrets
 from typing import Any
 from uuid import UUID
 
@@ -83,6 +82,10 @@ FINAL_REFUSAL = {
 class AdState(BaseModel):
     active: bool
     # Повтор того же запроса не создаёт второе изменение.
+    request_id: str = Field(min_length=1, max_length=100)
+
+
+class ArchiveBody(BaseModel):
     request_id: str = Field(min_length=1, max_length=100)
 
 
@@ -298,6 +301,7 @@ def control_router() -> APIRouter:
         request: Request,
         account: str,
         ad_id: str,
+        body: ArchiveBody,
         business_id: OwnedChecked,
         period: Period,
     ) -> dict[str, str]:
@@ -316,17 +320,15 @@ def control_router() -> APIRouter:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
 
         # Если объявление уже на площадке, сначала останавливаем показы через журнал (Ledger).
-        # Используем динамический request_id, чтобы повтор не блокировался старой записью.
         platform = _platform(request, business_id, account)
         ledger = _ledger(request, business_id, platform)
-        request_id = f"archive-{account}-{ad_id}-{secrets.token_urlsafe(12)}"
         done = await set_ad_active(
             ledger,
             account,
             ad_id,
             view.ad.title,
             False,
-            request_id,
+            body.request_id,
         )
         if done is None:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NO_ANSWER)

@@ -143,7 +143,7 @@ describe("Объявления и генерация: регрессии (BUG-�
       render(<GenerateAdsModal isOpen onClose={vi.fn()} store={store} />);
       await userEvent.click(screen.getByRole("button", { name: "Сгенерировать через ИИ" }));
       await screen.findByText("Маникюр за 1 200 ₽");
-      expect(guest.writeAds).toHaveBeenCalledWith({ niche: "", address: "Москва", services: [{ name: "Маникюр", price: 1200 }], features: [] });
+      expect(guest.writeAds).toHaveBeenCalledWith({ niche: "", address: "Москва", services: [{ name: "Маникюр", price: 1200 }], features: [], variants: 3 });
     });
 
     it("45.3: при сбое писателя не подставляет шаблон с выдуманными фактами", async () => {

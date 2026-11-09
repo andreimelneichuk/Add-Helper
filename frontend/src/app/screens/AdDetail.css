@@ -12,8 +12,19 @@
 .anno-preview-body { display: flex; flex-direction: column; gap: 4px; padding: var(--gap); }
 .ah-art-photo { background-position: center; background-size: cover; color: #fff; }
 
-.anno-facts, .anno-events, .anno-compose { display: flex; flex-direction: column; gap: var(--gap); }
+.anno-facts, .anno-management, .anno-events, .anno-compose { display: flex; flex-direction: column; gap: var(--gap); }
+.anno-performance { padding: 12px 14px; border-radius: var(--r-field); background: var(--accent-soft); }
+.anno-performance .ah-label { margin-bottom: 2px; color: var(--accent-ink); }
+.anno-performance strong { display: block; color: var(--accent-ink); font-size: var(--t-title); line-height: 1.35; }
+.anno-fact-source { overflow-wrap: anywhere; }
+.anno-management .ah-panel-title { margin: 0; }
 .anno-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.anno-publish { flex: 1 0 100%; }
+.anno-publish-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: var(--r-field); background: var(--canvas); }
+.anno-publish-picker > div { flex: 1 0 100%; }
+.anno-publish-picker strong { display: block; }
+.anno-publish-picker p { margin: 4px 0 0; }
+.anno-publish-cancel { margin-left: auto; }
 .anno-events ul { display: flex; flex-direction: column; gap: var(--gap); margin: 0; padding: 0; list-style: none; }
 .anno-events-when { color: var(--muted); font-size: var(--t-caption); }
 .anno-events .ah-btn { align-self: flex-start; }
@@ -31,4 +42,6 @@
 
 @media (max-width: 767px) {
   .anno-grid, .anno-compare { grid-template-columns: minmax(0, 1fr); }
+  .anno-publish-picker > .ah-btn { flex: 1 1 100%; }
+  .anno-publish-cancel { margin-left: 0; }
 }

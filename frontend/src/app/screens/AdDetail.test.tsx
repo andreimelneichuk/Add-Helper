@@ -8,6 +8,7 @@ import { fakeApi, open } from "../testLive";
 import { AdMaker } from "./AdDetail";
 
 const button = (name: string | RegExp) => screen.getByRole("button", { name });
+const adCard = (name: string) => screen.getByRole("button", { name: `Открыть объявление «${name}»` });
 
 function openFirst() {
   const store = new MockStore();
@@ -19,7 +20,7 @@ function openFirst() {
 describe("экран объявления", () => {
   it("открывается из списка и показывает цифры, факты и историю", async () => {
     openFirst();
-    await userEvent.click(button("Открыть «Первый визит со скидкой»"));
+    await userEvent.click(adCard("Первый визит со скидкой"));
     expect(screen.getByRole("heading", { level: 2, name: "Первый визит со скидкой" })).toBeInTheDocument();
     expect(screen.getByText(/7 обращений/)).toBeInTheDocument();
     expect(screen.getByText("Скидка из профиля, часы с сайта")).toBeInTheDocument();
@@ -57,7 +58,7 @@ describe("экран объявления", () => {
 describe("переделка объявления", () => {
   it("форма не закрывается, когда подробности объявления пришли позже", async () => {
     const store = openFirst();
-    await userEvent.click(button("Открыть «Первый визит со скидкой»"));
+    await userEvent.click(adCard("Первый визит со скидкой"));
     await userEvent.click(button("Переделать"));
     act(() => store.set({ ads: store.state.ads.map((a) => ({ ...a, facts: "Адрес" })) }));
     expect(button("Короче")).toBeInTheDocument();
@@ -65,7 +66,7 @@ describe("переделка объявления", () => {
 
   it("новый вариант виден рядом со старым и не применяется без подтверждения", async () => {
     const store = openFirst();
-    await userEvent.click(button("Открыть «Первый визит со скидкой»"));
+    await userEvent.click(adCard("Первый визит со скидкой"));
     await userEvent.click(button("Переделать"));
     await userEvent.click(button("Короче"));
     const fresh = screen.getByRole("region", { name: "Новый вариант" });
@@ -199,7 +200,7 @@ describe("факты только из профиля", () => {
 
   it("фото нельзя поставить без согласия на съёмку", async () => {
     openFirst();
-    await userEvent.click(button("Открыть «Первый визит со скидкой»"));
+    await userEvent.click(adCard("Первый визит со скидкой"));
     await userEvent.click(button("Переделать"));
     const file = new File(["x"], "работа.jpg", { type: "image/jpeg" });
     URL.createObjectURL = () => "blob:photo";
@@ -239,7 +240,7 @@ describe("запуск", () => {
     store.goView("ads");
     store.set({ adsOff: { a1: true } });
     render(<AppShell store={store} />);
-    await userEvent.click(button("Открыть «Первый визит со скидкой»"));
+    await userEvent.click(adCard("Первый визит со скидкой"));
 
     // Кнопка перехода во всю историю
     await userEvent.click(screen.getByRole("button", { name: "Вся история и отмена" }));
@@ -254,7 +255,7 @@ describe("запуск", () => {
   it("Compose: кнопка «Другой вариант»", async () => {
     cleanup();
     openFirst();
-    await userEvent.click(button("Открыть «Первый визит со скидкой»"));
+    await userEvent.click(adCard("Первый визит со скидкой"));
     await userEvent.click(button("Переделать"));
     await userEvent.click(button("Другой акцент"));
     const otherBtn = await screen.findByRole("button", { name: "Другой вариант" });

@@ -406,8 +406,8 @@ export function createApi(businessId: string, csrf: string) {
       request<{ status: "applied" | "pending" | "refused"; group: string; text: string | null }>(`${base}/wizard-ads/${part(id)}/publish`, { method: "POST", body: JSON.stringify({ grouping }) }, csrf),
     deleteWizardAd: (id: string) =>
       request<{ status: string }>(`${base}/wizard-ads/${part(id)}`, { method: "DELETE" }, csrf),
-    archiveAd: (account: string, adId: string) =>
-      request<{ status: "applied" | "pending" }>(`${base}/ads/${part(account)}/${part(adId)}/archive`, { method: "POST" }, csrf),
+    archiveAd: (account: string, adId: string, requestId: string) =>
+      request<{ status: "applied" | "pending" }>(`${base}/ads/${part(account)}/${part(adId)}/archive`, { method: "POST", body: JSON.stringify({ request_id: requestId }) }, csrf),
     logout: () => request<void>("/api/auth/logout", { method: "POST" }, csrf),
     channels: (init?: RequestInit) => request<Channels>("/api/me/notifications", init),
     linkTelegram: () => request<{ url: string }>("/api/me/telegram", { method: "POST" }, csrf),

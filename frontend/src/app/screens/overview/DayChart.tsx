@@ -31,7 +31,7 @@ export function DayChart({ s, store }: { s: State; store: Store }) {
         </div>
       </div>
       {today === 0 ? (
-        <p className="ov-chart-empty" role="status">Показы появятся здесь после запуска рекламы.</p>
+        <p className="ov-chart-empty" role="status">{budget <= 0 ? "Бюджет на месяц ещё не задан. Укажите сумму в настройках, чтобы рассчитать дневной лимит." : "Показов в этом месяце ещё не было. Лимит до " + rub(perDay) + " в день, чтобы уложиться в бюджет."}</p>
       ) : <div className="ov-chart" style={columns}>
         <span className="ov-chart-top">{cost ? rub(top) : String(top)}</span>
         {cost && !s.paused && top > 0 && perDay > 0 && <div className="ov-chart-limit" aria-hidden="true" style={{ bottom: `${Math.round((perDay * 100) / top)}%` }} />}
@@ -56,9 +56,7 @@ export function DayChart({ s, store }: { s: State; store: Store }) {
           ? (!s.live?.hasCampaigns && s.live?.planBudget
             ? `План ${rub(s.live.planBudget)}, реклама не запущена.`
             : "Бюджет на месяц ещё не задан. Укажите сумму в настройках, чтобы автопилот рассчитал дневной лимит показов.")
-          : today === 0
-            ? `Показов в этом месяце ещё не было. Лимит до ${rub(perDay)} в день, чтобы уложиться в бюджет.`
-            : `${sel + 1} ${monthOf}: ${rub(selCost)}, обращений ${selLeads}. Пунктир и контур: дальше можно до ${rub(perDay)} в день, чтобы уложиться в бюджет.`}
+          : `${sel + 1} ${monthOf}: ${rub(selCost)}, обращений ${selLeads}. Пунктир и контур: дальше можно до ${rub(perDay)} в день, чтобы уложиться в бюджет.`}
       </p>}
     </section>
   );

@@ -10,45 +10,52 @@ import { GenerateAdsModal } from "./ads/GenerateAdsModal";
 import { LaunchModal } from "./ads/LaunchModal";
 import "./Ads.css";
 
-type AdsView = Pick<State, "price" | "ads" | "adsOff" | "situation" | "live" | "openAd">;
+type AdsView = Pick<State, "price" | "ads" | "adsOff" | "situation" | "live" | "openAd" | "working">;
 
 function Card({ store, s, ad }: { store: Store; s: AdsView; ad: Ad }) {
   const isArchived = ad.tag === "в архиве" || ad.tag === "заменено";
   const off = !isArchived && (!!s.adsOff[ad.id] || ad.tag === "отключено");
   const name = adName(s, ad.id);
   const { hook, title } = adShown(s, ad);
-  const action = off ? "Включить" : "Отключить";
+  const status = isArchived ? ad.tag : off ? "Отключено" : ad.tag;
+  const working = s.working?.action === "ad" && s.working.value === ad.id ? (off ? "Включаем…" : "Отключаем…")
+    : s.working?.action === "adPublish" && s.working.value === ad.id ? "Публикуем…"
+      : s.working?.action === "adArchive" && s.working.value === ad.id ? "Архивируем…"
+        : s.working?.action === "adRestore" && s.working.value === ad.id ? "Восстанавливаем…"
+          : s.working?.action === "adSave" && s.working.value.id === ad.id ? "Сохраняем…" : null;
   return (
-    <article className={off || isArchived ? "ann-card ann-card-off" : "ann-card"}>
+    <article
+      role="button"
+      tabIndex={0}
+      className={`ann-card${off || isArchived ? " ann-card-off" : ""}`}
+      aria-busy={!!working}
+      aria-label={`Открыть объявление «${name}»`}
+      onClick={() => store.openAdScreen(ad.id)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          store.openAdScreen(ad.id);
+        }
+      }}
+    >
       {ad.photo ? (
         <div className="ann-thumb">
           <AdArt ad={ad} hook={hook} />
-          {!off && s.situation !== "first" && <span className={`ah-tag ah-tag-${ad.tagTone} ann-badge`}>{ad.tag}</span>}
+          <span className={`ah-tag ah-tag-${off || working ? "neutral" : ad.tagTone} ann-badge`}>{working ?? status}</span>
         </div>
       ) : (
         <div className="ann-text-preview">
-          {!off && s.situation !== "first" && <span className={`ah-tag ah-tag-${ad.tagTone}`}>{ad.tag}</span>}
+          <span className={`ah-tag ah-tag-${off || working ? "neutral" : ad.tagTone}`}>{working ?? status}</span>
           <div className="ann-title">{title}</div>
           <div className="ann-text">{ad.text}</div>
         </div>
       )}
       <div className="ann-body">
         {ad.photo && <><div className="ann-title">{title}</div><div className="ann-text">{ad.text}</div></>}
-        <div className="ann-stat">{adStat(s, ad)}</div>
-        <div className="ann-facts">{ad.facts}</div>
+        <div className="ann-stat"><span>Результат</span><strong>{adStat(s, ad)}</strong></div>
         <div className="ann-foot">
-          <button type="button" className="ah-btn" aria-label={`Открыть «${name}»`} onClick={() => store.openAdScreen(ad.id)}>Открыть</button>
-          {ad.tag === "готово к запуску" && s.live?.hasCampaigns && (
-            <>
-              <button type="button" className="ah-btn ah-btn-primary" aria-label={`Опубликовать «${name}» по услугам`} onClick={() => store.ask({ action: "adPublish", value: ad.id, grouping: "services" })}>По услугам</button>
-              <button type="button" className="ah-btn" aria-label={`Опубликовать «${name}» общей темой`} onClick={() => store.ask({ action: "adPublish", value: ad.id, grouping: "general" })}>Общая тема</button>
-            </>
-          )}
-          {isArchived ? (
-            <button type="button" className="ah-btn" aria-label={`Вернуть «${name}» из архива`} onClick={() => store.ask({ action: "adRestore", value: ad.id })}>Восстановить</button>
-          ) : (
-            <button type="button" className="ah-btn" aria-label={`${action} «${name}»`} onClick={() => (off ? store.run({ action: "ad", value: ad.id }) : store.ask({ action: "ad", value: ad.id }))}>{action}</button>
-          )}
+          <span>Открыть объявление</span>
+          <span className="ann-open-icon" aria-hidden="true">↗</span>
         </div>
       </div>
     </article>
@@ -58,7 +65,7 @@ function Card({ store, s, ad }: { store: Store; s: AdsView; ad: Ad }) {
 type Filter = "all" | "on" | "ready" | "off" | "archived";
 
 export function Ads({ store }: { store: Store }) {
-  const s = useStore(store, (x): AdsView => ({ price: x.price, ads: x.ads, adsOff: x.adsOff, situation: x.situation, live: x.live, openAd: x.openAd }));
+  const s = useStore(store, (x): AdsView => ({ price: x.price, ads: x.ads, adsOff: x.adsOff, situation: x.situation, live: x.live, openAd: x.openAd, working: x.working }));
   const [filter, setFilter] = useState<Filter>("all");
   const [genModalOpen, setGenModalOpen] = useState(false);
   const [launchModalOpen, setLaunchModalOpen] = useState(false);
@@ -109,6 +116,7 @@ export function Ads({ store }: { store: Store }) {
           </button>
         </div>
       </div>
+      <p className="ann-list-lead">Выберите объявление, чтобы посмотреть его и управлять им.</p>
       <div className="ah-chips" role="group" aria-label="Какие показать">
         {filters.map(([id, label]) => (
           <button key={id} type="button" className="ah-chip" aria-pressed={filter === id} onClick={() => setFilter(id)}>{label} {groups[id].length}</button>

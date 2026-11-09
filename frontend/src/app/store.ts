@@ -39,6 +39,8 @@ export type SessionState = {
   /** Итог действия на панели; в чате итог виден в ленте. */
   notice: string;
   pending: Pending | null;
+  /** Действие, ожидающее ответа сервиса; блокирует повторный запуск. */
+  working: Pending | null;
   /** Вход в настоящем запуске состоялся, черновик перенесён в бизнес. */
   account: { email: string | null } | null;
   /** Список всех доступных бизнесов пользователя. */
@@ -183,7 +185,7 @@ const GREETING = "Здравствуйте! Я веду рекламу мало�
 
 export function initialState(stage: State["stage"] = "work", situation: Situation = "running"): State {
   return {
-    live: null, stage, situation, mode: "panel", view: "overview", notice: "", price: null, step: 0, input: "", pending: null,
+    live: null, stage, situation, mode: "panel", view: "overview", notice: "", pending: null, working: null, price: null, step: 0, input: "",
     msgs: [msg("ai", stage === "start" ? GREETING : fixtures.OPENING[situation])],
     hist: fixtures.histFor(situation), undone: {}, undoing: {}, asked: {}, undoInfo: {}, adsOff: {}, ads: fixtures.ADS, openAd: null, paused: false, topped: false, decided: null, extra: 0,
     metric: "cost", selDay: null, period: "week", filter: "all", clientsInput: "", clients: null,

@@ -1,26 +1,49 @@
-/* Сетка как лента видео: превью, под ним подпись прямо на фоне страницы. */
+/* Объявления собраны в самостоятельные карточки: статус, текст и результат читаются вместе. */
 .ann { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
 .ann-list-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
-.ann-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--pad) var(--gap); }
-.ann-card { display: flex; flex-direction: column; min-width: 0; }
+.ann-list-lead { margin: -12px 0 0; color: var(--muted); }
+.ann-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr)); gap: 16px; }
+.ann-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-surface);
+  background: var(--panel);
+  color: var(--ink);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+.ann-card:hover { border-color: var(--accent); box-shadow: 0 5px 18px rgb(25 33 45 / 8%); transform: translateY(-1px); }
+.ann-card:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .ann-thumb { position: relative; }
-.ann-thumb .ah-art { height: auto; aspect-ratio: 16 / 9; margin: 0; border-radius: var(--r-field); }
-.ann-text-preview { display: flex; flex-direction: column; gap: 6px; padding: 16px 16px 0; }
+.ann-thumb .ah-art { height: auto; aspect-ratio: 16 / 9; margin: 0; border-radius: 0; }
+.ann-text-preview { display: flex; flex: 1; flex-direction: column; align-items: flex-start; gap: 9px; padding: 16px 16px 0; }
+.ann-text-preview .ann-title { font-size: var(--t-head); line-height: 1.3; }
+.ann-text-preview .ann-text { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 /* Метка лежит на цветном превью: подложка своя, чтобы не сливалась. */
 .ah-tag.ann-badge { position: absolute; top: 8px; right: 8px; background: var(--panel); }
-.ann-body { display: flex; flex-direction: column; flex: 1; gap: 2px; padding-top: 8px; }
-.ann-title { font-weight: 600; }
-.ann-text { color: var(--muted); }
-.ann-stat { margin-top: 4px; font-weight: 500; }
-.ann-facts { color: var(--muted); font-size: var(--t-caption); }
-.ann-foot { display: flex; flex-wrap: wrap; gap: 4px; margin-top: auto; padding-top: 8px; }
+.ann-body { display: flex; flex-direction: column; flex: 1; gap: 12px; padding: 14px 16px 12px; }
+.ann-body .ann-title { font-weight: 650; font-size: var(--t-head); line-height: 1.3; }
+.ann-body .ann-text { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; color: var(--muted); }
+.ann-stat { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: var(--t-caption); }
+.ann-stat strong { color: var(--ink); font-size: var(--t-body); font-weight: 600; text-align: right; }
+.ann-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--accent); font-weight: 600; }
+.ann-open-icon { font-size: 20px; line-height: 1; }
 
-/* Отключённая карточка без прозрачности: текст и кнопка сохраняют контраст 4.5:1. */
-.ann-card-off .ah-art { background: var(--line); color: var(--muted); }
-.ann-card-off .ann-title, .ann-card-off .ann-stat { color: var(--muted); }
+/* Состояние приглушено, но весь текст остаётся читаемым и кликабельным. */
+.ann-card-off .ann-thumb .ah-art { filter: grayscale(.8); }
+.ann-card-off .ann-title { color: var(--muted); }
 
 @media (max-width: 767px) {
   .ann-cards { grid-template-columns: minmax(0, 1fr); }
+  .ann-list-head > div { width: 100%; }
+  .ann-list-head > div .ah-btn { flex: 1; }
 }
 
 .ann-decide, .ann-queue { display: flex; flex-direction: column; gap: 12px; }

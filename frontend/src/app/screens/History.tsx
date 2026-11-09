@@ -11,13 +11,14 @@ type EntryProps = {
   entry: HistoryEntry;
   undone: boolean;
   undoing: boolean;
+  working: boolean;
   asked: boolean;
   info?: UndoPreview;
   onAskUndo: (id: string) => void;
   onRunUndo: (id: string, whole?: boolean) => void;
 };
 
-const Entry = memo(function Entry({ entry, undone, undoing, asked, info, onAskUndo, onRunUndo }: EntryProps) {
+const Entry = memo(function Entry({ entry, undone, undoing, working, asked, info, onAskUndo, onRunUndo }: EntryProps) {
   const can = entry.canUndo && !undone && !undoing;
   const isAsked = asked && can;
   // Сервис проверил заранее: если отменить нельзя, говорим почему и не предлагаем кнопку.
@@ -51,16 +52,16 @@ const Entry = memo(function Entry({ entry, undone, undoing, asked, info, onAskUn
         {isAsked && <p id={noteId} className="ah-hist-note" role="status">{info?.text ?? entry.undoNote}</p>}
       </div>
       <div className="ah-hist-actions">
-        {can && !isAsked && <button ref={askRef} type="button" className="ah-btn" aria-describedby={titleId} onClick={toggle}>Отменить</button>}
+        {can && !isAsked && <button ref={askRef} type="button" className="ah-btn" disabled={working} aria-describedby={titleId} onClick={toggle}>Отменить</button>}
         {isAsked && (
           <>
             {possible && many > 0 && (
-              <button type="button" className="ah-btn ah-btn-primary" aria-describedby={noteId} onClick={() => onRunUndo(entry.id, true)}>Отменить для всех {many} направлений</button>
+              <button type="button" className="ah-btn ah-btn-primary" disabled={working} aria-describedby={noteId} onClick={() => onRunUndo(entry.id, true)}>{undoing ? "Отменяю…" : `Отменить для всех ${many} направлений`}</button>
             )}
             {possible && (
-              <button type="button" className={many ? "ah-btn" : "ah-btn ah-btn-primary"} aria-describedby={noteId} onClick={() => onRunUndo(entry.id)}>{many ? "Только это направление" : "Да, отменить"}</button>
+              <button type="button" className={many ? "ah-btn" : "ah-btn ah-btn-primary"} disabled={working} aria-describedby={noteId} onClick={() => onRunUndo(entry.id)}>{undoing ? "Отменяю…" : many ? "Только это направление" : "Да, отменить"}</button>
             )}
-            <button ref={keepRef} type="button" className="ah-btn" onClick={toggle}>{possible ? "Оставить" : "Понятно"}</button>
+            <button ref={keepRef} type="button" className="ah-btn" disabled={working} onClick={toggle}>{possible ? "Оставить" : "Понятно"}</button>
           </>
         )}
         {!can && state && <span ref={stateRef} tabIndex={-1} className="ah-hist-state">{state}</span>}
@@ -70,7 +71,7 @@ const Entry = memo(function Entry({ entry, undone, undoing, asked, info, onAskUn
 });
 
 export function History({ store }: { store: Store }) {
-  const s = useStore(store, (x) => ({ hist: x.hist, filter: x.filter, undone: x.undone, undoing: x.undoing, asked: x.asked, undoInfo: x.undoInfo }));
+  const s = useStore(store, (x) => ({ hist: x.hist, filter: x.filter, undone: x.undone, undoing: x.undoing, asked: x.asked, undoInfo: x.undoInfo, working: x.working }));
   const list = s.hist.filter((h) => s.filter === "all" || h.kind === s.filter);
 
   const handleAskUndo = (id: string) => store.askUndo(id);
@@ -89,6 +90,7 @@ export function History({ store }: { store: Store }) {
           entry={h}
           undone={!!s.undone[h.id]}
           undoing={!!s.undoing?.[h.id]}
+          working={!!s.working}
           asked={!!s.asked[h.id]}
           info={s.undoInfo[h.id]}
           onAskUndo={handleAskUndo}

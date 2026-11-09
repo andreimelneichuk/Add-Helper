@@ -9,6 +9,9 @@ import { MockStore } from "./MockStore";
 installFixtures(mockFixtures);
 
 export function MockApp() {
-  const store = useMemo(() => new MockStore(initialState(new URLSearchParams(window.location.search).has("start") ? "start" : "work")), []);
+  const store = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    return new MockStore({ ...initialState(params.has("start") ? "start" : "work"), ...(params.get("view") === "ads" ? { view: "ads" as const } : {}) });
+  }, []);
   return <AppShell store={store} />;
 }

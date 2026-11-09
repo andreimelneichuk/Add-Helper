@@ -9,6 +9,7 @@ import { initialState} from "./store";
 import { MockStore } from "../mock/MockStore";
 
 const button = (name: string | RegExp) => screen.getByRole("button", { name });
+const adCard = (name: string) => screen.getByRole("button", { name: `Открыть объявление «${name}»` });
 
 describe("изменения с панели", () => {
   it("настройка применяется только после подтверждения", async () => {
@@ -66,7 +67,8 @@ describe("изменения с панели", () => {
     const store = new MockStore();
     render(<AppShell store={store} />);
     act(() => store.goView("ads"));
-    await userEvent.click(button("Отключить «Первый визит со скидкой»"));
+    await userEvent.click(adCard("Первый визит со скидкой"));
+    await userEvent.click(button("Отключить"));
     expect(store.state.adsOff.a1).toBeFalsy();
     expect(screen.getByRole("group", { name: "Подтверждение" })).toHaveTextContent(/проверк/i);
     await userEvent.click(button("Применить"));
@@ -78,7 +80,8 @@ describe("изменения с панели", () => {
   it("включение объявления подтверждения не требует", async () => {
     const store = new MockStore({ ...initialState(), adsOff: { a3: true } });
     render(<Ads store={store} />);
-    await userEvent.click(button("Включить «Педикюр рядом с домом»"));
+    await userEvent.click(adCard("Педикюр рядом с домом"));
+    await userEvent.click(button("Включить"));
     expect(store.state.adsOff.a3).toBe(false);
   });
 });
