@@ -416,7 +416,7 @@ async def test_managed_campaign_ids_resolves_campaigns_from_open_launch_markers(
         _token,
         lambda: NOW,
         lambda _account: _campaign_ids(),
-        lambda _account: _open_campaign_targets(),
+        lambda _account: _campaign_targets(),
     )
     direct.campaigns[101] = {
         "Id": 101,
@@ -440,7 +440,7 @@ async def _campaign_ids() -> tuple[str, ...]:
     return ("101",)
 
 
-async def _open_campaign_targets() -> tuple[str, ...]:
+async def _campaign_targets() -> tuple[str, ...]:
     return ("launch:ah-1-1",)
 
 

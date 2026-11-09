@@ -102,17 +102,16 @@ class SqlChangeRepository:
             return tuple(value for value in await session.scalars(statement) if value)
 
     @staticmethod
-    async def open_campaign_targets_for(
+    async def campaign_targets_for(
         sessions: async_sessionmaker[AsyncSession], business_id: UUID, account: str
     ) -> tuple[str, ...]:
-        """Launch markers for campaigns whose external creation is not yet reconciled."""
+        """Launch markers owned by this business, including unreconciled creations."""
         statement = (
             select(ChangeRow.target_ref)
             .where(
                 ChangeRow.business_id == business_id,
                 ChangeRow.account == account,
                 ChangeRow.kind == ChangeKind.CREATE_CAMPAIGN.value,
-                ChangeRow.status.in_((ChangeStatus.PLANNED.value, ChangeStatus.APPLYING.value)),
             )
             .distinct()
         )

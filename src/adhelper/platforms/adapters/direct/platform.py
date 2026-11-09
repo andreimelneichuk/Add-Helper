@@ -213,13 +213,13 @@ class DirectPlatform:
         token_for: TokenSource,
         clock: Callable[[], datetime],
         campaign_ids_for: Callable[[str], Awaitable[Sequence[str]]] | None = None,
-        open_campaign_targets_for: Callable[[str], Awaitable[Sequence[str]]] | None = None,
+        campaign_targets_for: Callable[[str], Awaitable[Sequence[str]]] | None = None,
     ) -> None:
         self._client = client
         self._token_for = token_for
         self._clock = clock
         self._campaign_ids_for = campaign_ids_for
-        self._open_campaign_targets_for = open_campaign_targets_for
+        self._campaign_targets_for = campaign_targets_for
 
     async def _managed_campaigns(self, account: str) -> list[Mapping[str, Any]]:
         if self._campaign_ids_for is None:
@@ -435,8 +435,8 @@ class DirectPlatform:
         if self._campaign_ids_for is None:
             return tuple(str(c["Id"]) for c in await self._campaigns(account))
         campaign_ids = {str(campaign_id) for campaign_id in await self._campaign_ids_for(account)}
-        if self._open_campaign_targets_for is not None:
-            targets = await self._open_campaign_targets_for(account)
+        if self._campaign_targets_for is not None:
+            targets = await self._campaign_targets_for(account)
             markers = [
                 target.removeprefix(LAUNCH_PREFIX)
                 for target in targets

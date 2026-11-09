@@ -108,8 +108,8 @@ class DirectPlatforms:
         async def campaign_ids_for(account: str) -> tuple[str, ...]:
             return await SqlChangeRepository.campaign_ids_for(self._sessions, business_id, account)
 
-        async def open_campaign_targets_for(account: str) -> tuple[str, ...]:
-            return await SqlChangeRepository.open_campaign_targets_for(
+        async def campaign_targets_for(account: str) -> tuple[str, ...]:
+            return await SqlChangeRepository.campaign_targets_for(
                 self._sessions, business_id, account
             )
 
@@ -118,7 +118,7 @@ class DirectPlatforms:
             self._tokens(business_id),
             self._clock,
             campaign_ids_for,
-            open_campaign_targets_for,
+            campaign_targets_for,
         )
 
     async def aclose(self) -> None:
