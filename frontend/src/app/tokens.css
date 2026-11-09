@@ -68,7 +68,7 @@
 /* Кнопки: обычная, главная, текстовая */
 .ah-btn { display: inline-flex; align-items: center; justify-content: center; flex: none; max-width: 100%; min-height: var(--control); padding: 4px 18px; border: 1px solid var(--line-strong); border-radius: var(--r-control); background: var(--panel); color: var(--ink); font-size: var(--t-body); font-weight: 500; cursor: pointer; }
 .ah-btn:hover { border-color: var(--muted); }
-.ah-btn:disabled { border-color: var(--line); color: var(--muted); cursor: default; }
+.ah-btn:disabled { border-color: var(--line); color: var(--muted); cursor: not-allowed; opacity: 0.5; }
 .ah-btn-primary { border-color: var(--accent); background: var(--accent); color: var(--on-accent); font-weight: 600; }
 .ah-btn-primary:hover { border-color: var(--accent-ink); background: var(--accent-ink); }
 .ah-btn-primary:disabled { border-color: var(--line); background: var(--line); color: var(--muted); }
@@ -141,7 +141,7 @@
 .ah-proto .ah-chip { flex: none; padding: 0 8px; font-size: var(--t-caption); }
 
 /* Итог действия и подтверждение прилипают к краям: действие часто вызвано из глубины страницы */
-.ah-notice { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: var(--gap); margin-bottom: var(--gap); padding: 4px var(--pad); border-radius: var(--r-field); background: var(--accent-soft); color: var(--accent-ink); }
+.ah-notice { position: sticky; top: 0; z-index: 4; display: flex; align-items: center; justify-content: space-between; gap: var(--gap); margin-bottom: var(--gap); padding: 4px var(--pad); border-radius: var(--r-field); background: var(--accent-soft); color: var(--accent-ink); }
 .ah-confirm { position: sticky; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gap); margin-top: var(--gap); padding: var(--gap) var(--pad); border: 1px solid var(--accent); border-radius: var(--r-voice); box-shadow: 0 8px 24px rgb(28 24 48 / 14%); background: var(--panel); }
 .ah-confirm p { flex: 1 1 280px; min-width: 0; font-weight: 500; }
 .ah-confirm-actions { display: flex; gap: 8px; }

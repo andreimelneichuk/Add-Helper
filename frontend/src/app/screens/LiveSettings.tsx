@@ -280,6 +280,9 @@ function BudgetForm({ store }: { store: LiveStore }) {
       )}
 
       {problem && <p className="ah-error" role="alert">{problem}</p>}
+      {!problem && !asking && mode === "separate" && amount === live.budget && (
+        <p className="set-hint">Введите другую сумму, и кнопка «Изменить бюджет» станет активной.</p>
+      )}
       {asking ? (
         <div className="set-confirm" role="group" aria-label="Подтверждение бюджета">
           <p>

@@ -299,7 +299,12 @@ async def accounts_with_open_changes(
 
 
 class PostgresAccountLock:
-    """Блокировка сессии: при падении процесса PostgreSQL снимает её сам."""
+    """Блокировка на время транзакции: пулер соединений (Neon) не может её «потерять».
+
+    Сессионная блокировка при пулере PgBouncer снимается на другом соединении и остаётся
+    висеть навсегда, поэтому исполнитель вечно «занят». Транзакционная блокировка живёт
+    на одном соединении и снимается при завершении транзакции или падении процесса.
+    """
 
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
@@ -307,21 +312,11 @@ class PostgresAccountLock:
     @asynccontextmanager
     async def _hold(self, account: str) -> AsyncIterator[bool]:
         key = {"account": account}
-        connection = await self._engine.connect()
-        try:
-            await connection.execution_options(isolation_level="AUTOCOMMIT")
+        async with self._engine.connect() as connection, connection.begin():
             acquired = await connection.scalar(
-                text("SELECT pg_try_advisory_lock(hashtextextended(:account, 0))"), key
+                text("SELECT pg_try_advisory_xact_lock(hashtextextended(:account, 0))"), key
             )
-            try:
-                yield bool(acquired)
-            finally:
-                if acquired:
-                    await connection.execute(
-                        text("SELECT pg_advisory_unlock(hashtextextended(:account, 0))"), key
-                    )
-        finally:
-            await connection.close()
+            yield bool(acquired)
 
     def hold(self, account: str) -> Any:
         return self._hold(account)
