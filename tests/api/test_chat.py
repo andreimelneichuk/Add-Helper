@@ -136,3 +136,22 @@ async def test_chat_budget_is_the_number_owner_sees_not_the_working_part(
     client, csrf, business = anna
     answer = await _say(client, csrf, business, "Какой у меня сейчас бюджет?")
     assert "Бюджет на месяц: 30 000 ₽" in answer["reply"].replace("\xa0", " ")
+
+
+def test_ads_on_review_skip_copies_already_in_direct_and_archived() -> None:
+    """Как на экране «Реклама»: копия, что уже есть в Директе, и архивная не считаются."""
+    from types import SimpleNamespace as Item
+
+    from adhelper.api.chat import awaiting_review
+
+    def wiz(headline: str, text: str, status: str | None, archived: bool = False) -> Item:
+        return Item(headline=headline, text=text, publication_status=status, archived=archived)
+
+    items = [
+        wiz("Укладка", "Текст  один", "submitted"),
+        wiz("Бритьё", "Текст два", "submitted"),
+        wiz("Архив", "Текст", "submitted", archived=True),
+        wiz("Черновик", "Текст", None),
+    ]
+    direct = [Item(title="укладка", text="текст один")]
+    assert awaiting_review(items, direct) == ("Бритьё",)  # type: ignore[arg-type]

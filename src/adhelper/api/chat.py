@@ -4,6 +4,7 @@
 владельца теми же маршрутами, что и кнопки: политика, журнал, исполнитель.
 """
 
+from collections.abc import Sequence
 from dataclasses import asdict
 from datetime import datetime
 from typing import Any
@@ -25,9 +26,10 @@ from adhelper.commands.application.service import (
     known_from,
 )
 from adhelper.creatives.adapters.sql import SqlProfiles
-from adhelper.creatives.adapters.wizard import SqlWizardAds
+from adhelper.creatives.adapters.wizard import SqlWizardAds, WizardAdItem
 from adhelper.stats.adapters.sql import SqlDashboard
 from adhelper.stats.application.overview import PLATFORM_ZONE, ads, platform_today, window
+from adhelper.stats.domain.model import AdLine
 
 
 class CommandBody(BaseModel):
@@ -50,6 +52,25 @@ def _shown(answer: Answer, ttl: int) -> dict[str, Any]:
         "rules": answer.rules,
         "expires_in": ttl,
     }
+
+
+def _copy_key(title: str, text: str) -> tuple[str, str]:
+    return (" ".join(title.lower().split()), " ".join(text.lower().split()))
+
+
+def awaiting_review(wizard: Sequence[WizardAdItem], direct: Sequence[AdLine]) -> tuple[str, ...]:
+    """Названия объявлений мастера на проверке Яндекса: как на экране «Реклама».
+
+    Копия, которая уже есть в Директе, и архивная не считаются.
+    """
+    in_direct = {_copy_key(line.title, line.text) for line in direct}
+    return tuple(
+        item.headline
+        for item in wizard
+        if item.publication_status == "submitted"
+        and not item.archived
+        and _copy_key(item.headline, item.text) not in in_direct
+    )
 
 
 def chat_router() -> APIRouter:
@@ -117,11 +138,7 @@ def chat_router() -> APIRouter:
             has_campaigns=bool(lines),
             connected_account=connected_login,
             wizard_ads=tuple(item.headline for item in all_wizard_ads if item.active),
-            on_moderation=tuple(
-                item.headline
-                for item in all_wizard_ads
-                if item.publication_status == "submitted" and not item.archived
-            ),
+            on_moderation=awaiting_review(all_wizard_ads, [line for line, _ in lines]),
         )
 
         rules = load_rules(CURRENT_RULES)
