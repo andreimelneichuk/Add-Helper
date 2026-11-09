@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     # Боевой адаптер Директа. Выключен: действия с площадкой отвечают 503, страж шлёт тревогу.
     # Включать после согласования боевого запуска с владельцем; для проверки — адрес песочницы.
     direct_enabled: bool = False
+    # Разрешение владельца проекта на режим «Сам» у автопилота (docs/16, docs/17). Пока false,
+    # сервер отклоняет этот режим. Включать только после ворот этапа 9.
+    autopilot_auto_allowed: bool = False
     direct_api_url: str = "https://api.direct.yandex.com"
     direct_live_url: str = "https://api.direct.yandex.ru/live/v4/json/"
 

@@ -295,3 +295,13 @@ async def test_missing_browser_is_a_warning(
     monkeypatch.setattr(cli, "browser_starts", browser_starts)
     monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path))
     assert statuses(await run_checks(migrated))["browser"] is CheckStatus.WARN
+
+
+async def test_auto_mode_is_not_allowed_by_default(migrated: Settings, engine: AsyncEngine) -> None:
+    assert Settings().autopilot_auto_allowed is False
+    assert statuses(await run_checks(migrated))["autopilot"] is CheckStatus.OK
+
+
+async def test_allowed_auto_mode_is_a_warning(migrated: Settings, engine: AsyncEngine) -> None:
+    allowed = migrated.model_copy(update={"autopilot_auto_allowed": True})
+    assert statuses(await run_checks(allowed))["autopilot"] is CheckStatus.WARN

@@ -43,6 +43,7 @@ RULE_LOADERS = (
     (load_budget_rules, "budget-1"),
     (load_autopilot_rules, "autopilot-1"),
     (load_autopilot_rules, "autopilot-2"),
+    (load_autopilot_rules, "autopilot-3"),
     (load_experiment_rules, "experiments-1"),
     (load_experiment_rules, "experiments-2"),
     (load_creative_rules, "creatives-1"),
@@ -220,6 +221,15 @@ def _rules_check() -> CheckResult:
     return CheckResult("rules", CheckStatus.OK, "Файлы правил читаются")
 
 
+def _autopilot_check(settings: Settings) -> CheckResult:
+    if settings.autopilot_auto_allowed:
+        detail = (
+            "AUTOPILOT_AUTO_ALLOWED=true: режим «Сам» разрешён, деньги меняются без подтверждения"
+        )
+        return CheckResult("autopilot", CheckStatus.WARN, detail)
+    return CheckResult("autopilot", CheckStatus.OK, "Режим «Сам» не разрешён, автопилот предлагает")
+
+
 async def _browser_check() -> CheckResult:
     if await browser_starts():
         return CheckResult("browser", CheckStatus.OK, "Браузер для сайтов на скриптах запускается")
@@ -241,6 +251,7 @@ async def run_checks(settings: Settings) -> list[CheckResult]:
         _email_check(settings),
         _telegram_check(settings),
         _rules_check(),
+        _autopilot_check(settings),
         await _browser_check(),
     ]
 
