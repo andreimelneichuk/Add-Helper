@@ -244,3 +244,10 @@ async def test_broken_shadow_rules_file_does_not_break_the_working_cycle(
     monkeypatch.setattr(runtime_module, "load_autopilot_rules", load, raising=False)
     cycle = runtime(sessions, engine, {BUSINESS}).autopilot_cycle(BUSINESS, "acc")
     assert cycle is not None
+
+
+async def test_working_cycle_has_the_policy_gate(sessions: Sessions, engine: AsyncEngine) -> None:
+    """Ворота политики подключены в боевой цикл: без них действие шло бы мимо политики."""
+    cycle = runtime(sessions, engine, {BUSINESS}).autopilot_cycle(BUSINESS, "acc")
+    assert cycle._gate is not None
+    assert cycle._gate._rules.version == "policy-1"

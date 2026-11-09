@@ -11,12 +11,15 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from adhelper.accounts.adapters.crypto import AesGcmCipher
 from adhelper.autopilot.adapters.data import SqlAutopilotData, autopilot_accounts
+from adhelper.autopilot.adapters.gate_facts import SqlGateFacts
 from adhelper.autopilot.adapters.ledgered import LedgeredActions
+from adhelper.autopilot.adapters.rules_file import load_policy_rules
 from adhelper.autopilot.adapters.rules_file import load_rules as load_autopilot_rules
 from adhelper.autopilot.adapters.settings import SqlAutopilotSettings, settings_of_businesses
 from adhelper.autopilot.adapters.sql import SqlDecisionLog
 from adhelper.autopilot.adapters.tests import SqlTestPlanner
 from adhelper.autopilot.application.cycle import AutopilotCycle
+from adhelper.autopilot.application.gate import PolicyGate
 from adhelper.autopilot.application.settings import DEFAULT_SETTINGS, cycle_mode, is_due
 from adhelper.autopilot.application.visits import WithVisits
 from adhelper.budget.adapters.ledgered import (
@@ -109,6 +112,7 @@ logger = logging.getLogger(__name__)
 
 MAX_CHANGE_ATTEMPTS = 3
 CURRENT_AUTOPILOT_RULES = "autopilot-2"
+CURRENT_POLICY_RULES = "policy-1"
 # Считает рядом с рабочими правилами и пишет «сделала бы»: docs/17-autopilot-plan.md, этап 5.
 SHADOW_AUTOPILOT_RULES = "autopilot-3"
 CURRENT_EXPERIMENT_RULES = "experiments-2"
@@ -344,6 +348,10 @@ class Runtime:
             rules,
             SqlTestPlanner(self.sessions, business_id, CURRENT_EXPERIMENT_RULES),
             shadow_rules=shadow_rules,
+            gate=PolicyGate(
+                load_policy_rules(CURRENT_POLICY_RULES),
+                SqlGateFacts(self.sessions, business_id, SqlPeriodStore(self.sessions)),
+            ),
         )
 
     async def autopilot_goal(self, business_id: UUID, legacy: int) -> int:

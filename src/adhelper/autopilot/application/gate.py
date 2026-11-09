@@ -176,7 +176,7 @@ class PolicyGate:
             campaign_in_learning=campaign.in_learning if campaign else None,
             auto_strategy=campaign.auto_strategy if campaign else None,
             last_limit_change_at=self._last_change(campaign, facts),
-            data_alert=facts.data_alert,
+            data_alert=facts.data_alert or data.platform_incident or data.manual_hold,
             api_points_rest=facts.api_points_rest,
         )
 
