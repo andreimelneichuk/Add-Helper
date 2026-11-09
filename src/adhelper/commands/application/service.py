@@ -98,6 +98,15 @@ def budget_reply(context: AnalyticsContext | None) -> str:
     )
 
 
+def moderation_reply(context: AnalyticsContext | None) -> str:
+    """Что сейчас на проверке у Яндекса: названия из кабинета, число считает код."""
+    names = context.on_moderation if context else ()
+    if not names:
+        return "Сейчас на проверке у Яндекса объявлений нет."
+    listed = "; ".join(f"«{name}»" for name in names)
+    return f"На проверке у Яндекса {len(names)}: {listed}. Обычно проверка занимает до суток."
+
+
 def _money(value: int) -> str:
     return f"{value:,}".replace(",", " ") + " ₽"
 
@@ -191,6 +200,9 @@ async def interpret(
         found = (first,)
 
     text = message.lower().replace("ё", "е")
+    if first.command.kind is Kind.MODERATION:
+        first = Parsed(Command(Kind.STATS), Source.RULES, reply=moderation_reply(analytics_context))
+        return _single(first, message, rules)
     if first.command.kind is Kind.BUDGET:
         first = Parsed(Command(Kind.STATS), Source.RULES, reply=budget_reply(analytics_context))
         return _single(first, message, rules)

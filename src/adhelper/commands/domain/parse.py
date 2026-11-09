@@ -228,6 +228,16 @@ def by_rules(message: str, known: Known, max_chars: int, max_budget: int = 500_0
         return Parsed(Command(Kind.STATS), Source.RULES)
     if re.search(r"отмени|верни как было", text):
         return Parsed(Command(Kind.UNDO_LAST), Source.RULES)
+    if re.search(r"на проверк|модерац|проверя\S* яндекс", text) and not re.search(
+        r"отключ|выключ|включ|удал|передел|перепиш|архив", text
+    ):
+        return Parsed(Command(Kind.MODERATION), Source.RULES)
+    if re.search(r"потрач|потрат|расход", text):
+        # За период (неделя, сегодня) — цифры статистики, иначе бюджет месяца: потрачено и осталось.
+        if re.search(r"недел|\d+ дн|сегодня|вчера", text):
+            return Parsed(Command(Kind.STATS), Source.RULES)
+        if not numbers:
+            return Parsed(Command(Kind.BUDGET), Source.RULES)
 
     days = days_in(text)
     if days:
@@ -427,7 +437,7 @@ def from_model(
     def unknown(question: str = "") -> Parsed:
         return Parsed(Command(Kind.UNKNOWN), Source.MODEL, question)
 
-    if kind is Kind.BUDGET:
+    if kind in (Kind.BUDGET, Kind.MODERATION):
         return unknown()
     if kind in (Kind.SET_BUDGET, Kind.SET_PRICE):
         # Суммы не додумываем: число должно стоять в сообщении.

@@ -80,6 +80,8 @@ class AnalyticsContext:
     has_campaigns: bool = False
     connected_account: str | None = None
     wizard_ads: tuple[str, ...] = ()
+    # Названия объявлений, которые сейчас на проверке у Яндекса.
+    on_moderation: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

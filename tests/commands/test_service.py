@@ -188,3 +188,34 @@ def test_zero_budget_is_refused() -> None:
 
     parsed = by_rules("бюджет 0", KNOWN, 300)
     assert parsed.command.kind is Kind.UNKNOWN and "больше нуля" in parsed.question
+
+
+async def test_moderation_reference_lists_only_ads_on_review_from_the_cabinet() -> None:
+    from adhelper.commands.application.analytics import AnalyticsContext
+
+    def ctx(names: tuple[str, ...]) -> AnalyticsContext:
+        return AnalyticsContext(
+            period_label="За 7 дней",
+            cost_micros=0,
+            impressions=0,
+            clicks=0,
+            conversions=0,
+            on_moderation=names,
+        )
+
+    answer = await interpret(
+        "Какие объявления на проверке?",
+        KNOWN,
+        RULES,
+        None,
+        always,
+        analytics_context=ctx(("Укладка", "Королевское бритьё")),
+    )
+    assert answer.command.kind is Kind.STATS
+    assert (
+        "2" in answer.reply and "Укладка" in answer.reply and "Королевское бритьё" in answer.reply
+    )
+    empty = await interpret(
+        "что на модерации", KNOWN, RULES, None, always, analytics_context=ctx(())
+    )
+    assert "нет" in empty.reply.lower()

@@ -22,6 +22,8 @@ class Kind(StrEnum):
     HISTORY = "history"
     # Справка о бюджете: ответ пишет код по данным кабинета, команды на площадку нет.
     BUDGET = "budget"
+    # Справка: какие объявления сейчас на проверке у Яндекса. Ответ пишет код.
+    MODERATION = "moderation"
     UNKNOWN = "unknown"
 
 

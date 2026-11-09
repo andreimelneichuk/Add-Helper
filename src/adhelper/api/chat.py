@@ -101,11 +101,12 @@ def chat_router() -> APIRouter:
             for h in history_lines
         )
         open_periods = [p for p in await dashboard.periods(now) if p.starts_at <= now < p.ends_at]
-        working = sum(p.hard_limit - p.hard_limit * p.reserve_bp // 10_000 for p in open_periods)
+        # Бюджет — число из «Обзора» и настроек: лимит месяца без вычета резерва.
+        limit = sum(p.hard_limit for p in open_periods)
         spent_micros = sum(p.spent or 0 for p in open_periods)
         analytics_context = AnalyticsContext(
             period_label="За 7 дней",
-            budget_rubles=working // 1_000_000 if open_periods else None,
+            budget_rubles=limit // 1_000_000 if open_periods else None,
             spent_rubles=spent_micros // 1_000_000 if open_periods else None,
             cost_micros=cost_micros,
             impressions=impressions,
@@ -116,6 +117,11 @@ def chat_router() -> APIRouter:
             has_campaigns=bool(lines),
             connected_account=connected_login,
             wizard_ads=tuple(item.headline for item in all_wizard_ads if item.active),
+            on_moderation=tuple(
+                item.headline
+                for item in all_wizard_ads
+                if item.publication_status == "submitted" and not item.archived
+            ),
         )
 
         rules = load_rules(CURRENT_RULES)

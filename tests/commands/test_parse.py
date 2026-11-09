@@ -264,3 +264,18 @@ def test_budget_above_ceiling_is_a_question_not_a_command() -> None:
 def test_budget_question_is_not_a_set_budget() -> None:
     for text in ("Какой у меня сейчас бюджет?", "сколько осталось бюджета"):
         assert parse(text).command.kind is Kind.BUDGET
+
+
+def test_how_much_was_spent_is_a_budget_reference_without_a_period() -> None:
+    for text in ("Сколько потрачено?", "сколько я потратил", "какие расходы"):
+        assert parse(text).command.kind is Kind.BUDGET, text
+
+
+def test_spent_for_a_period_stays_in_stats() -> None:
+    for text in ("сколько я потратил за неделю", "расходы за 7 дней"):
+        assert parse(text).command.kind is Kind.STATS, text
+
+
+def test_which_ads_are_on_moderation_is_a_reference() -> None:
+    for text in ("Какие объявления на проверке?", "что на модерации", "что проверяет Яндекс"):
+        assert parse(text).command.kind is Kind.MODERATION, text

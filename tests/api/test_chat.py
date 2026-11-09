@@ -127,3 +127,12 @@ async def test_every_answer_tells_how_long_the_question_stays_valid(
     client, csrf, business = anna
     answer = await _say(client, csrf, business, "пауза")
     assert answer["expires_in"] == 600
+
+
+async def test_chat_budget_is_the_number_owner_sees_not_the_working_part(
+    anna: Anna,  # noqa: F811
+) -> None:
+    """В чате тот же бюджет, что в «Обзоре» и в настройках: лимит месяца без вычета резерва."""
+    client, csrf, business = anna
+    answer = await _say(client, csrf, business, "Какой у меня сейчас бюджет?")
+    assert "Бюджет на месяц: 30 000 ₽" in answer["reply"].replace("\xa0", " ")
