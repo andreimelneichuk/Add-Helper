@@ -190,12 +190,18 @@ def _launched(change: Change) -> LaunchedCampaign:
     campaign = NewCampaign.from_planned(
         change.target_ref.removeprefix(LAUNCH_PREFIX), change.planned
     )
+    actual_ads = after.get("ads")
+    ads = tuple(
+        NewAd(str(ad["headline"]), str(ad["text"]))
+        for ad in actual_ads
+        if isinstance(ad, dict) and "headline" in ad and "text" in ad
+    ) if isinstance(actual_ads, list) else campaign.ads
     return LaunchedCampaign(
         campaign_id=str(after["campaign_id"]),
         name=campaign.name,
         limit=campaign.limit,
         href=campaign.href,
-        ads=campaign.ads,
+        ads=ads,
         ad_ids=tuple(str(ad_id) for ad_id in after.get("ad_ids", [])),
     )
 

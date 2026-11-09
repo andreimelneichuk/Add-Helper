@@ -62,6 +62,8 @@ MODERATION_STATES = {
     "REJECTED": ModerationState.REJECTED,
 }
 logger = logging.getLogger(__name__)
+# Директ допускает не более трёх комбинаторных объявлений в группе.
+MAX_COMBINATORIAL_ADS_PER_GROUP = 3
 
 
 def _today(now: datetime) -> date:
@@ -1083,6 +1085,10 @@ class DirectPlatform:
             for ad in await self._ads_of_campaigns(account, [campaign_id])
         ]
         missing = [ad for ad in campaign.ads if (ad.headline, ad.text) not in present]
+        # В уже существующей кампании могут быть чужие/тестовые объявления. Не отправляем
+        # запрос, который заведомо превысит лимит Директа; повтор запуска останется идемпотентным.
+        slots = max(0, MAX_COMBINATORIAL_ADS_PER_GROUP - len(present))
+        missing = missing[:slots]
         # Метка в ссылке — та же, что у объявлений вручную: по ней ищем и читаем обратно.
         href = mark_href(campaign.href, campaign.marker)
         await self._add_text_ads(

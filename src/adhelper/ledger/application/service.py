@@ -6,6 +6,7 @@ from uuid import UUID
 
 from adhelper.ledger.domain.model import (
     Change,
+    ChangeKind,
     ChangeStatus,
     ExecutionStep,
     ProposedChange,
@@ -145,7 +146,30 @@ class Ledger:
             )
             return True
         result = await self._gateway.read(applying.account, applying.target_ref)
-        if not plan_reached(applying.planned, result):
+        reached = plan_reached(applying.planned, result)
+        is_launch = (
+            applying.kind is ChangeKind.CREATE_CAMPAIGN
+            and applying.target_ref.startswith("launch:")
+        )
+        if is_launch:
+            # Запуск считается состоявшимся, если Direct подтвердил кампанию с реальными
+            # объявлениями и совпали её настройки. Состав ads может быть меньше плана:
+            # у группы Директа жёсткий лимит, а ранее созданные объявления занимают места.
+            fields = ("name", "placement", "limit", "ends_at", "regions", "href", "counters")
+            reached = (
+                bool(result.get("campaign_id"))
+                and bool(result.get("ad_ids"))
+                and bool(result.get("ads"))
+                and all(result.get(key) == applying.planned.get(key) for key in fields)
+            )
+            if reached and result.get("ads") != applying.planned.get("ads"):
+                logger.warning(
+                    "Direct ограничил объявления кампании %s: план=%s, создано=%s",
+                    result["campaign_id"],
+                    len(applying.planned.get("ads", [])),
+                    len(result.get("ads", [])),
+                )
+        if not reached:
             logger.info(
                 "Изменение %s (%s, %s) отправлено, Яндекс ещё не показал нужное значение",
                 applying.id,
