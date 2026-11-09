@@ -145,7 +145,7 @@ export function AppShell({ store }: { store: Store }) {
           </div>
         )}
         {starting && s.account && (
-          <span className="ah-muted" style={{ marginLeft: "auto", fontSize: "13px" }}>
+          <span className="ah-muted ah-bar-email" style={{ marginLeft: "auto", fontSize: "13px" }}>
             {s.account.email}
           </span>
         )}
