@@ -17,9 +17,21 @@ def guard_source() -> ChangeSource:
     return ChangeSource.BUDGET_GUARD
 
 
+def transfer_key_prefix(transfer_id: str) -> str:
+    return f"transfer:{transfer_id}:"
+
+
 def limit_proposal(
-    account: str, source: ChangeSource, campaign_id: str, new_limit: int
+    account: str,
+    source: ChangeSource,
+    campaign_id: str,
+    new_limit: int,
+    transfer_id: str | None = None,
 ) -> ProposedChange:
+    """С `transfer_id` ключ уникален для переноса: возврат не склеивается со старой записью."""
+    key = f"set_limit:{campaign_id}:{new_limit}"
+    if transfer_id is not None:
+        key = transfer_key_prefix(transfer_id) + key
     return ProposedChange(
         account=account,
         source=source,
@@ -27,7 +39,8 @@ def limit_proposal(
         target_ref=campaign_id,
         planned={"limit": new_limit},
         explanation=f"Лимит кампании {campaign_id}: {new_limit}",
-        idempotency_key=f"set_limit:{campaign_id}:{new_limit}",
+        idempotency_key=key,
+        decision_id=f"transfer:{transfer_id}" if transfer_id is not None else None,
     )
 
 
@@ -64,10 +77,21 @@ class PlatformChangeGateway:
 class LedgeredBudgetPlatform:
     """Площадка для стража бюджета: чтение напрямую, изменения только через журнал."""
 
-    def __init__(self, platform: BudgetPlatform, ledger: Ledger, source: ChangeSource) -> None:
+    def __init__(
+        self,
+        platform: BudgetPlatform,
+        ledger: Ledger,
+        source: ChangeSource,
+        transfer_id: str | None = None,
+    ) -> None:
         self._platform = platform
         self._ledger = ledger
         self._source = source
+        self._transfer_id = transfer_id
+
+    def for_transfer(self, transfer_id: str) -> "LedgeredBudgetPlatform":
+        """Та же площадка, но все лимиты пишутся под единым идентификатором переноса."""
+        return LedgeredBudgetPlatform(self._platform, self._ledger, self._source, transfer_id)
 
     async def read_campaigns(self, account: str) -> Sequence[CampaignBudget]:
         campaigns = await self._platform.read_campaigns(account)
@@ -98,7 +122,9 @@ class LedgeredBudgetPlatform:
         return await self._platform.fetch_balance(account)
 
     def _proposal(self, account: str, change: LimitChange) -> ProposedChange:
-        return limit_proposal(account, self._source, change.campaign_id, change.new_limit)
+        return limit_proposal(
+            account, self._source, change.campaign_id, change.new_limit, self._transfer_id
+        )
 
     async def _run(self, proposed: ProposedChange) -> None:
         try:

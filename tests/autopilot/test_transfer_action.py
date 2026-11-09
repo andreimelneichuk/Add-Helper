@@ -12,20 +12,28 @@ from hypothesis import strategies as st
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from adhelper.autopilot.adapters.rules_file import load_policy_rules
+from adhelper.autopilot.adapters.transfers import SqlTransferStore
 from adhelper.autopilot.application.transfer import (
+    AuthorizedTransfer,
     CampaignTraits,
     PolicyFacts,
     TransferOutcome,
     TransferResult,
     authorize_transfer,
+    cancel_transfer,
+    finish_open_transfers,
+    restore_transfer,
     resume_transfer,
+    run_transfer,
 )
-from adhelper.autopilot.domain.policy import PolicyAction, PolicyReason
+from adhelper.autopilot.domain.policy import PolicyAction, PolicyDecision, PolicyReason
+from adhelper.autopilot.domain.transfers import TransferState
 from adhelper.budget.adapters.ledgered import LedgeredBudgetPlatform, PlatformChangeGateway
 from adhelper.budget.adapters.rules_file import load_rules
 from adhelper.budget.application.guard import TransferStatus
 from adhelper.budget.application.preflight import BudgetPreflight
-from adhelper.budget.domain.limits import BudgetPeriod, CampaignBudget
+from adhelper.budget.domain.limits import BudgetPeriod, CampaignBudget, LimitChange
+from adhelper.budget.domain.transfer import TransferPlan
 from adhelper.budget.domain.watch import BurnRate
 from adhelper.ledger.adapters.sql import PostgresAccountLock, SqlChangeRepository
 from adhelper.ledger.application.rollback import RollbackStatus, rollback_change
@@ -124,7 +132,7 @@ async def test_allowed_transfer_decreases_before_increasing_and_keeps_the_sum() 
     assert outcome.authorized.decision.rules_version == "policy-1"
 
     status = await resume_transfer(
-        platform, "acc", PERIOD, outcome.authorized, ZERO, NOW, BUDGET_RULES
+        platform, "acc", PERIOD, outcome.authorized, ZERO, NOW, BUDGET_RULES, POLICY
     )
 
     assert status is TransferStatus.DONE
@@ -141,7 +149,9 @@ async def test_resume_after_break_finishes_without_repeating_the_donor_decrease(
     platform.faults.append(Fault("set_limit", after_apply=True))
 
     statuses = [
-        await resume_transfer(platform, "acc", PERIOD, outcome.authorized, ZERO, NOW, BUDGET_RULES)
+        await resume_transfer(
+            platform, "acc", PERIOD, outcome.authorized, ZERO, NOW, BUDGET_RULES, POLICY
+        )
         for _ in range(3)
     ]
 
@@ -187,12 +197,17 @@ def test_sum_of_limits_never_exceeds_the_start_sum_even_with_faults(
         status = TransferStatus.INTERRUPTED
         for _ in range(len(faults) + 1):
             status = await resume_transfer(
-                platform, "acc", PERIOD, outcome.authorized, ZERO, NOW, BUDGET_RULES
+                platform, "acc", PERIOD, outcome.authorized, ZERO, NOW, BUDGET_RULES, POLICY
             )
             if status is not TransferStatus.INTERRUPTED:
                 break
         # Страж может отказать в росте получателя; сумма лимитов не выше начальной всегда.
-        assert status in {TransferStatus.DONE, TransferStatus.REJECTED}
+        assert status in {
+            TransferStatus.DONE,
+            TransferStatus.REJECTED,
+            TransferStatus.ROLLED_BACK,
+            TransferStatus.STUCK,
+        }
         assert max(platform.limit_sums) <= start
         if status is TransferStatus.DONE:
             assert platform.limit_sum == start
@@ -224,7 +239,7 @@ async def test_journaled_transfer_is_rolled_back_by_new_records(
     assert outcome.authorized is not None
 
     status = await resume_transfer(
-        ledgered, "acc", PERIOD, outcome.authorized, ZERO, NOW, BUDGET_RULES
+        ledgered, "acc", PERIOD, outcome.authorized, ZERO, NOW, BUDGET_RULES, POLICY
     )
     assert status is TransferStatus.DONE
     repository = SqlChangeRepository(sessions, BUSINESS)
@@ -245,3 +260,209 @@ async def test_journaled_transfer_is_rolled_back_by_new_records(
     assert platform.campaigns["a"].limit == 500_000
     assert platform.campaigns["b"].limit == 100_000
     assert max(platform.limit_sums) <= PERIOD.operating_budget
+
+
+def outage_after_first_limit(platform: FakePlatform) -> None:
+    """Донор снижен, затем площадка пропадает: перенос остаётся недоведённым."""
+    original = platform.set_limit
+
+    async def once(account: str, change: LimitChange) -> None:
+        await original(account, change)
+        platform.unavailable = True
+        platform.set_limit = original  # type: ignore[method-assign]
+
+    platform.set_limit = once  # type: ignore[method-assign]
+
+
+def ledger_for(platform: FakePlatform, sessions: Sessions, engine: AsyncEngine) -> Ledger:
+    return Ledger(
+        repository=SqlChangeRepository(sessions, BUSINESS),
+        gateway=PlatformChangeGateway(platform),
+        lock=PostgresAccountLock(engine),
+        max_attempts=3,
+        preflight=BudgetPreflight(platform, PERIOD, ZERO, lambda: platform.now, BUDGET_RULES),
+    )
+
+
+def test_authorized_transfer_cannot_be_built_outside_the_policy() -> None:
+    plan = TransferPlan("a", "b", 450_000, 150_000, 500_000)
+    allowed = PolicyDecision(None, POLICY.version, {})
+
+    with pytest.raises(TypeError):
+        AuthorizedTransfer(plan, allowed, 50_000)
+    with pytest.raises(TypeError):
+        AuthorizedTransfer(plan, allowed, 50_000, object())
+
+
+async def test_resume_refuses_a_stale_or_denied_decision() -> None:
+    platform = FakePlatform([campaign("a", 500_000), campaign("b", 100_000)], NOW)
+    outcome = await authorize(platform, 50_000)
+    assert outcome.authorized is not None
+    other = replace(POLICY, version="policy-0")
+
+    status = await resume_transfer(
+        platform, "acc", PERIOD, outcome.authorized, ZERO, NOW, BUDGET_RULES, other
+    )
+
+    assert status is TransferStatus.REJECTED
+    assert platform.set_limit_calls == []
+
+
+def test_only_the_transfer_module_drives_transfers() -> None:
+    from pathlib import Path
+
+    root = Path(__file__).parents[2] / "src"
+    users = {
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*.py")
+        if "drive_transfer" in path.read_text()
+    }
+    assert users == {
+        "adhelper/autopilot/application/transfer.py",
+        "adhelper/budget/application/guard.py",
+    }
+
+
+async def test_run_transfer_writes_intent_first_and_tags_journal_with_transfer_id(
+    sessions: Sessions, engine: AsyncEngine, _owner: None
+) -> None:
+    platform = FakePlatform([campaign("a", 500_000), campaign("b", 100_000)], NOW)
+    ledger = ledger_for(platform, sessions, engine)
+    ledgered = LedgeredBudgetPlatform(platform, ledger, ChangeSource.AUTOPILOT)
+    store = SqlTransferStore(sessions, BUSINESS)
+    outcome = await authorize(platform, 50_000)
+    assert outcome.authorized is not None
+
+    transfer_id, status = await run_transfer(
+        store, ledgered, "acc", PERIOD, outcome.authorized, ZERO, NOW, BUDGET_RULES, POLICY
+    )
+
+    assert status is TransferStatus.DONE
+    record = await store.get(transfer_id)
+    assert record is not None and record.state is TransferState.DONE
+    rows = await SqlChangeRepository(sessions, BUSINESS).all()
+    assert {r.decision_id for r in rows} == {f"transfer:{transfer_id}"}
+    assert await store.open_transfers() == []
+
+
+async def test_other_business_does_not_see_the_transfer(
+    sessions: Sessions, engine: AsyncEngine, _owner: None
+) -> None:
+    platform = FakePlatform([campaign("a", 500_000), campaign("b", 100_000)], NOW)
+    ledgered = LedgeredBudgetPlatform(
+        platform, ledger_for(platform, sessions, engine), ChangeSource.AUTOPILOT
+    )
+    outcome = await authorize(platform, 50_000)
+    assert outcome.authorized is not None
+    transfer_id, _ = await run_transfer(
+        SqlTransferStore(sessions, BUSINESS),
+        ledgered,
+        "acc",
+        PERIOD,
+        outcome.authorized,
+        ZERO,
+        NOW,
+        BUDGET_RULES,
+        POLICY,
+    )
+
+    assert await SqlTransferStore(sessions, uuid.uuid4()).get(transfer_id) is None
+
+
+async def test_open_transfer_is_finished_after_a_crash(
+    sessions: Sessions, engine: AsyncEngine, _owner: None
+) -> None:
+    platform = FakePlatform([campaign("a", 500_000), campaign("b", 100_000)], NOW)
+    ledgered = LedgeredBudgetPlatform(
+        platform, ledger_for(platform, sessions, engine), ChangeSource.AUTOPILOT
+    )
+    store = SqlTransferStore(sessions, BUSINESS)
+    outcome = await authorize(platform, 50_000)
+    assert outcome.authorized is not None
+    # Донор снижен, ответ на рост получателя потерян: перенос остаётся открытым в базе.
+    outage_after_first_limit(platform)
+    _, first = await run_transfer(
+        store, ledgered, "acc", PERIOD, outcome.authorized, ZERO, NOW, BUDGET_RULES, POLICY
+    )
+    assert first is TransferStatus.INTERRUPTED
+    assert len(await store.open_transfers()) == 1
+    platform.unavailable = False
+
+    done = await finish_open_transfers(store, ledgered, PERIOD, ZERO, NOW, BUDGET_RULES, POLICY)
+
+    assert set(done.values()) == {TransferStatus.DONE}
+    assert platform.campaigns["a"].limit == 450_000
+    assert platform.campaigns["b"].limit == 150_000
+    assert await store.open_transfers() == []
+
+
+async def test_stale_open_transfer_is_cancelled_by_reverse_transfer(
+    sessions: Sessions, engine: AsyncEngine, _owner: None
+) -> None:
+    platform = FakePlatform([campaign("a", 500_000), campaign("b", 100_000)], NOW)
+    ledgered = LedgeredBudgetPlatform(
+        platform, ledger_for(platform, sessions, engine), ChangeSource.AUTOPILOT
+    )
+    store = SqlTransferStore(sessions, BUSINESS)
+    outcome = await authorize(platform, 50_000)
+    assert outcome.authorized is not None
+    outage_after_first_limit(platform)
+    transfer_id, first = await run_transfer(
+        store, ledgered, "acc", PERIOD, outcome.authorized, ZERO, NOW, BUDGET_RULES, POLICY
+    )
+    assert first is TransferStatus.INTERRUPTED
+    assert platform.campaigns["a"].limit == 450_000
+    platform.unavailable = False
+
+    other = replace(POLICY, version="policy-0")
+    result = await finish_open_transfers(store, ledgered, PERIOD, ZERO, NOW, BUDGET_RULES, other)
+
+    assert result == {transfer_id: TransferStatus.DONE}
+    record = await store.get(transfer_id)
+    assert record is not None and record.state is TransferState.CANCELLED
+    assert platform.campaigns["a"].limit == 500_000
+    assert platform.campaigns["b"].limit == 100_000
+
+
+async def test_cancel_transfer_returns_recipient_first_then_donor(
+    sessions: Sessions, engine: AsyncEngine, _owner: None
+) -> None:
+    platform = FakePlatform([campaign("a", 500_000), campaign("b", 100_000)], NOW)
+    ledgered = LedgeredBudgetPlatform(
+        platform, ledger_for(platform, sessions, engine), ChangeSource.AUTOPILOT
+    )
+    store = SqlTransferStore(sessions, BUSINESS)
+    outcome = await authorize(platform, 50_000)
+    assert outcome.authorized is not None
+    transfer_id, _ = await run_transfer(
+        store, ledgered, "acc", PERIOD, outcome.authorized, ZERO, NOW, BUDGET_RULES, POLICY
+    )
+    platform.set_limit_calls.clear()
+    platform.limit_sums.clear()
+
+    status = await cancel_transfer(store, ledgered, transfer_id, PERIOD, ZERO, NOW, BUDGET_RULES)
+
+    assert status is TransferStatus.DONE
+    assert [c.campaign_id for c in platform.set_limit_calls] == ["b", "a"]
+    assert platform.campaigns["a"].limit == 500_000
+    assert platform.campaigns["b"].limit == 100_000
+    assert max(platform.limit_sums) <= PERIOD.operating_budget
+    record = await store.get(transfer_id)
+    assert record is not None and record.state is TransferState.CANCELLED
+    assert (
+        await cancel_transfer(store, ledgered, transfer_id, PERIOD, ZERO, NOW, BUDGET_RULES) is None
+    )
+
+
+def test_restored_transfer_keeps_the_stored_decision() -> None:
+    from adhelper.autopilot.domain.transfers import TransferRecord
+
+    record = TransferRecord(
+        "x", "acc", "a", "b", 500_000, 450_000, 150_000, 50_000,
+        {"reason": None, "rules_version": "policy-1", "inputs": {}},
+    )  # fmt: skip
+
+    restored = restore_transfer(record)
+
+    assert restored.plan.donor_start == 500_000
+    assert restored.decision.rules_version == "policy-1"

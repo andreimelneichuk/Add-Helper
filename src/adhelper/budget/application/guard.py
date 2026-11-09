@@ -173,9 +173,11 @@ async def drive_transfer(
     """
     try:
         first = next_step(plan, await _read_limits(platform, account))
-        if first is not None and first.campaign_id == plan.donor_id:
-            if not await _precheck_recipient(platform, account, period, plan, burn, now, rules):
-                return TransferStatus.REJECTED
+        donor_first = first is not None and first.campaign_id == plan.donor_id
+        if donor_first and not await _precheck_recipient(
+            platform, account, period, plan, burn, now, rules
+        ):
+            return TransferStatus.REJECTED
         for _ in range(MAX_TRANSFER_ITERATIONS):
             step = next_step(plan, await _read_limits(platform, account))
             if step is None:
@@ -187,6 +189,10 @@ async def drive_transfer(
                     return await compensate_transfer(platform, account, period, plan)
                 return TransferStatus.REJECTED
             await platform.set_limit(account, step)
+        # Шаги не подтверждаются. Донор не тронут — ничего не выведено, перенос остаётся открытым.
+        limits = await _read_limits(platform, account)
+        if plan.donor_start is not None and limits.get(plan.donor_id) == plan.donor_start:
+            return TransferStatus.INTERRUPTED
     except PlatformUnavailable:
         return TransferStatus.INTERRUPTED
     return await compensate_transfer(platform, account, period, plan)
