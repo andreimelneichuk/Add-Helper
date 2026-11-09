@@ -850,6 +850,7 @@ class SqlCreativeQueue:
                 None if row.profile is None else profile_from_json(row.profile),
                 None if row.rework is None else _rework(row.rework),
                 None if row.rework is None else row.rework["rules"],
+                max(1, row.wanted or 5),
             )
 
     async def finish(

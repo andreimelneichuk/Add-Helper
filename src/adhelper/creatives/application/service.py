@@ -109,7 +109,9 @@ async def run_queued(
                     profile, claimed.rework, model, rules, load_rework(claimed.rework_rules), judge
                 )
             else:
-                result = await generate_ads(profile, model, rules, judge, claimed.campaign_name)
+                result = await generate_ads(
+                    profile, model, rules, judge, claimed.campaign_name, claimed.wanted
+                )
         except Exception as error:
             # В логе только тип: текст ошибки может содержать ответ модели или ключ.
             logger.error("Генерация набора %s: %s", claimed.id, type(error).__name__)

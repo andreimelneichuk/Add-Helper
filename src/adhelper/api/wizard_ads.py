@@ -53,6 +53,7 @@ class DraftBody(BaseModel):
     address: str = Field(default="", max_length=2000)
     services: list[ServiceBody] = Field(default_factory=list, max_length=200)
     features: list[str] = Field(default_factory=list, max_length=200)
+    variants: int = Field(default=5, ge=1, le=10)
     force: bool = False
 
 
@@ -137,6 +138,7 @@ def guest_ads_router() -> APIRouter:
                 CURRENT_RULES,
                 _now(request),
                 force=body.force,
+                wanted=body.variants,
             )
         except TooManySets:
             raise HTTPException(

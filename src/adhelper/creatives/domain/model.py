@@ -150,6 +150,7 @@ class ClaimedSet:
     # Переделка одного объявления по просьбе владельца.
     rework: Rework | None = None
     rework_rules: str | None = None
+    wanted: int = 5
 
 
 @dataclass(frozen=True)

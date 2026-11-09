@@ -42,6 +42,7 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
   const [selectedService, setSelectedService] = useState(serviceOptions[0] ?? "Все услуги");
   const [customService, setCustomService] = useState("");
   const [wish, setWish] = useState("");
+  const [variants, setVariants] = useState(3);
   const [busy, setBusy] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +71,7 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
         address: profile.address,
         services: services.map((x) => ({ name: x.name, price: x.price })),
         features: profile.features,
+        variants,
       });
       setAdSetMeta({ id: queued.id, token: queued.token });
       const polled = await poller.run({
@@ -113,6 +115,7 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
         address: "наш салон",
         services: [{ name: targetService, price: null }],
         features,
+        variants,
       });
 
       setAdSetMeta({ id: queued.id, token: queued.token });
@@ -259,6 +262,25 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
                 />
               )}
             </div>
+
+            <label>
+              <span className="ah-label">Сколько вариантов написать</span>
+              <input
+                className="ah-input"
+                type="number"
+                min={1}
+                max={10}
+                value={variants}
+                onChange={(e) => setVariants(Math.min(10, Math.max(1, Number(e.target.value) || 1)))}
+                style={{ width: 120, marginTop: 6 }}
+              />
+              <span className="ah-muted" style={{ fontSize: "12px", display: "block", marginTop: 4 }}>
+                В одной группе Direct можно запустить до 3 вариантов. Остальные останутся черновиками.
+              </span>
+              <span className="ah-muted" style={{ fontSize: "12px", display: "block", marginTop: 4 }}>
+                Direct сначала ротирует объявления, затем чаще показывает вариант с более высоким CTR по мере накопления статистики.
+              </span>
+            </label>
 
             {live ? (
               <p className="ah-muted">

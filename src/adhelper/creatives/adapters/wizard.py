@@ -67,6 +67,7 @@ class SqlWizardSets:
         creative_rules: str,
         now: datetime,
         force: bool = False,
+        wanted: int = 5,
     ) -> int:
         guests = CreativeSetRow.business_id.is_(None)
         recent = CreativeSetRow.created_at > now - DAY
@@ -82,6 +83,7 @@ class SqlWizardSets:
                         recent,
                         CreativeSetRow.guest_key == guest_key,
                         CreativeSetRow.profile == profile_json,
+                        CreativeSetRow.wanted == wanted,
                         CreativeSetRow.status == SetStatus.READY.value,
                     )
                     .order_by(CreativeSetRow.id.desc())
@@ -107,6 +109,7 @@ class SqlWizardSets:
                 guest_key=guest_key,
                 token_hash=token_hash,
                 profile=profile_to_json(profile),
+                wanted=wanted,
                 created_at=now,
             )
             session.add(row)

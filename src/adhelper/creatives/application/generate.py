@@ -82,7 +82,12 @@ FRAME = (
 )
 
 
-def build_prompt(profile: BusinessProfile, rules: CreativeRules, focus: str | None = None) -> str:
+def build_prompt(
+    profile: BusinessProfile,
+    rules: CreativeRules,
+    focus: str | None = None,
+    wanted: int = 5,
+) -> str:
     facts = keyed_facts(profile)
     # Название направления — только тема. Факты по-прежнему берутся из профиля.
     topic = (
@@ -93,7 +98,8 @@ def build_prompt(profile: BusinessProfile, rules: CreativeRules, focus: str | No
     )
     # Замер 2026-11-01: с лимитом без запаса 78% черновиков выходили длиннее и снимались.
     return (
-        f"{topic}Напиши 5 разных по смыслу объявлений. Заголовок до {rules.headline_max} символов. "
+        f"{topic}Напиши {wanted} разных по смыслу объявлений. "
+        f"Заголовок до {rules.headline_max} символов. "
         f"Текст — одно-два коротких предложения, {rules.text_max * 2 // 3}–"
         f"{rules.text_max - 10} символов с пробелами; длиннее {rules.text_max} — "
         "объявление отклонят.\n"
@@ -192,6 +198,7 @@ async def generate_ads(
     rules: CreativeRules,
     judge: TextModel | None = None,
     focus: str | None = None,
+    wanted: int = 5,
 ) -> CreativeSet:
     """Модель предлагает, код и судья проверяют. При любой неудаче остаётся шаблон из профиля."""
     tokens = 0
@@ -199,7 +206,8 @@ async def generate_ads(
     needs_review = profile.niche.strip().lower() in rules.sensitive_niches
     notes: list[str] = []
     if model is not None:
-        prompt = build_prompt(profile, rules, focus)
+        wanted = max(1, wanted)
+        prompt = build_prompt(profile, rules, focus, wanted)
         for _ in range(rules.max_model_attempts):
             left = rules.max_tokens_per_set - tokens
             if left <= 0:
@@ -216,6 +224,7 @@ async def generate_ads(
                 notes.append("bad_model_reply")
                 continue
             kept, dropped = _select(candidates, profile, rules)
+            kept = kept[:wanted]
             rejected.extend(dropped)
             # Судья смотрит только то, что прошло детерминированную проверку, и может лишь снять.
             if kept and judge is not None:
@@ -237,7 +246,7 @@ async def generate_ads(
                 )
             notes.append("all_drafts_rejected")
     return CreativeSet(
-        template_drafts(profile, rules),
+        template_drafts(profile, rules)[:wanted],
         tuple(rejected),
         CreativeSource.TEMPLATE,
         tokens,

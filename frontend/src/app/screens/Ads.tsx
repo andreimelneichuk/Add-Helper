@@ -49,7 +49,7 @@ function Card({ store, s, ad }: { store: Store; s: AdsView; ad: Ad }) {
   );
 }
 
-type Filter = "all" | "on" | "off" | "archived";
+type Filter = "all" | "on" | "ready" | "off" | "archived";
 
 export function Ads({ store }: { store: Store }) {
   const s = useStore(store, (x): AdsView => ({ price: x.price, ads: x.ads, adsOff: x.adsOff, situation: x.situation, live: x.live, openAd: x.openAd }));
@@ -60,20 +60,22 @@ export function Ads({ store }: { store: Store }) {
   if (s.openAd && s.ads.some((a) => a.id === s.openAd)) return <AdDetail store={store} id={s.openAd} />;
 
   const isPrelaunch = s.live ? !s.live.hasCampaigns : s.situation === "first";
-  const onLabel = isPrelaunch ? "К запуску" : "Работают";
   const isArchived = (a: Ad) => a.tag === "в архиве" || a.tag === "заменено";
   const isOff = (a: Ad) => !isArchived(a) && (!!s.adsOff[a.id] || a.tag === "отключено");
-  const isOn = (a: Ad) => !isArchived(a) && !isOff(a);
+  const isReady = (a: Ad) => !isArchived(a) && !isOff(a) && a.tag === "готово к запуску";
+  const isOn = (a: Ad) => !isArchived(a) && !isOff(a) && (isPrelaunch ? isReady(a) : a.tag === "работает");
 
   const groups: Record<Filter, Ad[]> = {
     all: s.ads.filter((a) => !isArchived(a)),
     on: s.ads.filter(isOn),
+    ready: s.ads.filter(isReady),
     off: s.ads.filter(isOff),
     archived: s.ads.filter(isArchived),
   };
   const filters: [Filter, string][] = [
     ["all", "Все"],
-    ["on", onLabel],
+    ["on", isPrelaunch ? "К запуску" : "Работают"],
+    ...(!isPrelaunch ? [["ready", "К запуску"] as [Filter, string]] : []),
     ["off", "Отключены"],
     ["archived", "В архиве"],
   ];
