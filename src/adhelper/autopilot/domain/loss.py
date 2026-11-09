@@ -11,6 +11,8 @@ from dataclasses import dataclass
 
 BASIS_POINTS = 10000
 GRID = 2000
+# Выше этого счётчики пропорционально уменьшаем: сетка не вырождается.
+COUNT_CAP = 10**9
 SPREAD = 10.0
 
 
@@ -34,11 +36,15 @@ def belief(
     clicks: int, leads: int, group_clicks: int, group_leads: int, prior_clicks: int
 ) -> RateBelief:
     """Апостериор объявления. Группа с поправкой Лапласа: среднее строго внутри (0, 1)."""
+    clicks = max(0, clicks)
     leads = max(0, min(leads, clicks))
     prior_rate = (max(0, group_leads) + 1) / (max(0, group_clicks) + 2)
+    # Априор с нулевым весом оставил бы нулевые клики без оценки: вес не меньше одного клика.
+    prior = max(1, prior_clicks)
+    scale = min(1.0, COUNT_CAP / max(1, clicks))
     return RateBelief(
-        leads + prior_clicks * prior_rate,
-        clicks - leads + prior_clicks * (1.0 - prior_rate),
+        leads * scale + prior * prior_rate,
+        (clicks - leads) * scale + prior * (1.0 - prior_rate),
     )
 
 
@@ -63,13 +69,18 @@ def _weights(value: RateBelief, low: float, step: float) -> list[float]:
         )
         raw.append(math.exp(log_density))
     total = math.fsum(raw)
+    if not math.isfinite(total) or total <= 0:
+        return [1.0 / GRID] * GRID
     return [item / total for item in raw]
 
 
 def _range(*values: RateBelief) -> tuple[float, float]:
     low = min(rate_mean(v) - SPREAD * _sd(v) for v in values)
     high = max(rate_mean(v) + SPREAD * _sd(v) for v in values)
-    return max(0.0, low), min(1.0, high)
+    low, high = max(0.0, low), min(1.0, high)
+    if high - low < 1e-12:
+        low, high = max(0.0, low - 1e-9), min(1.0, high + 1e-9)
+    return low, high
 
 
 def _to_bp(probability: float) -> int:

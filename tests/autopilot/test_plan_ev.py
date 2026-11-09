@@ -2,6 +2,7 @@
 
 import dataclasses
 from datetime import UTC, datetime
+from typing import Any
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -123,7 +124,7 @@ def test_slow_direction_only_protects_and_does_not_optimize() -> None:
     result = plan([ad("ad:a", 400, 5), ad("ad:b", 400, 1)])
 
     assert result.actions == []
-    assert set(result.blocked.values()) == {BlockReason.STRATEGY_LEARNING}
+    assert set(result.blocked.values()) == {BlockReason.FEW_LEADS}
 
 
 def test_untrusted_data_is_protect_only_even_if_numbers_scream() -> None:
@@ -208,3 +209,62 @@ def test_decisions_are_reproducible_and_every_action_carries_its_proof(
 def test_below_minimum_clicks_there_is_never_an_action(clicks: int, leads: int) -> None:
     result = plan([ad("ad:a", 900, 60), ad("ad:b", clicks, min(leads, clicks))])
     assert result.actions == []
+
+
+INPUT_KEYS = {
+    "clicks",
+    "leads",
+    "spend_micros",
+    "age_days",
+    "weekly_leads",
+    "weekly_clicks",
+    "group_clicks",
+    "group_leads",
+    "prior_clicks",
+    "test_running",
+    "last_change_at",
+}
+
+
+def test_every_branch_records_all_inputs_of_the_decision() -> None:
+    slow = plan([ad("ad:a", 400, 5), ad("ad:b", 400, 1)])
+    single = plan([ad("ad:a", 400, 20)])
+    wait = plan([ad("ad:a", 400, 20), ad("ad:b", 100, 3)])
+    full = plan([ad("ad:a", 400, 20), ad("ad:b", 400, 10)])
+    for result in (slow, single, wait, full):
+        for ref, facts in result.assessments.items():
+            assert set(facts) >= INPUT_KEYS, (ref, INPUT_KEYS - set(facts))
+    facts = full.assessments["ad:b"]
+    assert facts["prior_clicks"] == RULES.prior_clicks and facts["group_clicks"] == 800
+    assert facts["group_leads"] == 30 and facts["expected_gap_ppm"] > 0 and facts["p_worse_bp"] > 0
+
+
+def test_campaign_state_is_part_of_the_recorded_inputs() -> None:
+    changed = datetime(2026, 11, 19, 12, 0, tzinfo=UTC)
+    campaign = CampaignStats("c1", 1, False, changed, test_running=True)
+    result = plan([ad("ad:a", 400, 20), ad("ad:b", 400, 10)], [campaign])
+    facts = result.assessments["ad:b"]
+    assert facts["test_running"] == 1 and facts["last_change_at"] == int(changed.timestamp())
+
+
+def test_more_leads_than_clicks_is_contradictory_data_and_only_protects() -> None:
+    result = plan([ad("ad:a", 400, 20), ad("ad:b", 100, 120)])
+    assert result.actions == []
+    assert set(result.blocked.values()) == {BlockReason.DATA_CONFLICT}
+    assert result.assessments["ad:b"]["data_conflict"] == 1
+
+
+def test_rules_reject_nonsense_thresholds() -> None:
+    import pytest
+
+    bad_values: tuple[dict[str, Any], ...] = (
+        {"prior_clicks": 0},
+        {"interval_tail_bp": 0},
+        {"interval_tail_bp": 5000},
+        {"min_worse_probability_bp": 10000},
+        {"max_variants": 1},
+        {"min_weekly_leads": -1},
+    )
+    for bad in bad_values:
+        with pytest.raises(ValueError):
+            dataclasses.replace(RULES, **bad)

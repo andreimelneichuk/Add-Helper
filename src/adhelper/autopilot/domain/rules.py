@@ -43,3 +43,23 @@ class AutopilotRules:
     min_weekly_leads: int = 0
     # Больше вариантов в одном направлении не сравниваем.
     max_variants: int = 2
+
+    def __post_init__(self) -> None:
+        """Бессмысленные пороги отклоняем при загрузке файла, а не в середине цикла."""
+        problems = []
+        if self.engine != "classic" and self.prior_clicks < 1:
+            problems.append("prior_clicks должен быть не меньше 1")
+        if not 0 <= self.prior_clicks <= 1_000_000:
+            problems.append("prior_clicks вне 0..1 000 000")
+        if not 1 <= self.interval_tail_bp <= 4999:
+            problems.append("interval_tail_bp вне 1..4999")
+        if not 0 <= self.min_worse_probability_bp <= 9999:
+            problems.append("min_worse_probability_bp вне 0..9999")
+        if self.max_variants < 2:
+            problems.append("max_variants должен быть не меньше 2")
+        if self.min_weekly_leads < 0 or self.min_clicks < 0 or self.error_cost_target_multiple < 0:
+            problems.append("пороги не могут быть отрицательными")
+        if self.min_clicks > 10_000_000:
+            problems.append("min_clicks больше 10 000 000")
+        if problems:
+            raise ValueError(f"Правила {self.version}: " + "; ".join(problems))

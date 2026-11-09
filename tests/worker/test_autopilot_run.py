@@ -3,7 +3,9 @@
 import uuid
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from adhelper.autopilot.adapters.settings import SqlAutopilotSettings
@@ -224,3 +226,21 @@ async def test_confirmed_economics_sets_the_goal_of_the_cycle(
     assert await run_time.autopilot_goal(BUSINESS, 90_000_000) == expected
     # Без записи экономики остаётся прежняя цель.
     assert await run_time.autopilot_goal(OTHER, 77_000_000) == 77_000_000
+
+
+async def test_broken_shadow_rules_file_does_not_break_the_working_cycle(
+    sessions: Sessions, engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from adhelper.autopilot.adapters.rules_file import load_rules
+    from adhelper.worker import runtime as runtime_module
+
+    real = load_rules
+
+    def load(version: str) -> Any:
+        if version == runtime_module.SHADOW_AUTOPILOT_RULES:
+            raise ValueError("файл правил испорчен")
+        return real(version)
+
+    monkeypatch.setattr(runtime_module, "load_autopilot_rules", load, raising=False)
+    cycle = runtime(sessions, engine, {BUSINESS}).autopilot_cycle(BUSINESS, "acc")
+    assert cycle is not None

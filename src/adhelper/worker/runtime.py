@@ -327,6 +327,14 @@ class Runtime:
         if visits is not None:
             counter = SqlTagChecks(self.sessions, business_id).counter
             data = WithVisits(data, visits, counter, rules)
+        # Порча файла теневых правил не должна останавливать рабочий цикл.
+        try:
+            shadow_rules = load_autopilot_rules(SHADOW_AUTOPILOT_RULES)
+        except Exception as error:
+            logger.warning(
+                "Правила %s не загружены: %s", SHADOW_AUTOPILOT_RULES, type(error).__name__
+            )
+            shadow_rules = None
         return AutopilotCycle(
             data,
             SqlDecisionLog(self.sessions, business_id),
@@ -335,7 +343,7 @@ class Runtime:
             self.clock,
             rules,
             SqlTestPlanner(self.sessions, business_id, CURRENT_EXPERIMENT_RULES),
-            shadow_rules=load_autopilot_rules(SHADOW_AUTOPILOT_RULES),
+            shadow_rules=shadow_rules,
         )
 
     async def autopilot_goal(self, business_id: UUID, legacy: int) -> int:

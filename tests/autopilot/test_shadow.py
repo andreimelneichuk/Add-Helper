@@ -36,8 +36,22 @@ class Source:
 
 
 @dataclass
+class Last:
+    decided_at: datetime
+    inputs: Mapping[str, Any]
+    verdict: str
+    action: str | None
+
+
+@dataclass
 class Log:
     rows: list[dict[str, Any]] = field(default_factory=list)
+
+    async def latest(self, account: str, object_ref: str) -> Last | None:
+        for row in reversed(self.rows):
+            if row["ref"] == object_ref:
+                return Last(row["at"], row["inputs"], row["verdict"], row["action"])
+        return None
 
     async def record(
         self,
@@ -58,6 +72,7 @@ class Log:
                 "status": status,
                 "inputs": dict(inputs),
                 "rules": rules_version,
+                "at": decided_at,
             }
         )
         return len(self.rows)
@@ -170,3 +185,28 @@ async def test_shadow_failure_never_breaks_the_working_cycle(
 
     assert log.rows, "рабочие правила отработали и записали решения"
     assert not [row for row in log.rows if row["status"] == "shadow"]
+
+
+async def test_same_day_same_inputs_are_not_written_twice_but_changes_are() -> None:
+    log, hands = Log(), Hands()
+    ads = [ad("ad:a", 400, 20), ad("ad:b", 400, 10)]
+    cycle = build(ads, log, hands)
+    await cycle.run("acc", TARGET, Mode.CONFIRM)
+    first = [r for r in log.rows if r["status"] == "shadow"]
+    await cycle.run("acc", TARGET, Mode.CONFIRM)
+    assert [r for r in log.rows if r["status"] == "shadow"] == first
+    # Изменились входные данные: запись новая.
+    await build([ad("ad:a", 400, 20), ad("ad:b", 400, 14)], log, hands).run(
+        "acc", TARGET, Mode.CONFIRM
+    )
+    assert len([r for r in log.rows if r["status"] == "shadow"]) > len(first)
+
+
+async def test_bad_data_shadow_record_carries_the_health_window() -> None:
+    log, hands = Log(), Hands()
+    await build([ad("ad:a", 400, 40)], log, hands, incident=True).run("acc", TARGET, Mode.AUTO)
+    inputs = next(r for r in log.rows if r["ref"] == "shadow:acc")["inputs"]
+    assert (
+        inputs["recent_clicks"] == HEALTHY.clicks and inputs["baseline_clicks"] == BASELINE.clicks
+    )
+    assert inputs["platform_incident"] == 1 and inputs["reasons"]

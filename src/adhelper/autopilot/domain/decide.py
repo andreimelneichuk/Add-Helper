@@ -36,6 +36,10 @@ class BlockReason(StrEnum):
     NOT_WORSE = "not_worse"
     TOO_MANY_VARIANTS = "too_many_variants"
     STRATEGY_LEARNING = "strategy_learning"
+    # Меньше обращений в неделю, чем нужно для оценки: это нехватка данных, а не обучение.
+    FEW_LEADS = "few_leads"
+    # Обращений больше, чем кликов: данные противоречивы, выводов не делаем.
+    DATA_CONFLICT = "data_conflict"
 
 
 @dataclass(frozen=True)

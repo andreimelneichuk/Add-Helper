@@ -1,7 +1,7 @@
 import logging
 from collections.abc import Callable, Mapping
 from dataclasses import replace
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from adhelper.autopilot.domain.decide import Action, ActionKind, Mode, plan_cycle
@@ -24,6 +24,20 @@ SHADOW_PREFIX = "shadow:"
 SCHEDULED_MODE = Mode.CONFIRM
 
 
+def _window_inputs(data: AccountData) -> dict[str, Any]:
+    """Окно проверки качества данных: по нему видно, почему данным верили или нет."""
+    out: dict[str, Any] = {
+        "platform_incident": int(data.platform_incident),
+        "manual_hold": int(data.manual_hold),
+    }
+    for name, window in (("recent", data.recent), ("baseline", data.baseline)):
+        out[f"{name}_spend_micros"] = window.spend
+        out[f"{name}_leads"] = window.leads
+        out[f"{name}_clicks"] = window.clicks
+        out[f"{name}_visits"] = -1 if window.visits is None else window.visits
+    return out
+
+
 class AutopilotData(Protocol):
     async def load(self, account: str, now: datetime) -> AccountData: ...
 
@@ -40,6 +54,21 @@ class DecisionLog(Protocol):
         rules_version: str,
         decided_at: datetime,
     ) -> int: ...
+
+
+class LastDecision(Protocol):
+    @property
+    def decided_at(self) -> datetime: ...
+    @property
+    def inputs(self) -> Mapping[str, Any]: ...
+    @property
+    def verdict(self) -> str: ...
+    @property
+    def action(self) -> str | None: ...
+
+
+class ShadowLog(DecisionLog, Protocol):
+    async def latest(self, account: str, object_ref: str) -> LastDecision | None: ...
 
 
 class Actions(Protocol):
@@ -69,7 +98,7 @@ class AutopilotCycle:
     def __init__(
         self,
         data: AutopilotData,
-        decisions: DecisionLog,
+        decisions: ShadowLog,
         actions: Actions,
         alerts: DataAlerts,
         clock: Callable[[], datetime],
@@ -158,16 +187,16 @@ class AutopilotCycle:
                 HealthInput(data.recent, data.baseline, data.platform_incident, data.manual_hold),
                 rules,
             )
+            window = _window_inputs(data)
             if not health.trusted:
                 reasons = [reason.value for reason in health.reasons]
-                await self._decisions.record(
+                await self._shadow_record(
                     account,
                     SHADOW_PREFIX + account,
                     "untrusted",
                     None,
-                    SHADOW_STATUS,
-                    {"would": "protect_only", "reasons": reasons, "goal_micros": target},
-                    rules.version,
+                    {"would": "protect_only", "reasons": reasons, "goal_micros": target} | window,
+                    rules,
                     now,
                 )
                 return
@@ -180,25 +209,53 @@ class AutopilotCycle:
                     if action
                     else (plan.blocked[ref].value if ref in plan.blocked else "no_action")
                 )
-                inputs: dict[str, Any] = dict(plan.assessments.get(ref, {})) | {
-                    "would": action.kind.value if action else "wait",
-                    "reason": reason,
-                    "goal_micros": target,
-                }
+                inputs: dict[str, Any] = (
+                    dict(plan.assessments.get(ref, {}))
+                    | window
+                    | {
+                        "would": action.kind.value if action else "wait",
+                        "reason": reason,
+                        "goal_micros": target,
+                        "mode": mode.value,
+                    }
+                )
                 if ref in plan.compared_with:
                     inputs["better_ref"] = plan.compared_with[ref]
-                await self._decisions.record(
+                await self._shadow_record(
                     account,
                     SHADOW_PREFIX + ref,
                     evaluation.verdict.value,
                     action.kind.value if action else None,
-                    SHADOW_STATUS,
                     inputs,
-                    rules.version,
+                    rules,
                     now,
                 )
         except Exception as error:
             logger.warning("Теневой счёт %s не удался: %s", rules.version, type(error).__name__)
+
+    async def _shadow_record(
+        self,
+        account: str,
+        ref: str,
+        verdict: str,
+        action: str | None,
+        inputs: Mapping[str, Any],
+        rules: AutopilotRules,
+        now: datetime,
+    ) -> None:
+        """Одно и то же решение с теми же входными данными за сутки второй раз не пишем."""
+        last = await self._decisions.latest(account, ref)
+        if (
+            last is not None
+            and last.decided_at.astimezone(UTC).date() == now.astimezone(UTC).date()
+            and last.verdict == verdict
+            and last.action == action
+            and dict(last.inputs) == dict(inputs)
+        ):
+            return
+        await self._decisions.record(
+            account, ref, verdict, action, SHADOW_STATUS, inputs, rules.version, now
+        )
 
     async def _execute(self, account: str, action: Action, now: datetime) -> None:
         verdict = {

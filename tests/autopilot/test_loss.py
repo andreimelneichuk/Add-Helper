@@ -126,3 +126,21 @@ def test_cost_interval_is_integer_micros_and_ordered() -> None:
 def test_expected_loss_rounds_down_to_whole_micros() -> None:
     assert expected_loss_micros(400, 0.0249999, TARGET) == int(400 * 0.0249999 * TARGET)
     assert expected_loss_micros(0, 0.5, TARGET) == 0
+
+
+def test_zero_and_huge_counts_never_raise_and_say_little() -> None:
+    from adhelper.autopilot.domain.loss import (
+        belief,
+        compare_rates,
+        cost_interval_micros,
+        rate_interval,
+    )
+
+    empty = belief(0, 0, 0, 0, 0)
+    huge = belief(10**15, 3 * 10**13, 10**15, 3 * 10**13, 20)
+    for value in (empty, huge):
+        low, high = rate_interval(value, 500)
+        assert 0.0 <= low <= high <= 1.0
+    assert 0 <= compare_rates(empty, huge).p_worse_bp <= 9999
+    assert compare_rates(huge, huge).expected_gap >= 0
+    assert cost_interval_micros(0, 0, 0.0, 0.0) == (0, 0)
