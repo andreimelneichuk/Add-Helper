@@ -54,6 +54,32 @@ class GateNote:
     notes: dict[str, str]
 
 
+class Gate(Protocol):
+    async def screen(
+        self,
+        account: str,
+        actions: Sequence[Action],
+        data: AccountData,
+        allowed: frozenset[ActionKind] | None,
+        now: datetime,
+    ) -> dict[str, GateNote]: ...
+
+
+class ClosedGate:
+    """Ворота без правил: файл политики не прочитан, поэтому самостоятельно не делаем ничего."""
+
+    async def screen(
+        self,
+        account: str,
+        actions: Sequence[Action],
+        data: AccountData,
+        allowed: frozenset[ActionKind] | None,
+        now: datetime,
+    ) -> dict[str, GateNote]:
+        note = {"policy_version": "unavailable", "held_by": "gate_error"}
+        return {a.ref: GateNote(True, dict(note)) for a in actions if not a.needs_confirmation}
+
+
 class PolicyGate:
     def __init__(
         self, rules: PolicyRules, facts: GateFactsSource, reviewer: Reviewer | None = None
@@ -77,14 +103,14 @@ class PolicyGate:
             return {}
         try:
             facts = await self._facts.load(account, now)
+            # Пустой набор разрешений не значит «всё»: всё разрешено только при `None`.
+            kinds = frozenset(ActionKind) if allowed is None else allowed
+            permitted = frozenset(POLICY_ACTION[kind] for kind in kinds)
         except Exception as error:
             logger.warning("Ворота не получили факты: %s", type(error).__name__)
             return {a.ref: GateNote(True, version | {"held_by": "gate_error"}) for a in todo}
         notes: dict[str, GateNote] = {}
         passed: list[Action] = []
-        # Пустой набор разрешений не значит «всё»: всё разрешено только при `None`.
-        kinds = frozenset(ActionKind) if allowed is None else allowed
-        permitted = frozenset(POLICY_ACTION[kind] for kind in kinds)
         # Счётчики копятся внутри цикла: каждое пропущенное действие занимает место следующим.
         changes, moved = facts.changes_today, facts.moved_this_week
         for action in todo:

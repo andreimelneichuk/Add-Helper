@@ -305,3 +305,9 @@ async def test_auto_mode_is_not_allowed_by_default(migrated: Settings, engine: A
 async def test_allowed_auto_mode_is_a_warning(migrated: Settings, engine: AsyncEngine) -> None:
     allowed = migrated.model_copy(update={"autopilot_auto_allowed": True})
     assert statuses(await run_checks(allowed))["autopilot"] is CheckStatus.WARN
+
+
+def test_check_reads_the_policy_rules_file() -> None:
+    from adhelper.autopilot.adapters.rules_file import load_policy_rules
+
+    assert (load_policy_rules, "policy-1") in cli.RULE_LOADERS

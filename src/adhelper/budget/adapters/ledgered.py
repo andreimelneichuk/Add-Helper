@@ -17,6 +17,10 @@ def guard_source() -> ChangeSource:
     return ChangeSource.BUDGET_GUARD
 
 
+def autopilot_source() -> ChangeSource:
+    return ChangeSource.AUTOPILOT
+
+
 def transfer_key_prefix(transfer_id: str) -> str:
     return f"transfer:{transfer_id}:"
 

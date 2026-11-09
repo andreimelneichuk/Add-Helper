@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from adhelper.autopilot.adapters.settings import SqlAutopilotSettings
 from adhelper.autopilot.adapters.sql import SqlDecisionLog
+from adhelper.autopilot.application.gate import PolicyGate
 from adhelper.autopilot.domain.settings import DEFAULT_SETTINGS, AutopilotMode, Cadence
 from adhelper.business.adapters.sql import SqlLeadGoal
 from adhelper.creatives.adapters.sql import SqlProfiles
@@ -249,5 +250,88 @@ async def test_broken_shadow_rules_file_does_not_break_the_working_cycle(
 async def test_working_cycle_has_the_policy_gate(sessions: Sessions, engine: AsyncEngine) -> None:
     """Ворота политики подключены в боевой цикл: без них действие шло бы мимо политики."""
     cycle = runtime(sessions, engine, {BUSINESS}).autopilot_cycle(BUSINESS, "acc")
-    assert cycle._gate is not None
+    assert isinstance(cycle._gate, PolicyGate)
     assert cycle._gate._rules.version == "policy-1"
+
+
+async def test_broken_policy_file_closes_the_gate_instead_of_opening_it(
+    sessions: Sessions, engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from adhelper.autopilot.application.gate import ClosedGate
+    from adhelper.worker import runtime as runtime_module
+
+    def broken(version: str) -> Any:
+        raise ValueError("файл политики испорчен")
+
+    monkeypatch.setattr(runtime_module, "load_policy_rules", broken)
+
+    cycle = runtime(sessions, engine, {BUSINESS}).autopilot_cycle(BUSINESS, "acc")
+
+    # Нет ворот — действие шло бы мимо политики; нет файла — самостоятельно не делаем ничего.
+    assert isinstance(cycle._gate, ClosedGate)
+
+
+async def _open_transfer(
+    sessions: Sessions, platform: FakePlatform, rules_version: str = "policy-1"
+) -> str:
+    from adhelper.autopilot.adapters.transfers import SqlTransferStore
+    from adhelper.autopilot.domain.transfers import TransferRecord
+    from adhelper.budget.adapters.sql import SqlPeriodStore
+    from adhelper.budget.domain.limits import BudgetPeriod
+
+    period = BudgetPeriod(1_000_000, 1000, NOW - timedelta(days=1), NOW + timedelta(days=29))
+    await SqlPeriodStore(sessions).add(BUSINESS, "acc", period, "budget-1", None, NOW)
+    record = TransferRecord(
+        str(uuid.uuid4()), "acc", "a", "b", 500_000, 490_000, 110_000, 10_000,
+        {"reason": None, "rules_version": rules_version, "inputs": {}},
+    )  # fmt: skip
+    await SqlTransferStore(sessions, BUSINESS).add(record)
+    return record.id
+
+
+async def test_hourly_tick_finishes_an_interrupted_transfer(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    from adhelper.autopilot.adapters.transfers import SqlTransferStore
+    from adhelper.autopilot.domain.transfers import TransferState
+    from adhelper.budget.domain.limits import CampaignBudget
+    from tests.budget.fake_platform import FakePlatform as Fake
+
+    await SqlLeadGoal(sessions, BUSINESS).set(90_000_000)
+    # Донор уже снижен, до получателя рост не дошёл: сервис остановился между шагами.
+    platform = Fake(
+        [CampaignBudget("a", 490_000, 0, True, None), CampaignBudget("b", 100_000, 0, True, None)],
+        NOW,
+    )
+    transfer_id = await _open_transfer(sessions, platform)
+    worker = Runtime(
+        sessions=sessions,
+        engine=engine,
+        platform_for=lambda business, _account: platform if business == BUSINESS else None,
+        clock=lambda: NOW,
+    )
+
+    await worker.autopilot_run()
+
+    assert platform.campaigns["b"].limit == 110_000
+    assert platform.campaigns["a"].limit == 490_000
+    record = await SqlTransferStore(sessions, BUSINESS).get(transfer_id)
+    assert record is not None and record.state is TransferState.DONE
+
+
+async def test_failing_recovery_does_not_stop_the_cycle(
+    sessions: Sessions, engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from adhelper.worker import runtime as runtime_module
+
+    await SqlLeadGoal(sessions, BUSINESS).set(90_000_000)
+    await SqlProfiles(sessions, BUSINESS).save(
+        BusinessProfile("Лак", (Service("Маникюр", 1500),)), ""
+    )
+
+    async def boom(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("сбой доводчика")
+
+    monkeypatch.setattr(runtime_module, "finish_open_transfers", boom)
+
+    assert await runtime(sessions, engine, {BUSINESS}).autopilot_run() == 1

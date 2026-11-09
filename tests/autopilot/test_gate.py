@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import pytest
+
 from adhelper.autopilot.adapters.rules_file import load_policy_rules, load_rules
 from adhelper.autopilot.application.cycle import AccountData, AutopilotCycle
 from adhelper.autopilot.application.gate import GateFacts, PolicyGate
@@ -175,6 +177,18 @@ async def test_gate_failure_is_a_card_not_an_action() -> None:
     log, actions = Log(), Actions()
     broken = Facts(RuntimeError("db down"))
     await run_self(cycle(gate(broken, Reviewer(True)), log, actions))
+    assert actions.paused == []
+    assert decision(log)[3]["held_by"] == "gate_error"
+
+
+async def test_unmapped_action_kind_is_a_card_not_a_crash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from adhelper.autopilot.application import gate as gate_module
+
+    monkeypatch.delitem(gate_module.POLICY_ACTION, ActionKind.PAUSE_AD)
+    log, actions = Log(), Actions()
+    await run_self(cycle(gate(Facts(), Reviewer(True)), log, actions))
     assert actions.paused == []
     assert decision(log)[3]["held_by"] == "gate_error"
 

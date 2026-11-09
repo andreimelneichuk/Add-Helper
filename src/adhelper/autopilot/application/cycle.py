@@ -4,7 +4,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
-from adhelper.autopilot.application.gate import PolicyGate
+from adhelper.autopilot.application.gate import Gate
 from adhelper.autopilot.domain.decide import Action, ActionKind, Mode, plan_cycle
 from adhelper.autopilot.domain.explain import explain
 from adhelper.autopilot.domain.health import HealthInput, check_health
@@ -106,7 +106,7 @@ class AutopilotCycle:
         rules: AutopilotRules,
         tests: TestPlanner | None = None,
         shadow_rules: AutopilotRules | None = None,
-        gate: PolicyGate | None = None,
+        gate: Gate | None = None,
     ) -> None:
         self._gate = gate
         self._shadow_rules = shadow_rules

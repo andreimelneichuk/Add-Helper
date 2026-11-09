@@ -18,13 +18,16 @@ from adhelper.autopilot.adapters.rules_file import load_rules as load_autopilot_
 from adhelper.autopilot.adapters.settings import SqlAutopilotSettings, settings_of_businesses
 from adhelper.autopilot.adapters.sql import SqlDecisionLog
 from adhelper.autopilot.adapters.tests import SqlTestPlanner
+from adhelper.autopilot.adapters.transfers import SqlTransferStore
 from adhelper.autopilot.application.cycle import AutopilotCycle
-from adhelper.autopilot.application.gate import PolicyGate
+from adhelper.autopilot.application.gate import ClosedGate, Gate, PolicyGate
 from adhelper.autopilot.application.settings import DEFAULT_SETTINGS, cycle_mode, is_due
+from adhelper.autopilot.application.transfer import finish_open_transfers
 from adhelper.autopilot.application.visits import WithVisits
 from adhelper.budget.adapters.ledgered import (
     LedgeredBudgetPlatform,
     PlatformChangeGateway,
+    autopilot_source,
     guard_source,
     limit_proposal,
 )
@@ -339,6 +342,20 @@ class Runtime:
                 "Правила %s не загружены: %s", SHADOW_AUTOPILOT_RULES, type(error).__name__
             )
             shadow_rules = None
+        # Не прочитали политику — ворота закрыты: без них действие шло бы мимо политики.
+        gate: Gate
+        try:
+            gate = PolicyGate(
+                load_policy_rules(CURRENT_POLICY_RULES),
+                SqlGateFacts(self.sessions, business_id, SqlPeriodStore(self.sessions)),
+            )
+        except Exception as error:
+            logger.error(
+                "Правила %s не загружены, ворота закрыты: %s",
+                CURRENT_POLICY_RULES,
+                type(error).__name__,
+            )
+            gate = ClosedGate()
         return AutopilotCycle(
             data,
             SqlDecisionLog(self.sessions, business_id),
@@ -348,11 +365,36 @@ class Runtime:
             rules,
             SqlTestPlanner(self.sessions, business_id, CURRENT_EXPERIMENT_RULES),
             shadow_rules=shadow_rules,
-            gate=PolicyGate(
-                load_policy_rules(CURRENT_POLICY_RULES),
-                SqlGateFacts(self.sessions, business_id, SqlPeriodStore(self.sessions)),
-            ),
+            gate=gate,
         )
+
+    async def recover_transfers(self, business_id: UUID, account: str) -> int:
+        """Доводит или откатывает недоведённые переносы лимита. Возвращает число обработанных.
+
+        Это восстановление, а не новое решение: суммарный лимит не растёт, каждый шаг идёт через
+        страж бюджета. Нет подключённой площадки или действующего периода — ничего не трогаем.
+        """
+        now = self.clock()
+        platform = self.platform_for(business_id, account)
+        record = await SqlPeriodStore(self.sessions).active_for(business_id, account, now)
+        if platform is None or record is None:
+            return 0
+        period = record.period
+        if period.ends_at is None or period.ends_at <= now:
+            return 0
+        ledgered = LedgeredBudgetPlatform(
+            platform, self.ledger_for(business_id, account), autopilot_source()
+        )
+        done = await finish_open_transfers(
+            SqlTransferStore(self.sessions, business_id),
+            ledgered,
+            period,
+            None,
+            now,
+            load_rules(record.rules_version),
+            load_policy_rules(CURRENT_POLICY_RULES),
+        )
+        return len(done)
 
     async def autopilot_goal(self, business_id: UUID, legacy: int) -> int:
         """Цель цикла: из подтверждённой владельцем экономики, иначе прежняя цель."""
@@ -469,6 +511,11 @@ class Runtime:
         done = 0
         for business_id, account, goal in accounts:
             settings = stored.get(business_id, DEFAULT_SETTINGS)
+            # Восстановление идёт каждый час, не по слоту разбора: деньги не ждут расписания.
+            try:
+                await self.recover_transfers(business_id, account)
+            except Exception as error:
+                logger.warning("Переносы не доведены: %s", type(error).__name__)
             if only is None and not is_due(settings, now):
                 continue
             if settings.stopped_at is not None or self.platform_for(business_id, account) is None:

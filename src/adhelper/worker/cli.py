@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from adhelper.accounts.adapters.crypto import AesGcmCipher, CipherConfigError
 from adhelper.accounts.adapters.sql import logins_of_business
 from adhelper.autopilot.adapters.data import SqlHistory, autopilot_accounts
+from adhelper.autopilot.adapters.rules_file import load_policy_rules
 from adhelper.autopilot.adapters.rules_file import load_rules as load_autopilot_rules
 from adhelper.autopilot.adapters.sql import LoggedDecision, SqlDecisionLog
 from adhelper.autopilot.application.simulator import Difference, compare
@@ -45,6 +46,7 @@ RULE_LOADERS = (
     (load_autopilot_rules, "autopilot-1"),
     (load_autopilot_rules, "autopilot-2"),
     (load_autopilot_rules, "autopilot-3"),
+    (load_policy_rules, "policy-1"),
     (load_experiment_rules, "experiments-1"),
     (load_experiment_rules, "experiments-2"),
     (load_creative_rules, "creatives-1"),
