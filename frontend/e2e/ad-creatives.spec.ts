@@ -20,7 +20,7 @@ test.describe("Интерактивная переделка объявлени�
     // 2. Открытие карточки первого объявления
     const firstCard = page.locator(".ann-card").first();
     const adTitle = await firstCard.locator(".ann-title").innerText();
-    await firstCard.getByRole("button", { name: /^Открыть/ }).click();
+    await firstCard.click();
 
     // 3. Детальный экран объявления .anno-screen
     const screen = page.locator(".anno-screen");
@@ -90,8 +90,8 @@ test.describe("Интерактивная переделка объявлени�
     await nav(page, "Реклама").click();
 
     // Находим карточку живого объявления и открываем детальный экран
-    const adCard = page.locator(".ann-card").filter({ has: page.getByRole("button", { name: /^Открыть/ }) }).first();
-    await adCard.getByRole("button", { name: /^Открыть/ }).click();
+    const adCard = page.locator(".ann-card[aria-label^='Открыть объявление']").first();
+    await adCard.click();
 
     const screen = page.locator(".anno-screen");
     await expect(screen).toBeVisible();
@@ -133,7 +133,7 @@ test.describe("Интерактивная переделка объявлени�
     const photosSection = page.locator(".set-section[aria-labelledby='set-photos-title']");
     await expect(photosSection).toBeVisible();
 
-    const consentCheckbox = photosSection.getByRole("checkbox", { name: /Люди на фото согласны/ });
+    const consentCheckbox = photosSection.getByRole("checkbox", { name: /У меня есть права использовать фото/ });
     await expect(consentCheckbox).toBeVisible();
 
     const addPhotoBtn = photosSection.getByRole("button", { name: "Добавить фото" });

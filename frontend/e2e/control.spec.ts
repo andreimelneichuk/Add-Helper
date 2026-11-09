@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openWorkingAd } from "./ads-helpers";
 import type { Page } from "@playwright/test";
 
 const notice = (page: Page) => page.locator(".ah-notice");
@@ -19,10 +20,8 @@ test("обзор показывает настоящие данные, а не �
 test("отключение объявления доходит до журнала и видно в истории", async ({ page }) => {
   await page.goto("/");
   await nav(page, "Реклама").click();
-  // Карточки решений по новым объявлениям стоят выше и кнопки «Отключить» не имеют.
-  const card = page.locator(".ann-card").filter({ has: page.getByRole("button", { name: /^Отключить/ }) }).first();
-  const name = await card.locator(".ann-title").innerText();
-  await card.getByRole("button", { name: /^Отключить/ }).click();
+  const name = await openWorkingAd(page);
+  await page.getByRole("button", { name: /^Отключить/ }).click();
   await page.getByRole("button", { name: "Применить" }).click();
   await expect(notice(page)).toContainText(`Отключил «${name}»`);
 
@@ -277,6 +276,8 @@ test("после подключения кабинета мастер ведёт
   await expect(page.getByRole("heading", { level: 1, name: "Подключите кабинет Яндекса" })).toBeVisible();
   await expect(page.getByRole("alert")).toBeVisible();
   await expect(page).toHaveURL(/\/\?start$/);
+  // Кнопка «Продолжить» пускает дальше только после ответа сервиса о кабинете: ждём «Подключено».
+  await expect(page.getByRole("button", { name: "Подключено" })).toBeVisible();
   await page.getByRole("button", { name: "Продолжить" }).click();
 
   await expect(page.getByRole("heading", { level: 1, name: "Укажите ИНН для маркировки" })).toBeVisible();
@@ -413,13 +414,15 @@ test("проверка Яндекса: отклонённое переписан
   await nav(page, "История").click();
   await expect(page.getByRole("heading", { name: /^Отправил объявление на проверку/ }).first()).toBeVisible();
   await nav(page, "Реклама").click();
-  await expect(page.getByText("на проверке Яндекса")).toHaveCount(0);
+  // Вкладка-фильтр остаётся, но ничего на проверке не висит: счётчик 0, карточек с такой меткой нет.
+  await expect(page.getByRole("button", { name: /^На проверке Яндекса 0$/ })).toBeVisible();
+  await expect(page.locator(".ann-card").filter({ hasText: "на проверке Яндекса" })).toHaveCount(0);
 });
 
 test("переделка объявления: выдумка отклонена до писателя, выбранный вариант встаёт в очередь", async ({ page, request }) => {
   await page.goto("/");
   await nav(page, "Реклама").click();
-  await page.getByRole("button", { name: "Открыть «Педикюр у метро Профсоюзная»" }).first().click();
+  await page.getByRole("button", { name: "Открыть объявление «Педикюр у метро Профсоюзная»" }).first().click();
   await page.getByRole("button", { name: "Переделать" }).click();
 
   // Скидки нет в профиле: сервис отказывает сразу, писатель не вызывается.

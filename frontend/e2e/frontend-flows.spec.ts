@@ -1,3 +1,4 @@
+import { openWorkingAd } from "./ads-helpers";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
@@ -134,9 +135,8 @@ test.describe("Комплексное тестирование экранов и
     await nav(page, "Реклама").click();
 
     // 1. Находим работающее объявление и нажимаем «Отключить»
-    const card = page.locator(".ann-card").filter({ has: page.getByRole("button", { name: /^Отключить/ }) }).first();
-    const adTitle = await card.locator(".ann-title").innerText();
-    await card.getByRole("button", { name: /^Отключить/ }).click();
+    const adTitle = await openWorkingAd(page);
+    await page.getByRole("button", { name: /^Отключить/ }).click();
 
     // 2. Появляется плашка подтверждения .ah-confirm
     const confirmDialog = page.locator(".ah-confirm");
@@ -148,6 +148,6 @@ test.describe("Комплексное тестирование экранов и
 
     // 4. Диалог закрылся, объявление осталось активным
     await expect(confirmDialog).toHaveCount(0);
-    await expect(card.getByRole("button", { name: /^Отключить/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Отключить/ })).toBeVisible();
   });
 });

@@ -1,3 +1,4 @@
+import { openWorkingAd } from "./ads-helpers";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
@@ -90,13 +91,11 @@ test.describe("Задача 15. Мобильная адаптивность (mob
     await mobileNav(page, "Реклама").click();
     await expect(page.locator(".ann")).toBeVisible();
 
-    // Находим карточку объявления
-    const card = page.locator(".ann-card").filter({ has: page.getByRole("button", { name: /^Отключить/ }) }).first();
-    await expect(card).toBeVisible();
-    const adTitle = await card.locator(".ann-title").innerText();
+    // Открываем работающее объявление: «Отключить» стоит на его экране
+    const adTitle = await openWorkingAd(page);
 
     // Нажимаем «Отключить» — появляется липкий диалог подтверждения внизу
-    await card.getByRole("button", { name: /^Отключить/ }).click();
+    await page.getByRole("button", { name: /^Отключить/ }).click();
     const confirmDialog = page.locator(".ah-confirm");
     await expect(confirmDialog).toBeVisible();
     await expect(confirmDialog).toContainText(`Отключить «${adTitle}»?`);

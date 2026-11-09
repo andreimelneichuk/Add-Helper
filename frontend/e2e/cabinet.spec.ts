@@ -1,3 +1,4 @@
+import { backToAds, openWorkingAd } from "./ads-helpers";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
@@ -188,13 +189,12 @@ test.describe("Задача 15. Кабинет и управление рекл�
     await nav(page, "Реклама").click();
     await expect(page.locator(".ann")).toBeVisible();
 
-    // Находим активное объявление с кнопкой «Отключить»
-    const card = page.locator(".ann-card").filter({ has: page.getByRole("button", { name: /^Отключить/ }) }).first();
-    await expect(card).toBeVisible();
-    const adTitle = await card.locator(".ann-title").innerText();
+    // Кнопка «Отключить» стоит на экране объявления, а не на карточке списка.
+    const adTitle = await openWorkingAd(page);
+    const offButton = page.getByRole("button", { name: /^Отключить/ });
 
     // 1. Клик «Отключить» открывает диалог подтверждения
-    await card.getByRole("button", { name: /^Отключить/ }).click();
+    await offButton.click();
     const confirmDialog = page.locator(".ah-confirm");
     await expect(confirmDialog).toBeVisible();
     await expect(confirmDialog).toContainText(`Отключить «${adTitle}»?`);
@@ -204,18 +204,20 @@ test.describe("Задача 15. Кабинет и управление рекл�
     await expect(confirmDialog).toHaveCount(0);
 
     // 3. Клик «Отключить» и «Применить»
-    await card.getByRole("button", { name: /^Отключить/ }).click();
+    await offButton.click();
     await page.locator(".ah-confirm").getByRole("button", { name: "Применить" }).click();
     await expect(notice(page)).toContainText(`Отключил «${adTitle}»`);
 
     // 4. Проверка фильтра «Отключены»
+    await backToAds(page);
     await page.getByRole("button", { name: /^Отключены/ }).click();
     await expect(page.locator(".ann-card-off .ann-title", { hasText: adTitle }).first()).toBeVisible();
 
-    // 5. Включение объявления обратно
-    const offCard = page.locator(".ann-card-off").filter({ hasText: adTitle }).first();
-    await offCard.getByRole("button", { name: /^Включить/ }).click();
+    // 5. Включение объявления обратно: на его экране
+    await page.locator(".ann-card-off").filter({ hasText: adTitle }).first().click();
+    await page.getByRole("button", { name: /^Включить/ }).click();
     await expect(notice(page)).toContainText(`Включил «${adTitle}»`);
+    await backToAds(page);
 
     // Возврат в фильтр «Все»
     await page.getByRole("button", { name: /^Все/ }).click();

@@ -188,7 +188,7 @@ test.describe("E2E Юзеркейсы: Мультибизнес, генерац�
     const filterGroup = page.getByRole("group", { name: "Какие показать" });
     await expect(filterGroup).toBeVisible();
     const tabAll = filterGroup.getByRole("button", { name: /^Все/ });
-    const tabActive = filterGroup.getByRole("button", { name: /^(Работают|К запуску)/ });
+    const tabActive = filterGroup.getByRole("button", { name: /^Работают/ });
     const tabOff = filterGroup.getByRole("button", { name: /^Отключены/ });
     const tabArchived = filterGroup.getByRole("button", { name: /^В архиве/ });
 
@@ -198,7 +198,7 @@ test.describe("E2E Юзеркейсы: Мультибизнес, генерац�
     await expect(tabArchived).toBeVisible();
 
     // 2. Открываем первое объявление и архивируем его
-    const openBtn = page.getByRole("button", { name: /^Открыть «/ }).first();
+    const openBtn = page.getByRole("button", { name: /^Открыть объявление «/ }).first();
     await expect(openBtn).toBeVisible();
     await openBtn.click();
     await expect(page.locator(".anno-screen")).toBeVisible();
@@ -221,17 +221,19 @@ test.describe("E2E Юзеркейсы: Мультибизнес, генерац�
     await tabArchived.click();
     await expect(tabArchived).toHaveAttribute("aria-pressed", "true");
 
-    // 4. Восстанавливаем объявление из архива (aria-label: Вернуть «...» из архива)
-    const restoreBtn = page.getByRole("button", { name: /^Вернуть «/ }).first();
+    // 4. Восстанавливаем объявление из архива: «Вернуть из архива» стоит на его экране
+    await page.getByRole("button", { name: /^Открыть объявление «/ }).first().click();
+    const restoreBtn = page.getByRole("button", { name: "Вернуть из архива" });
     await expect(restoreBtn).toBeVisible();
     await restoreBtn.click();
 
     await expect(confirmBox).toBeVisible();
     await confirmBox.getByRole("button", { name: "Применить" }).click();
     await expect(confirmBox).toHaveCount(0);
+    await page.getByRole("button", { name: "Все объявления" }).click();
 
     // 5. Переключаемся на «Все» — карточка снова в основном списке
     await tabAll.click();
-    await expect(page.getByRole("button", { name: /^Открыть «/ }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Открыть объявление «/ }).first()).toBeVisible();
   });
 });
