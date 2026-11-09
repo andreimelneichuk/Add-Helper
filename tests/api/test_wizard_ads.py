@@ -174,7 +174,7 @@ async def test_wizard_ads_identify_confirmed_submissions(
         assert (await client.post(url, json=body, headers=headers)).status_code == 201
     planned = {"ads": [sent]} if kind is ChangeKind.CREATE_CAMPAIGN else sent
     repo = SqlChangeRepository(sessions, business_id)
-    # Ожидающая запись не выдаётся за подтверждённую отправку.
+    # Отправленная кампания подтверждает объявление только после применения.
     await repo.add(
         ProposedChange("anna-direct", ChangeSource.USER, kind, "sent", planned, "Запуск", "sent"),
         {},
@@ -189,6 +189,11 @@ async def test_wizard_ads_identify_confirmed_submissions(
     )
     saved = (await client.get(url)).json()["ads"]
     assert [ad["submitted"] for ad in saved] == [True, False, False]
+    assert [ad["publication_status"] for ad in saved] == [
+        "submitted",
+        "pending" if kind is ChangeKind.CREATE_AD else None,
+        None,
+    ]
 
 
 async def test_custom_ad_retry_is_idempotent_even_when_first_requests_overlap(

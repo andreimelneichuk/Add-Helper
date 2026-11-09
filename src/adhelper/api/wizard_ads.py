@@ -225,6 +225,7 @@ def wizard_ads_router() -> APIRouter:
                 "active": item.active,
                 "archived": item.archived,
                 "submitted": item.submitted,
+                "publication_status": item.publication_status,
                 "services": list(item.services),
             }
             for item in items
@@ -284,7 +285,7 @@ def wizard_ads_router() -> APIRouter:
         )
         if item is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Объявление не найдено")
-        if item.submitted:
+        if item.publication_status is not None:
             raise HTTPException(status.HTTP_409_CONFLICT, "Объявление уже отправлено в Яндекс")
         if not item.active or item.archived:
             raise HTTPException(status.HTTP_409_CONFLICT, "Объявление отключено или в архиве")

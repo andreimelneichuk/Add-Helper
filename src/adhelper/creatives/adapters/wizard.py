@@ -1,6 +1,5 @@
 """Наборы мастера до входа и выбор владельца после входа. Миграция 0018."""
 
-from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -177,6 +176,7 @@ class WizardAdItem:
     services: tuple[str, ...] = ()
     archived: bool = False
     submitted: bool = False
+    publication_status: str | None = None
 
 
 class SqlWizardAds:
@@ -235,28 +235,45 @@ class SqlWizardAds:
             row = await session.scalar(statement)
             if row is None or not row.drafts:
                 return []
-            confirmed = (
-                await session.scalars(
-                    select(ChangeRow.planned).where(
+            publication_rows = (
+                await session.execute(
+                    select(ChangeRow.kind, ChangeRow.status, ChangeRow.planned)
+                    .where(
                         ChangeRow.business_id == self._business_id,
                         ChangeRow.created_at >= row.created_at,
                         ChangeRow.kind.in_(
                             (ChangeKind.CREATE_CAMPAIGN.value, ChangeKind.CREATE_AD.value)
                         ),
-                        ChangeRow.status == ChangeStatus.APPLIED.value,
                     )
+                    .order_by(ChangeRow.id)
                 )
             ).all()
-        submitted = Counter(
-            (str(ad["headline"]), str(ad["text"]))
-            for planned in confirmed
-            for ad in planned.get("ads", [planned])
-            if "headline" in ad and "text" in ad
-        )
+        publication_statuses: dict[tuple[str, str], list[str]] = {}
+        for kind, status, planned in publication_rows:
+            # Кампания считается отправленной только после подтверждения Direct.
+            # Отдельное объявление блокируем уже при постановке в очередь: повторный
+            # клик не должен породить ещё одну попытку, пока первая не завершилась.
+            if kind == ChangeKind.CREATE_CAMPAIGN.value and status != ChangeStatus.APPLIED.value:
+                continue
+            if kind == ChangeKind.CREATE_AD.value and status not in {
+                ChangeStatus.PLANNED.value,
+                ChangeStatus.APPLYING.value,
+                ChangeStatus.APPLIED.value,
+            }:
+                continue
+            for ad in planned.get("ads", [planned]):
+                if "headline" not in ad or "text" not in ad:
+                    continue
+                key = (str(ad["headline"]), str(ad["text"]))
+                publication_statuses.setdefault(key, []).append(
+                    "pending"
+                    if status in {ChangeStatus.PLANNED.value, ChangeStatus.APPLYING.value}
+                    else "submitted"
+                )
         view = _view(row)
         drafts = view.drafts
         kept_set = set(row.kept or [])
-        submitted_remaining = submitted.copy()
+        publication_remaining = {key: list(value) for key, value in publication_statuses.items()}
         items: list[WizardAdItem] = []
         for i, d in enumerate(drafts):
             raw = row.drafts[i] if i < len(row.drafts) else {}
@@ -268,9 +285,12 @@ class SqlWizardAds:
             raw_sources = tuple(s.get("label", "") for s in raw.get("sources", []))
             facts = tuple(source.label for source in d.sources) or raw_sources or ("Ваш текст",)
             text_key = (d.headline, d.text)
-            is_submitted = submitted_remaining[text_key] > 0
-            if is_submitted:
-                submitted_remaining[text_key] -= 1
+            publication_status = (
+                publication_remaining.get(text_key, []).pop(0)
+                if publication_remaining.get(text_key)
+                else None
+            )
+            is_submitted = publication_status == "submitted"
             items.append(
                 WizardAdItem(
                     id=f"w{i}",
@@ -292,6 +312,7 @@ class SqlWizardAds:
                     active=is_active,
                     archived=is_archived,
                     submitted=is_submitted,
+                    publication_status=publication_status,
                 )
             )
         return items

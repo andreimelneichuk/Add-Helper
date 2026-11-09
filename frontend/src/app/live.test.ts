@@ -15,19 +15,22 @@ describe("живые данные", () => {
     expect(store.state.ads.map((a) => a.id)).toEqual(["anna/11", "w1"]);
   });
 
-  it("показывает новые черновики рядом с рекламой площадки и скрывает уже отправленные", async () => {
+  it("показывает черновики и сохраняет статус ожидающей или отправленной публикации", async () => {
     const wizardAds = vi.fn().mockResolvedValue({ ads: [
-      { id: "w0", headline: "Маникюр", text: "Текст", facts: [], submitted: true },
+      { id: "w0", headline: "Маникюр", text: "Текст", facts: [], submitted: true, publication_status: "submitted" },
       { id: "w1", headline: "Новое объявление", text: "Запишитесь", facts: [], active: true, submitted: false },
       { id: "w2", headline: "Выключенный черновик", text: "Запишитесь", facts: [], active: false },
       { id: "w3", headline: "Архивный черновик", text: "Запишитесь", facts: [], archived: true },
+      { id: "w4", headline: "В очереди", text: "Подождите", facts: [], publication_status: "pending" },
     ] });
     const store = await open(fakeApi({ wizardAds }));
     expect(wizardAds).toHaveBeenCalledWith(true);
-    expect(store.state.ads.map((a) => a.id)).toEqual(["anna/11", "w1", "w2", "w3"]);
+    expect(store.state.ads.map((a) => a.id)).toEqual(["anna/11", "w0", "w1", "w2", "w3", "w4"]);
+    expect(store.state.ads.find((a) => a.id === "w0")?.tag).toBe("на проверке Яндекса");
     expect(store.state.ads.find((a) => a.id === "w1")?.tag).toBe("готово к запуску");
     expect(store.state.ads.find((a) => a.id === "w2")?.tag).toBe("отключено");
     expect(store.state.ads.find((a) => a.id === "w3")?.tag).toBe("в архиве");
+    expect(store.state.ads.find((a) => a.id === "w4")?.tag).toBe("отправляется");
   });
 
   it("переводит микроединицы в рубли только для показа и заполняет дни без статистики", async () => {
