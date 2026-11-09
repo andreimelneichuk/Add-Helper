@@ -80,22 +80,37 @@ async def test_keywords_add_idempotency() -> None:
     assert any(kw["Keyword"] == "дизайн ногтей пермь" for kw in fake.keywords.values())
 
 
-async def test_keywords_add_batching_up_to_1000() -> None:
+async def test_keywords_add_respects_group_limit_of_200() -> None:
     platform, fake = _setup()
     fake.groups[1] = {"Id": 1, "CampaignId": 10, "Name": "Группа 1", "RegionIds": [213]}
 
-    # Генерируем 1500 уникальных фраз
-    lots_of_keywords = [f"услуга номер {i} пермь" for i in range(1500)]
+    # Директ ограничивает группу 200 фразами, даже если план содержит больше.
+    lots_of_keywords = [f"услуга номер {i} пермь" for i in range(250)]
 
     added = await platform._add_keywords(ACCOUNT, 1, lots_of_keywords)
-    assert len(added) == 1500
-    assert len(fake.keywords) == 1500
+    assert len(added) == 200
+    assert len(fake.keywords) == 200
 
-    # Проверяем разбивку на пакеты: ровно 2 вызова (1000 и 500)
+    # Проверяем, что в запрос ушёл только допустимый объём.
     add_calls = [r for r in fake.requests if r["name"] == "keywords.add"]
-    assert len(add_calls) == 2
-    assert len(add_calls[0]["body"]["params"]["Keywords"]) == 1000
-    assert len(add_calls[1]["body"]["params"]["Keywords"]) == 500
+    assert len(add_calls) == 1
+    assert len(add_calls[0]["body"]["params"]["Keywords"]) == 200
+
+
+async def test_keywords_add_uses_only_remaining_group_slots() -> None:
+    platform, fake = _setup()
+    fake.groups[1] = {"Id": 1, "CampaignId": 10, "Name": "Группа 1", "RegionIds": [213]}
+    fake.keywords = {
+        i: {"Id": i, "AdGroupId": 1, "Keyword": f"существующая фраза {i}"}
+        for i in range(1_000, 1_195)
+    }
+
+    added = await platform._add_keywords(
+        ACCOUNT, 1, [f"новая фраза {i}" for i in range(20)]
+    )
+
+    assert len(added) == 5
+    assert len(fake.keywords) == 200
 
 
 async def test_create_campaign_adds_keywords() -> None:

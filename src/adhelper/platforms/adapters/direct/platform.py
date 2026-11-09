@@ -64,6 +64,7 @@ MODERATION_STATES = {
 logger = logging.getLogger(__name__)
 # Директ допускает не более трёх комбинаторных объявлений в группе.
 MAX_COMBINATORIAL_ADS_PER_GROUP = 3
+MAX_KEYWORDS_PER_GROUP = 200
 
 
 def _today(now: datetime) -> date:
@@ -803,6 +804,10 @@ class DirectPlatform:
             return []
         present = {kw.lower().strip() for kw in await self._keywords(account, group_id)}
         missing = [kw for kw in keywords if kw.lower().strip() not in present]
+        if not missing:
+            return []
+        # Лимит Директа общий на группу, включая уже добавленные вручную фразы.
+        missing = missing[: max(0, MAX_KEYWORDS_PER_GROUP - len(present))]
         if not missing:
             return []
 
