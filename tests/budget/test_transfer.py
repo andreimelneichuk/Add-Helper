@@ -77,7 +77,38 @@ async def test_recipient_increase_is_rechecked_and_can_be_rejected() -> None:
     status = await drive_transfer(platform, "acc", PERIOD, plan, ZERO, NOW, RULES)
 
     assert status is TransferStatus.REJECTED
-    assert platform.set_limit_calls == [LimitChange("a", 450_000)]
+    # Рост получателя не пройдёт, поэтому донора не трогаем вовсе: деньги не остаются выведенными.
+    assert platform.set_limit_calls == []
+    assert platform.campaigns["a"].limit == 500_000
+
+
+async def test_recipient_rejected_after_donor_cut_gives_donor_back() -> None:
+    """Состояние изменилось между шагами: донор уже снижен, рост получателя отказан."""
+    platform = FakePlatform([campaign("a", 500_000), campaign("b", 100_000)], NOW)
+    plan = plan_transfer(campaign("a", 500_000), campaign("b", 100_000), 50_000)
+    await platform.set_limit("acc", LimitChange("a", 450_000))
+    platform.campaigns["c"] = campaign("c", 500_000)
+    platform.set_limit_calls.clear()
+
+    status = await drive_transfer(platform, "acc", PERIOD, plan, ZERO, NOW, RULES)
+
+    assert status is TransferStatus.STUCK
+    assert platform.campaigns["a"].limit == 450_000
+
+
+async def test_recipient_rejected_after_donor_cut_restores_donor_when_budget_allows() -> None:
+    platform = FakePlatform([campaign("a", 500_000), campaign("b", 100_000)], NOW)
+    rules = replace(RULES, max_increase_bp=0)
+    plan = plan_transfer(campaign("a", 500_000), campaign("b", 100_000), 50_000)
+    await platform.set_limit("acc", LimitChange("a", 450_000))
+    platform.set_limit_calls.clear()
+
+    status = await drive_transfer(platform, "acc", PERIOD, plan, ZERO, NOW, rules)
+
+    assert status is TransferStatus.ROLLED_BACK
+    assert platform.campaigns["a"].limit == 500_000
+    assert platform.campaigns["b"].limit == 100_000
+    assert platform.limit_sum <= PERIOD.operating_budget
 
 
 async def test_repeat_of_applied_change_does_not_call_platform() -> None:

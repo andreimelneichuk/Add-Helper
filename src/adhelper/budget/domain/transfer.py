@@ -14,6 +14,8 @@ class TransferPlan:
     recipient_id: str
     donor_target: int
     recipient_target: int
+    # Лимит донора до переноса: к нему возвращаем, если рост получателя невозможен.
+    donor_start: int | None = None
 
 
 def plan_transfer(donor: CampaignBudget, recipient: CampaignBudget, amount: int) -> TransferPlan:
@@ -28,6 +30,7 @@ def plan_transfer(donor: CampaignBudget, recipient: CampaignBudget, amount: int)
         recipient_id=recipient.campaign_id,
         donor_target=donor.limit - amount,
         recipient_target=recipient.limit + amount,
+        donor_start=donor.limit,
     )
 
 

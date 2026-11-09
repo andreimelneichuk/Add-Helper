@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import StrEnum
 
 from adhelper.budget.domain.balance import BalanceBaseline, BalanceState, check_balance
 from adhelper.budget.domain.limits import (
     BudgetPeriod,
+    CampaignBudget,
     LimitChange,
     LimitDecision,
     check_limit_change,
@@ -49,8 +51,11 @@ async def check_change(
     now: datetime,
     rules: BudgetRules,
     opening_spent: int = 0,
+    campaigns: Sequence[CampaignBudget] | None = None,
 ) -> LimitDecision:
-    campaigns = await platform.read_campaigns(account)
+    """Проверка шага; `campaigns` — состояние, которое наступит после предыдущих шагов."""
+    if campaigns is None:
+        campaigns = await platform.read_campaigns(account)
     snapshot = await platform.fetch_spend(account)
     spent = corrected_spend(snapshot, burn, now)
     period_spent = max(spent - opening_spent, 0)
@@ -95,6 +100,62 @@ class TransferStatus(StrEnum):
     REJECTED = "rejected"
     INTERRUPTED = "interrupted"
     STUCK = "stuck"
+    # Рост получателя невозможен, донору возвращён прежний лимит: деньги на месте.
+    ROLLED_BACK = "rolled_back"
+
+
+async def _precheck_recipient(
+    platform: BudgetPlatform,
+    account: str,
+    period: BudgetPeriod,
+    plan: TransferPlan,
+    burn: BurnRate,
+    now: datetime,
+    rules: BudgetRules,
+) -> bool:
+    """До первого изменения: пройдёт ли рост получателя в состоянии после снижения донора."""
+    campaigns = await platform.read_campaigns(account)
+    after = [
+        replace(c, limit=min(c.limit, plan.donor_target)) if c.campaign_id == plan.donor_id else c
+        for c in campaigns
+    ]
+    step = LimitChange(plan.recipient_id, plan.recipient_target)
+    current = next((c.limit for c in campaigns if c.campaign_id == plan.recipient_id), None)
+    if current is None or current >= plan.recipient_target:
+        return True
+    decision = await check_change(
+        platform, account, period, step, burn, now, rules, campaigns=after
+    )
+    if not decision.allowed:
+        await platform.record_rejection(account, step, decision)
+    return decision.allowed
+
+
+async def compensate_transfer(
+    platform: BudgetPlatform, account: str, period: BudgetPeriod, plan: TransferPlan
+) -> TransferStatus:
+    """Возвращает донору прежний лимит, если рост получателя не прошёл.
+
+    Возврат идёт через ту же площадку (журналируемую), новой записью. Если он вывел бы сумму
+    лимитов за рабочий бюджет, донор остаётся сниженным: сумма меньше, бюджет цел, а перенос
+    помечается как застрявший, чтобы его увидел человек.
+    """
+    if plan.donor_start is None:
+        return TransferStatus.STUCK
+    try:
+        limits = await _read_limits(platform, account)
+        donor_now = limits.get(plan.donor_id)
+        if donor_now is None:
+            return TransferStatus.STUCK
+        if donor_now >= plan.donor_start:
+            return TransferStatus.ROLLED_BACK
+        if sum(limits.values()) + plan.donor_start - donor_now > period.operating_budget:
+            return TransferStatus.STUCK
+        await platform.set_limit(account, LimitChange(plan.donor_id, plan.donor_start))
+        restored = (await _read_limits(platform, account)).get(plan.donor_id, 0)
+    except PlatformUnavailable:
+        return TransferStatus.INTERRUPTED
+    return TransferStatus.ROLLED_BACK if restored >= plan.donor_start else TransferStatus.STUCK
 
 
 async def drive_transfer(
@@ -106,8 +167,15 @@ async def drive_transfer(
     now: datetime,
     rules: BudgetRules,
 ) -> TransferStatus:
-    """Доводит перенос до цели по фактическому состоянию; можно запускать повторно после сбоя."""
+    """Доводит перенос до цели по фактическому состоянию; можно запускать повторно после сбоя.
+
+    Не вызывать мимо `autopilot.application.transfer`: там политика и долговременная запись.
+    """
     try:
+        first = next_step(plan, await _read_limits(platform, account))
+        if first is not None and first.campaign_id == plan.donor_id:
+            if not await _precheck_recipient(platform, account, period, plan, burn, now, rules):
+                return TransferStatus.REJECTED
         for _ in range(MAX_TRANSFER_ITERATIONS):
             step = next_step(plan, await _read_limits(platform, account))
             if step is None:
@@ -115,11 +183,13 @@ async def drive_transfer(
             decision = await check_change(platform, account, period, step, burn, now, rules)
             if not decision.allowed:
                 await platform.record_rejection(account, step, decision)
+                if step.campaign_id == plan.recipient_id:
+                    return await compensate_transfer(platform, account, period, plan)
                 return TransferStatus.REJECTED
             await platform.set_limit(account, step)
     except PlatformUnavailable:
         return TransferStatus.INTERRUPTED
-    return TransferStatus.STUCK
+    return await compensate_transfer(platform, account, period, plan)
 
 
 @dataclass(frozen=True)
