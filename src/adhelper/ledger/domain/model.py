@@ -92,7 +92,8 @@ def decide_execution(
     """Что делать по факту на площадке. Повтор вслепую невозможен: решение всегда после чтения."""
     if plan_reached(planned, actual):
         return ExecutionStep.FINISH
-    if any(actual.get(key) != before.get(key) for key in planned):
+    # Пустое «до» — создание: объект, который уже нашли по метке, наш недоделанный, а не чужой.
+    if before and any(actual.get(key) != before.get(key) for key in planned):
         return ExecutionStep.CONFLICT
     if attempts >= max_attempts:
         return ExecutionStep.GIVE_UP

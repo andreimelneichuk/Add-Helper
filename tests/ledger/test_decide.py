@@ -27,3 +27,11 @@ def test_attempts_are_bounded() -> None:
 
 def test_fact_matching_plan_wins_over_attempt_limit() -> None:
     assert decide_execution(BEFORE, PLANNED, {"limit": 400}, 3, 3) is ExecutionStep.FINISH
+
+
+def test_partly_created_object_is_resumed_not_a_conflict() -> None:
+    # Регрессия: создание без «до» видело собственную недоделанную кампанию как чужую правку,
+    # и изменение зависало в «конфликте». Объект находит метка, значит он наш.
+    partial = {"name": "Кампания", "ads": []}
+    planned = {"name": "Кампания", "ads": [{"headline": "А", "text": "Б"}]}
+    assert decide_execution({}, planned, partial, 1, 3) is ExecutionStep.APPLY

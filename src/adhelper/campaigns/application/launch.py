@@ -349,7 +349,7 @@ async def launch(
     started = {
         c.target_ref
         for c in await _creations(ledger, stored)
-        if c.status not in {ChangeStatus.FAILED, ChangeStatus.REJECTED}
+        if c.status not in {ChangeStatus.FAILED, ChangeStatus.REJECTED, ChangeStatus.CONFLICT}
     }
     if require_advertiser and (advertiser is None or not advertiser.get("inn_tail")):
         raise UnregisteredAdvertiserError(

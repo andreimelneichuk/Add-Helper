@@ -65,6 +65,32 @@ describe("Модальное окно запуска рекламы (LaunchModal
     expect(screen.getByText("18000 ₽ за 30 дней")).toBeInTheDocument();
   });
 
+  it("показывает ход запуска, пока ждёт ответ Яндекса", async () => {
+    const user = userEvent.setup();
+    const store = new MockStore(initialState("work"));
+    let finishLaunch!: (value: LaunchAnswer) => void;
+    const startLaunch = vi.fn(
+      () => new Promise<LaunchAnswer>((resolve) => { finishLaunch = resolve; }),
+    );
+
+    render(
+      <LaunchModal
+        isOpen={true}
+        onClose={vi.fn()}
+        store={store}
+        api={{ launchCheck: vi.fn().mockResolvedValue(readyCheck), startLaunch }}
+      />,
+    );
+    await user.click(await screen.findByRole("button", { name: "Запустить рекламу" }));
+
+    expect(screen.getByRole("status")).toHaveTextContent("Проверяю запуск в Яндексе…");
+    expect(screen.getByRole("progressbar", { name: "Идёт запуск рекламы" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Запускаю рекламу…" })).toBeDisabled();
+
+    finishLaunch(answer);
+    expect(await screen.findByText("Кампании успешно созданы.")).toBeInTheDocument();
+  });
+
   it("показывает владельцу регион, который будет использован для запуска", async () => {
     const store = new MockStore(initialState("work"));
     const api = {

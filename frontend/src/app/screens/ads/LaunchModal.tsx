@@ -208,6 +208,34 @@ export function LaunchModal({ isOpen, onClose, store, api: propsApi }: LaunchMod
               </p>
             )}
 
+            {busy && (
+              <div
+                role="status"
+                aria-live="polite"
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  padding: "14px 16px",
+                  background: "var(--accent-soft)",
+                  border: "1px solid var(--accent)",
+                  borderRadius: 12,
+                }}
+              >
+                <strong style={{ color: "var(--ink)", fontSize: 14 }}>
+                  Проверяю запуск в Яндексе…
+                </strong>
+                <progress
+                  aria-label="Идёт запуск рекламы"
+                  style={{ width: "100%", accentColor: "var(--accent)" }}
+                />
+                <span className="ah-muted" style={{ fontSize: 13 }}>
+                  Сервис сверяет состояние кабинета, создаёт кампанию и объявления, затем проверяет
+                  ответ Яндекса. Дождитесь результата в этом окне.
+                </span>
+              </div>
+            )}
+
             {error && <p className="ah-error" role="alert" style={{ margin: 0 }}>{error}</p>}
 
             <div className="ah-modal-foot">
