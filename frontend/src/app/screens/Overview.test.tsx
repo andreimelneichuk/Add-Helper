@@ -88,6 +88,21 @@ describe("показатели", () => {
     expect(screen.getByText("нет ответа")).toBeInTheDocument();
   });
 
+  it("показывают показы и клики из отчёта Директа на дашборде", async () => {
+    const api = fakeApi({
+      today: vi.fn(async () => ({
+        rules: "today-2",
+        cards: [{ kind: "summary", tone: "info" as const, title: "За 7 дней показов не было", text: "Данных пока нет", action: null, ref: null, rules: "today-2" }],
+      })),
+    });
+    const store = await open(api);
+    render(<Overview store={store} />);
+    expect(await screen.findByText("Показы, 7 дней")).toBeInTheDocument();
+    expect(screen.getByText("100")).toBeInTheDocument();
+    expect(screen.getByText("Клики: 10")).toBeInTheDocument();
+    expect(screen.queryByText("За 7 дней показов не было")).not.toBeInTheDocument();
+  });
+
   it("при first нет вывода о цене", () => {
     show("first");
     expect(screen.getAllByText("мало для выводов")).toHaveLength(2);

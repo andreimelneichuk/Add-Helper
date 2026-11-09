@@ -43,8 +43,10 @@ function kpisOf(s: State): Kpi[] {
   };
   if (s.live) {
     const price = (cost: number, leads: number) => (leads > 0 ? rub(cost / leads) : "—");
+    const stats = s.live.stats.week;
     const base: Kpi[] = [
       money,
+      { label: "Показы, 7 дней", value: stats.shows.toLocaleString("ru-RU"), sub: `Клики: ${stats.clicks.toLocaleString("ru-RU")}`, ink: "muted" },
       { label: "Обращения, 7 дней", value: String(w.leads), sub: `было ${w.prevLeads}`, ink: w.leads >= w.prevLeads ? "good" : "bad", spark: last14.map((d) => d[1]) },
       { label: "Цена обращения", value: price(w.cost, w.leads), sub: `было ${price(w.prevCost, w.prevLeads)}`, ink: "muted", spark: last14.map((d) => (d[1] > 0 ? d[0] / d[1] : 0)) },
     ];
@@ -70,7 +72,7 @@ function kpisOf(s: State): Kpi[] {
 export function Kpis({ s }: { s: State }) {
   const kpis = kpisOf(s);
   return (
-    <div className={kpis.length === 3 ? "ov-kpis ov-kpis-three" : "ov-kpis"}>
+    <div className={`ov-kpis${kpis.length === 3 ? " ov-kpis-three" : kpis.length === 5 ? " ov-kpis-five" : ""}`}>
       {kpis.map((k) => (
         <div key={k.label} className="ah-panel ov-kpi">
           <div className="ov-kpi-label">{k.label}</div>

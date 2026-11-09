@@ -35,6 +35,7 @@
 /* Показатели */
 .ov-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--gap); }
 .ov-kpis-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ov-kpis-five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .ov-kpi { display: flex; flex-direction: column; gap: 2px; }
 .ov-kpi-label, .ov-kpi-sub { font-size: var(--t-caption); }
 .ov-kpi-label { color: var(--muted); }
@@ -91,6 +92,7 @@
 @media (max-width: 767px) {
   .ov-row { grid-template-columns: minmax(0, 1fr); }
   .ov-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ov-kpis-five { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ov-kpis-three > :first-child { grid-column: 1 / -1; }
   .ov-chart { height: 110px; }
   .ov-clients-row { flex: 1 1 100%; }

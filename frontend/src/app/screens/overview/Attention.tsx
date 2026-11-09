@@ -53,8 +53,20 @@ function cardMessage(card: TodayCard, store: Store): Message {
   return { tone: card.tone, title: card.title, text: card.text, actions, calm: card.kind === "summary" || card.kind === "last_action" || card.kind.startsWith("test_") };
 }
 
+function cardsOf(s: State): TodayCard[] {
+  const cards = s.live?.cards ?? [];
+  return s.live && s.live.stats.week.shows > 0
+    ? cards.filter(
+        (card) => !(card.kind === "summary" && card.title === "За 7 дней показов не было"),
+      )
+    : cards;
+}
+
 function messageOf(s: State, store: Store): Message {
-  if (s.live) return s.live.cards?.length ? cardMessage(s.live.cards[0]!, store) : liveMessage(s, store);
+  if (s.live) {
+    const cards = cardsOf(s);
+    return cards.length ? cardMessage(cards[0]!, store) : liveMessage(s, store);
+  }
   return fixtures.attention(s, store, calmOf);
 }
 
@@ -79,7 +91,7 @@ function More({ cards, store }: { cards: TodayCard[]; store: Store }) {
 }
 
 export function Attention({ s, store }: { s: State; store: Store }) {
-  const rest = s.live?.cards?.slice(1) ?? [];
+  const rest = cardsOf(s).slice(1);
   return (
     <>
       <Main s={s} store={store} />
