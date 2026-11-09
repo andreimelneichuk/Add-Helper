@@ -153,5 +153,9 @@ def test_ads_on_review_skip_copies_already_in_direct_and_archived() -> None:
         wiz("Архив", "Текст", "submitted", archived=True),
         wiz("Черновик", "Текст", None),
     ]
-    direct = [Item(title="укладка", text="текст один")]
-    assert awaiting_review(items, direct) == ("Бритьё",)  # type: ignore[arg-type]
+    direct = [
+        Item(title="укладка", text="текст один", state="active"),
+        Item(title="Королевское бритьё", text="Текст три", state="moderation"),
+    ]
+    # Объявления Директа в состоянии «moderation» идут первыми, затем отправленные из мастера.
+    assert awaiting_review(items, direct) == ("Королевское бритьё", "Бритьё")  # type: ignore[arg-type]

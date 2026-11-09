@@ -61,10 +61,12 @@ def _copy_key(title: str, text: str) -> tuple[str, str]:
 def awaiting_review(wizard: Sequence[WizardAdItem], direct: Sequence[AdLine]) -> tuple[str, ...]:
     """Названия объявлений мастера на проверке Яндекса: как на экране «Реклама».
 
-    Копия, которая уже есть в Директе, и архивная не считаются.
+    Объявления Директа в состоянии «на проверке» считаются; копия мастера, что уже есть
+    в Директе, и архивная — нет.
     """
     in_direct = {_copy_key(line.title, line.text) for line in direct}
-    return tuple(
+    from_direct = tuple(line.title for line in direct if line.state == "moderation")
+    return from_direct + tuple(
         item.headline
         for item in wizard
         if item.publication_status == "submitted"
