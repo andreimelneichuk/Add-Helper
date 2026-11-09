@@ -10,6 +10,7 @@ import { isAbort } from "../polling";
 import { liveApi, savedText, LiveStore } from "../live";
 import { useStore } from "../store";
 import { AutopilotSettings } from "./AutopilotSettings";
+import { EconomicsSettings } from "./EconomicsSettings";
 import type { Store } from "../store";
 import { isCityFact } from "../draft";
 import "./Settings.css";
@@ -1219,6 +1220,10 @@ function SiteSettings({ store, api }: { store: Store; api: Api }) {
           <section className="ah-panel set-section" aria-labelledby="set-autopilot-title">
             <h3 id="set-autopilot-title" className="ah-panel-title">Что делает автопилот</h3>
             <AutopilotSettings api={api} />
+          </section>
+          <section className="ah-panel set-section" aria-labelledby="set-economics-title">
+            <h3 id="set-economics-title" className="ah-panel-title">Сколько стоит клиент</h3>
+            <EconomicsSettings api={api} />
           </section>
         </section>
         <section id="set-about" className="set-group" aria-labelledby="set-about-h">

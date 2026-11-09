@@ -96,3 +96,10 @@
 .ap-stop { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .ap-history { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 0.9em; }
 .ap-history span { opacity: 0.7; }
+.eco { display: grid; gap: 12px; }
+.eco-state { margin: 0; font-weight: 600; }
+.eco-state[data-confirmed="true"] { color: var(--ok, #1a7f4b); }
+.eco-goal { margin: 0; }
+.eco-fields { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.eco-field { display: grid; gap: 4px; }
+.eco-services { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 0.9em; }

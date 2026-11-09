@@ -2,6 +2,7 @@ import tomllib
 from importlib.resources import files
 from typing import Any
 
+from adhelper.business.domain.economics import EconomicsRules
 from adhelper.business.domain.site import RenderRules, SiteRules
 from adhelper.business.domain.tag import TagRules
 
@@ -56,3 +57,20 @@ def load_tag_rules(version: str = CURRENT_TAG_RULES) -> TagRules:
     resource = files("adhelper.business.adapters") / "rules" / f"{version}.toml"
     raw = tomllib.loads(resource.read_text(encoding="utf-8"))
     return TagRules(raw["version"], raw["max_checks_per_day"], raw["max_attempts"])
+
+
+CURRENT_ECONOMICS_RULES = "economics-1"
+
+
+def load_economics_rules(version: str = CURRENT_ECONOMICS_RULES) -> EconomicsRules:
+    resource = files("adhelper.business.adapters") / "rules" / f"{version}.toml"
+    raw = tomllib.loads(resource.read_text(encoding="utf-8"))
+    return EconomicsRules(
+        version=raw["version"],
+        lead_to_client_bp=raw["lead_to_client_bp"],
+        margin_bp=raw["margin_bp"],
+        repeat_bp=raw["repeat_bp"],
+        ad_share_bp=raw["ad_share_bp"],
+        max_repeat_bp=raw["max_repeat_bp"],
+        max_capacity_per_week=raw["max_capacity_per_week"],
+    )

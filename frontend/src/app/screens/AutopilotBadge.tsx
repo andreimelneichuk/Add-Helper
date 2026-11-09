@@ -1,3 +1,4 @@
+import { AUTOPILOT_CHANGED } from "../autopilotEvents";
 import { useEffect, useState } from "react";
 import type { AutopilotView } from "../../api";
 import { liveApi } from "../live";
@@ -12,8 +13,10 @@ export function AutopilotBadge({ store, businessId, screen }: { store: Store; bu
     const api = liveApi(store);
     if (!api || typeof api.autopilot !== "function" || !businessId) return;
     let alive = true;
-    api.autopilot().then((v) => { if (alive) setView(v); }, () => undefined);
-    return () => { alive = false; };
+    const read = () => api.autopilot().then((v) => { if (alive) setView(v); }, () => undefined);
+    void read();
+    window.addEventListener(AUTOPILOT_CHANGED, read);
+    return () => { alive = false; window.removeEventListener(AUTOPILOT_CHANGED, read); };
   }, [store, businessId, screen]);
   if (!view) return null;
   const text = view.status === "stopped" ? "остановлен" : WORDS[view.mode];

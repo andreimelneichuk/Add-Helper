@@ -391,6 +391,9 @@ export function createApi(businessId: string, csrf: string) {
     autopilot: (init?: RequestInit) => request<AutopilotView>(`${base}/autopilot`, init),
     saveAutopilot: (body: AutopilotPatch) =>
       request<AutopilotView>(`${base}/autopilot`, { method: "PUT", body: JSON.stringify(body) }, csrf),
+    economics: () => request<EconomicsView>(`${base}/economics`),
+    saveEconomics: (body: EconomicsPatch) =>
+      request<EconomicsView>(`${base}/economics`, { method: "PUT", body: JSON.stringify(body) }, csrf),
     stopAutopilot: () => request<AutopilotView>(`${base}/autopilot/stop`, { method: "POST" }, csrf),
     tagCheck: (init?: RequestInit) => request<TagCheckView>(`${base}/tag-check`, init),
     requestTagCheck: () => request<TagCheckView>(`${base}/tag-check`, { method: "POST" }, csrf),
@@ -484,6 +487,26 @@ export type MarkingInput = { kind: AdvertiserKind; inn: string; name: string; ph
 /** ИНН и телефон приходят только с последними цифрами. */
 export type MarkingView = { kind: AdvertiserKind; inn: string; name: string; phone: string | null; okved: string | null };
 export type TagCheck = { status: "queued" | "running" | "found" | "missing" | "failed"; url: string; counters: number[]; problem: string | null };
+export type EconomicsView = {
+  check_rubles: number | null;
+  /** Средний чек посчитан по ценам услуг из профиля, а не назван владельцем. */
+  check_from_profile: boolean;
+  /** Доли в базисных пунктах: 10 000 = 100%. */
+  lead_to_client_bp: number;
+  margin_bp: number;
+  repeat_bp: number;
+  ad_share_bp: number;
+  capacity_per_week: number | null;
+  /** Пока false, числа — «ориентир». */
+  confirmed: boolean;
+  goal_rubles: number | null;
+  how: string;
+  services: { service: string; price_rubles: number; goal_rubles: number }[];
+};
+export type EconomicsPatch = Partial<Pick<EconomicsView, "lead_to_client_bp" | "margin_bp" | "repeat_bp" | "ad_share_bp" | "capacity_per_week">> & {
+  avg_check_rubles?: number;
+  confirm?: boolean;
+};
 export type AutopilotMode = "watch" | "confirm" | "auto";
 export type AutopilotAction = "pause_ad" | "increase_limit" | "start_test";
 export type AutopilotStatus = "ok" | "no_goal" | "data_untrusted" | "stopped" | "not_connected";

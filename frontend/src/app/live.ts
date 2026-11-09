@@ -1,5 +1,6 @@
 // Новый интерфейс на настоящих данных: сводит ответы API к состоянию экранов и шлёт действия владельца.
 // Деньги приходят целыми микроединицами; в рубли переводим только здесь и только для показа.
+import { announceAutopilotChange } from "./autopilotEvents";
 import { ApiError, createApi, createBusiness, createGuestApi, openSession } from "../api";
 import type { AdLine, Alert, Api, ChatCommand, HistoryLine, Money, OutdatedAd, Overview, Profile, UndoPreview } from "../api";
 import { clearDraft, clearStartReading, clearStartSite } from "./draft";
@@ -656,13 +657,16 @@ export class LiveStore extends Store {
       }
       case "autopilot_off":
         await this.api.stopAutopilot();
+        announceAutopilotChange();
         return "Остановил автопилот: рекламу он больше не разбирает. Всё, что уже сделано, осталось как было. Включить снова можно здесь же или в настройках.";
       case "autopilot_on":
         await this.api.saveAutopilot({ resume: true });
+        announceAutopilotChange();
         return "Снова включил автопилот в прежнем положении. Следующий разбор пройдёт по расписанию.";
       case "autopilot_cadence": {
         const weekly = c.cadence === "weekly";
         await this.api.saveAutopilot({ cadence: weekly ? "weekly" : "daily" });
+        announceAutopilotChange();
         return `Теперь автопилот разбирает рекламу ${weekly ? "раз в неделю" : "каждый день"}. Вы попросили. Если он был остановлен, он таким и остался.`;
       }
       default:

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { announceAutopilotChange } from "../autopilotEvents";
 import type { Api, AutopilotAction, AutopilotMode, AutopilotPatch, AutopilotStatus, AutopilotView } from "../../api";
 
 // Слова владельца: «положение» вместо «режим», «разбор» вместо «цикл» (docs/01-product-spec.md).
@@ -56,6 +57,7 @@ export function AutopilotSettings({ api }: { api: Api }) {
     setError("");
     try {
       setView(await api.saveAutopilot(patch));
+      announceAutopilotChange();
     } catch (e) {
       setError(problem(e));
     } finally {
@@ -67,6 +69,7 @@ export function AutopilotSettings({ api }: { api: Api }) {
     setError("");
     try {
       setView(await api.stopAutopilot());
+      announceAutopilotChange();
       setConfirmStop(false);
     } catch (e) {
       setError(problem(e));
