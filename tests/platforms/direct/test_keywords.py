@@ -105,9 +105,7 @@ async def test_keywords_add_uses_only_remaining_group_slots() -> None:
         for i in range(1_000, 1_195)
     }
 
-    added = await platform._add_keywords(
-        ACCOUNT, 1, [f"новая фраза {i}" for i in range(20)]
-    )
+    added = await platform._add_keywords(ACCOUNT, 1, [f"новая фраза {i}" for i in range(20)])
 
     assert len(added) == 5
     assert len(fake.keywords) == 200

@@ -251,6 +251,48 @@ async def test_direct_inventory_sync_updates_states_and_inserts_new_ads(
     ]
 
 
+async def test_owner_archive_survives_inventory_sync(
+    anna: tuple[httpx.AsyncClient, str, uuid.UUID], sessions: Sessions
+) -> None:
+    """Архив владельца хранится у нас: Яндекс видит такое объявление остановленным."""
+    _client, _csrf, business_id = anna
+    async with sessions.begin() as session:
+        await session.execute(
+            text(
+                "INSERT INTO campaigns (business_id, account, campaign_id, name, state)"
+                " VALUES (:b, 'anna-direct', '42', 'C', 'on')"
+            ),
+            {"b": business_id},
+        )
+        for ad_id, state in (("mine", "archived"), ("back", "archived"), ("other", "archived")):
+            await session.execute(
+                text(
+                    "INSERT INTO ads (business_id, account, ad_id, campaign_id, title, text, href, state)"
+                    " VALUES (:b, 'anna-direct', :a, '42', 't', 'x', 'https://example.com/', :s)"
+                ),
+                {"b": business_id, "a": ad_id, "s": state},
+            )
+    stats = SqlReportStats(sessions, business_id)
+    await stats.sync_inventory(
+        "anna-direct",
+        [CampaignInventory("42", "C", "on")],
+        [
+            AdInventory("mine", "42", "t", "x", "https://example.com/", "suspended"),
+            AdInventory("back", "42", "t", "x", "https://example.com/", "on"),
+            AdInventory("other", "42", "t", "x", "https://example.com/", "rejected"),
+        ],
+    )
+    async with sessions() as session:
+        rows = (
+            await session.execute(
+                text("SELECT ad_id, state FROM ads WHERE business_id = :b ORDER BY ad_id"),
+                {"b": business_id},
+            )
+        ).all()
+    # Включили в самом Яндексе или он отклонил: правда площадки, архив снимается.
+    assert rows == [("back", "on"), ("mine", "archived"), ("other", "rejected")]
+
+
 async def test_overview_shows_saved_account_balance_when_no_periods(
     anna: tuple[httpx.AsyncClient, str, uuid.UUID], sessions: Sessions
 ) -> None:

@@ -27,13 +27,17 @@ async def set_ad_active(
         # Повтор незавершённого действия продолжает ту же запись, даже если клиент
         # после таймаута прислал новый request_id. Завершённые действия не склеиваем:
         # владелец может позже снова включить или отключить объявление.
-        change = next((
-            row for row in rows
-            if row.source is ChangeSource.USER
-            and row.kind is kind
-            and row.planned.get("active") is active
-            and row.status in {ChangeStatus.PLANNED, ChangeStatus.APPLYING}
-        ), None)
+        change = next(
+            (
+                row
+                for row in rows
+                if row.source is ChangeSource.USER
+                and row.kind is kind
+                and row.planned.get("active") is active
+                and row.status in {ChangeStatus.PLANNED, ChangeStatus.APPLYING}
+            ),
+            None,
+        )
         if change is None:
             # Между действиями другой вкладки целевое состояние могло уже
             # измениться. Не создаём новую строку журнала, если запрос уже

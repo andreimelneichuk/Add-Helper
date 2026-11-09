@@ -12,6 +12,8 @@ from sqlalchemy import (
     Integer,
     Text,
     Uuid,
+    and_,
+    case,
     column,
     exists,
     func,
@@ -281,7 +283,17 @@ class SqlReportStats:
                             "title": statement.excluded.title,
                             "text": statement.excluded.text,
                             "href": statement.excluded.href,
-                            "state": statement.excluded.state,
+                            # Архив владельца живёт у нас, в Яндексе объявление просто остановлено.
+                            "state": case(
+                                (
+                                    and_(
+                                        ADS.c.state == "archived",
+                                        statement.excluded.state == "suspended",
+                                    ),
+                                    "archived",
+                                ),
+                                else_=statement.excluded.state,
+                            ),
                         },
                     )
                 )
