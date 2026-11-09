@@ -25,6 +25,9 @@ TITLES = {
     "ads_need_confirmation": "Новые объявления ждут вашего решения",
     "ads_rejected": "Яндекс отклонил объявление",
     "ads_launched": "Запущены новые объявления",
+    "autopilot_rolled_back": "Автопилот отменил своё действие",
+    "autopilot_demoted": "Автопилот снова только предлагает",
+    "autopilot_digest": "Что автопилот сделал за сутки",
 }
 SUMMARY_SHOWN = 5
 
@@ -69,6 +72,45 @@ def _launched(details: dict[str, object]) -> list[str]:
         "Если что-то не так, снимите объявление одним нажатием в разделе «Реклама»:"
         " отменить снятие можно в истории.",
     ]
+    return lines
+
+
+def _int(details: dict[str, object], name: str) -> int:
+    value = details.get(name)
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def _autopilot_rolled_back(details: dict[str, object]) -> list[str]:
+    explanation = details.get("explanation")
+    text = explanation if isinstance(explanation, str) and explanation else ""
+    lines = [text] if text else ["Автопилот вернул своё действие: после него стало хуже."]
+    lines.append("Повторять это действие автопилот не будет, пока вы не решите сами.")
+    return lines
+
+
+def _digest(details: dict[str, object]) -> list[str]:
+    done, better, same, worse = (
+        _int(details, "done"),
+        _int(details, "better"),
+        _int(details, "same"),
+        _int(details, "worse"),
+    )
+    rolled = _int(details, "rolled_back")
+    if done == 0 and better + same + worse + rolled == 0:
+        return [
+            "За сутки автопилот ничего не менял и не проверял прошлые действия.",
+            "Данных пока мало: когда их станет достаточно, он напишет, что получилось.",
+        ]
+    lines = [f"Действий за сутки: {done}."]
+    checked = better + same + worse
+    if checked:
+        lines.append(
+            f"Проверили прошлые действия: лучше стало в {better}, без заметной разницы в {same}, "
+            f"хуже в {worse}."
+        )
+    if rolled:
+        lines.append(f"Отменили сами: {rolled}. Каждая отмена записана в истории.")
+    lines.append("Любое действие можно отменить в истории одной кнопкой.")
     return lines
 
 
@@ -163,6 +205,19 @@ def _body(kind: str, money: MoneyFacts | None, details: dict[str, object]) -> li
         ]
     if kind == "ads_launched":
         return _launched(details)
+    if kind == "autopilot_rolled_back":
+        return _autopilot_rolled_back(details)
+    if kind == "autopilot_demoted":
+        reason = details.get("reason")
+        why = reason if isinstance(reason, str) and reason else "сработал предохранитель"
+        return [
+            f"Самостоятельный режим выключен: {why}.",
+            "Автопилот остался в режиме «Предлагает»: решения по деньгам принимаете вы, "
+            "а сделанное осталось как было.",
+            "Включить самостоятельный режим снова можно в настройках автопилота.",
+        ]
+    if kind == "autopilot_digest":
+        return _digest(details)
     if kind == "ads_rejected":
         headline = details.get("headline")
         reason = details.get("reason")

@@ -13,7 +13,8 @@ from adhelper.accounts.adapters.crypto import AesGcmCipher
 from adhelper.autopilot.adapters.data import SqlAutopilotData, autopilot_accounts
 from adhelper.autopilot.adapters.gate_facts import SqlGateFacts
 from adhelper.autopilot.adapters.ledgered import LedgeredActions
-from adhelper.autopilot.adapters.rules_file import load_policy_rules
+from adhelper.autopilot.adapters.outcomes import SqlOutcomeStore
+from adhelper.autopilot.adapters.rules_file import load_outcome_rules, load_policy_rules
 from adhelper.autopilot.adapters.rules_file import load_rules as load_autopilot_rules
 from adhelper.autopilot.adapters.settings import SqlAutopilotSettings, settings_of_businesses
 from adhelper.autopilot.adapters.sql import SqlDecisionLog
@@ -21,9 +22,11 @@ from adhelper.autopilot.adapters.tests import SqlTestPlanner
 from adhelper.autopilot.adapters.transfers import SqlTransferStore
 from adhelper.autopilot.application.cycle import AutopilotCycle
 from adhelper.autopilot.application.gate import ClosedGate, Gate, PolicyGate
-from adhelper.autopilot.application.settings import DEFAULT_SETTINGS, cycle_mode, is_due
+from adhelper.autopilot.application.outcomes import OutcomeMonitor
+from adhelper.autopilot.application.settings import DEFAULT_SETTINGS, cycle_mode, demote, is_due
 from adhelper.autopilot.application.transfer import finish_open_transfers
 from adhelper.autopilot.application.visits import WithVisits
+from adhelper.autopilot.domain.settings import AutopilotMode
 from adhelper.budget.adapters.ledgered import (
     LedgeredBudgetPlatform,
     PlatformChangeGateway,
@@ -115,6 +118,8 @@ logger = logging.getLogger(__name__)
 
 MAX_CHANGE_ATTEMPTS = 3
 CURRENT_AUTOPILOT_RULES = "autopilot-2"
+# Оценка исходов и предохранители: docs/17-autopilot-plan.md, этап 7.
+CURRENT_OUTCOME_RULES = "outcomes-1"
 CURRENT_POLICY_RULES = "policy-1"
 # Считает рядом с рабочими правилами и пишет «сделала бы»: docs/17-autopilot-plan.md, этап 5.
 SHADOW_AUTOPILOT_RULES = "autopilot-3"
@@ -368,6 +373,21 @@ class Runtime:
             gate=gate,
         )
 
+    def autopilot_monitor(self, business_id: UUID, account: str) -> OutcomeMonitor:
+        settings_store = SqlAutopilotSettings(self.sessions, business_id)
+
+        async def demote_auto(reason: str) -> bool:
+            return await demote(settings_store, reason)
+
+        return OutcomeMonitor(
+            SqlOutcomeStore(self.sessions, business_id),
+            self.ledger_for(business_id, account),
+            SqlAlerts(self.sessions, business_id),
+            load_outcome_rules(CURRENT_OUTCOME_RULES),
+            self.clock,
+            demote_auto,
+        )
+
     async def recover_transfers(self, business_id: UUID, account: str) -> int:
         """Доводит или откатывает недоведённые переносы лимита. Возвращает число обработанных.
 
@@ -516,17 +536,37 @@ class Runtime:
                 await self.recover_transfers(business_id, account)
             except Exception as error:
                 logger.warning("Переносы не доведены: %s", type(error).__name__)
+            monitored = False
+            if settings.stopped_at is None and self.platform_for(business_id, account) is not None:
+                # Исходы проверяются каждый час, а не по слоту: плохое действие не ждёт расписания.
+                try:
+                    monitor = self.autopilot_monitor(business_id, account)
+                    result = await monitor.run(account)
+                    monitored = not result.frozen
+                    if result.demoted_reason is not None:
+                        settings = (
+                            await SqlAutopilotSettings(self.sessions, business_id).get()
+                            or DEFAULT_SETTINGS
+                        )
+                except Exception as error:
+                    logger.warning("Исходы не проверены: %s", type(error).__name__)
             if only is None and not is_due(settings, now):
                 continue
             if settings.stopped_at is not None or self.platform_for(business_id, account) is None:
                 continue
-            mode = cycle_mode(settings.mode, auto_allowed=self.auto_allowed)
+            mode = cycle_mode(settings.mode, auto_allowed=self.auto_allowed and monitored)
             goal = await self.autopilot_goal(business_id, goal)
             await self.autopilot_cycle(business_id, account).run(
                 account, goal, mode, settings.allowed_actions
             )
             # Слот закрывается сразу после разбора: сбой на следующем кабинете его не открывает.
             await SqlAutopilotSettings(self.sessions, business_id).mark_run(settings, now)
+            try:
+                await self.autopilot_monitor(business_id, account).digest(
+                    account, always=settings.mode is AutopilotMode.AUTO
+                )
+            except Exception as error:
+                logger.warning("Сводка автопилота не отправлена: %s", type(error).__name__)
             done += 1
         return done
 

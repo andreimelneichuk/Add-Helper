@@ -82,7 +82,7 @@ def _later_changes(change: Change, rows: Sequence[Change]) -> list[Change]:
     ]
 
 
-async def _revert(ledger: Ledger, change: Change) -> RollbackResult:
+async def _revert(ledger: Ledger, change: Change, explanation: str | None = None) -> RollbackResult:
     kind = INVERSE_KIND.get(change.kind)
     if kind is None or change.source is ChangeSource.EXTERNAL:
         # Остановка стражем снимается отдельным решением с проверкой бюджета, а не отменой.
@@ -95,7 +95,8 @@ async def _revert(ledger: Ledger, change: Change) -> RollbackResult:
         kind=kind,
         target_ref=change.target_ref,
         planned={key: change.before[key] for key in change.planned},
-        explanation=(
+        explanation=explanation
+        or (
             f"Отменили изменение №{change.id}: вернули прежнее значение. "
             "Потраченные деньги и данные обучения нельзя вернуть."
         ),
@@ -157,8 +158,12 @@ async def rollback_change(
     change_id: int,
     include_later: bool = False,
     overwrite_outside: bool = False,
+    explanation: str | None = None,
 ) -> RollbackResult:
-    """Откат создаёт новые записи тем же путём: политика → журнал → исполнитель → чтение."""
+    """Откат создаёт новые записи тем же путём: политика → журнал → исполнитель → чтение.
+
+    explanation — текст записи отката вместо стандартного: автооткат пишет, почему он сделан.
+    """
     checked = await _check(ledger, change_id, include_later, overwrite_outside)
     if checked.status is not RollbackStatus.READY or checked.change is None:
         return checked
@@ -166,7 +171,7 @@ async def rollback_change(
         result = await _revert(ledger, dependent)
         if result.status is not RollbackStatus.APPLIED:
             return result
-    return await _revert(ledger, checked.change)
+    return await _revert(ledger, checked.change, explanation)
 
 
 def request_prefix(change: Change) -> str | None:

@@ -30,6 +30,7 @@ __all__ = [
     "Patch",
     "SettingsError",
     "cycle_mode",
+    "demote",
     "is_due",
     "next_run_at",
     "report_text",
@@ -114,6 +115,16 @@ async def stop(store: Store, now: datetime) -> AutopilotSettings:
     after = replace(before, stopped_at=now)
     await store.save(after, [STOPPED_LINE])
     return after
+
+
+async def demote(store: Store, reason: str) -> bool:
+    """Предохранитель: из «Сам» обратно в «Предлагает». Вернуть может только владелец."""
+    before = await store.get() or DEFAULT_SETTINGS
+    if before.mode is not AutopilotMode.AUTO:
+        return False
+    after = replace(before, mode=AutopilotMode.CONFIRM)
+    await store.save(after, [f"Выключил самостоятельный режим: {reason}"])
+    return True
 
 
 MODE_WORDS = {

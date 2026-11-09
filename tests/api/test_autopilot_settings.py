@@ -135,3 +135,24 @@ async def test_other_users_business_is_not_found(
         await boris.put(URL.format(business), json={"run_hour": 9}, headers=headers)
     ).status_code == 404
     assert (await boris.post(f"{URL.format(business)}/stop", headers=headers)).status_code == 404
+
+
+async def test_report_is_empty_and_honest_without_actions(anna: Anna) -> None:
+    client, _, business = anna
+    answer = await client.get(URL.format(business) + "/report")
+    assert answer.status_code == 200
+    body = answer.json()
+    assert (body["done"], body["better"], body["same"], body["worse"], body["rolled_back"]) == (
+        0,
+        0,
+        0,
+        0,
+        0,
+    )
+    assert body["outcomes"] == []
+
+
+async def test_report_of_another_business_is_not_readable(anna: Anna) -> None:
+    client, _, _ = anna
+    answer = await client.get(URL.format("00000000-0000-0000-0000-000000000001") + "/report")
+    assert answer.status_code in {403, 404}

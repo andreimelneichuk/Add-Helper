@@ -335,3 +335,48 @@ async def test_failing_recovery_does_not_stop_the_cycle(
     monkeypatch.setattr(runtime_module, "finish_open_transfers", boom)
 
     assert await runtime(sessions, engine, {BUSINESS}).autopilot_run() == 1
+
+
+async def _auto_worker(sessions: Sessions, engine: AsyncEngine) -> Runtime:
+    await _borderline(sessions)
+    await SqlAutopilotSettings(sessions, BUSINESS).save(
+        replace(DEFAULT_SETTINGS, mode=AutopilotMode.AUTO), []
+    )
+    worker = runtime(sessions, engine, {BUSINESS})
+    worker.auto_allowed = True
+    return worker
+
+
+async def test_auto_runs_as_auto_when_outcome_monitor_works(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    worker = await _auto_worker(sessions, engine)
+    assert await worker.autopilot_run() == 1
+    decision = await SqlDecisionLog(sessions, BUSINESS).latest("acc", "ad:1")
+    assert decision is not None and decision.status != "awaiting_confirmation"
+
+
+async def test_auto_falls_back_to_confirm_when_outcome_monitor_fails(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    worker = await _auto_worker(sessions, engine)
+
+    def broken(business_id: uuid.UUID, account: str) -> Any:
+        raise RuntimeError("monitor down")
+
+    worker.autopilot_monitor = broken  # type: ignore[method-assign]
+    assert await worker.autopilot_run() == 1
+    decision = await SqlDecisionLog(sessions, BUSINESS).latest("acc", "ad:1")
+    assert decision is not None and decision.status == "awaiting_confirmation"
+
+
+async def test_auto_falls_back_to_confirm_while_data_is_untrusted(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    from adhelper.notifications.adapters.sql import SqlAlerts
+
+    worker = await _auto_worker(sessions, engine)
+    await SqlAlerts(sessions, BUSINESS).raise_alert("data_untrusted", {})
+    assert await worker.autopilot_run() == 1
+    decision = await SqlDecisionLog(sessions, BUSINESS).latest("acc", "ad:1")
+    assert decision is not None and decision.status in {"awaiting_confirmation", "protect_only"}

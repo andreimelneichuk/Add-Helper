@@ -4,7 +4,7 @@
 по-прежнему принимает цикл автопилота по правилам. docs/17-autopilot-plan.md, этап 1.
 """
 
-from datetime import UTC
+from datetime import UTC, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -14,6 +14,7 @@ from sqlalchemy import text
 
 from adhelper.accounts.adapters.sql import logins_of_business
 from adhelper.api.cabinet import Owned, OwnedChecked, _now, _sessions
+from adhelper.autopilot.adapters.outcomes import SqlOutcomeStore
 from adhelper.autopilot.adapters.settings import SqlAutopilotSettings
 from adhelper.autopilot.application.settings import (
     DEFAULT_SETTINGS,
@@ -101,6 +102,42 @@ def autopilot_router() -> APIRouter:
     @router.get("")
     async def get_autopilot(request: Request, business_id: Owned) -> dict[str, Any]:
         return await _view(request, business_id)
+
+    @router.get("/report")
+    async def get_report(request: Request, business_id: Owned) -> dict[str, Any]:
+        """Что автопилот сделал за сутки и что получилось. Числа считает код, ничего не меняет."""
+        sessions = _sessions(request)
+        store = SqlOutcomeStore(sessions, business_id)
+        since = _now(request) - timedelta(days=1)
+        logins = await logins_of_business(sessions, business_id)
+        done = 0
+        outcomes: list[dict[str, Any]] = []
+        for login in logins:
+            done += await store.autopilot_changes_since(login, since)
+            for row in await store.evaluated_since(login, since):
+                outcomes.append(
+                    {
+                        "change_id": row.change_id,
+                        "object_ref": row.object_ref,
+                        "verdict": row.verdict,
+                        "cpl_change_bp": row.cpl_change_bp,
+                        "noise_bp": row.noise_bp,
+                        "rolled_back": row.rollback_change_id is not None,
+                        "note": row.note,
+                        "evaluated_at": row.evaluated_at.isoformat() if row.evaluated_at else None,
+                    }
+                )
+        verdicts = [item["verdict"] for item in outcomes]
+        return {
+            "since": since.astimezone(UTC).isoformat(),
+            "done": done,
+            "better": verdicts.count("better"),
+            "same": verdicts.count("same"),
+            "worse": verdicts.count("worse"),
+            "insufficient": verdicts.count("insufficient"),
+            "rolled_back": sum(item["rolled_back"] for item in outcomes),
+            "outcomes": outcomes,
+        }
 
     @router.put("")
     async def put_autopilot(

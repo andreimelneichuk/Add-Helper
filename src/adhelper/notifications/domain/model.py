@@ -5,7 +5,9 @@ from enum import StrEnum
 from typing import Any
 
 # Сводки, а не проблемы: пишутся сразу закрытыми, в «Сегодня» не висят, но доставляются.
-NOTICES = frozenset({"ads_launched"})
+NOTICES = frozenset(
+    {"ads_launched", "autopilot_rolled_back", "autopilot_demoted", "autopilot_digest"}
+)
 
 
 class Channel(StrEnum):

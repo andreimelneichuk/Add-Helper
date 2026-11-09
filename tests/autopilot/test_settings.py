@@ -1,5 +1,6 @@
 """Настройки автопилота: значения, проверка, расписание. docs/17-autopilot-plan.md, этап 1."""
 
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -119,3 +120,34 @@ def test_a_run_makes_the_same_moment_not_due(hour: int, cadence: Cadence, offset
     following = next_run_at(ran, now)
     assert following is not None and following > now
     assert is_due(ran, following)
+
+
+class MemoryStore:
+    def __init__(self, current: AutopilotSettings | None) -> None:
+        self.current = current
+        self.lines: list[str] = []
+
+    async def get(self) -> AutopilotSettings | None:
+        return self.current
+
+    async def save(self, settings: AutopilotSettings, lines: Sequence[str]) -> None:
+        self.current = settings
+        self.lines.extend(lines)
+
+
+async def test_demote_moves_auto_to_confirm_and_writes_the_reason() -> None:
+    from adhelper.autopilot.application.settings import demote
+
+    store = MemoryStore(settings(mode=AutopilotMode.AUTO))
+    assert await demote(store, "за сутки уже 2 автоматических отката") is True
+    assert store.current is not None and store.current.mode is AutopilotMode.CONFIRM
+    assert store.lines == ["Выключил самостоятельный режим: за сутки уже 2 автоматических отката"]
+
+
+async def test_demote_does_nothing_outside_auto() -> None:
+    from adhelper.autopilot.application.settings import demote
+
+    for mode in (AutopilotMode.WATCH, AutopilotMode.CONFIRM):
+        store = MemoryStore(settings(mode=mode))
+        assert await demote(store, "причина") is False
+        assert store.lines == [] and store.current is not None and store.current.mode is mode

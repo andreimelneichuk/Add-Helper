@@ -1,0 +1,20 @@
+# Оценка исходов и предохранители, docs/04-autopilot.md §6. Значения не откалиброваны:
+# калибровка на реальной истории кабинета (docs/17-autopilot-plan.md, ворота D).
+version = "outcomes-1"
+
+window_days = 7
+maturity_days = 2
+min_clicks = 30
+min_leads = 5
+# Доли в базисных пунктах: 2000 = 20%.
+worse_threshold_bp = 2000
+better_threshold_bp = 2000
+# Ширина шума в десятых долях сигмы: 20 — две сигмы.
+noise_sigmas_x10 = 20
+# Ноль обращений после действия — «хуже» при расходе от стольких цен обращения «до».
+zero_leads_spend_multiple = 3
+
+max_rollbacks = 2
+rollback_window_days = 14
+anomaly_window = 5
+anomaly_worse_count = 3

@@ -36,3 +36,14 @@ def explain(kind: str, facts: Mapping[str, int]) -> str:
             f"{facts['leads']}. Данных не хватает для вывода, поэтому нужен A/B-тест."
         )
     raise KeyError(kind)
+
+
+def explain_rollback(facts: Mapping[str, int]) -> str:
+    """Текст автоотката: что вернули, почему, с цифрами и что дальше. Числа подставляет код."""
+    return (
+        f"Вернули объявление в показ: после его остановки цена обращения выросла на "
+        f"{percent(facts['cpl_change_bp'])} (было {rubles(facts['before_cpl_micros'])}, "
+        f"стало {rubles(facts['after_cpl_micros'])}), а случайный разброс объясняет не больше "
+        f"{percent(facts['noise_bp'])}. Автопилот не остановит это объявление снова, пока вы "
+        f"сами не решите иначе. Отменить возврат можно в истории одной кнопкой."
+    )
