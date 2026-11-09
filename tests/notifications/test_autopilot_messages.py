@@ -28,7 +28,7 @@ def test_digest_without_data_says_so() -> None:
 def test_demoted_names_the_reason_and_what_stays() -> None:
     body = text("autopilot_demoted", {"reason": "за сутки уже 2 автоматических отката"})
     assert "за сутки уже 2 автоматических отката" in body
-    assert "«Предлагает»" in body
+    assert "«Предлагает»" in body and "Сработал предохранитель" in body
 
 
 def test_rolled_back_uses_the_prepared_explanation() -> None:

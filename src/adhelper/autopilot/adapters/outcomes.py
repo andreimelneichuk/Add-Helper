@@ -27,6 +27,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from adhelper.autopilot.domain.outcomes import (
+    ROLLBACK_STARTED,
     Measured,
     OutcomeRow,
     OutcomeRules,
@@ -34,7 +35,7 @@ from adhelper.autopilot.domain.outcomes import (
     PendingOutcome,
     Period,
 )
-from adhelper.budget.domain.calendar import platform_date
+from adhelper.budget.domain.calendar import moscow_period, platform_date
 
 OUTCOMES = table(
     "decision_outcomes",
@@ -56,6 +57,7 @@ OUTCOMES = table(
     column("note", Text),
     column("rules_version", Text),
     column("evaluated_at", DateTime(timezone=True)),
+    column("claimed_at", DateTime(timezone=True)),
 )
 CHANGES = table(
     "changes",
@@ -98,6 +100,8 @@ AD_PREFIX = "ad:"
 # отдельное решение с проверкой бюджета, а не автоматика.
 EVALUATED_KINDS = ("pause_ad",)
 DATA_ALERT = "data_untrusted"
+# Захваченный исход считается брошенным, если за это время его не записали: воркер упал.
+CLAIM_LEASE = timedelta(minutes=30)
 
 
 def _period(row: Any) -> Period:
@@ -109,16 +113,24 @@ class SqlOutcomeStore:
         self._sessions = sessions
         self._business_id = business_id
 
-    async def register_new(self, account: str, rules: OutcomeRules) -> int:
-        """Берёт на учёт применённые самостоятельные действия, у которых ещё нет исхода."""
+    async def register_new(self, account: str, rules: OutcomeRules, now: datetime) -> int:
+        """Берёт на учёт применённые самостоятельные действия, у которых ещё нет исхода.
+
+        Старше `register_lookback_days` не берём: после ввода этапа или простоя автопилот не
+        откатывает пачкой остановки, которые владелец давно видел. Срок оценки — полночь по
+        Москве после дня, когда дозрело последнее окно: окно считается по дням площадки.
+        """
         after_days = rules.window_days + rules.maturity_days
         statement = text(
             "INSERT INTO decision_outcomes (business_id, account, change_id, decision_id,"
             " object_ref, kind, applied_at, evaluate_at)"
             " SELECT c.business_id, c.account, c.id, c.decision_id, c.target_ref, c.kind,"
-            " c.created_at, c.created_at + make_interval(days => :days)"
+            " c.created_at,"
+            " ((c.created_at AT TIME ZONE 'Europe/Moscow')::date + CAST(:days AS integer))"
+            "::timestamp AT TIME ZONE 'Europe/Moscow'"
             " FROM changes c WHERE c.business_id = :business AND c.account = :account"
             " AND c.source = 'autopilot' AND c.status = 'applied' AND c.kind = ANY(:kinds)"
+            " AND c.created_at >= :since"
             " ON CONFLICT (business_id, change_id) DO NOTHING"
         )
         async with self._sessions.begin() as session:
@@ -129,43 +141,100 @@ class SqlOutcomeStore:
                     "account": account,
                     "days": after_days,
                     "kinds": list(EVALUATED_KINDS),
+                    "since": now - timedelta(days=rules.register_lookback_days),
                 },
             )
         return int(getattr(result, "rowcount", 0) or 0)
 
-    async def due(self, account: str, now: datetime) -> Sequence[PendingOutcome]:
+    async def claim_due(self, account: str, now: datetime) -> Sequence[PendingOutcome]:
+        """Захватывает созревшие исходы одним запросом: второй воркер их не получит.
+
+        Забирается и «оценивается» с истёкшей арендой: воркер, который брал запись, упал.
+        """
+        statement = text(
+            "UPDATE decision_outcomes SET status = 'evaluating', claimed_at = :now"
+            " WHERE id IN (SELECT id FROM decision_outcomes"
+            " WHERE business_id = :business AND account = :account AND evaluate_at <= :now"
+            " AND (status = 'pending' OR (status = 'evaluating' AND claimed_at < :stale))"
+            " ORDER BY id FOR UPDATE SKIP LOCKED)"
+            " RETURNING id, change_id, object_ref, kind, applied_at, decision_id, evaluate_at, note"
+        )
+        async with self._sessions.begin() as session:
+            rows = (
+                await session.execute(
+                    statement,
+                    {
+                        "business": self._business_id,
+                        "account": account,
+                        "now": now,
+                        "stale": now - CLAIM_LEASE,
+                    },
+                )
+            ).all()
+        return sorted((PendingOutcome(*row) for row in rows), key=lambda item: item.id)
+
+    async def release(self, outcome_id: int, note: str) -> None:
+        """Вернуть захваченный исход в очередь: оценим на следующем часовом тике."""
         statement = (
-            select(
-                OUTCOMES.c.id,
-                OUTCOMES.c.change_id,
-                OUTCOMES.c.object_ref,
-                OUTCOMES.c.kind,
-                OUTCOMES.c.applied_at,
-                OUTCOMES.c.decision_id,
-            )
+            OUTCOMES.update()
             .where(
                 OUTCOMES.c.business_id == self._business_id,
-                OUTCOMES.c.account == account,
-                OUTCOMES.c.status == "pending",
-                OUTCOMES.c.evaluate_at <= now,
+                OUTCOMES.c.id == outcome_id,
+                OUTCOMES.c.status == "evaluating",
             )
-            .order_by(OUTCOMES.c.id)
+            .values(status="pending", claimed_at=None, note=note)
         )
-        async with self._sessions() as session:
-            return [PendingOutcome(*row) for row in await session.execute(statement)]
+        async with self._sessions.begin() as session:
+            await session.execute(statement)
 
-    async def measure(self, account: str, pending: PendingOutcome, rules: OutcomeRules) -> Measured:
+    async def mark_rollback_started(self, outcome_id: int) -> None:
+        statement = (
+            OUTCOMES.update()
+            .where(
+                OUTCOMES.c.business_id == self._business_id,
+                OUTCOMES.c.id == outcome_id,
+                OUTCOMES.c.status == "evaluating",
+            )
+            .values(note=ROLLBACK_STARTED)
+        )
+        async with self._sessions.begin() as session:
+            await session.execute(statement)
+
+    async def measure(
+        self, account: str, pending: PendingOutcome, rules: OutcomeRules, now: datetime
+    ) -> Measured:
+        """Окна считаются по дням площадки (МСК), как и окно вмешательств.
+
+        «После» — дни действия +1…+window. «До» — те же дни неделей раньше, то есть с дня
+        действия −6: день действия входит в «до» целиком (пауза ставится в течение дня, до неё
+        день шёл как обычно, после — с меньшим расходом; цена обращения от этого почти не
+        меняется). Недозревшие дни (последние `maturity_days`) в суммы не входят, а окно
+        «после» полное, только если за каждый его день есть статистика.
+        """
         applied_day = platform_date(pending.applied_at)
         window = rules.window_days
         after_from, after_to = applied_day + timedelta(days=1), applied_day + timedelta(days=window)
         before_from, before_to = after_from - timedelta(days=7), after_to - timedelta(days=7)
+        mature_to = platform_date(now) - timedelta(days=rules.maturity_days)
         async with self._sessions() as session:
             campaign = await self._campaign_of(session, account, pending.object_ref)
             if campaign is None:
-                return Measured(Period(0, 0, 0), Period(0, 0, 0), confounded=True, reverted=False)
-            before = await self._sum(session, account, campaign, before_from, before_to)
-            after = await self._sum(session, account, campaign, after_from, after_to)
-            confounded = await self._confounded(session, account, campaign, pending, rules)
+                return Measured(
+                    Period(0, 0, 0),
+                    Period(0, 0, 0),
+                    confounded=True,
+                    reverted=False,
+                    complete=False,
+                )
+            before, _ = await self._sum(
+                session, account, campaign, before_from, before_to, mature_to
+            )
+            after, after_days = await self._sum(
+                session, account, campaign, after_from, after_to, mature_to
+            )
+            confounded = await self._confounded(
+                session, account, campaign, pending, before_from, after_to
+            )
             reverted = bool(
                 await session.scalar(
                     select(func.count()).where(
@@ -174,7 +243,8 @@ class SqlOutcomeStore:
                     )
                 )
             )
-        return Measured(before, after, confounded, reverted)
+        complete = after_to <= mature_to and after_days >= window
+        return Measured(before, after, confounded, reverted, complete)
 
     async def _campaign_of(self, session: AsyncSession, account: str, ref: str) -> str | None:
         if not ref.startswith(AD_PREFIX):
@@ -188,13 +258,21 @@ class SqlOutcomeStore:
         )
 
     async def _sum(
-        self, session: AsyncSession, account: str, campaign: str, first: date, last: date
-    ) -> Period:
+        self,
+        session: AsyncSession,
+        account: str,
+        campaign: str,
+        first: date,
+        last: date,
+        mature_to: date,
+    ) -> tuple[Period, int]:
+        """Сумма кампании за дозревшие дни окна и число дней, за которые есть статистика."""
         statement = (
             select(
                 func.coalesce(func.sum(AD_STATS.c.clicks), 0).label("clicks"),
                 func.coalesce(func.sum(AD_STATS.c.cost_micros), 0).label("spend"),
                 func.coalesce(func.sum(AD_STATS.c.conversions), 0).label("leads"),
+                func.count(func.distinct(AD_STATS.c.day)).label("days"),
             )
             .select_from(
                 AD_STATS.join(
@@ -211,10 +289,11 @@ class SqlOutcomeStore:
                 AD_STATS.c.account == account,
                 ADS.c.campaign_id == campaign,
                 AD_STATS.c.day >= first,
-                AD_STATS.c.day <= last,
+                AD_STATS.c.day <= min(last, mature_to),
             )
         )
-        return _period((await session.execute(statement)).one())
+        row = (await session.execute(statement)).one()
+        return _period(row), int(row.days or 0)
 
     async def _confounded(
         self,
@@ -222,9 +301,14 @@ class SqlOutcomeStore:
         account: str,
         campaign: str,
         pending: PendingOutcome,
-        rules: OutcomeRules,
+        first_day: date,
+        last_day: date,
     ) -> bool:
-        """В окне менялось что-то ещё в этой кампании: её объявления, лимит или показ."""
+        """В окнах «до» и «после» менялось что-то ещё в этой кампании: объявления, лимит, показ.
+
+        Границы те же, что у статистики: сутки по Москве от первого дня окна «до» до конца
+        последнего дня окна «после».
+        """
         ad_refs = select(func.concat(AD_PREFIX, ADS.c.ad_id)).where(
             ADS.c.business_id == self._business_id,
             ADS.c.account == account,
@@ -235,15 +319,15 @@ class SqlOutcomeStore:
             CHANGES.c.target_ref == f"targeting:{campaign}",
             CHANGES.c.target_ref.in_(ad_refs),
         )
-        end = pending.applied_at + timedelta(days=rules.window_days)
+        starts_at, ends_at = moscow_period(first_day, (last_day - first_day).days + 1)
         count = await session.scalar(
             select(func.count()).where(
                 CHANGES.c.business_id == self._business_id,
                 CHANGES.c.account == account,
                 CHANGES.c.status == "applied",
                 CHANGES.c.id != pending.change_id,
-                CHANGES.c.created_at > pending.applied_at,
-                CHANGES.c.created_at <= end,
+                CHANGES.c.created_at >= starts_at,
+                CHANGES.c.created_at < ends_at,
                 own_targets,
             )
         )
@@ -262,10 +346,15 @@ class SqlOutcomeStore:
         note: str,
         rules_version: str,
         at: datetime,
-    ) -> None:
+    ) -> bool:
+        """Пишет только захваченный исход: если аренда ушла к другому воркеру, не трогает."""
         statement = (
             OUTCOMES.update()
-            .where(OUTCOMES.c.business_id == self._business_id, OUTCOMES.c.id == outcome_id)
+            .where(
+                OUTCOMES.c.business_id == self._business_id,
+                OUTCOMES.c.id == outcome_id,
+                OUTCOMES.c.status == "evaluating",
+            )
             .values(
                 status=status,
                 verdict=verdict.value if verdict else None,
@@ -276,10 +365,12 @@ class SqlOutcomeStore:
                 note=note,
                 rules_version=rules_version,
                 evaluated_at=at,
+                claimed_at=None,
             )
         )
         async with self._sessions.begin() as session:
-            await session.execute(statement)
+            result = await session.execute(statement)
+        return bool(getattr(result, "rowcount", 0))
 
     async def recent_verdicts(self, account: str, limit: int) -> Sequence[OutcomeVerdict]:
         statement = (
@@ -297,14 +388,26 @@ class SqlOutcomeStore:
             return [OutcomeVerdict(value) for value in await session.scalars(statement)]
 
     async def rollbacks_since(self, account: str, since: datetime) -> int:
-        statement = select(func.count()).where(
-            OUTCOMES.c.business_id == self._business_id,
-            OUTCOMES.c.account == account,
-            OUTCOMES.c.rollback_change_id.is_not(None),
-            OUTCOMES.c.evaluated_at >= since,
+        """Откаты самостоятельных действий по журналу: записи отката, применённые с `since`.
+
+        Считаем по журналу, а не по строкам исходов: откат уже сделан на площадке, даже если
+        воркер упал до записи исхода.
+        """
+        statement = text(
+            "SELECT count(*) FROM changes r JOIN changes o"
+            " ON o.id = r.reverts_change_id AND o.business_id = r.business_id"
+            " WHERE r.business_id = :business AND r.account = :account"
+            " AND r.source = 'rollback' AND r.status = 'applied' AND r.created_at >= :since"
+            " AND o.source = 'autopilot'"
         )
         async with self._sessions() as session:
-            return int(await session.scalar(statement) or 0)
+            return int(
+                await session.scalar(
+                    statement,
+                    {"business": self._business_id, "account": account, "since": since},
+                )
+                or 0
+            )
 
     async def data_untrusted(self) -> bool:
         statement = select(func.count()).where(

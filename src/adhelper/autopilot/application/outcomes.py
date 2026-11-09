@@ -6,12 +6,14 @@
 """
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 
-from adhelper.autopilot.domain.explain import explain_rollback
+from adhelper.autopilot.domain.explain import explain_rollback, explain_rollback_no_leads
 from adhelper.autopilot.domain.outcomes import (
+    ROLLBACK_STARTED,
     Measured,
     OutcomeResult,
     OutcomeRow,
@@ -24,6 +26,8 @@ from adhelper.autopilot.domain.outcomes import (
 from adhelper.autopilot.domain.safeguards import SafeguardState, check_safeguards
 from adhelper.ledger.application.rollback import RollbackStatus, rollback_change
 from adhelper.ledger.application.service import Ledger
+from adhelper.ledger.domain.model import Change, ChangeStatus
+from adhelper.ledger.domain.ports import GatewayUnavailable
 
 DAY = timedelta(days=1)
 ROLLED_BACK = "autopilot_rolled_back"
@@ -32,10 +36,12 @@ DIGEST = "autopilot_digest"
 
 
 class OutcomeStore(Protocol):
-    async def register_new(self, account: str, rules: OutcomeRules) -> int: ...
-    async def due(self, account: str, now: datetime) -> Sequence[PendingOutcome]: ...
+    async def register_new(self, account: str, rules: OutcomeRules, now: datetime) -> int: ...
+    async def claim_due(self, account: str, now: datetime) -> Sequence[PendingOutcome]: ...
+    async def release(self, outcome_id: int, note: str) -> None: ...
+    async def mark_rollback_started(self, outcome_id: int) -> None: ...
     async def measure(
-        self, account: str, pending: PendingOutcome, rules: OutcomeRules
+        self, account: str, pending: PendingOutcome, rules: OutcomeRules, now: datetime
     ) -> Measured: ...
     async def save(
         self,
@@ -50,7 +56,7 @@ class OutcomeStore(Protocol):
         note: str,
         rules_version: str,
         at: datetime,
-    ) -> None: ...
+    ) -> bool: ...
     async def recent_verdicts(self, account: str, limit: int) -> Sequence[OutcomeVerdict]: ...
     async def rollbacks_since(self, account: str, since: datetime) -> int: ...
     async def data_untrusted(self) -> bool: ...
@@ -111,8 +117,8 @@ class OutcomeMonitor:
         if await self._store.data_untrusted():
             result.frozen = True
             return result
-        result.registered = await self._store.register_new(account, self._rules)
-        for pending in await self._store.due(account, now):
+        result.registered = await self._store.register_new(account, self._rules, now)
+        for pending in await self._store.claim_due(account, now):
             await self._evaluate(account, pending, now, result)
             if result.demoted_reason is not None:
                 break
@@ -122,7 +128,11 @@ class OutcomeMonitor:
         self, account: str, pending: PendingOutcome, now: datetime, result: MonitorResult
     ) -> None:
         rules = self._rules
-        measured = await self._store.measure(account, pending, rules)
+        if pending.note == ROLLBACK_STARTED and await self._finish_rollback(
+            account, pending, now, result
+        ):
+            return
+        measured = await self._store.measure(account, pending, rules, now)
         if measured.reverted:
             await self._save(pending, "skipped", None, None, None, "уже отменено", now)
             return
@@ -130,16 +140,23 @@ class OutcomeMonitor:
             outcome = OutcomeResult(
                 OutcomeVerdict.INSUFFICIENT, None, 0, "в окне менялось что-то ещё в кампании"
             )
+        elif not measured.complete:
+            if now < pending.evaluate_at + rules.max_wait_days * DAY:
+                # Статистика за окно ещё не догружена: по неполным числам не судим.
+                await self._store.release(pending.id, "ждём данные за окно")
+                return
+            outcome = OutcomeResult(OutcomeVerdict.INSUFFICIENT, None, 0, "не хватает данных")
         else:
             outcome = evaluate_outcome(measured.before, measured.after, rules)
-        result.evaluated += 1
-        result.verdicts.append(outcome.verdict)
         rollback_id: int | None = None
         note = outcome.reason
         if outcome.verdict is OutcomeVerdict.WORSE:
-            rollback_id, note = await self._on_worse(
-                account, pending, measured, outcome, now, result
-            )
+            done = await self._on_worse(account, pending, measured, outcome, now, result)
+            if done is None:
+                return  # откат ещё не доведён: исход остаётся в очереди и повторится
+            rollback_id, note = done
+        result.evaluated += 1
+        result.verdicts.append(outcome.verdict)
         await self._save(pending, "evaluated", outcome, measured, rollback_id, note, now)
 
     async def _on_worse(
@@ -150,7 +167,7 @@ class OutcomeMonitor:
         outcome: OutcomeResult,
         now: datetime,
         result: MonitorResult,
-    ) -> tuple[int | None, str]:
+    ) -> tuple[int | None, str] | None:
         rules = self._rules
         state = SafeguardState(
             rollbacks_in_window=await self._store.rollbacks_since(
@@ -166,43 +183,87 @@ class OutcomeMonitor:
         decision = check_safeguards(state, rules)
         if decision.demote_reason is not None:
             result.demoted_reason = decision.demote_reason
-            if await self._demote(decision.demote_reason):
-                await self._notices.notice(
-                    DEMOTED,
-                    f"demoted:{now.date().isoformat()}:{pending.change_id}",
-                    {"reason": decision.demote_reason},
-                )
+            await self._demote(decision.demote_reason)
+            # Письмо не зависит от результата: режим могли уже сменить, а письмо потерять.
+            # Ключ один на исход, повтор после сбоя письмо не дублирует.
+            await self._notices.notice(
+                DEMOTED, f"demoted:{pending.change_id}", {"reason": decision.demote_reason}
+            )
         if not decision.allow_rollback:
             return None, "хуже, но откат остановлен предохранителем"
-        explanation = explain_rollback(
-            {
-                "cpl_change_bp": outcome.cpl_change_bp or 0,
-                "before_cpl_micros": _cpl(measured.before),
-                "after_cpl_micros": _cpl(measured.after),
-                "noise_bp": outcome.noise_bp,
-            }
-            if outcome.cpl_change_bp is not None
-            else {
-                "cpl_change_bp": 0,
-                "before_cpl_micros": _cpl(measured.before),
-                "after_cpl_micros": 0,
-                "noise_bp": 0,
-            }
-        )
+        if outcome.cpl_change_bp is None:
+            explanation = explain_rollback_no_leads(
+                {
+                    "after_spend_micros": measured.after.spend,
+                    "before_cpl_micros": _cpl(measured.before),
+                }
+            )
+        else:
+            explanation = explain_rollback(
+                {
+                    "cpl_change_bp": outcome.cpl_change_bp,
+                    "before_cpl_micros": _cpl(measured.before),
+                    "after_cpl_micros": _cpl(measured.after),
+                    "noise_bp": outcome.noise_bp,
+                }
+            )
+        # Метка до отката: упавший воркер потом доведёт начатый откат, а не оценит заново.
+        await self._store.mark_rollback_started(pending.id)
         rolled = await rollback_change(self._ledger, pending.change_id, explanation=explanation)
         if rolled.status is RollbackStatus.APPLIED:
             result.rolled_back += 1
-            rows = await self._ledger.changes_on_target(account, pending.object_ref)
-            latest = next(
-                (row.id for row in rows if row.reverts_change_id == pending.change_id), None
-            )
-            await self._notices.notice(
-                ROLLED_BACK,
-                f"rolled_back:{pending.change_id}",
-                {"explanation": explanation, "object_ref": pending.object_ref},
-            )
-            return latest, "откат сделан"
+            latest = await self._latest_rollback(account, pending)
+            await self._notify_rolled_back(pending, explanation)
+            return (latest.id if latest else None), "откат сделан"
+        if rolled.status is RollbackStatus.PENDING:
+            await self._store.release(pending.id, ROLLBACK_STARTED)
+            return None
         return None, f"откат не выполнен: {rolled.status.value}"
+
+    async def _latest_rollback(self, account: str, pending: PendingOutcome) -> Change | None:
+        rows = await self._ledger.changes_on_target(account, pending.object_ref)
+        reverts = [row for row in rows if row.reverts_change_id == pending.change_id]
+        return max(reverts, key=lambda row: row.id, default=None)
+
+    async def _notify_rolled_back(self, pending: PendingOutcome, explanation: str) -> None:
+        await self._notices.notice(
+            ROLLED_BACK,
+            f"rolled_back:{pending.change_id}",
+            {"explanation": explanation, "object_ref": pending.object_ref},
+        )
+
+    async def _finish_rollback(
+        self, account: str, pending: PendingOutcome, now: datetime, result: MonitorResult
+    ) -> bool:
+        """Доводит начатый откат после падения воркера или ответа «выполняется».
+
+        Истина — журнал: запись отката есть и применена — письмо (повтор не дублируется по
+        ключу) и запись исхода; ещё не применена — ждём; записи нет — отката не было, оцениваем
+        заново. Возвращает True, когда исход обработан.
+        """
+        revert = await self._latest_rollback(account, pending)
+        if revert is None:
+            return False
+        if revert.status in {ChangeStatus.PLANNED, ChangeStatus.APPLYING}:
+            with suppress(GatewayUnavailable):
+                await self._ledger.execute_pending(account)
+            current = await self._ledger.get_change(revert.id)
+            revert = current or revert
+        if revert.status in {ChangeStatus.PLANNED, ChangeStatus.APPLYING}:
+            await self._store.release(pending.id, ROLLBACK_STARTED)
+            return True
+        if revert.status is ChangeStatus.APPLIED:
+            result.rolled_back += 1
+            await self._notify_rolled_back(pending, revert.explanation)
+            note, rollback_id = "откат сделан", revert.id
+        else:
+            note, rollback_id = f"откат не выполнен: {revert.status.value}", None
+        result.evaluated += 1
+        result.verdicts.append(OutcomeVerdict.WORSE)
+        measured = await self._store.measure(account, pending, self._rules, now)
+        worse = OutcomeResult(OutcomeVerdict.WORSE, None, 0, note)
+        await self._save(pending, "evaluated", worse, measured, rollback_id, note, now)
+        return True
 
     async def _save(
         self,

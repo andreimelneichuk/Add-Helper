@@ -58,6 +58,7 @@ class AutoNotAllowed(Exception):
 class Store(Protocol):
     async def get(self) -> AutopilotSettings | None: ...
     async def save(self, settings: AutopilotSettings, lines: Sequence[str]) -> None: ...
+    async def demote_from_auto(self, line: str) -> bool: ...
 
 
 @dataclass(frozen=True)
@@ -119,12 +120,9 @@ async def stop(store: Store, now: datetime) -> AutopilotSettings:
 
 async def demote(store: Store, reason: str) -> bool:
     """Предохранитель: из «Сам» обратно в «Предлагает». Вернуть может только владелец."""
-    before = await store.get() or DEFAULT_SETTINGS
-    if before.mode is not AutopilotMode.AUTO:
-        return False
-    after = replace(before, mode=AutopilotMode.CONFIRM)
-    await store.save(after, [f"Выключил самостоятельный режим: {reason}"])
-    return True
+    # Один условный запрос в хранилище: чтения и перезаписи настроек, где можно затереть
+    # одновременную правку владельца, здесь нет.
+    return await store.demote_from_auto(f"Выключил самостоятельный режим: {reason}")
 
 
 MODE_WORDS = {

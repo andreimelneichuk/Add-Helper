@@ -16,6 +16,7 @@ from sqlalchemy import (
     func,
     select,
     table,
+    update,
 )
 from sqlalchemy.dialects.postgresql import JSONB, insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -98,6 +99,24 @@ class SqlAutopilotSettings:
             await session.execute(statement)
             for line in lines:
                 await session.execute(LOG.insert().values(business_id=self._business_id, text=line))
+
+    async def demote_from_auto(self, line: str) -> bool:
+        """«Сам» → «Предлагает» одним условным UPDATE: гонки с другой правкой настроек нет.
+
+        Остальные поля не читаются и не перезаписываются; строка истории пишется в той же
+        транзакции и только если режим действительно сменился.
+        """
+        statement = (
+            update(SETTINGS)
+            .where(SETTINGS.c.business_id == self._business_id, SETTINGS.c.mode == "auto")
+            .values(mode="confirm", updated_at=func.now())
+        )
+        async with self._sessions() as session, session.begin():
+            changed = getattr(await session.execute(statement), "rowcount", 0)
+            if not changed:
+                return False
+            await session.execute(LOG.insert().values(business_id=self._business_id, text=line))
+        return True
 
     async def mark_run(self, settings: AutopilotSettings, at: datetime) -> None:
         """Отметить разбор. Записи нет — она создаётся со значениями по умолчанию."""

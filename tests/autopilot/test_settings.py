@@ -1,6 +1,7 @@
 """Настройки автопилота: значения, проверка, расписание. docs/17-autopilot-plan.md, этап 1."""
 
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -28,8 +29,6 @@ SLOT = datetime(2026, 11, 20, 6, 20, tzinfo=MSK)
 
 def settings(**changes: object) -> AutopilotSettings:
     values: dict[str, object] = {"last_run_at": None} | changes
-    from dataclasses import replace
-
     return replace(DEFAULT_SETTINGS, **values)  # type: ignore[arg-type]
 
 
@@ -133,6 +132,13 @@ class MemoryStore:
     async def save(self, settings: AutopilotSettings, lines: Sequence[str]) -> None:
         self.current = settings
         self.lines.extend(lines)
+
+    async def demote_from_auto(self, line: str) -> bool:
+        if self.current is None or self.current.mode is not AutopilotMode.AUTO:
+            return False
+        self.current = replace(self.current, mode=AutopilotMode.CONFIRM)
+        self.lines.append(line)
+        return True
 
 
 async def test_demote_moves_auto_to_confirm_and_writes_the_reason() -> None:

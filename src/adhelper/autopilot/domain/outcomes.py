@@ -14,6 +14,9 @@ from math import isqrt
 from typing import Any
 
 BASIS_POINTS = 10_000
+# Метка исхода, у которого откат уже начат: после падения воркера или недоведённого отката
+# его не оценивают заново, а доводят (docs/04-autopilot.md §6).
+ROLLBACK_STARTED = "rollback_started"
 
 
 class OutcomeVerdict(StrEnum):
@@ -53,6 +56,39 @@ class OutcomeRules:
     rollback_window_days: int = 14
     anomaly_window: int = 5
     anomaly_worse_count: int = 3
+    # Сколько дней после срока ждём недостающую статистику; потом «не хватает данных».
+    max_wait_days: int = 7
+    # Остановки старше этого срока на учёт не берём: после ввода этапа или простоя
+    # автопилот не откатывает пачкой то, что владелец давно видел.
+    register_lookback_days: int = 14
+
+    def __post_init__(self) -> None:
+        """Бессмысленные пороги отвергаем при загрузке правил, а не делением на ноль в бою."""
+        positive = {
+            "window_days": self.window_days,
+            "min_leads": self.min_leads,
+            "worse_threshold_bp": self.worse_threshold_bp,
+            "better_threshold_bp": self.better_threshold_bp,
+            "zero_leads_spend_multiple": self.zero_leads_spend_multiple,
+            "max_rollbacks": self.max_rollbacks,
+            "rollback_window_days": self.rollback_window_days,
+            "anomaly_window": self.anomaly_window,
+            "anomaly_worse_count": self.anomaly_worse_count,
+        }
+        non_negative = {
+            "min_clicks": self.min_clicks,
+            "noise_sigmas_x10": self.noise_sigmas_x10,
+            "maturity_days": self.maturity_days,
+            "max_wait_days": self.max_wait_days,
+        }
+        bad = [name for name, value in positive.items() if value < 1]
+        bad += [name for name, value in non_negative.items() if value < 0]
+        if bad:
+            raise ValueError(f"правила {self.version}: недопустимые значения: {', '.join(bad)}")
+        if self.anomaly_worse_count > self.anomaly_window:
+            raise ValueError(f"правила {self.version}: anomaly_worse_count больше anomaly_window")
+        if self.register_lookback_days < self.window_days + self.maturity_days:
+            raise ValueError(f"правила {self.version}: register_lookback_days меньше окна оценки")
 
 
 @dataclass(frozen=True)
@@ -72,6 +108,9 @@ class PendingOutcome:
     kind: str
     applied_at: datetime
     decision_id: str | None
+    evaluate_at: datetime
+    # Метка прерванного отката: исход захвачен снова после падения или недоведённого отката.
+    note: str | None = None
 
 
 @dataclass(frozen=True)
@@ -96,6 +135,8 @@ class Measured:
     # Другие изменения той же кампании в окне: вывод о причине был бы нечестным.
     confounded: bool
     reverted: bool
+    # Окно «после» полное: все дни дозрели и в статистике есть за каждый из них.
+    complete: bool = True
 
 
 def _noise_bp(leads_before: int, leads_after: int, sigmas_x10: int) -> int:

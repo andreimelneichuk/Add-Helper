@@ -1,5 +1,9 @@
 """Оценка исхода действия автопилота: шум не даёт «хуже», настоящее ухудшение даёт."""
 
+from dataclasses import replace
+from typing import Any
+
+import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -96,3 +100,45 @@ def test_more_leads_for_same_spend_never_worse(clicks: int, leads: int, extra: i
     before = Period(clicks, clicks * 30 * RUB, leads)
     after = Period(clicks, clicks * 30 * RUB, leads + extra)
     assert evaluate_outcome(before, after, RULES).verdict is not OutcomeVerdict.WORSE
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("window_days", 0),
+        ("min_clicks", -1),
+        ("min_leads", 0),
+        ("worse_threshold_bp", 0),
+        ("better_threshold_bp", 0),
+        ("noise_sigmas_x10", -1),
+        ("zero_leads_spend_multiple", 0),
+        ("maturity_days", -1),
+        ("max_rollbacks", 0),
+        ("rollback_window_days", 0),
+        ("anomaly_window", 0),
+        ("anomaly_worse_count", 0),
+        ("anomaly_worse_count", 6),
+        ("max_wait_days", -1),
+        ("register_lookback_days", 8),
+    ],
+)
+def test_nonsense_rules_are_refused(field: str, value: int) -> None:
+    changes: dict[str, Any] = {field: value}
+    with pytest.raises(ValueError):
+        replace(RULES, **changes)
+
+
+def test_shipped_rules_pass_their_own_validation() -> None:
+    from adhelper.autopilot.adapters.rules_file import load_outcome_rules
+
+    assert load_outcome_rules("outcomes-1").min_leads >= 1
+
+
+def test_zero_leads_explanation_states_the_numbers() -> None:
+    from adhelper.autopilot.domain.explain import explain_rollback_no_leads
+
+    text = explain_rollback_no_leads(
+        {"after_spend_micros": 8_400 * RUB, "before_cpl_micros": 200 * RUB}
+    )
+    assert "обращений 0" in text and "8 400 ₽" in text and "200 ₽" in text
+    assert "выросла" not in text
