@@ -24,6 +24,7 @@ __all__ = [
     "ServiceGoal",
     "View",
     "build_view",
+    "confirmed_goal_micros",
     "reference",
     "save_patch",
 ]
@@ -157,3 +158,15 @@ async def save_patch(
     confirmed_at = now if patch.confirm else (None if changed else was)
     await store.save(replace(after, confirmed=confirmed_at is not None), check, confirmed_at)
     return replace(after, confirmed=confirmed_at is not None), check, confirmed_at
+
+
+async def confirmed_goal_micros(store: Store, legacy: int) -> int:
+    """Цель цикла автопилота: из подтверждённой экономики, иначе прежняя цель.
+
+    Без подтверждения цифры остаются «ориентиром» и цикл по ним не работает.
+    Средний чек берётся только названный владельцем: цена из профиля цель не меняет.
+    """
+    stored = await store.get()
+    if stored is None or stored.confirmed_at is None or stored.avg_check_micros is None:
+        return legacy
+    return goal_micros(stored.avg_check_micros, stored.economics) or legacy

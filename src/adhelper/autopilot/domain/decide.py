@@ -30,6 +30,12 @@ class BlockReason(StrEnum):
     ROLLED_BACK = "rolled_back"
     BUDGET_TOO_SMALL = "budget_too_small"
     TEST_DECLINED = "test_declined"
+    # autopilot-3: почему решения нет.
+    LOW_DATA = "low_data"
+    WAIT_IS_CHEAPER = "wait_is_cheaper"
+    NOT_WORSE = "not_worse"
+    TOO_MANY_VARIANTS = "too_many_variants"
+    STRATEGY_LEARNING = "strategy_learning"
 
 
 @dataclass(frozen=True)
@@ -49,6 +55,10 @@ class CyclePlan:
     actions: list[Action] = field(default_factory=list)
     evaluations: dict[str, Evaluation] = field(default_factory=dict)
     blocked: dict[str, BlockReason] = field(default_factory=dict)
+    # Вся арифметика решения по объявлению: пишется в журнал целиком (autopilot-3).
+    assessments: dict[str, Mapping[str, int]] = field(default_factory=dict)
+    # С каким вариантом сравнивали: слабый → сильный.
+    compared_with: dict[str, str] = field(default_factory=dict)
 
 
 def _facts(ad: AdStats, evaluation: Evaluation, target: int) -> dict[str, int]:

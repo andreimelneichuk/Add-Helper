@@ -559,6 +559,25 @@ async def test_history_merges_changes_and_decisions(
     assert [(line["source"], line["kind"]) for line in body] == [("autopilot", "keep")]
 
 
+async def test_history_does_not_show_shadow_decisions_of_autopilot_3(
+    anna: tuple[httpx.AsyncClient, str, uuid.UUID], sessions: Sessions
+) -> None:
+    client, _, business_id = anna
+    async with sessions.begin() as session:
+        await session.execute(
+            text(
+                "INSERT INTO decisions (business_id, account, object_ref, verdict, action, status,"
+                " inputs, rules_version, decided_at)"
+                " VALUES (:b, 'anna-direct', 'shadow:ad:1', 'inefficient', 'pause_ad',"
+                " 'shadow', '{}',"
+                " 'autopilot-3', :t)"
+            ),
+            {"b": business_id, "t": NOW - timedelta(days=1)},
+        )
+    body = (await client.get(f"/api/businesses/{business_id}/history")).json()
+    assert body == []
+
+
 async def test_history_shows_failure_reason_of_a_refused_change(
     anna: tuple[httpx.AsyncClient, str, uuid.UUID], sessions: Sessions
 ) -> None:

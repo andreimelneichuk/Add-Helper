@@ -64,3 +64,28 @@ def test_ad_without_rows_that_day_is_not_judged() -> None:
     stopped = [Day(day.day, []) if i >= 10 else day for i, day in enumerate(days)]
     log = simulate(stopped, TARGET, OLD, {"c1": 600_000_000})
     assert all(not entry.actions for entry in log[10:])
+
+
+def test_autopilot_3_is_compared_with_autopilot_2_on_the_same_history() -> None:
+    """Движки разные, симулятор один: расхождение объяснимо цифрами клика и обращений."""
+    before, after = load_rules("autopilot-2"), load_rules("autopilot-3")
+    # Один пограничный и один явно слабый вариант в направлении, 20 дней.
+    days = [
+        Day(
+            START + timedelta(days=i),
+            [
+                AdDay("ad:a", "c1", "g1", 70_000_000, 3 if i % 2 == 0 else 2, 60, None),
+                AdDay("ad:b", "c1", "g1", 70_000_000, 1 if i % 4 == 0 else 0, 60, None),
+            ],
+        )
+        for i in range(20)
+    ]
+    first = compare(days, TARGET, before, after, {"c1": 600_000_000})
+    again = compare(days, TARGET, before, after, {"c1": 600_000_000})
+    assert first == again, "воспроизводимо"
+    log = simulate(days, TARGET, after, {"c1": 600_000_000})
+    paused = [a for entry in log for a in entry.actions if a.kind is ActionKind.PAUSE_AD]
+    assert paused and all(a.rules_version == "autopilot-3" for a in paused)
+    assert all(
+        a.ref == "ad:b" and a.facts["p_worse_bp"] >= after.min_worse_probability_bp for a in paused
+    )

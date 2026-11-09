@@ -11,6 +11,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from adhelper.db import Base
 
+SHADOW_STATUS = "shadow"
+
 
 class DecisionRow(Base):
     __tablename__ = "decisions"
@@ -113,11 +115,30 @@ class SqlDecisionLog:
             row = (await session.scalars(statement)).one_or_none()
         return self._logged(row) if row else None
 
+    async def shadow(self, account: str, limit: int = 200) -> Sequence[LoggedDecision]:
+        """Теневые записи autopilot-3: что сделали бы правила, новые сверху. Только чтение."""
+        statement = (
+            select(DecisionRow)
+            .where(
+                DecisionRow.business_id == self._business_id,
+                DecisionRow.account == account,
+                DecisionRow.status == SHADOW_STATUS,
+            )
+            .order_by(DecisionRow.id.desc())
+            .limit(limit)
+        )
+        async with self._sessions() as session:
+            return [self._logged(row) for row in await session.scalars(statement)]
+
     async def recent(self, account: str, limit: int = 100) -> Sequence[LoggedDecision]:
         """Последнее состояние каждого объекта, новые сверху."""
         statement = (
             select(DecisionRow)
-            .where(DecisionRow.business_id == self._business_id, DecisionRow.account == account)
+            .where(
+                DecisionRow.business_id == self._business_id,
+                DecisionRow.account == account,
+                DecisionRow.status != SHADOW_STATUS,
+            )
             .order_by(DecisionRow.id.desc())
             .limit(limit)
         )

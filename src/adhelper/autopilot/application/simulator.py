@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 
-from adhelper.autopilot.domain.decide import Action, ActionKind, Mode, plan_cycle
+from adhelper.autopilot.domain.decide import Action, ActionKind, Mode
 from adhelper.autopilot.domain.health import HealthInput, HealthReport, Window, check_health
 from adhelper.autopilot.domain.model import (
     AdDay,
@@ -18,6 +18,7 @@ from adhelper.autopilot.domain.model import (
     History,
     mature_totals,
 )
+from adhelper.autopilot.domain.planner import plan_by_rules
 from adhelper.autopilot.domain.rules import AutopilotRules
 from adhelper.budget.domain.calendar import MOSCOW
 
@@ -139,10 +140,11 @@ def simulate(
                     totals.leads,
                     age,
                     ad.active and ad.ref in present,
+                    clicks=totals.clicks,
                 )
             )
         campaigns = _campaigns(limits, state, current.day)
-        plan = plan_cycle(stats, campaigns, target, health, Mode.AUTO, at, rules)
+        plan = plan_by_rules(stats, campaigns, target, health, Mode.AUTO, at, rules)
         for action in plan.actions:
             if action.kind is ActionKind.PAUSE_AD:
                 ads[action.ref].active = False

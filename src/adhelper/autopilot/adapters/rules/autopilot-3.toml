@@ -1,8 +1,8 @@
-# autopilot-3: В РАЗРАБОТКЕ, на этапе 0 копия autopilot-2 без изменений. Не подключена к циклу
-# (CURRENT_AUTOPILOT_RULES остаётся autopilot-2), docs/17-autopilot-plan.md.
-# Пороги autopilot-1 и запуск A/B-теста по итогам анализа, docs/04-autopilot.md §5.
-# Изменение порогов = новая версия файла. Значения не откалиброваны: калибровка на пилоте (T7).
+# autopilot-3: оценка по ожидаемой потере (docs/16-autopilot-autonomy.md §11, docs/04-autopilot.md §4).
+# Работает в теневом режиме: считает рядом с autopilot-2 и пишет «сделала бы», ничего не меняя.
+# Изменение порогов = новая версия файла. Значения не откалиброваны: калибровка на теневом периоде.
 version = "autopilot-3"
+engine = "expected_loss"
 
 # Доли и вероятности в базисных пунктах: 10000 = 100%.
 maturity_days = 2
@@ -10,6 +10,7 @@ learning_days = 7
 learning_target_multiple = 2
 prior_weight = 1
 
+# Поля прежнего движка читаются здравым смыслом проверок качества данных и симулятором.
 good_probability_bp = 8000
 bad_probability_bp = 9000
 bad_cpl_multiple_bp = 13000
@@ -18,15 +19,29 @@ bad_min_spend_multiple = 2
 min_change_gap_days = 3
 budget_increase_bp = 2000
 
+# Качество данных: те же пороги, что в autopilot-2. Плохие данные — только защита.
 health_recent_days = 7
 health_min_clicks = 50
 health_min_visit_share_bp = 5000
 health_min_expected_leads = 5
 health_gap_share_bp = 3000
 
-# Тест предлагается пограничному объявлению, если дневной лимит направления за test_days
-# покрывает test_min_target_multiple целевых цен обращения: на вариант придётся хотя бы две.
 test_days = 7
 test_min_target_multiple = 4
-# Владелец отказался от теста — две недели не предлагаем его этому объявлению снова.
 test_decline_hold_days = 14
+
+# Beta-Binomial по объявлению. Априор — среднее направления с весом в «воображаемых кликах».
+prior_clicks = 20
+# Интервалы по 5% с каждой стороны: 90%.
+interval_tail_bp = 500
+# Меньше 50 кликов объявление не сравниваем.
+min_clicks = 50
+# Действуем, если вариант хуже с вероятностью не ниже 90%.
+min_worse_probability_bp = 9000
+# Цена ошибки: три целевые цены обращения, для объявления моложе learning_days втрое дороже.
+error_cost_target_multiple = 3
+learning_error_multiple = 3
+# Меньше 10 обращений в неделю в направлении: оптимизацию не ведём, только защита.
+min_weekly_leads = 10
+# Больше двух вариантов в направлении не сравниваем.
+max_variants = 2

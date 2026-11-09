@@ -32,10 +32,12 @@ from adhelper.budget.application.watch_cycle import run_watch_cycle
 from adhelper.budget.domain.calendar import platform_date
 from adhelper.budget.domain.ports import PlatformUnavailable
 from adhelper.business.adapters.browser import ChromiumRenderer
+from adhelper.business.adapters.economics import SqlEconomics
 from adhelper.business.adapters.fetcher import SafeFetcher
 from adhelper.business.adapters.rules_file import load_site_rules, load_tag_rules
 from adhelper.business.adapters.site_reads import SqlSiteReadQueue
 from adhelper.business.adapters.tag_checks import SqlTagCheckQueue, SqlTagChecks
+from adhelper.business.application.economics import confirmed_goal_micros
 from adhelper.business.application.site import run_site_reads
 from adhelper.business.application.tag import run_tag_checks
 from adhelper.config import Settings
@@ -107,6 +109,8 @@ logger = logging.getLogger(__name__)
 
 MAX_CHANGE_ATTEMPTS = 3
 CURRENT_AUTOPILOT_RULES = "autopilot-2"
+# Считает рядом с рабочими правилами и пишет «сделала бы»: docs/17-autopilot-plan.md, этап 5.
+SHADOW_AUTOPILOT_RULES = "autopilot-3"
 CURRENT_EXPERIMENT_RULES = "experiments-2"
 
 
@@ -331,7 +335,12 @@ class Runtime:
             self.clock,
             rules,
             SqlTestPlanner(self.sessions, business_id, CURRENT_EXPERIMENT_RULES),
+            shadow_rules=load_autopilot_rules(SHADOW_AUTOPILOT_RULES),
         )
+
+    async def autopilot_goal(self, business_id: UUID, legacy: int) -> int:
+        """Цель цикла: из подтверждённой владельцем экономики, иначе прежняя цель."""
+        return await confirmed_goal_micros(SqlEconomics(self.sessions, business_id), legacy)
 
     async def experiments_run(self, only: UUID | None = None) -> int:
         """Открытые тесты: вариант, итог проверки, итог теста. Возвращает число кабинетов."""
@@ -449,6 +458,7 @@ class Runtime:
             if settings.stopped_at is not None or self.platform_for(business_id, account) is None:
                 continue
             mode = cycle_mode(settings.mode, auto_allowed=self.auto_allowed)
+            goal = await self.autopilot_goal(business_id, goal)
             await self.autopilot_cycle(business_id, account).run(
                 account, goal, mode, settings.allowed_actions
             )

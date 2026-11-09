@@ -82,3 +82,62 @@ def test_command_runs_on_recorded_history(
     assert code == 0
     assert out[0].startswith("Кабинет acc: 30 дней")
     assert out[-1] == "Решения не изменились." or out[-1].startswith("Расхождений:")
+
+
+def _shadow(**inputs: object):  # type: ignore[no-untyped-def]
+    from datetime import UTC, datetime
+
+    from adhelper.autopilot.adapters.sql import LoggedDecision
+
+    return LoggedDecision(
+        1,
+        "shadow:ad:7",
+        "inefficient",
+        inputs.get("action"),  # type: ignore[arg-type]
+        "shadow",
+        inputs,
+        "autopilot-3",
+        datetime(2026, 11, 20, 9, 0, tzinfo=UTC),
+        "acc",
+    )
+
+
+def test_shadow_line_says_what_the_rules_would_do_with_numbers() -> None:
+    from adhelper.worker.cli import describe_shadow
+
+    line = describe_shadow(
+        _shadow(
+            action="pause_ad",
+            would="pause_ad",
+            reason="none",
+            p_worse_bp=9681,
+            loss_micros=2_876_840_810,
+            error_cost_micros=900_000_000,
+            clicks=400,
+            leads=10,
+            better_ref="ad:3",
+        )
+    )
+    assert line == (
+        "2026-11-20 ad:7: сделала бы паузу объявления; хуже ad:3 с вероятностью 96%,"
+        " недобор за неделю 2876 ₽ против цены ошибки 900 ₽ (400 кликов, 10 обращений)"
+    )
+
+
+def test_shadow_line_for_waiting_names_the_reason_in_words() -> None:
+    from adhelper.worker.cli import describe_shadow
+
+    line = describe_shadow(_shadow(would="wait", reason="low_data", clicks=100, leads=3))
+    assert line == "2026-11-20 ad:7: ждала бы: данных мало (100 кликов, 3 обращения)"
+    line = describe_shadow(_shadow(would="protect_only", reasons=["platform_incident"]))
+    assert line.endswith("только защита: сбой площадки")
+
+
+async def test_shadow_report_without_rows_says_so(sessions: Sessions) -> None:
+    from adhelper.worker.cli import shadow_report
+
+    lines = await shadow_report(sessions, BUSINESS, 50)
+    assert lines == ["Теневых записей пока нет: правила autopilot-3 ещё не считали этот кабинет."]
+    assert await shadow_report(sessions, uuid.uuid4(), 50) == [
+        "У бизнеса нет подключённых кабинетов."
+    ]

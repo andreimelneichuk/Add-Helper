@@ -213,6 +213,7 @@ class SqlAutopilotData:
                     state == ON and campaign_id in running,
                     rollback_hold=ref in rolled_back,
                     test_hold=ref in declined,
+                    clicks=totals.clicks,
                 )
             )
         # Изменение направления — это его лимит, показ или любое его объявление.

@@ -175,3 +175,52 @@ async def test_auto_mode_in_the_database_still_only_proposes_while_not_allowed(
     await worker.autopilot_run()
     decision = await SqlDecisionLog(sessions, BUSINESS).latest("acc", "ad:1")
     assert decision is not None and decision.status == "awaiting_confirmation"
+
+
+async def test_shadow_rows_appear_beside_real_decisions_and_do_not_replace_them(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    await SqlLeadGoal(sessions, BUSINESS).set(90_000_000)
+    profile = BusinessProfile("Лак", (Service("Маникюр", 1500),))
+    await SqlProfiles(sessions, BUSINESS).save(profile, "")
+
+    await runtime(sessions, engine, {BUSINESS}).autopilot_run()
+
+    log = SqlDecisionLog(sessions, BUSINESS)
+    real = await log.latest("acc", "ad:1")
+    assert real is not None and real.status == "awaiting_confirmation"
+    shadow = await log.shadow("acc")
+    assert shadow, "autopilot-3 считает в тени на тех же данных"
+    assert {row.status for row in shadow} == {"shadow"}
+    assert {row.rules_version for row in shadow} == {"autopilot-3"}
+    assert all(row.object_ref.startswith("shadow:") for row in shadow)
+    assert not [row for row in await log.recent("acc") if row.status == "shadow"]
+    assert await SqlDecisionLog(sessions, OTHER).shadow("acc") == []
+
+
+async def test_confirmed_economics_sets_the_goal_of_the_cycle(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    from datetime import UTC, datetime
+
+    from adhelper.business.adapters.economics import SqlEconomics
+    from adhelper.business.adapters.rules_file import load_economics_rules
+    from adhelper.business.domain.economics import goal_micros, reference
+
+    await SqlLeadGoal(sessions, BUSINESS).set(90_000_000)
+    economics = reference(load_economics_rules())
+    check = 3000 * 1_000_000
+    run_time = runtime(sessions, engine, {BUSINESS})
+    expected = goal_micros(check, economics)
+    assert expected is not None and expected != 90_000_000
+
+    # Пока владелец не подтвердил цифры, цель прежняя.
+    await SqlEconomics(sessions, BUSINESS).save(economics, check, None)
+    assert await run_time.autopilot_goal(BUSINESS, 90_000_000) == 90_000_000
+    # Средний чек из профиля, а не названный владельцем, цель не меняет.
+    await SqlEconomics(sessions, BUSINESS).save(economics, None, datetime.now(UTC))
+    assert await run_time.autopilot_goal(BUSINESS, 90_000_000) == 90_000_000
+    await SqlEconomics(sessions, BUSINESS).save(economics, check, datetime.now(UTC))
+    assert await run_time.autopilot_goal(BUSINESS, 90_000_000) == expected
+    # Без записи экономики остаётся прежняя цель.
+    assert await run_time.autopilot_goal(OTHER, 77_000_000) == 77_000_000

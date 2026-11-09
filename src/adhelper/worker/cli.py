@@ -18,6 +18,7 @@ from adhelper.accounts.adapters.crypto import AesGcmCipher, CipherConfigError
 from adhelper.accounts.adapters.sql import logins_of_business
 from adhelper.autopilot.adapters.data import SqlHistory, autopilot_accounts
 from adhelper.autopilot.adapters.rules_file import load_rules as load_autopilot_rules
+from adhelper.autopilot.adapters.sql import LoggedDecision, SqlDecisionLog
 from adhelper.autopilot.application.simulator import Difference, compare
 from adhelper.budget.adapters.rules_file import load_rules as load_budget_rules
 from adhelper.budget.application.emergency import StopReport, stop_account
@@ -383,6 +384,89 @@ async def _simulate(
     return 0
 
 
+WAIT_WORDS = {
+    "low_data": "данных мало",
+    "wait_is_cheaper": "ждать дешевле, чем ошибиться",
+    "not_worse": "нет уверенности, что хуже",
+    "too_many_variants": "в направлении больше двух вариантов",
+    "strategy_learning": "стратегия ещё учится",
+    "no_action": "действия нет",
+}
+WOULD_WORDS = {
+    "pause_ad": "паузу объявления",
+    "increase_limit": "рост лимита",
+    "start_test": "тест",
+}
+HEALTH_WORDS = {
+    "tracking_lost": "не видно обращений с сайта",
+    "visits_mismatch": "визиты не сходятся с кликами",
+    "conversion_gap": "обращения расходятся с заявками",
+    "platform_incident": "сбой площадки",
+    "manual_hold": "ручная остановка",
+}
+
+
+def _plural(number: int, one: str, few: str, many: str) -> str:
+    if number % 100 in range(11, 15):
+        return many
+    return {1: one, 2: few, 3: few, 4: few}.get(number % 10, many)
+
+
+def describe_shadow(row: LoggedDecision) -> str:
+    """Одна строка о том, что сделали бы правила autopilot-3. Показывается только в CLI."""
+    inputs = row.inputs
+    ref = row.object_ref.removeprefix("shadow:")
+    head = f"{row.decided_at.date().isoformat()} {ref}:"
+    would = inputs.get("would")
+    if would == "protect_only":
+        reasons = ", ".join(HEALTH_WORDS.get(str(r), str(r)) for r in inputs.get("reasons", []))
+        return f"{head} только защита: {reasons}"
+    clicks, leads = int(inputs.get("clicks", 0)), int(inputs.get("leads", 0))
+    counts = (
+        f"{clicks} {_plural(clicks, 'клик', 'клика', 'кликов')},"
+        f" {leads} {_plural(leads, 'обращение', 'обращения', 'обращений')}"
+    )
+    if would == "wait":
+        why = WAIT_WORDS.get(str(inputs.get("reason")), str(inputs.get("reason")))
+        return f"{head} ждала бы: {why} ({counts})"
+    word = WOULD_WORDS.get(str(would), str(would))
+    chance = int(inputs.get("p_worse_bp", 0)) // 100
+    loss = int(inputs.get("loss_micros", 0)) // MICROS_PER_RUB
+    error = int(inputs.get("error_cost_micros", 0)) // MICROS_PER_RUB
+    return (
+        f"{head} сделала бы {word}; хуже {inputs.get('better_ref', 'лучшего')}"
+        f" с вероятностью {chance}%, недобор за неделю {loss} ₽"
+        f" против цены ошибки {error} ₽ ({counts})"
+    )
+
+
+async def shadow_report(
+    sessions: async_sessionmaker[AsyncSession], business_id: uuid.UUID, limit: int
+) -> list[str]:
+    """Теневые записи каждого кабинета бизнеса, новые сверху. Только чтение."""
+    logins = await logins_of_business(sessions, business_id)
+    if not logins:
+        return ["У бизнеса нет подключённых кабинетов."]
+    log = SqlDecisionLog(sessions, business_id)
+    lines: list[str] = []
+    for login in logins:
+        rows = await log.shadow(login, limit)
+        lines += [describe_shadow(row) for row in rows]
+    return lines or ["Теневых записей пока нет: правила autopilot-3 ещё не считали этот кабинет."]
+
+
+async def _shadow(settings: Settings, business_id: uuid.UUID, limit: int) -> int:
+    try:
+        async with open_runtime(settings) as runtime:
+            lines = await shadow_report(runtime.sessions, business_id, limit)
+    except (SQLAlchemyError, OSError) as error:
+        _say(f"База недоступна: {type(error).__name__}")
+        return 1
+    for line in lines:
+        _say(line)
+    return 0
+
+
 async def _sync_stats(settings: Settings) -> int:
     try:
         async with open_runtime(settings) as runtime:
@@ -420,6 +504,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     simulate.add_argument("--rules", default="autopilot-1", help="Прежняя версия правил")
     simulate.add_argument("--against", default=CURRENT_AUTOPILOT_RULES, help="Новая версия")
     simulate.add_argument("--target", type=int, help="Цель цены обращения в рублях")
+    shadow = commands.add_parser(
+        "shadow", help="Показать, что сделали бы правила autopilot-3 рядом с рабочими"
+    )
+    shadow.add_argument("--business", type=uuid.UUID, required=True)
+    shadow.add_argument("--limit", type=int, default=50, help="Сколько записей на кабинет")
     args = parser.parse_args(argv)
 
     settings = Settings()
@@ -429,6 +518,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return asyncio.run(_sync_stats(settings))
     if args.command == "demo-seed":
         return asyncio.run(_demo_seed(settings, args.mismatch))
+    if args.command == "shadow":
+        return asyncio.run(_shadow(settings, args.business, args.limit))
     if args.command == "simulate":
         unknown = [v for v in (args.rules, args.against) if not _known_rules(v)]
         if unknown:

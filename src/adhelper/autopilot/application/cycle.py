@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import replace
 from datetime import datetime
@@ -7,11 +8,18 @@ from adhelper.autopilot.domain.decide import Action, ActionKind, Mode, plan_cycl
 from adhelper.autopilot.domain.explain import explain
 from adhelper.autopilot.domain.health import HealthInput, check_health
 from adhelper.autopilot.domain.model import AccountData, Verdict
+from adhelper.autopilot.domain.plan_ev import plan_cycle_ev
 from adhelper.autopilot.domain.rules import AutopilotRules
 
 __all__ = ["AccountData", "AutopilotCycle", "Mode", "TestPlanner"]
 
+logger = logging.getLogger(__name__)
+
 DATA_ALERT = "data_untrusted"
+# Теневые записи autopilot-3 живут под своими ссылками и статусом: действий и карточек у них нет,
+# а решения рабочих правил по тем же объектам они не заслоняют.
+SHADOW_STATUS = "shadow"
+SHADOW_PREFIX = "shadow:"
 # До калибровки порогов на пилоте (T7) автопилот только предлагает: решает владелец.
 SCHEDULED_MODE = Mode.CONFIRM
 
@@ -67,7 +75,9 @@ class AutopilotCycle:
         clock: Callable[[], datetime],
         rules: AutopilotRules,
         tests: TestPlanner | None = None,
+        shadow_rules: AutopilotRules | None = None,
     ) -> None:
+        self._shadow_rules = shadow_rules
         self._tests = tests
         self._data = data
         self._decisions = decisions
@@ -105,6 +115,7 @@ class AutopilotCycle:
                 self._rules.version,
                 now,
             )
+            await self._shadow(account, data, target, mode, now)
             return
         await self._alerts.resolve(DATA_ALERT)
         plan = plan_cycle(data.ads, data.campaigns, target, health, mode, now, self._rules)
@@ -129,6 +140,65 @@ class AutopilotCycle:
             if allowed is not None and action.kind not in allowed:
                 action = replace(action, needs_confirmation=True)
             await self._execute(account, action, now)
+        await self._shadow(account, data, target, mode, now)
+
+    async def _shadow(
+        self, account: str, data: AccountData, target: int, mode: Mode, now: datetime
+    ) -> None:
+        """Правила autopilot-3 считают рядом и пишут «сделала бы»: ничего не выполняется.
+
+        Сбой теневого счёта не должен мешать рабочему циклу, поэтому ловим всё и пишем в лог
+        только тип ошибки.
+        """
+        rules = self._shadow_rules
+        if rules is None:
+            return
+        try:
+            health = check_health(
+                HealthInput(data.recent, data.baseline, data.platform_incident, data.manual_hold),
+                rules,
+            )
+            if not health.trusted:
+                reasons = [reason.value for reason in health.reasons]
+                await self._decisions.record(
+                    account,
+                    SHADOW_PREFIX + account,
+                    "untrusted",
+                    None,
+                    SHADOW_STATUS,
+                    {"would": "protect_only", "reasons": reasons, "goal_micros": target},
+                    rules.version,
+                    now,
+                )
+                return
+            plan = plan_cycle_ev(data.ads, data.campaigns, target, health, mode, now, rules)
+            chosen = {action.ref: action for action in plan.actions}
+            for ref, evaluation in plan.evaluations.items():
+                action = chosen.get(ref)
+                reason = (
+                    "none"
+                    if action
+                    else (plan.blocked[ref].value if ref in plan.blocked else "no_action")
+                )
+                inputs: dict[str, Any] = dict(plan.assessments.get(ref, {})) | {
+                    "would": action.kind.value if action else "wait",
+                    "reason": reason,
+                    "goal_micros": target,
+                }
+                if ref in plan.compared_with:
+                    inputs["better_ref"] = plan.compared_with[ref]
+                await self._decisions.record(
+                    account,
+                    SHADOW_PREFIX + ref,
+                    evaluation.verdict.value,
+                    action.kind.value if action else None,
+                    SHADOW_STATUS,
+                    inputs,
+                    rules.version,
+                    now,
+                )
+        except Exception as error:
+            logger.warning("Теневой счёт %s не удался: %s", rules.version, type(error).__name__)
 
     async def _execute(self, account: str, action: Action, now: datetime) -> None:
         verdict = {

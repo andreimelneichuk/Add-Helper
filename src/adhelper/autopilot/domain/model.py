@@ -33,6 +33,7 @@ class DailyStat:
 class Totals:
     spend: int
     leads: int
+    clicks: int = 0
 
 
 @dataclass(frozen=True)
@@ -47,6 +48,8 @@ class AdStats:
     rollback_hold: bool = False
     # Владелец недавно отказался от теста этого объявления.
     test_hold: bool = False
+    # Клики дозревших дней: нужны оценке по ожидаемой потере (autopilot-3).
+    clicks: int = 0
 
 
 @dataclass(frozen=True)
@@ -86,7 +89,11 @@ def mature_totals(rows: Iterable[DailyStat], now: datetime, rules: AutopilotRule
     """Только дозревшие дни, которым можно верить. Граница суток — московская, как у Директа."""
     until = platform_date(now) - timedelta(days=rules.maturity_days)
     used = [row for row in rows if row.day <= until and row.trusted]
-    return Totals(sum(row.spend for row in used), sum(row.leads for row in used))
+    return Totals(
+        sum(row.spend for row in used),
+        sum(row.leads for row in used),
+        sum(row.clicks for row in used),
+    )
 
 
 def _poisson_cdf(count: int, mean: float) -> float:
