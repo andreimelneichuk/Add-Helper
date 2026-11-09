@@ -391,11 +391,28 @@ class Runtime:
             try:
                 campaign_ids = await platform.managed_campaign_ids(account)
                 if not campaign_ids:
+                    logger.info(
+                        "Direct report sync skipped business=%s account=%s "
+                        "reason=no_managed_campaigns",
+                        business_id,
+                        account,
+                    )
                     continue
                 campaign_rows = await platform.campaign_days(account, campaign_ids, since, until)
                 ad_rows = await platform.ad_days(account, campaign_ids, since, until)
-                saved += await SqlReportStats(self.sessions, business_id).save(
+                account_saved = await SqlReportStats(self.sessions, business_id).save(
                     account, campaign_rows, ad_rows
+                )
+                saved += account_saved
+                logger.info(
+                    "Direct report sync business=%s account=%s campaign_ids=%s "
+                    "campaign_rows=%d ad_rows=%d saved=%d",
+                    business_id,
+                    account,
+                    ",".join(campaign_ids),
+                    len(campaign_rows),
+                    len(ad_rows),
+                    account_saved,
                 )
             except PlatformUnavailable as error:
                 logger.warning(
