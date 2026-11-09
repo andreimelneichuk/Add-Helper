@@ -60,6 +60,13 @@ def meaning(command: Command) -> str:
             return f"включить объявление «{name}»."
         case Kind.UNDO_LAST:
             return "отменить последнее изменение."
+        case Kind.AUTOPILOT_OFF:
+            return "остановить автопилот. Он перестанет разбирать рекламу, сделанное останется."
+        case Kind.AUTOPILOT_ON:
+            return "снова включить автопилот в прежнем положении. Бюджет месяца он не меняет."
+        case Kind.AUTOPILOT_CADENCE:
+            how = "раз в неделю" if command.cadence == "weekly" else "каждый день"
+            return f"автопилот будет разбирать рекламу {how}."
         case _:
             return ""
 

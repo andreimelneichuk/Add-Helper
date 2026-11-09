@@ -16,6 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from adhelper.accounts.adapters.sql import account_states
 from adhelper.accounts.application.service import AccountState
 from adhelper.api.cabinet import OwnedChecked
+from adhelper.autopilot.adapters.settings import SqlAutopilotSettings
+from adhelper.autopilot.application.settings import DEFAULT_SETTINGS, report_text
 from adhelper.commands.adapters.rules_file import load_rules
 from adhelper.commands.application.analytics import AdStatSummary, AnalyticsContext
 from adhelper.commands.application.service import (
@@ -45,6 +47,7 @@ def _shown(answer: Answer, ttl: int) -> dict[str, Any]:
         "ad": asdict(command.ad) if command.ad else None,
         "service": command.service,
         "days": list(command.days),
+        "cadence": command.cadence,
         "wish": command.wish,
         "confirm": answer.confirm,
         "reply": answer.reply,
@@ -127,6 +130,9 @@ def chat_router() -> APIRouter:
         # Бюджет — число из «Обзора» и настроек: лимит месяца без вычета резерва.
         limit = sum(p.hard_limit for p in open_periods)
         spent_micros = sum(p.spent or 0 for p in open_periods)
+        ap_store = SqlAutopilotSettings(sessions, business_id)
+        ap_settings = await ap_store.get() or DEFAULT_SETTINGS
+        ap_report = report_text(ap_settings, [line.text for line in await ap_store.history()])
         analytics_context = AnalyticsContext(
             period_label="За 7 дней",
             budget_rubles=limit // 1_000_000 if open_periods else None,
@@ -141,6 +147,7 @@ def chat_router() -> APIRouter:
             connected_account=connected_login,
             wizard_ads=tuple(item.headline for item in all_wizard_ads if item.active),
             on_moderation=awaiting_review(all_wizard_ads, [line for line, _ in lines]),
+            autopilot=ap_report,
         )
 
         rules = load_rules(CURRENT_RULES)

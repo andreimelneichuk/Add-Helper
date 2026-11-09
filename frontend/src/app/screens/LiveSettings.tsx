@@ -9,6 +9,7 @@ import { PriceSchema, planProblem } from "../schemas";
 import { isAbort } from "../polling";
 import { liveApi, savedText, LiveStore } from "../live";
 import { useStore } from "../store";
+import { AutopilotSettings } from "./AutopilotSettings";
 import type { Store } from "../store";
 import { isCityFact } from "../draft";
 import "./Settings.css";
@@ -1212,6 +1213,14 @@ function SiteSettings({ store, api }: { store: Store; api: Api }) {
             <DisplayForm api={api} store={store as LiveStore} />
           </section>
         </section>
+        <section id="set-autopilot" className="set-group" aria-labelledby="set-autopilot-h">
+          <h2 id="set-autopilot-h" className="set-group-title">Автопилот</h2>
+          <p className="set-group-sub">Сам следит за рекламой и предлагает, что поправить. Деньги сверх бюджета он потратить не может.</p>
+          <section className="ah-panel set-section" aria-labelledby="set-autopilot-title">
+            <h3 id="set-autopilot-title" className="ah-panel-title">Что делает автопилот</h3>
+            <AutopilotSettings api={api} />
+          </section>
+        </section>
         <section id="set-about" className="set-group" aria-labelledby="set-about-h">
           <h2 id="set-about-h" className="set-group-title">О бизнесе</h2>
           <p className="set-group-sub">В рекламу попадают только эти факты и фото. Чего здесь нет, того в объявлениях не будет.</p>
@@ -1252,6 +1261,7 @@ function SiteSettings({ store, api }: { store: Store; api: Api }) {
 const SET_GROUPS = [
   { id: "set-money", title: "Деньги" },
   { id: "set-show", title: "Показы" },
+  { id: "set-autopilot", title: "Автопилот" },
   { id: "set-about", title: "О бизнесе" },
   { id: "set-links", title: "Подключения" },
 ];

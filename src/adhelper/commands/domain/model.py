@@ -24,6 +24,11 @@ class Kind(StrEnum):
     BUDGET = "budget"
     # Справка: какие объявления сейчас на проверке у Яндекса. Ответ пишет код.
     MODERATION = "moderation"
+    # Автопилот: включить (снять остановку), остановить, сменить расписание; справка — кодом.
+    AUTOPILOT_ON = "autopilot_on"
+    AUTOPILOT_OFF = "autopilot_off"
+    AUTOPILOT_CADENCE = "autopilot_cadence"
+    AUTOPILOT_REPORT = "autopilot_report"
     UNKNOWN = "unknown"
 
 
@@ -38,6 +43,9 @@ CHANGING = frozenset(
         Kind.AD_OFF,
         Kind.AD_ON,
         Kind.UNDO_LAST,
+        Kind.AUTOPILOT_ON,
+        Kind.AUTOPILOT_OFF,
+        Kind.AUTOPILOT_CADENCE,
     }
 )
 
@@ -70,6 +78,7 @@ class Command:
     ad: KnownAd | None = None
     service: str | None = None
     days: tuple[int, ...] = ()
+    cadence: str | None = None
     wish: str = ""
 
 

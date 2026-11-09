@@ -654,6 +654,17 @@ export class LiveStore extends Store {
         const rest = unknown.length ? ` У ${unknown.length} ${unknown.length === 1 ? "направления" : "направлений"} часы ещё не прочитаны у Яндекса, их не трогал.` : "";
         return `Больше не показываю рекламу: ${names}. Часы каждого направления как были, бюджет месяца не изменился. Вы попросили.${rest} Вернуть можно отменой в истории.`;
       }
+      case "autopilot_off":
+        await this.api.stopAutopilot();
+        return "Остановил автопилот: рекламу он больше не разбирает. Всё, что уже сделано, осталось как было. Включить снова можно здесь же или в настройках.";
+      case "autopilot_on":
+        await this.api.saveAutopilot({ resume: true });
+        return "Снова включил автопилот в прежнем положении. Следующий разбор пройдёт по расписанию.";
+      case "autopilot_cadence": {
+        const weekly = c.cadence === "weekly";
+        await this.api.saveAutopilot({ cadence: weekly ? "weekly" : "daily" });
+        return `Теперь автопилот разбирает рекламу ${weekly ? "раз в неделю" : "каждый день"}. Вы попросили. Если он был остановлен, он таким и остался.`;
+      }
       default:
         return "Это действие ещё не подключено к сервису, ничего не изменилось.";
     }
@@ -740,6 +751,9 @@ export class LiveStore extends Store {
       }
       case "set_price":
       case "skip_days":
+      case "autopilot_on":
+      case "autopilot_off":
+      case "autopilot_cadence":
         return this.offer(c.confirm, { action: "chat", value: c });
       case "rework_ad":
         return this.say(`Переделка — на экране объявления: откройте «${c.ad!.name}» в разделе «Реклама» и нажмите «Переделать». Там видно варианты до замены.`, { label: "Открыть рекламу", view: "ads" });

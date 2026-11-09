@@ -617,6 +617,26 @@ describe("сетевые ошибки и граничные сценарии (50
     expect(store.state.notice).toContain("ещё не подключено к сервису");
   });
 
+  it("chat: автопилот останавливается, включается и меняет расписание теми же маршрутами", async () => {
+    const stopAutopilot = vi.fn(async () => ({}) as never);
+    const saveAutopilot = vi.fn(async () => ({}) as never);
+    const store = await open(fakeApi({ stopAutopilot, saveAutopilot } as Partial<Api>));
+
+    store.run({ action: "chat", value: said({ kind: "autopilot_off" }) });
+    await settled();
+    expect(stopAutopilot).toHaveBeenCalledTimes(1);
+    expect(store.state.notice).toContain("Остановил автопилот");
+
+    store.run({ action: "chat", value: said({ kind: "autopilot_on" }) });
+    await settled();
+    expect(saveAutopilot).toHaveBeenLastCalledWith({ resume: true });
+
+    store.run({ action: "chat", value: said({ kind: "autopilot_cadence", cadence: "weekly" }) });
+    await settled();
+    expect(saveAutopilot).toHaveBeenLastCalledWith({ cadence: "weekly" });
+    expect(store.state.notice).toContain("раз в неделю");
+  });
+
   it("различные типы тревог (Alerts)", async () => {
     const alerts = [
       { kind: "balance_mismatch", details: {}, created_at: "" },

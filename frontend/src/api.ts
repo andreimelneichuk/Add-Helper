@@ -282,12 +282,14 @@ export type TodayCard = { kind: string; tone: "bad" | "warn" | "info" | "good"; 
 export type UndoPreview = { possible: boolean; status: string; text: string; directions: number };
 
 export type ChatCommand = {
-  kind: "pause" | "resume" | "set_budget" | "set_price" | "skip_days" | "ad_off" | "ad_on" | "rework_ad" | "undo_last" | "stats" | "history" | "unknown";
+  kind: "pause" | "resume" | "set_budget" | "set_price" | "skip_days" | "ad_off" | "ad_on" | "rework_ad" | "undo_last" | "stats" | "history" | "autopilot_on" | "autopilot_off" | "autopilot_cadence" | "autopilot_report" | "unknown";
   rubles: number | null;
   ad: { id: string; name: string } | null;
   service: string | null;
   /** Дни без показов: 1 — понедельник, 7 — воскресенье. */
   days: number[];
+  /** Для «autopilot_cadence»: как часто автопилот разбирает рекламу. */
+  cadence?: "daily" | "weekly" | null;
   wish: string;
   confirm: string;
   reply: string;
@@ -386,6 +388,10 @@ export function createApi(businessId: string, csrf: string) {
     marking: (init?: RequestInit) => request<{ saved: MarkingView | null }>(`${base}/marking`, init),
     saveMarking: (body: MarkingInput) =>
       request<{ saved: MarkingView | null }>(`${base}/marking`, { method: "PUT", body: JSON.stringify(body) }, csrf),
+    autopilot: (init?: RequestInit) => request<AutopilotView>(`${base}/autopilot`, init),
+    saveAutopilot: (body: AutopilotPatch) =>
+      request<AutopilotView>(`${base}/autopilot`, { method: "PUT", body: JSON.stringify(body) }, csrf),
+    stopAutopilot: () => request<AutopilotView>(`${base}/autopilot/stop`, { method: "POST" }, csrf),
     tagCheck: (init?: RequestInit) => request<TagCheckView>(`${base}/tag-check`, init),
     requestTagCheck: () => request<TagCheckView>(`${base}/tag-check`, { method: "POST" }, csrf),
     launchCheck: (init?: RequestInit) => request<LaunchCheck>(`${base}/launch-check`, init),
@@ -478,6 +484,23 @@ export type MarkingInput = { kind: AdvertiserKind; inn: string; name: string; ph
 /** ИНН и телефон приходят только с последними цифрами. */
 export type MarkingView = { kind: AdvertiserKind; inn: string; name: string; phone: string | null; okved: string | null };
 export type TagCheck = { status: "queued" | "running" | "found" | "missing" | "failed"; url: string; counters: number[]; problem: string | null };
+export type AutopilotMode = "watch" | "confirm" | "auto";
+export type AutopilotAction = "pause_ad" | "increase_limit" | "start_test";
+export type AutopilotStatus = "ok" | "no_goal" | "data_untrusted" | "stopped" | "not_connected";
+export type AutopilotView = {
+  mode: AutopilotMode;
+  allowed_actions: AutopilotAction[];
+  cadence: "daily" | "weekly";
+  run_hour: number;
+  envelope: Record<string, number>;
+  status: AutopilotStatus;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  stopped_at: string | null;
+  auto_allowed: boolean;
+  history: { text: string; at: string }[];
+};
+export type AutopilotPatch = Partial<Pick<AutopilotView, "mode" | "allowed_actions" | "cadence" | "run_hour" | "envelope">> & { resume?: boolean };
 export type TagCheckView = { check: TagCheck | null; site: string };
 export type LaunchGeoRegion = { region_id: number; city: string; display: string; subject: string };
 export type LaunchItem = { key: "profile" | "plan" | "account" | "marking" | "counter" | "ads" | "launch_plan"; ok: boolean; text: string; geo_regions?: LaunchGeoRegion[] };

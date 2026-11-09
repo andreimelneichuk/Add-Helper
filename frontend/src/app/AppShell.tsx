@@ -6,6 +6,7 @@ import { BrandLogo, Icon } from "./icons";
 import { CreateSiteModal } from "./screens/CreateSiteModal";
 import { LiveStore } from "./live";
 import { Ads } from "./screens/Ads";
+import { AutopilotBadge } from "./screens/AutopilotBadge";
 import { Chat } from "./screens/Chat";
 import { History } from "./screens/History";
 import { Overview } from "./screens/Overview";
@@ -154,6 +155,7 @@ export function AppShell({ store }: { store: Store }) {
             В кабинет
           </button>
         )}
+        {!starting && <AutopilotBadge store={store} businessId={s.activeBusinessId} screen={s.view} />}
         {!starting && <span className="ah-status" style={tone}><i aria-hidden="true" />{statusText(s)}</span>}
         {!starting && (s.live ? s.live.hasCampaigns : true) && <button type="button" className="ah-btn ah-bar-pause" disabled={!!s.working} onClick={() => store.run({ action: "pause" })}>{s.working?.action === "pause" ? (s.paused ? "Включаем…" : "Останавливаем…") : s.paused ? "Включить" : "Пауза"}</button>}
       </header>

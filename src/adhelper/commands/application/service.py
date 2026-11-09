@@ -107,6 +107,14 @@ def moderation_reply(context: AnalyticsContext | None) -> str:
     return f"На проверке у Яндекса {len(names)}: {listed}. Обычно проверка занимает до суток."
 
 
+AUTOPILOT_NO_DATA = "Про автопилот пока нет данных: он ещё ничего не разбирал."
+
+
+def autopilot_reply(context: AnalyticsContext | None) -> str:
+    """Что делает автопилот: текст собрал код из настроек и журнала решений."""
+    return (context.autopilot if context else "") or AUTOPILOT_NO_DATA
+
+
 def _money(value: int) -> str:
     return f"{value:,}".replace(",", " ") + " ₽"
 
@@ -202,6 +210,9 @@ async def interpret(
     text = message.lower().replace("ё", "е")
     if first.command.kind is Kind.MODERATION:
         first = Parsed(Command(Kind.STATS), Source.RULES, reply=moderation_reply(analytics_context))
+        return _single(first, message, rules)
+    if first.command.kind is Kind.AUTOPILOT_REPORT:
+        first = Parsed(Command(Kind.STATS), Source.RULES, reply=autopilot_reply(analytics_context))
         return _single(first, message, rules)
     if first.command.kind is Kind.BUDGET:
         first = Parsed(Command(Kind.STATS), Source.RULES, reply=budget_reply(analytics_context))

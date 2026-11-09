@@ -80,3 +80,19 @@
 
 .set-nav { scrollbar-width: none; }
 .set-nav::-webkit-scrollbar { display: none; }
+
+/* Автопилот */
+.ap { display: grid; gap: 14px; }
+.ap-status { margin: 0; font-weight: 600; }
+.ap-status[data-status="ok"] { color: var(--ok, #1a7f4b); }
+.ap-cards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.ap-card { text-align: left; display: grid; gap: 6px; padding: 12px; border: 1px solid var(--line, #d7d7dc); border-radius: 10px; background: transparent; color: inherit; cursor: pointer; font: inherit; }
+.ap-card[disabled] { opacity: 0.6; cursor: not-allowed; }
+.ap-card-on { border-color: var(--accent, #2d5bff); box-shadow: 0 0 0 1px var(--accent, #2d5bff); }
+.ap-card em { font-size: 0.85em; }
+.ap-actions { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
+.ap-check { display: flex; gap: 8px; align-items: flex-start; }
+.ap-when { display: flex; flex-wrap: wrap; gap: 14px; }
+.ap-stop { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ap-history { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 0.9em; }
+.ap-history span { opacity: 0.7; }

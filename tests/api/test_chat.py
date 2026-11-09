@@ -159,3 +159,15 @@ def test_ads_on_review_skip_copies_already_in_direct_and_archived() -> None:
     ]
     # Объявления Директа в состоянии «moderation» идут первыми, затем отправленные из мастера.
     assert awaiting_review(items, direct) == ("Королевское бритьё", "Бритьё")  # type: ignore[arg-type]
+
+
+async def test_autopilot_report_and_switch_through_chat(
+    anna: Anna,  # noqa: F811
+) -> None:
+    client, csrf, business = anna
+    report = await _say(client, csrf, business, "что сделал автопилот")
+    assert report["kind"] == "stats" and "Автопилот" in report["reply"]
+    off = await _say(client, csrf, business, "выключи автопилот")
+    assert off["kind"] == "autopilot_off" and off["confirm"].endswith("Применить?")
+    weekly = await _say(client, csrf, business, "пусть автопилот работает раз в неделю")
+    assert (weekly["kind"], weekly["cadence"]) == ("autopilot_cadence", "weekly")

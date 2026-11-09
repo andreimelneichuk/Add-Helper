@@ -82,6 +82,8 @@ class AnalyticsContext:
     wizard_ads: tuple[str, ...] = ()
     # Названия объявлений, которые сейчас на проверке у Яндекса.
     on_moderation: tuple[str, ...] = ()
+    # Готовая справка об автопилоте: положение, расписание, последние решения. Пишет код.
+    autopilot: str = ""
 
 
 @dataclass(frozen=True)

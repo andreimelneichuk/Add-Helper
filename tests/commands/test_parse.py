@@ -279,3 +279,39 @@ def test_spent_for_a_period_stays_in_stats() -> None:
 def test_which_ads_are_on_moderation_is_a_reference() -> None:
     for text in ("Какие объявления на проверке?", "что на модерации", "что проверяет Яндекс"):
         assert parse(text).command.kind is Kind.MODERATION, text
+
+
+def test_autopilot_commands_are_understood_by_rules() -> None:
+    off = ("выключи автопилот", "останови автопилот", "отключи автопилот пожалуйста")
+    on = ("включи автопилот", "запусти автопилот снова", "верни автопилот")
+    for text in off:
+        assert parse(text).command.kind is Kind.AUTOPILOT_OFF, text
+    for text in on:
+        assert parse(text).command.kind is Kind.AUTOPILOT_ON, text
+
+
+def test_autopilot_cadence_is_read_from_the_message() -> None:
+    weekly = parse("пусть автопилот разбирает рекламу раз в неделю").command
+    assert (weekly.kind, weekly.cadence) == (Kind.AUTOPILOT_CADENCE, "weekly")
+    daily = parse("автопилот каждый день проверяй").command
+    assert (daily.kind, daily.cadence) == (Kind.AUTOPILOT_CADENCE, "daily")
+
+
+def test_what_autopilot_did_is_a_report_not_history() -> None:
+    for text in ("что сделал автопилот", "что делает автопилот?", "как работает автопилот"):
+        assert parse(text).command.kind is Kind.AUTOPILOT_REPORT, text
+    assert parse("что ты менял").command.kind is Kind.HISTORY
+
+
+def test_autopilot_changes_need_confirmation_and_report_does_not() -> None:
+    from adhelper.commands.domain.model import CHANGING
+
+    assert {Kind.AUTOPILOT_ON, Kind.AUTOPILOT_OFF, Kind.AUTOPILOT_CADENCE} <= CHANGING
+    assert Kind.AUTOPILOT_REPORT not in CHANGING
+
+
+def test_model_cannot_turn_autopilot_on_or_off() -> None:
+    for kind in ("autopilot_on", "autopilot_off", "autopilot_cadence"):
+        assert (
+            from_model({"command": kind}, "сделай что-нибудь", KNOWN).command.kind is Kind.UNKNOWN
+        )

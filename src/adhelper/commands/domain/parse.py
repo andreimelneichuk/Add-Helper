@@ -215,6 +215,21 @@ def _unknown(question: str = "") -> Parsed:
     return Parsed(Command(Kind.UNKNOWN), Source.RULES, question)
 
 
+def _autopilot(text: str) -> Command | None:
+    """Просьбы про автопилот: остановить, включить, сменить расписание, рассказать."""
+    if re.search(r"выключ|останов|отключ|прекрати|\bстоп", text):
+        return Command(Kind.AUTOPILOT_OFF)
+    if re.search(r"раз в недел|еженедел|кажд\S* недел", text):
+        return Command(Kind.AUTOPILOT_CADENCE, cadence="weekly")
+    if re.search(r"кажд\S* (день|сутки)|ежедневн|раз в (день|сутки)", text):
+        return Command(Kind.AUTOPILOT_CADENCE, cadence="daily")
+    if re.search(r"включ|запусти|верни|активир|возобнов", text):
+        return Command(Kind.AUTOPILOT_ON)
+    if re.search(r"что|как|расскаж|покажи|делает|сделал|работает|статус|состояни", text):
+        return Command(Kind.AUTOPILOT_REPORT)
+    return None
+
+
 def by_rules(message: str, known: Known, max_chars: int, max_budget: int = 500_000) -> Parsed:
     """Разбор правилами. UNKNOWN без вопроса значит «правила не узнали, можно спросить модель»."""
     if len(message) > max_chars:
@@ -222,6 +237,10 @@ def by_rules(message: str, known: Known, max_chars: int, max_budget: int = 500_0
     text = normalize(message)
     numbers = amounts(text)
 
+    if "автопилот" in text:
+        found = _autopilot(text)
+        if found is not None:
+            return Parsed(found, Source.RULES)
     if re.search(r"истори|что (ты )?(делал|сделал|менял)", text):
         return Parsed(Command(Kind.HISTORY), Source.RULES)
     if re.search(r"статист|как дела|итог|сколько (заяв|клиент|обращ)", text):
@@ -437,7 +456,14 @@ def from_model(
     def unknown(question: str = "") -> Parsed:
         return Parsed(Command(Kind.UNKNOWN), Source.MODEL, question)
 
-    if kind in (Kind.BUDGET, Kind.MODERATION):
+    if kind in (
+        Kind.BUDGET,
+        Kind.MODERATION,
+        Kind.AUTOPILOT_ON,
+        Kind.AUTOPILOT_OFF,
+        Kind.AUTOPILOT_CADENCE,
+        Kind.AUTOPILOT_REPORT,
+    ):
         return unknown()
     if kind in (Kind.SET_BUDGET, Kind.SET_PRICE):
         # Суммы не додумываем: число должно стоять в сообщении.

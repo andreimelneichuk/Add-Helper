@@ -219,3 +219,32 @@ async def test_moderation_reference_lists_only_ads_on_review_from_the_cabinet() 
         "что на модерации", KNOWN, RULES, None, always, analytics_context=ctx(())
     )
     assert "нет" in empty.reply.lower()
+
+
+async def test_autopilot_report_is_written_by_code_from_the_context() -> None:
+    from adhelper.commands.application.analytics import AnalyticsContext
+
+    ctx = AnalyticsContext(
+        period_label="За 7 дней",
+        cost_micros=0,
+        impressions=0,
+        clicks=0,
+        conversions=0,
+        autopilot="Автопилот предлагает. Ждёт вашего ответа: 2.",
+    )
+    answer = await interpret("что сделал автопилот", KNOWN, RULES, None, always, ctx)
+    assert answer.command.kind is Kind.STATS and answer.confirm == ""
+    assert answer.reply == "Автопилот предлагает. Ждёт вашего ответа: 2."
+
+
+async def test_autopilot_report_without_data_says_so() -> None:
+    answer = await interpret("что делает автопилот", KNOWN, RULES, None, always, None)
+    assert "пока нет данных" in answer.reply
+
+
+async def test_autopilot_switch_asks_for_confirmation() -> None:
+    answer = await interpret("выключи автопилот", KNOWN, RULES, None, always)
+    assert answer.command.kind is Kind.AUTOPILOT_OFF
+    assert answer.confirm.startswith("Понял так: остановить автопилот") and answer.confirm.endswith(
+        "Применить?"
+    )
