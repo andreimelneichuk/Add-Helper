@@ -118,10 +118,10 @@ describe("настройки на настоящих данных", () => {
     expect(api.saveProfile).toHaveBeenCalledWith(expect.objectContaining({ services: [{ name: "Маникюр", price: 1200 }] }));
   });
 
-  it("показывает кабинет и ведёт на подключение в Яндекс", async () => {
+  it("показывает кабинет и, если токен вручную недоступен, ведёт на вход через Яндекс", async () => {
     const assign = vi.fn();
     vi.stubGlobal("location", { ...window.location, assign });
-    const api = fakeApi();
+    const api = fakeApi({ manualTokenLink: vi.fn(async () => { throw new Error("503"); }) } as Partial<Api>);
     render(<Settings store={await open(api)} />);
     const account = screen.getByRole("region", { name: "Кабинет Яндекса" });
     expect(await within(account).findByText("anna")).toBeInTheDocument();
@@ -131,9 +131,9 @@ describe("настройки на настоящих данных", () => {
   });
 
   it("без кабинета объясняет, зачем он нужен", async () => {
-    render(<Settings store={await open(fakeApi({ accounts: vi.fn(async () => []) } as Partial<Api>))} />);
+    render(<Settings store={await open(fakeApi({ manualTokenLink: vi.fn(async () => { throw new Error("503"); }), accounts: vi.fn(async () => []) } as Partial<Api>))} />);
     expect(await screen.findByText(/без него реклама не запустится/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Подключить кабинет" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Подключить кабинет" })).toBeInTheDocument();
   });
 
   it("подключает Telegram и проверяет привязку", async () => {
@@ -196,7 +196,7 @@ describe("где и когда показывать", () => {
     render(<Settings store={await open(api)} />);
     const block = await screen.findByRole("region", { name: "Где и когда показывать" });
     expect(await within(block).findByText(/Сейчас: Москва/)).toBeInTheDocument();
-    expect(within(block).getByText(/подсвеченные будут выбраны.*Можно отметить несколько/s)).toBeInTheDocument();
+    expect(within(block).getByText(/Отметьте нужные регионы.*отменить можно в истории/s)).toBeInTheDocument();
     await userEvent.click(within(block).getByRole("button", { name: "Санкт-Петербург" }));
     await userEvent.click(within(block).getByRole("button", { name: "Изменить регион" }));
     const ask = within(block).getByRole("group", { name: "Подтверждение показа" });
@@ -414,13 +414,14 @@ describe("план бюджета до запуска", () => {
     const assign = vi.fn();
     vi.stubGlobal("location", { assign });
     const api = fakeApi({
+      manualTokenLink: vi.fn(async () => { throw new Error("503"); }),
       accounts: vi.fn(async () => []),
       connect: vi.fn().mockRejectedValueOnce(new ApiError(503, "Яндекс недоступен")).mockResolvedValue({ authorize_url: "https://ya.ru/auth" }),
     } as unknown as Partial<Api>);
 
     render(<Settings store={await open(api)} />);
     expect(await screen.findByText(/Кабинет ещё не подключён/)).toBeInTheDocument();
-    const connectBtn = screen.getByRole("button", { name: "Подключить кабинет" });
+    const connectBtn = await screen.findByRole("button", { name: "Подключить кабинет" });
 
     // Ошибка при первой попытке подключения
     await userEvent.click(connectBtn);
@@ -634,6 +635,7 @@ describe("ручной токен кабинета", () => {
     render(<Settings store={await open(api)} />);
     await userEvent.click(await screen.findByRole("button", { name: /Получить (код доступа к Директу|токен в Яндексе)/ }));
     expect(windowOpen).toHaveBeenCalledWith(expect.stringContaining("response_type=token"), "_blank", "noopener");
+    expect(screen.queryByRole("button", { name: /Подключить заново|Переподключить|Подключить кабинет$/ })).not.toBeInTheDocument();
     await userEvent.type(screen.getByLabelText("Токен"), "y0_secret-token-value-123");
     await userEvent.click(screen.getByRole("button", { name: /Подключить кабинет|Сохранить токен/ }));
     expect(api.saveManualToken).toHaveBeenCalledWith("y0_secret-token-value-123", undefined);
@@ -663,13 +665,14 @@ describe("ручной токен кабинета", () => {
 
   it("показывает баннер переподключения при статусе needs_reconnect", async () => {
     const api = fakeApi({
+      manualTokenLink: vi.fn(async () => { throw new Error("503"); }),
       accounts: vi.fn().mockResolvedValue([
         { id: "a1", platform: "yandex_direct", login: "owner-direct", scopes: [], state: "needs_reconnect", status: "needs_reconnect", reason: "token_unreadable" },
       ]),
     } as Partial<Api>);
     render(<Settings store={await open(api)} />);
     expect(await screen.findByText(/Связь с кабинетом Яндекса прервалась/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Переподключить" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Переподключить" })).toBeInTheDocument();
   });
 });
 

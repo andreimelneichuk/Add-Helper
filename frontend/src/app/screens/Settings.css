@@ -1,4 +1,23 @@
-.set { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--gap); align-items: start; }
+.set { display: flex; flex-direction: column; gap: var(--pad); max-width: 780px; margin: 0 auto; width: 100%; }
+.set-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.set-title { margin: 0; font-size: var(--t-display, 28px); font-weight: 800; }
+.set-sub { margin: 4px 0 0; color: var(--muted); overflow-wrap: anywhere; }
+.set-summary { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.set-summary li { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--r-field); background: var(--panel); min-width: 0; }
+.set-summary span, .set-summary em { color: var(--muted); font-size: var(--t-caption); font-style: normal; }
+.set-summary strong { font-size: 22px; overflow-wrap: anywhere; }
+.set-nav { position: sticky; top: calc(-1 * var(--pad)); z-index: 3; display: flex; gap: 8px; overflow-x: auto; padding: var(--pad) 0 8px; background: var(--canvas); }
+.set-nav .ah-chip { flex: none; }
+.set-body { display: flex; flex-direction: column; gap: 32px; }
+.set-group { display: flex; flex-direction: column; gap: var(--pad); scroll-margin-top: 64px; }
+.set-group-title { margin: 0; font-size: 22px; font-weight: 800; }
+.set-group-sub { margin: -8px 0 0; color: var(--muted); }
+.set-danger { border-color: var(--bad); }
+.set-details { border-top: 1px solid var(--line); padding-top: 12px; }
+.set-details > summary { cursor: pointer; font-weight: 600; min-height: 40px; display: flex; align-items: center; }
+.set-manual { display: flex; flex-direction: column; gap: 12px; padding-top: 8px; }
+.set-field { display: flex; flex-direction: column; gap: 4px; }
+.set-form > [role="group"] + [role="group"], .set-form > .set-form { border-top: 1px solid var(--line); padding-top: 16px; }
 .set-main { display: flex; flex-direction: column; gap: var(--pad); }
 .set-options { display: flex; flex-wrap: wrap; gap: 4px; }
 .set-own { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 4px; margin-top: 8px; }
@@ -15,13 +34,16 @@
 .set-service { display: grid; grid-template-columns: minmax(0, 1fr) 96px auto; align-items: center; gap: 8px; width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-field); background: var(--panel); }
 .set-textarea { min-height: 96px; padding: 10px 16px; resize: vertical; font: inherit; }
 .set-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-.set-profile-actions { position: sticky; bottom: 0; z-index: 2; padding: 12px; border: 1px solid var(--line); border-radius: var(--r-field); background: var(--panel); box-shadow: 0 -4px 16px rgb(20 26 46 / 8%); }
+.set-service-list { display: flex; flex-direction: column; gap: 8px; width: 100%; max-height: 340px; overflow-y: auto; padding-right: 4px; }
+.set-profile-actions { padding: 12px 0 0; }
+.set-profile-actions-dirty { position: sticky; bottom: 0; z-index: 2; padding: 12px; border: 1px solid var(--line); border-radius: var(--r-field); background: var(--panel); box-shadow: 0 -4px 16px rgb(20 26 46 / 8%); }
 .set-rows { display: flex; flex-direction: column; gap: 12px; }
 .set-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .set-row > div { min-width: 0; overflow-wrap: anywhere; }
 
 @media (max-width: 767px) {
-  .set { grid-template-columns: minmax(0, 1fr); }
+  .set-title { font-size: 22px; }
+  .set-summary { grid-template-columns: minmax(0, 1fr); }
   .set-service { grid-template-columns: minmax(0, 1fr) auto; }
   .set-service > :first-child { grid-column: 1 / -1; }
 }
@@ -36,3 +58,24 @@
 .set-check { display: flex; align-items: flex-start; gap: 8px; }
 .set-check input { margin-top: 3px; flex: none; }
 .set-file { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.set-summary:empty { display: none; }
+
+/* Единый ритм форм: подпись 4 px над полем, блоки через 16 px, действия отдельной строкой. */
+.set-form, .set-section, .set-manual { gap: 16px; }
+.set-form > [role="group"] { display: flex; flex-direction: column; gap: 12px; }
+.set-form .ah-label, .set-field .ah-label, .set-services legend { margin-bottom: 6px; font-weight: 600; color: var(--ink); }
+.set-time { display: grid; grid-template-columns: repeat(2, minmax(0, 140px)); gap: 12px; }
+.set-time label { display: block; }
+.set-time .ah-input { width: 100%; }
+.set-actions { margin-top: 4px; }
+.set-options { gap: 8px; }
+.set-check { align-items: center; gap: 12px; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--r-field); }
+.set-check input { margin: 0; width: 20px; height: 20px; accent-color: var(--accent, #2b3fd8); }
+.set-photo .set-check { padding: 0; border: 0; }
+.set-services { width: 100%; gap: 12px; }
+.set-service { padding: 0; border: 0; background: none; }
+.set-service-list { gap: 8px; }
+.set-details { margin-top: 4px; }
+.set-details > summary { font-weight: 600; }
+.set-field { display: flex; flex-direction: column; }
+

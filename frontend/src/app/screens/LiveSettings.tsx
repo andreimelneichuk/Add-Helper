@@ -83,8 +83,8 @@ function MetricaSettings({ api }: { api: Api }) {
 
   return (
     <section className="ah-panel set-section" aria-labelledby="set-metrica-title">
-      <h2 id="set-metrica-title" className="ah-panel-title">Код статистики на сайте</h2>
-      <p className="set-hint">Проверю, установлен ли код Метрики. Без него реклама запустится, но обращения на сайте могут не учитываться. Создание счётчика и целей в сервисе пока недоступно.</p>
+      <h3 id="set-metrica-title" className="ah-panel-title">Код статистики на сайте</h3>
+      <p className="set-hint">Проверю, установлен ли код Метрики. Без него реклама запустится, но обращения с сайта могут не учитываться.</p>
       <p className="set-hint">{status}</p>
       {error && <p className="ah-error" role="alert">{error}</p>}
       <div className="set-actions">
@@ -385,7 +385,7 @@ function DisplayForm({ api, store }: { api: Api; store: LiveStore }) {
         ) : (
           <>
             <p className="set-hint">Сейчас: {display.regions_text ?? "у направлений разный регион или Яндекс его ещё не передал"}.</p>
-            <p className="set-hint">Кнопки ниже только выбирают регионы: подсвеченные будут выбраны. Можно отметить несколько. Затем нажмите «Изменить регион» и подтвердите действие — оно применится ко всем кампаниям этого бизнеса. Отменить можно в истории.</p>
+            <p className="set-hint">Отметьте нужные регионы и нажмите «Изменить регион». Изменение коснётся всех кампаний бизнеса; отменить можно в истории.</p>
             <div className="set-options">
               {display.catalog.map((r) => (
                 <button key={r.id} type="button" className="ah-chip" aria-pressed={regions.includes(r.id)} onClick={() => { setStatus(null); setRegions(toggle(regions, r.id)); }}>{r.name}</button>
@@ -406,7 +406,7 @@ function DisplayForm({ api, store }: { api: Api; store: LiveStore }) {
             <button key={name} type="button" className="ah-chip" aria-pressed={days.includes(d)} onClick={() => { setStatus(null); setDays(toggle(days, d).sort((a, b) => a - b)); }}>{name}</button>
           ))}
         </div>
-        <div className="set-options">
+        <div className="set-time">
           <label><span className="ah-label">С</span> <select className="ah-input" aria-label="Показывать с" value={hours[0]} onChange={(e) => setHours([Number(e.target.value), hours[1]])}>{HOURS.slice(0, 24).map((h) => <option key={h} value={h}>{h}:00</option>)}</select></label>
           <label><span className="ah-label">До</span> <select className="ah-input" aria-label="Показывать до" value={hours[1]} onChange={(e) => setHours([hours[0], Number(e.target.value)])}>{HOURS.slice(1).map((h) => <option key={h} value={h}>{h}:00</option>)}</select></label>
         </div>
@@ -435,7 +435,7 @@ function DisplayForm({ api, store }: { api: Api; store: LiveStore }) {
           <input className="ah-input" inputMode="numeric" value={goal} placeholder={display.goal ? undefined : "Например, 400"} onChange={(e) => { setStatus(null); setGoal(e.target.value.replace(/\D/g, "").slice(0, 7)); }} />
         </label>
         {goal !== "" && goalValue < 1 && <p className="ah-error" role="alert">Цена должна быть больше нуля.</p>}
-        <p className="set-hint">{display.goal ? `Сейчас ${rub(display.goal)}.` : "Пока не задана."} В Яндексе это ничего не меняет: это мерка для решений автопилота.</p>
+        <p className="set-hint">{display.goal ? `Сейчас ${rub(display.goal)}.` : "Пока не задана."} В Яндексе это ничего не меняет. Если обращение выходит заметно дороже, автопилот отключает такое объявление.</p>
         <div className="set-actions"><button type="submit" className="ah-btn" disabled={busy || goalValue < 1 || goalValue === display.goal}>Задать цену</button></div>
       </form>
       {status && <p role="status" className="set-hint">{status}</p>}
@@ -635,7 +635,8 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
       <label><span className="ah-label">Адрес</span><input className="ah-input" value={profile.address} onChange={(e) => set({ address: e.target.value })} /></label>
       <p className="set-hint">Город для нового запуска берётся из этого поля. Укажите его в начале адреса, например: «Пермь, ул. Комсомольский проспект, 71», затем нажмите «Сохранить» внизу.</p>
       <fieldset className="set-services">
-        <legend className="ah-label">Услуги и цены</legend>
+        <legend className="ah-label">Услуги и цены{profile.services.length > 0 ? ` (${profile.services.length})` : ""}</legend>
+        <div className="set-service-list">
         {profile.services.map((x, i) => (
           <div key={rowIds[i] ?? i} className="set-service">
             <input className="ah-input" aria-label={`Услуга ${i + 1}`} value={x.name} onChange={(e) => service(i, { name: e.target.value })} />
@@ -656,6 +657,7 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
             }}>Убрать</button>
           </div>
         ))}
+        </div>
         <button type="button" className="ah-btn" onClick={() => { setRowIds([...rowIds, crypto.randomUUID()]); set({ services: [...profile.services, { name: "", price: null }] }); }}>Добавить услугу</button>
       </fieldset>
       <label>
@@ -671,7 +673,7 @@ function ProfileForm({ api, store }: { api: Api; store: LiveStore }) {
           }}
         />
       </label>
-      <div className="set-actions set-profile-actions">
+      <div className={dirty ? "set-actions set-profile-actions set-profile-actions-dirty" : "set-actions set-profile-actions"}>
         <button type="button" className="ah-btn ah-btn-primary" disabled={busy || !dirty} onClick={save}>{busy ? "Сохраняю…" : "Сохранить"}</button>
         <span role="status" className="set-hint">{status ?? (dirty ? "Есть несохранённые изменения." : "Все изменения сохранены.")}</span>
       </div>
@@ -706,7 +708,7 @@ function Channels({ api }: { api: Api }) {
   if (!channels) return <p className="ah-muted">{error ?? "Загружаю…"}</p>;
   const { telegram } = channels;
   const telegramText = !telegram.available
-    ? "Бот пока не настроен на сервере."
+    ? "Telegram пока недоступен, тревоги приходят на почту. Бот пока не настроен на сервере."
     : telegram.linked
       ? "Тревоги приходят и в Telegram."
       : link
@@ -769,7 +771,7 @@ function Balance({
 }
 
 /** Запасной путь, пока Яндекс не одобрил наше приложение: токен берётся у Яндекса и вставляется сюда. */
-function ManualToken({ api, onSaved }: { api: Api; onSaved: (account: AdAccount) => void }) {
+function ManualToken({ api, onSaved, onChecked }: { api: Api; onSaved: (account: AdAccount) => void; onChecked: (available: boolean) => void }) {
   const [link, setLink] = useState<string | null>(null);
   const [token, setToken] = useState("");
   const [login, setLogin] = useState("");
@@ -777,8 +779,8 @@ function ManualToken({ api, onSaved }: { api: Api; onSaved: (account: AdAccount)
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    api.manualTokenLink().then((r) => setLink(r.url), () => setLink(null));
-  }, [api]);
+    api.manualTokenLink().then((r) => { setLink(r.url); onChecked(true); }, () => { setLink(null); onChecked(false); });
+  }, [api, onChecked]);
   if (!link) return null;
   const save = async () => {
     setBusy(true);
@@ -798,13 +800,12 @@ function ManualToken({ api, onSaved }: { api: Api; onSaved: (account: AdAccount)
   };
   return (
     <div className="set-manual">
-      <p className="set-hint">Если вход через Яндекс не даёт доступ к Директу, получите токен вручную: нажмите кнопку, разрешите доступ, скопируйте токен с экрана и вставьте сюда.</p>
+      <p className="set-hint">Нажмите кнопку, разрешите доступ в Яндексе, скопируйте токен с экрана и вставьте сюда.</p>
       <div><button type="button" className="ah-btn" aria-label="Получить код доступа к Директу" onClick={() => window.open(link, "_blank", "noopener")}>Получить код доступа к Директу</button></div>
-      <label className="set-field">Токен<input type="password" value={token} placeholder="Скопируйте строку доступа из адресной строки и вставьте сюда" onChange={(e) => setToken(e.target.value)} autoComplete="off" /></label>
-      <p className="set-hint">Скопируйте строку доступа из адресной строки и вставьте сюда.</p>
-      {askLogin && <label className="set-field">Логин в Директе<input value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="off" /></label>}
-      <p className="set-hint">Токен хранится в зашифрованном виде, действует около года и сам не обновляется: через год понадобится получить новый.</p>
-      <button type="button" className="ah-btn ah-btn-primary" disabled={busy || !token.trim()} onClick={save}>Сохранить токен</button>
+      <label className="set-field"><span className="ah-label">Токен</span><input className="ah-input" type="password" value={token} placeholder="Вставьте токен" onChange={(e) => setToken(e.target.value)} autoComplete="off" /></label>
+      {askLogin && <label className="set-field"><span className="ah-label">Логин в Директе</span><input className="ah-input" value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="off" /></label>}
+      <p className="set-hint">Токен хранится в зашифрованном виде и действует около года: потом понадобится получить новый.</p>
+      <div><button type="button" className="ah-btn ah-btn-primary" disabled={busy || !token.trim()} onClick={save}>Сохранить токен</button></div>
       {error && <p className="ah-error" role="alert">{error}</p>}
     </div>
   );
@@ -815,6 +816,8 @@ function Accounts({ api, store }: { api: Api; store?: Store }) {
   const [available, setAvailable] = useState<AdAccount[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Показываем один способ входа: токен вручную, а если он недоступен, вход через Яндекс.
+  const [manual, setManual] = useState<boolean | null>(null);
   useEffect(() => {
     api.accounts().then(
       (accs) => {
@@ -874,7 +877,7 @@ function Accounts({ api, store }: { api: Api; store?: Store }) {
       {accounts?.length === 0 && <p className="set-hint">Кабинет ещё не подключён: без него реклама не запустится. Деньги списываются с вашего счёта в Яндексе, мы их не держим.</p>}
       {reconnectNeeded && (
         <div className="ah-error" role="alert" style={{ marginBottom: 12 }}>
-          Связь с кабинетом Яндекса прервалась. Нажмите «Переподключить», чтобы обновить доступ без потери данных рекламных кампаний.
+          Связь с кабинетом Яндекса прервалась. {manual === false ? "Нажмите «Переподключить»" : "Получите новый токен и вставьте его ниже"}, чтобы обновить доступ без потери данных рекламных кампаний.
         </div>
       )}
       {accounts?.map((a) => (
@@ -899,11 +902,11 @@ function Accounts({ api, store }: { api: Api; store?: Store }) {
           ))}
         </div>
       )}
-      {accounts !== null && (
+      {accounts !== null && manual === false && (
         <div><button type="button" className={working ? "ah-btn" : "ah-btn ah-btn-primary"} disabled={busy} onClick={connect}>{reconnectNeeded ? "Переподключить" : (accounts.length ? "Подключить заново" : "Подключить кабинет")}</button></div>
       )}
       {accounts !== null && (
-        <ManualToken api={api} onSaved={(saved) => {
+        <ManualToken api={api} onChecked={setManual} onSaved={(saved) => {
           setAccounts((all) => [...(all ?? []).filter((x) => x.login !== saved.login), saved]);
           store?.set({ yandex: true });
           if (saved.last_balance_micros != null && store && "live" in store.state && store.state.live) {
@@ -1167,48 +1170,82 @@ function SiteSettings({ store, api }: { store: Store; api: Api }) {
       setLeaving(message(e));
     }
   };
+  const live = s.live;
+  const go = (id: string) => document.getElementById(id)?.scrollIntoView?.({ behavior: "smooth", block: "start" });
   return (
     <div className="set">
-      <div className="set-main">
-        <MetricaSettings api={api} />
-        <section className="ah-panel set-section" aria-labelledby="set-title">
-          <h2 id="set-title" className="ah-panel-title">Бюджет</h2>
-          <BudgetForm store={store as LiveStore} />
+      <header className="set-head">
+        <div>
+          <h1 className="set-title">Настройки</h1>
+          <p className="set-sub">{businessName}</p>
+        </div>
+        <button type="button" className="ah-btn" disabled={leaving === "Выхожу…"} onClick={logout}>Выйти</button>
+      </header>
+      {leaving && leaving !== "Выхожу…" && <p className="ah-error" role="alert">{leaving}</p>}
+      <ul className="set-summary" aria-label="Коротко">
+        {live && live.budget > 0 && <li><span>Бюджет в месяц</span><strong>{rub(live.budget)}</strong><em>потрачено {rub(live.spent ?? 0)}</em></li>}
+        {live?.account && <li><span>Кабинет Яндекса</span><strong>{live.account}</strong>{live.balance != null && <em>на счёте {rub(live.balance)}</em>}</li>}
+      </ul>
+      <nav className="set-nav" aria-label="Разделы настроек">
+        {SET_GROUPS.map((g) => <button key={g.id} type="button" className="ah-chip" onClick={() => go(g.id)}>{g.title}</button>)}
+      </nav>
+      <div className="set-body">
+        <section id="set-money" className="set-group" aria-labelledby="set-money-h">
+          <h2 id="set-money-h" className="set-group-title">Деньги</h2>
+          <p className="set-group-sub">Сколько тратить. Яндекс не потратит больше: лимиты стоят в самом кабинете.</p>
+          <section className="ah-panel set-section" aria-labelledby="set-title">
+            <h3 id="set-title" className="ah-panel-title">Бюджет</h3>
+            <BudgetForm store={store as LiveStore} />
+          </section>
         </section>
-        <section className="ah-panel set-section" aria-labelledby="set-display-title">
-          <h2 id="set-display-title" className="ah-panel-title">Где и когда показывать</h2>
-          <DisplayForm api={api} store={store as LiveStore} />
+        <section id="set-show" className="set-group" aria-labelledby="set-show-h">
+          <h2 id="set-show-h" className="set-group-title">Показы</h2>
+          <p className="set-group-sub">Где и когда видят рекламу. Изменения применяются в Яндексе после подтверждения.</p>
+          <section className="ah-panel set-section" aria-labelledby="set-display-title">
+            <h3 id="set-display-title" className="ah-panel-title">Где и когда показывать</h3>
+            <DisplayForm api={api} store={store as LiveStore} />
+          </section>
         </section>
-        <section className="ah-panel set-section" aria-labelledby="set-profile-title">
-          <h2 id="set-profile-title" className="ah-panel-title">Профиль бизнеса</h2>
-          <p className="set-hint">В рекламу попадают только эти факты. Чего здесь нет, того в объявлениях не будет.</p>
-          <ProfileForm api={api} store={store as LiveStore} />
+        <section id="set-about" className="set-group" aria-labelledby="set-about-h">
+          <h2 id="set-about-h" className="set-group-title">О бизнесе</h2>
+          <p className="set-group-sub">В рекламу попадают только эти факты и фото. Чего здесь нет, того в объявлениях не будет.</p>
+          <section className="ah-panel set-section" aria-labelledby="set-profile-title">
+            <h3 id="set-profile-title" className="ah-panel-title">Профиль бизнеса</h3>
+            <ProfileForm api={api} store={store as LiveStore} />
+          </section>
+          <section className="ah-panel set-section" aria-labelledby="set-photos-title">
+            <h3 id="set-photos-title" className="ah-panel-title">Фото для объявлений</h3>
+            <Photos api={api} />
+          </section>
         </section>
-        <section className="ah-panel set-section" aria-labelledby="set-photos-title">
-          <h2 id="set-photos-title" className="ah-panel-title">Фото для объявлений</h2>
-          <Photos api={api} />
+        <section id="set-links" className="set-group" aria-labelledby="set-links-h">
+          <h2 id="set-links-h" className="set-group-title">Подключения</h2>
+          <p className="set-group-sub">Откуда сервис берёт данные и куда пишет, если что-то пошло не так.</p>
+          <section className="ah-panel set-section" aria-labelledby="set-account-title">
+            <h3 id="set-account-title" className="ah-panel-title">Кабинет Яндекса</h3>
+            <Accounts api={api} store={store} />
+          </section>
+          <MetricaSettings api={api} />
+          <section className="ah-panel set-section" aria-labelledby="set-channels-title">
+            <h3 id="set-channels-title" className="ah-panel-title">Уведомления</h3>
+            <p className="set-hint">Напишу, если показы остановлены или с деньгами что-то не так.</p>
+            <Channels api={api} />
+          </section>
         </section>
-      </div>
-      <div className="set-main">
-        <section className="ah-panel set-section" aria-labelledby="set-account-title">
-          <h2 id="set-account-title" className="ah-panel-title">Кабинет Яндекса</h2>
-          <Accounts api={api} store={store} />
-        </section>
-        <section className="ah-panel set-section" aria-labelledby="set-channels-title">
-          <h2 id="set-channels-title" className="ah-panel-title">Уведомления</h2>
-          <p className="set-hint">Напишу, если показы остановлены или с деньгами что-то не так.</p>
-          <Channels api={api} />
-        </section>
-        <section className="ah-panel set-section" aria-labelledby="set-delete-title">
-          <h2 id="set-delete-title" className="ah-panel-title">Удаление бизнеса</h2>
-          <DeleteBusiness store={store} businessId={s.activeBusinessId ?? ""} businessName={businessName} />
-        </section>
-        <section className="ah-panel set-section" aria-labelledby="set-exit-title">
-          <h2 id="set-exit-title" className="ah-panel-title">Вход</h2>
-          <div><button type="button" className="ah-btn" disabled={leaving === "Выхожу…"} onClick={logout}>Выйти</button></div>
-          {leaving && leaving !== "Выхожу…" && <p className="ah-error" role="alert">{leaving}</p>}
+        <section id="set-danger" className="set-group" aria-labelledby="set-delete-title">
+          <section className="ah-panel set-section set-danger">
+            <h3 id="set-delete-title" className="ah-panel-title">Удаление бизнеса</h3>
+            <DeleteBusiness store={store} businessId={s.activeBusinessId ?? ""} businessName={businessName} />
+          </section>
         </section>
       </div>
     </div>
   );
 }
+
+const SET_GROUPS = [
+  { id: "set-money", title: "Деньги" },
+  { id: "set-show", title: "Показы" },
+  { id: "set-about", title: "О бизнесе" },
+  { id: "set-links", title: "Подключения" },
+];
