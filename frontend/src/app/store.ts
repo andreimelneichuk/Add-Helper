@@ -190,7 +190,7 @@ const GREETING = "Здравствуйте! Я веду рекламу мало�
 
 export function initialState(stage: State["stage"] = "work", situation: Situation = "running"): State {
   return {
-    live: null, stage, situation, mode: "panel", view: "overview", notice: "", pending: null, working: null, price: null, step: 0, input: "", thinking: false, pendingAt: null, pendingTtl: 600,
+    live: null, stage, situation, mode: "panel", view: "overview", notice: "", pending: null, working: null, price: null, step: STEP.site, input: "", thinking: false, pendingAt: null, pendingTtl: 600,
     msgs: [msg("ai", stage === "start" ? GREETING : fixtures.OPENING[situation])],
     hist: fixtures.histFor(situation), undone: {}, undoing: {}, asked: {}, undoInfo: {}, adsOff: {}, ads: fixtures.ADS, openAd: null, paused: false, topped: false, decided: null, extra: 0,
     metric: "cost", selDay: null, period: "week", filter: "all", clientsInput: "", clients: null,
@@ -377,7 +377,7 @@ export class Store {
   protected sendStart(text: string, t: string) {
     const s = this.state;
     if (s.step === STEP.site && this.reader) { this.set({ site: text, input: "", msgs: [...s.msgs, msg("me", text)] }); void this.study(); return; }
-    if (s.step === STEP.site) { this.set({ site: s.site || text, input: "", step: 1, block: "", msgs: [...s.msgs, msg("me", text), msg("ai", STEPS[0]!.ai)] }); return; }
+    if (s.step === STEP.site) { this.set({ site: s.site || text, input: "", step: STEP.profile, block: "", msgs: [...s.msgs, msg("me", text), msg("ai", STEPS[STEP.site]!.ai)] }); return; }
     if (s.step === STEP.profile && !/верно|(^|\s)да(\s|$)|дальше/.test(t)) return this.reply(text, "Записал в профиль. Только такие факты попадут в рекламу.", { facts: [...s.facts, newFact(text)] });
     const num = Number((t.match(/\d[\d\s]*/) || ["0"])[0].replace(/\s/g, ""));
     const hasPause = /пауз|останов|выходн|воскрес/.test(t);
@@ -468,13 +468,13 @@ export class Store {
     }
     clearStartReading();
     const facts = siteFacts(read.facts);
-    const ai = facts.length ? STEPS[0]!.ai : "На сайте не нашёл фактов, которые можно подтвердить цитатой. Добавьте их сами: в рекламу попадёт только это.";
-    this.set({ reading: null, facts, step: 1, block: "", msgs: [...this.state.msgs, msg("ai", ai)] });
+    const ai = facts.length ? STEPS[STEP.site]!.ai : "На сайте не нашёл фактов, которые можно подтвердить цитатой. Добавьте их сами: в рекламу попадёт только это.";
+    this.set({ reading: null, facts, step: STEP.profile, block: "", msgs: [...this.state.msgs, msg("ai", ai)] });
   }
   /** Сайта нет или он не читается: профиль с чистого листа. */
   fillByHand = () => {
     clearStartReading();
-    this.set({ facts: [], step: 1, block: "", reading: null });
+    this.set({ facts: [], step: STEP.profile, block: "", reading: null });
   };
   /** Прямой вход в аккаунт: если бизнес уже есть, сервер сразу откроет кабинет без мастера. */
   loginDirect = () => {
@@ -492,7 +492,7 @@ export class Store {
     this.resumed = true;
     const draft = loadDraft();
     if (!draft) return;
-    this.set({ facts: draft.facts, site: draft.site, f: { ...this.state.f, budget: draft.budget }, step: 4, block: "" });
+    this.set({ facts: draft.facts, site: draft.site, f: { ...this.state.f, budget: draft.budget }, step: STEP.cabinet, block: "" });
     if (loginResult) return this.set({ block: LOGIN_FAILED[loginResult] ?? LOGIN_FAILED_OTHER });
     try {
       const done = await transferDraft(deps, draft);
@@ -561,7 +561,7 @@ export class Store {
     const business = session?.businesses.find((b) => b.id === id);
     if (!session || !business) return this.navigate("/");
     this.wizard = deps.open(business.id, session.me.csrf_token);
-    this.set({ account: { email: session.me.email }, step: 4, block: problem ?? "" });
+    this.set({ account: { email: session.me.email }, step: STEP.cabinet, block: problem ?? "" });
     await this.loadChosen();
   }
   /** Выбор объявлений уже в сервисе: после перезагрузки сводка показывает его, а не подставные. */

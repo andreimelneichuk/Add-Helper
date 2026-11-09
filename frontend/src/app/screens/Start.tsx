@@ -37,7 +37,7 @@ function summary(s: State, real: boolean) {
 
 export function Start({ store }: { store: Store }) {
   const s = useStoreState(store);
-  const base = STEPS[s.step] ?? STEPS[0]!;
+  const base = STEPS[s.step] ?? STEPS[STEP.site]!;
   // В настоящем запуске сводка честно показывает, что готово: создание кампаний ещё не подключено.
   const step = store.reader && s.step === STEPS.length - 1
     ? { ...base, title: "Что готово к запуску", lead: "Сервис проверил всё, что нужно для запуска рекламы." }
@@ -87,7 +87,7 @@ export function Start({ store }: { store: Store }) {
               <span className="st-block-wrap">
                 <span role="alert" className="st-block">{s.block}</span>
                 {s.step === STEP.ads && (
-                  <button type="button" className="ah-btn st-block-action" onClick={() => store.set({ step: 1, block: "" })}>
+                  <button type="button" className="ah-btn st-block-action" onClick={() => store.set({ step: STEP.profile, block: "" })}>
                     К услугам
                   </button>
                 )}

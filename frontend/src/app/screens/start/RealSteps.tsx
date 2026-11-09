@@ -2,7 +2,7 @@
 // Всё, что владелец вводит, сразу уходит в сервис; сводку готовности проверяет сервис.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AdAccount, AdvertiserKind, LaunchAnswer, LaunchCheck, MarkingView, TagCheckView } from "../../../api";
-import { type Ad, rub } from "../../data";
+import { type Ad, rub, STEP } from "../../data";
 import type { State, Store } from "../../store";
 
 type Props = { store: Store; s: State };
@@ -458,7 +458,7 @@ export function RealAds({ store, s }: Props) {
               Продолжить к кабинету
             </button>
           ) : (
-            <button type="button" className="ah-btn ah-btn-primary" onClick={() => store.set({ step: 1, block: "" })}>
+            <button type="button" className="ah-btn ah-btn-primary" onClick={() => store.set({ step: STEP.profile, block: "" })}>
               Вернуться в профиль
             </button>
           )}
