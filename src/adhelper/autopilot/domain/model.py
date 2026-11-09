@@ -59,6 +59,9 @@ class CampaignStats:
     budget_limited: bool
     last_change_at: datetime | None
     test_running: bool = False
+    # None: площадка не сказала. Политика трактует неизвестное строго (docs/04-autopilot.md §7).
+    auto_strategy: bool | None = None
+    in_learning: bool | None = None
 
 
 @dataclass(frozen=True)

@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+from adhelper.autopilot.application.gate import PolicyGate
 from adhelper.autopilot.domain.decide import Action, ActionKind, Mode, plan_cycle
 from adhelper.autopilot.domain.explain import explain
 from adhelper.autopilot.domain.health import HealthInput, check_health
@@ -105,7 +106,9 @@ class AutopilotCycle:
         rules: AutopilotRules,
         tests: TestPlanner | None = None,
         shadow_rules: AutopilotRules | None = None,
+        gate: PolicyGate | None = None,
     ) -> None:
+        self._gate = gate
         self._shadow_rules = shadow_rules
         self._tests = tests
         self._data = data
@@ -165,10 +168,20 @@ class AutopilotCycle:
                     self._rules.version,
                     now,
                 )
-        for action in plan.actions:
-            if allowed is not None and action.kind not in allowed:
+        planned = [
+            replace(action, needs_confirmation=True)
+            if allowed is not None and action.kind not in allowed
+            else action
+            for action in plan.actions
+        ]
+        screened = (
+            await self._gate.screen(account, planned, data, allowed, now) if self._gate else {}
+        )
+        for action in planned:
+            note = screened.get(action.ref)
+            if note is not None and note.held:
                 action = replace(action, needs_confirmation=True)
-            await self._execute(account, action, now)
+            await self._execute(account, action, now, note.notes if note else None)
         await self._shadow(account, data, target, mode, now)
 
     async def _shadow(
@@ -257,41 +270,45 @@ class AutopilotCycle:
             account, ref, verdict, action, SHADOW_STATUS, inputs, rules.version, now
         )
 
-    async def _execute(self, account: str, action: Action, now: datetime) -> None:
+    async def _execute(
+        self, account: str, action: Action, now: datetime, notes: Mapping[str, str] | None = None
+    ) -> None:
         verdict = {
             ActionKind.PAUSE_AD: Verdict.INEFFICIENT,
             ActionKind.INCREASE_LIMIT: Verdict.EFFICIENT,
             ActionKind.START_TEST: Verdict.BORDERLINE,
         }[action.kind]
         if action.kind is ActionKind.START_TEST:
-            await self._start_test(account, action, now)
+            await self._start_test(account, action, now, notes)
             return
         if action.needs_confirmation:
-            await self._log(account, action, verdict, "awaiting_confirmation", now)
+            await self._log(account, action, verdict, "awaiting_confirmation", now, notes)
             return
         if action.kind is ActionKind.PAUSE_AD:
-            decision_id = await self._log(account, action, verdict, "planned", now)
+            decision_id = await self._log(account, action, verdict, "planned", now, notes)
             status = await self._actions.pause_ad(
                 account, action.ref, explain(action.kind.value, action.facts), decision_id
             )
-            await self._log(account, action, verdict, status, now)
+            await self._log(account, action, verdict, status, now, notes)
             return
         if action.new_limit is None:
             raise ValueError("У увеличения лимита должно быть новое значение")
         status = await self._actions.increase_limit(account, action.ref, action.new_limit)
-        await self._log(account, action, verdict, status, now)
+        await self._log(account, action, verdict, status, now, notes)
 
-    async def _start_test(self, account: str, action: Action, now: datetime) -> None:
+    async def _start_test(
+        self, account: str, action: Action, now: datetime, notes: Mapping[str, str] | None = None
+    ) -> None:
         """Тест меняет показы, поэтому в режиме подтверждения ждёт согласия владельца."""
         verdict = Verdict.BORDERLINE
         if self._tests is None:
-            await self._log(account, action, verdict, "test_needed", now)
+            await self._log(account, action, verdict, "test_needed", now, notes)
             return
         hypothesis = await self._tests.hypothesis(account, action.ref)
         if hypothesis is None:
-            await self._log(account, action, verdict, "no_hypothesis", now)
+            await self._log(account, action, verdict, "no_hypothesis", now, notes)
             return
-        extra = {"hypothesis": hypothesis, "campaign_id": action.campaign_id}
+        extra = dict(notes or {}) | {"hypothesis": hypothesis, "campaign_id": action.campaign_id}
         if action.needs_confirmation:
             await self._log(account, action, verdict, "awaiting_confirmation", now, extra)
             return
