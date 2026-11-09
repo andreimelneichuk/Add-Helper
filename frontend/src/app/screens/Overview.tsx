@@ -24,7 +24,7 @@ function AdsTable({ s, store }: { s: State; store: Store }) {
               <tr><th scope="col">Объявление</th><th scope="col">Обращения</th><th scope="col">Цена</th><th scope="col">Расход</th></tr>
             </thead>
             <tbody>
-              {s.ads.map((a) => {
+              {s.ads.filter((a) => !((a.tag === "заменено" || a.tag === "в архиве") && a.cost === 0 && a.leads === 0)).map((a) => {
                 const off = !first && !!s.adsOff[a.id];
                 const neutral = first || off;
                 const empty = first || a.leads <= 0;

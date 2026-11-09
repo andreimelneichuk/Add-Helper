@@ -130,7 +130,7 @@ def chat_router() -> APIRouter:
         analytics_context = AnalyticsContext(
             period_label="За 7 дней",
             budget_rubles=limit // 1_000_000 if open_periods else None,
-            spent_rubles=spent_micros // 1_000_000 if open_periods else None,
+            spent_rubles=(spent_micros + 500_000) // 1_000_000 if open_periods else None,
             cost_micros=cost_micros,
             impressions=impressions,
             clicks=clicks,

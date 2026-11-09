@@ -43,6 +43,10 @@ from adhelper.stats.application.overview import ad_detail
 MAX_CHANGE_ATTEMPTS = 3
 NOT_CONNECTED = "Кабинет Яндекса пока не подключён, поэтому ничего не изменилось"
 NO_ANSWER = "Яндекс не ответил. Ничего не изменилось, попробуйте позже"
+PAUSE_QUEUED = (
+    "Яндекс пока не подтвердил паузу. Просьба стоит в очереди и применится в ближайшие минуты:"
+    " проверьте статус позже"
+)
 PAUSED = "Поставил рекламу на паузу: вы попросили. Настройки сохранены."
 RESUMED = "Снял паузу: вы попросили. Перед включением проверил, что бюджет выдержит."
 MICROS_PER_RUB = 1_000_000
@@ -377,7 +381,11 @@ def control_router() -> APIRouter:
                 campaign_id = stopped.removeprefix(f"{account.login}:")
                 await dashboard.note_campaign_state(account.login, campaign_id, "suspended")
         if not report.complete:
-            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NO_ANSWER)
+            # Пауза уже в журнале и выполнится позже, «ничего не изменилось» было бы неправдой.
+            queued = any(reason == "still_active" for _, reason in report.failed)
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE, PAUSE_QUEUED if queued else NO_ANSWER
+            )
         return {"stopped": report.stopped}
 
     @router.post("/resume")

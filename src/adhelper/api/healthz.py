@@ -52,7 +52,7 @@ async def check_health(engine: AsyncEngine) -> tuple[int, dict[str, Any]]:
     return status.HTTP_200_OK, {"status": "ok"}
 
 
-@router.get("/healthz")
+@router.api_route("/healthz", methods=["GET", "HEAD", "POST"])
 async def healthz(request: Request) -> JSONResponse:
     code, payload = await check_health(request.app.state.engine)
     return JSONResponse(payload, status_code=code)
