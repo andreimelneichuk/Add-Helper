@@ -55,6 +55,11 @@ class ChooseBody(BaseModel):
     creative_id: int
 
 
+class PhotoChangeBody(BaseModel):
+    # null means explicitly remove the image; a positive id selects an approved business photo.
+    image_id: int | None
+
+
 def _refusal(items: tuple[str, ...]) -> str:
     words = ", ".join(f"«{item}»" for item in items)
     return (
@@ -65,6 +70,33 @@ def _refusal(items: tuple[str, ...]) -> str:
 
 def rework_router() -> APIRouter:
     router = APIRouter(prefix="/api/businesses/{business_id}")
+
+    @router.post("/ads/{account}/{ad_id}/photo", status_code=status.HTTP_202_ACCEPTED)
+    async def post_photo_change(
+        request: Request,
+        account: str,
+        ad_id: str,
+        body: PhotoChangeBody,
+        business_id: OwnedChecked,
+    ) -> dict[str, Any]:
+        try:
+            creative_id = await SqlReworks(_sessions(request), business_id).request_photo_change(
+                account, ad_id, body.image_id, _now(request)
+            )
+        except ValueError:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, "Фото не найдено или уже убрано"
+            ) from None
+        if creative_id is None:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Объявление уже изменилось")
+        return {
+            "id": creative_id,
+            "status": "queued",
+            "text": (
+                "Готовлю замену с выбранным фото. Старое объявление продолжит работать, "
+                "пока Яндекс не проверит замену."
+            ),
+        }
 
     @router.post("/ads/{account}/{ad_id}/rework", status_code=status.HTTP_202_ACCEPTED)
     async def post_rework(

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ReworkVariant } from "../../api";
+import type { Api, Photo, ReworkVariant } from "../../api";
 import type { Ad } from "../data";
 import { adName, adShown, adStat, draftAd, inTest, useStoreState } from "../store";
 import type { ReworkApi, State, Store } from "../store";
@@ -15,6 +15,60 @@ const TOPICS = ["Маникюр", "Педикюр", "Акция"];
 export function AdArt({ ad, hook }: { ad: Ad; hook: string }) {
   if (!ad.photo) return <div className="ah-art">{hook}</div>;
   return <div className="ah-art ah-art-photo" style={{ backgroundImage: `linear-gradient(transparent 30%, rgb(0 0 0 / 65%)), url(${ad.photo})` }}>{hook}</div>;
+}
+
+function PhotoControls({ api, ad, disabled }: { api: Api; ad: Ad; disabled: boolean }) {
+  const [photos, setPhotos] = useState<Photo[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    void api.photos().then((result) => { if (active) setPhotos(result.photos); }, (e: unknown) => {
+      if (active) setError(e instanceof Error ? e.message : "Не удалось загрузить фото бизнеса.");
+    });
+    return () => { active = false; };
+  }, [api]);
+  const request = async (imageId: number | null) => {
+    const [account, adId] = ad.id.split("/");
+    if (!account || !adId) return;
+    setBusy(true);
+    setError("");
+    setStatus("");
+    try {
+      const result = await api.changeAdPhoto(account, adId, imageId);
+      setStatus(result.text);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось подготовить замену.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const canChange = !disabled && !busy;
+  return (
+    <section className="ah-panel anno-photo-controls" aria-labelledby="anno-photo-title">
+      <h3 id="anno-photo-title" className="ah-panel-title">Фото в объявлении</h3>
+      <p className="ah-muted">Выберите другое фото или оставьте объявление без него. Подготовлю замену с тем же текстом; текущее объявление будет работать, пока Яндекс её проверяет.</p>
+      {photos === null && !error && <p className="ah-muted">Загружаю фото бизнеса…</p>}
+      {photos && photos.length > 0 && (
+        <ul className="anno-photo-list" aria-label="Фото бизнеса для замены">
+          {photos.map((photo, index) => (
+            <li key={photo.id}>
+              <img src={photo.url} alt={`Фото бизнеса ${index + 1}`} width={photo.width} height={photo.height} />
+              <button type="button" className="ah-btn" disabled={!canChange || ad.photoId === photo.id} onClick={() => void request(photo.id)}>
+                {ad.photoId === photo.id ? "Сейчас в объявлении" : "Поставить фото"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {photos?.length === 0 && <p className="ah-muted">Пока нет одобренных фото бизнеса. Добавьте их в настройках или оставьте автоизображение.</p>}
+      <button type="button" className="ah-btn" disabled={!canChange || ad.photoId === undefined} onClick={() => void request(null)}>Оставить без фото</button>
+      {disabled && <p className="ah-muted">Для отключённого или архивного объявления фото изменить нельзя.</p>}
+      {status && <p className="ah-muted" role="status">{status}</p>}
+      {error && <p className="ah-error" role="alert">{error}</p>}
+    </section>
+  );
 }
 
 function Preview({ ad, hook, title, label }: { ad: Ad; hook: string; title: string; label?: string }) {
@@ -239,6 +293,7 @@ export function AdDetail({ store, id }: { store: Store; id: string }) {
   const events = s.hist.filter((h) => h.about === id || h.title.includes(`«${name}»`));
   const action = off ? "Включить" : "Отключить";
   const status = isArchived ? ad.tag : off ? "Отключено" : ad.tag;
+  const photoApi = (store as Store & { api?: Api }).api;
 
   return (
     <div className="anno-screen">
@@ -315,6 +370,9 @@ export function AdDetail({ store, id }: { store: Store; id: string }) {
             <Preview ad={ad} hook={hook} title={title} />
           </div>
           <div className="anno-side">
+            {photoApi && ad.id.includes("/") && (
+              <PhotoControls api={photoApi} ad={ad} disabled={off || isArchived || ad.tag === "отклонено Яндексом"} />
+            )}
             <section className="ah-panel anno-facts">
               <div className="anno-performance">
                 <span className="ah-label">Результат объявления</span>

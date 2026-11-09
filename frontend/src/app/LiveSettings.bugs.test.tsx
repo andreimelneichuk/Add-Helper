@@ -19,7 +19,7 @@ describe("Настройки кабинета: профиль, бюджет, п�
       const store = await open(api);
       render(<LiveSettings store={store} />);
 
-      const consentBox = await screen.findByRole("checkbox", { name: /Люди на фото согласны/ });
+      const consentBox = await screen.findByRole("checkbox", { name: /У меня есть права использовать фото/ });
       expect(consentBox).not.toBeChecked();
 
       // Check consent
@@ -154,7 +154,7 @@ describe("Настройки кабинета: профиль, бюджет, п�
       });
       expect(await screen.findByDisplayValue("Маникюр")).toBeInTheDocument();
       expect(screen.queryByDisplayValue("Стрижка 500р")).toBeNull();
-      expect(screen.getByDisplayValue("https://salebot.site/")).toBeInTheDocument();
+      expect(screen.getByLabelText("Адрес сайта, откуда взять фото")).toHaveValue("https://salebot.site/");
     });
   });
 
@@ -163,7 +163,7 @@ describe("Настройки кабинета: профиль, бюджет, п�
       const uploadPhoto = vi.fn(async () => ({ id: 1, url: "/p/1" }));
       const store = await open(fakeApi({ uploadPhoto: uploadPhoto as never }));
       render(<LiveSettings store={store} />);
-      await userEvent.click(await screen.findByLabelText(/согласны на рекламу/));
+      await userEvent.click(await screen.findByLabelText(/У меня есть права использовать фото/));
       const field = screen.getByLabelText("Файл фото");
       await userEvent.upload(field, new File(["x"], "a.png", { type: "image/png" }));
       expect(await screen.findByText(/Фото добавил/)).toBeInTheDocument();
@@ -172,7 +172,7 @@ describe("Настройки кабинета: профиль, бюджет, п�
       expect(await screen.findByRole("alert")).toHaveTextContent("Сначала отметьте");
       expect(screen.queryByText(/Фото добавил/)).toBeNull();
 
-      await userEvent.click(screen.getByLabelText(/согласны на рекламу/));
+      await userEvent.click(screen.getByLabelText(/У меня есть права использовать фото/));
       await userEvent.upload(field, new File(["x"], "note.txt", { type: "text/plain" }), { applyAccept: false });
       expect(await screen.findByRole("alert")).toHaveTextContent("JPEG, PNG, GIF или WebP");
       expect(uploadPhoto).toHaveBeenCalledTimes(1);

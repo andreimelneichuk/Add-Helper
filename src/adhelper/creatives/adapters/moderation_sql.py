@@ -126,6 +126,7 @@ class SqlModeration:
                 AdDraft(row.headline, row.text),
                 hrefs.get((row.account, row.campaign_id), ""),
                 images.get(row.image_id) if row.image_id is not None else None,
+                row.image_disabled,
             )
             for row in rows
         ]

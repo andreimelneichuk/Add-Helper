@@ -72,7 +72,7 @@ describe("настройки на настоящих данных", () => {
     await userEvent.type(price, "1400");
     late(base);
     await settled();
-    expect(profile).toHaveBeenCalledTimes(3);
+    expect(profile).toHaveBeenCalledTimes(4);
     expect(screen.getByLabelText("Цена услуги 1, ₽")).toHaveValue("1400");
   });
 

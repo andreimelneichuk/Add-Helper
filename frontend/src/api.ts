@@ -351,6 +351,8 @@ export function createApi(businessId: string, csrf: string) {
     launch: (id: number) => request<CreativeReport>(`${base}/creatives/${id}/launch`, { method: "POST" }, csrf),
     rework: (account: string, adId: string, wish: string) =>
       request<{ id: number; status: "queued" }>(`${base}/ads/${part(account)}/${part(adId)}/rework`, { method: "POST", body: JSON.stringify({ wish }) }, csrf),
+    changeAdPhoto: (account: string, adId: string, imageId: number | null) =>
+      request<{ id: number; status: "queued"; text: string }>(`${base}/ads/${part(account)}/${part(adId)}/photo`, { method: "POST", body: JSON.stringify({ image_id: imageId }) }, csrf),
     reworkSet: (id: number, init?: RequestInit) => request<ReworkView>(`${base}/reworks/${id}`, init),
     chooseRework: (id: number, creativeId: number) =>
       request<ReworkView>(`${base}/reworks/${id}/choose`, { method: "POST", body: JSON.stringify({ creative_id: creativeId }) }, csrf),

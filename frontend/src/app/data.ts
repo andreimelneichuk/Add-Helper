@@ -10,7 +10,7 @@ export type HistoryKind = "money" | "ads" | "tests" | "yours";
 export type Day = [number, number];
 export type HistoryEntry = { id: string; kind: HistoryKind; when: string; title: string; why: string; next: string; canUndo: boolean; undoNote?: string; state?: string; revert?: { setting?: [SettingKey, string | number]; ad?: string; adOff?: string; adContent?: Ad }; about?: string };
 export type TagTone = 'good' | 'accent' | 'neutral' | 'bad';
-export type Ad = { id: string; name: string; tag: string; tagTone: TagTone; leads: number; cost: number; hook: string; title: string; text: string; facts: string; photo?: string };
+export type Ad = { id: string; name: string; tag: string; tagTone: TagTone; leads: number; cost: number; hook: string; title: string; text: string; facts: string; photo?: string; photoId?: number };
 /** Название, обращения, расход, объявления; у настоящих данных ещё «кабинет/номер направления». */
 type Direction = [string, number, number, [string, number, number, string?][], string?];
 export type PeriodStats = { label: string; cost: number; leads: number; shows: number; clicks: number; dirs: Direction[] };

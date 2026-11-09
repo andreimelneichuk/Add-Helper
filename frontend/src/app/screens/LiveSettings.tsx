@@ -944,6 +944,7 @@ async function shortSide(file: Blob): Promise<number | null> {
 function Photos({ api }: { api: Api }) {
   const [data, setData] = useState<PhotosData | null>(null);
   const picker = useRef<HTMLInputElement>(null);
+  const siteLookupStarted = useRef<Api | null>(null);
   const [consent, setConsent] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -970,6 +971,37 @@ function Photos({ api }: { api: Api }) {
   const [siteUrl, setSiteUrl] = useState("");
   const [found, setFound] = useState<SiteImage[] | null>(null);
   const [chosen, setChosen] = useState<string[]>([]);
+  // Найти варианты автоматически по адресу профиля, но никогда не сохранять их
+  // без явного выбора владельца и согласия на права/людей на снимках.
+  useEffect(() => {
+    if (!data || data.photos.length >= data.max || siteLookupStarted.current === api) return;
+    siteLookupStarted.current = api;
+    let active = true;
+    void api.profile().then(async (profile) => {
+      const website = profile.website.trim();
+      if (!website || !active) return;
+      setSiteUrl(website);
+      setBusy(true);
+      setStatus("Ищу подходящие фото на сайте…");
+      setError(null);
+      try {
+        const result = await api.siteImages(website);
+        if (!active) return;
+        setFound(result.images);
+        setChosen([]);
+        setStatus(result.images.length
+          ? `Нашёл на сайте ${result.images.length} фото. Выберите подходящие и подтвердите права на них.`
+          : "Подходящих фото на сайте не нашёл. Можно продолжить без фото.");
+      } catch (e) {
+        if (active) setError(`Не удалось найти фото на сайте: ${message(e)}`);
+      } finally {
+        if (active) setBusy(false);
+      }
+    }, (e: unknown) => {
+      if (active) setError(message(e));
+    });
+    return () => { active = false; };
+  }, [api, data]);
   const lookUp = () => {
     if (!siteUrl.trim()) return refuse("Впишите адрес сайта.");
     void act(async () => {
@@ -1008,7 +1040,7 @@ function Photos({ api }: { api: Api }) {
   const full = data.photos.length >= data.max;
   return (
     <div className="set-rows">
-      <p className="set-hint">Фото салона, работ или мастеров делают объявление заметнее. До {data.max} фото, квадрат или кадр 4:3, от 450 точек по короткой стороне.</p>
+      <p className="set-hint">Фото необязательны: если своих не будет, сервис подберёт или создаст изображение сам. До {data.max} фото салона, работ или мастеров; квадрат или кадр 4:3, от 450 точек по короткой стороне.</p>
       {data.photos.length > 0 && (
         <ul className="set-photos" aria-label="Ваши фото">
           {data.photos.map((p, i) => (
@@ -1025,11 +1057,11 @@ function Photos({ api }: { api: Api }) {
         <>
           <label className="set-check">
             <input type="checkbox" checked={consent} onChange={(e) => { setConsent(e.target.checked); setError(null); }} />
-            <span>Люди на фото согласны на рекламу, или людей на фото нет</span>
+            <span>У меня есть права использовать фото; люди на нём согласны на рекламу или их нет</span>
           </label>
           <label className="set-field">
-            <span>Адрес сайта, откуда взять фото</span>
-            <input type="url" value={siteUrl} placeholder="https://" onChange={(e) => setSiteUrl(e.target.value)} />
+            <span className="ah-label">Адрес сайта, откуда взять фото</span>
+            <input className="ah-input" type="url" value={siteUrl} placeholder="https://" onChange={(e) => setSiteUrl(e.target.value)} />
           </label>
           <div className="set-actions">
             <button type="button" className="ah-btn" disabled={busy} onClick={() => (consent ? picker.current?.click() : refuse(NO_CONSENT))}>{busy ? "Загружаю…" : "Добавить фото"}</button>

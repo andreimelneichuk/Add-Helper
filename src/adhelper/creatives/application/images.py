@@ -127,7 +127,7 @@ async def attach_images(
     owner = [image.id for image in await store.active(ImageSource.OWNER)]
     used = list(await store.used())
     for item in outgoing:
-        if item.image is not None:
+        if item.image is not None or item.image_disabled:
             continue
         chosen = pick_owner_photo(owner, used)
         if chosen is None:

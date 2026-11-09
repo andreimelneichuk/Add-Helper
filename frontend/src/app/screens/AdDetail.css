@@ -13,6 +13,11 @@
 .ah-art-photo { background-position: center; background-size: cover; color: #fff; }
 
 .anno-facts, .anno-management, .anno-events, .anno-compose { display: flex; flex-direction: column; gap: var(--gap); }
+.anno-photo-controls { display: flex; flex-direction: column; gap: 10px; }
+.anno-photo-controls .ah-panel-title { margin: 0; }
+.anno-photo-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.anno-photo-list li { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.anno-photo-list img { width: 100%; aspect-ratio: 1; object-fit: cover; border: 1px solid var(--line); border-radius: var(--r-field); }
 .anno-performance { padding: 12px 14px; border-radius: var(--r-field); background: var(--accent-soft); }
 .anno-performance .ah-label { margin-bottom: 2px; color: var(--accent-ink); }
 .anno-performance strong { display: block; color: var(--accent-ink); font-size: var(--t-title); line-height: 1.35; }

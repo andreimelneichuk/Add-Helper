@@ -247,6 +247,8 @@ class CreativeRow(Base):
     rejection: Mapped[str | None] = mapped_column(Text)
     # Картинка объявления: миграция 0023. Пусто — объявление без картинки.
     image_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("creative_images.id"))
+    # Владелец явно попросил оставить замену без картинки; автоподбор её пропускает.
+    image_disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
@@ -762,6 +764,87 @@ class SqlReworks:
         async with self._sessions() as session:
             row = (await session.execute(statement)).first()
         return (str(row[0]), AdDraft(row[1], row[2])) if row else None
+
+    async def request_photo_change(
+        self, account: str, ad_id: str, image_id: int | None, now: datetime
+    ) -> int | None:
+        """Queue an identical-text replacement; the current ad stays live until approval."""
+        async with self._sessions.begin() as session:
+            ad = (
+                await session.execute(
+                    select(ADS.c.campaign_id, ADS.c.title, ADS.c.text, ADS.c.state).where(
+                        ADS.c.business_id == self._business_id,
+                        ADS.c.account == account,
+                        ADS.c.ad_id == ad_id,
+                    )
+                )
+            ).first()
+            if ad is None or ad.state not in ("on", "moderation"):
+                return None
+            if image_id is not None:
+                image_exists = await session.scalar(
+                    select(CreativeImageRow.id).where(
+                        CreativeImageRow.business_id == self._business_id,
+                        CreativeImageRow.id == image_id,
+                        CreativeImageRow.source == "owner",
+                        CreativeImageRow.state == ACTIVE_IMAGE,
+                    )
+                )
+                if image_exists is None:
+                    raise ValueError("photo_not_available")
+            pending = await session.scalar(
+                select(CreativeRow.id)
+                .where(
+                    CreativeRow.business_id == self._business_id,
+                    CreativeRow.account == account,
+                    CreativeRow.replaces == ad_id,
+                    CreativeRow.reason == "owner_photo",
+                    CreativeRow.state.in_(
+                        (CreativeState.LAUNCH_PENDING.value, CreativeState.MODERATION.value)
+                    ),
+                )
+                .order_by(CreativeRow.id.desc())
+                .limit(1)
+            )
+            if pending is not None:
+                return int(pending)
+            old = await session.scalar(
+                select(CreativeRow)
+                .where(
+                    CreativeRow.business_id == self._business_id,
+                    CreativeRow.account == account,
+                    CreativeRow.ad_id == ad_id,
+                )
+                .order_by(CreativeRow.id.desc())
+                .limit(1)
+            )
+            row = CreativeRow(
+                business_id=self._business_id,
+                set_id=None,
+                account=account,
+                campaign_id=str(ad.campaign_id),
+                headline=str(ad.title),
+                text=str(ad.text),
+                source=old.source if old else "owner",
+                auto_ok=True,
+                reason="owner_photo",
+                facts=list(old.facts) if old else [],
+                sources=list(old.sources) if old else [],
+                state=CreativeState.LAUNCH_PENDING.value,
+                state_reason="owner_photo_change",
+                history=[_event(now, CreativeState.LAUNCH_PENDING, "owner_photo_change")],
+                replaces=ad_id,
+                ad_id=None,
+                repairs=0,
+                rejection=None,
+                image_id=image_id,
+                image_disabled=image_id is None,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(row)
+            await session.flush()
+            return row.id
 
     async def request(
         self,

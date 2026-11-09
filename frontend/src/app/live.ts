@@ -82,7 +82,7 @@ const AD_TAG: Record<string, [string, Ad["tagTone"]]> = {
 function toAd(line: AdLine, photoUrl: (id: number) => string): Ad {
   const [tag, tagTone] = AD_TAG[line.state] ?? ["работает", "neutral"];
   const ad: Ad = { id: `${line.account}/${line.ad_id}`, name: line.title, tag, tagTone, leads: line.totals.conversions, cost: rubles(line.totals.cost), hook: line.title, title: line.title, text: line.text, facts: "" };
-  return line.image_id ? { ...ad, photo: photoUrl(line.image_id) } : ad;
+  return line.image_id ? { ...ad, photo: photoUrl(line.image_id), photoId: line.image_id } : ad;
 }
 
 function kindOf(line: HistoryLine): HistoryKind {

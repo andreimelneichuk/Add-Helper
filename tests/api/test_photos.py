@@ -126,3 +126,40 @@ async def test_ad_list_names_the_image_the_ad_went_out_with(
     lines = (await client.get(f"{base}/ads")).json()
 
     assert {line["ad_id"]: line["image_id"] for line in lines} == {"11": photo, "12": None}
+
+
+async def test_owner_can_queue_same_text_ad_replacement_with_photo(
+    anna: Anna,  # noqa: F811
+    sessions: Sessions,
+) -> None:
+    client, csrf, business = anna
+    base = f"/api/businesses/{business}"
+    photo = (
+        await client.post(f"{base}/photos?consent=true", content=_jpeg(), headers={**csrf, **JPEG})
+    ).json()["id"]
+
+    queued = await client.post(
+        f"{base}/ads/anna-direct/11/photo", json={"image_id": photo}, headers=csrf
+    )
+    assert queued.status_code == 202, queued.text
+    assert queued.json()["status"] == "queued"
+
+    async with sessions() as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT headline, text, state, reason, replaces, image_id, image_disabled "
+                    "FROM creatives WHERE id = :id"
+                ),
+                {"id": queued.json()["id"]},
+            )
+        ).one()
+    assert row.headline == "Маникюр 1500 ₽" and row.text == "У метро"
+    assert row.state == "launch_pending" and row.reason == "owner_photo"
+    assert row.replaces == "11" and row.image_id == photo and row.image_disabled is False
+
+    repeated = await client.post(
+        f"{base}/ads/anna-direct/11/photo", json={"image_id": photo}, headers=csrf
+    )
+    assert repeated.status_code == 202
+    assert repeated.json()["id"] == queued.json()["id"]
