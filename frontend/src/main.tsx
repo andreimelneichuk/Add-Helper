@@ -5,6 +5,7 @@ import { AppShell } from "./app/AppShell";
 import { AppSkeleton } from "./app/screens/AppSkeleton";
 import { loadDraft, loadStartReading, loadStartSite, loadWizard } from "./app/draft";
 import { LiveStore, loadLive } from "./app/live";
+import { STEP } from "./app/data";
 import { initialState, Store } from "./app/store";
 import { CONNECT_RESULT } from "./app/screens/LiveSettings";
 import { Login } from "./app/screens/Login";
@@ -37,7 +38,7 @@ function GuestStart() {
         site: draft.site || savedSite,
         facts: draft.facts,
         f: { ...initialState("start").f, budget: draft.budget },
-        step: draft.step ?? 0,
+        step: draft.step ?? STEP.site,
         draftOff: draft.draftOff ?? {},
         createAsNew: isNew ? true : draft.createAsNew,
       } : {}),
@@ -79,7 +80,7 @@ function GuestStart() {
       return;
     }
     const pending = loadStartReading();
-    if (pending && store.reader && store.state.step === 0 && !login) {
+    if (pending && store.reader && store.state.step === STEP.site && !login) {
       void store.resumeReading(pending.id, pending.token, pending.url);
       return;
     }

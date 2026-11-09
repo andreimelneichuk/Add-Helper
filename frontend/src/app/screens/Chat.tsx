@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import { STEP } from "../data";
 import { useStore } from "../store";
 import type { State, Store } from "../store";
 import "./Chat.css";
@@ -17,9 +18,9 @@ function chipsFor(s: Pick<State, "pending" | "live" | "msgs" | "paused" | "stage
     { label: "Что ты делал?" },
   ];
   if (s.stage === "start") {
-    if (s.step === 0) return [{ label: "salon-primer.ru" }];
-    if (s.step === 1) return [{ label: "Работаем до 22:00" }];
-    if (s.step === 2) return [{ label: "20 000 ₽ в месяц", send: "20000" }];
+    if (s.step === STEP.site) return [{ label: "salon-primer.ru" }];
+    if (s.step === STEP.profile) return [{ label: "Работаем до 22:00" }];
+    if (s.step === STEP.budget) return [{ label: "20 000 ₽ в месяц", send: "20000" }];
     return [];
   }
   return [{ label: "Как дела?" }, { label: "Почему такая цена?" }, { label: "Не показывай по воскресеньям" }, { label: "Новая цена на маникюр 1400" }, { label: "Отмени последнее" }];

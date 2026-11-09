@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { FormEvent } from "react";
 import { createApi, createBusiness, openSession } from "../../api";
-import { rub, STEPS } from "../data";
+import { rub, STEP, STEPS } from "../data";
 import { useStoreState } from "../store";
 import type { State, Store } from "../store";
 import { adsLeft, innReady, STEP_BODIES } from "./start/Steps";
@@ -28,8 +28,8 @@ function summary(s: State, real: boolean) {
   const adsOn = adsCount > 0;
   return [
     { label: "Сайт", value: siteDisplay, title: site || undefined, on: !!site },
-    { label: "Профиль", value: s.step > 1 ? "подтверждён" : s.step === 1 ? "на проверке" : "пока нет", on: s.step > 1 },
-    { label: "Бюджет", value: s.step > 2 ? `${rub(Number(s.f.budget))} в месяц` : "пока нет", on: s.step > 2 },
+    { label: "Профиль", value: s.step > STEP.profile ? "подтверждён" : s.step === STEP.profile ? "на проверке" : "пока нет", on: s.step > STEP.profile },
+    { label: "Бюджет", value: s.step > STEP.budget ? `${rub(Number(s.f.budget))} в месяц` : "пока нет", on: s.step > STEP.budget },
     { label: "Объявления", value: adsOn ? `${adsCount} готово` : "пока нет", on: adsOn },
     { label: "Подключения", value: `${links} из 3`, on: links === 3 },
   ];
@@ -41,7 +41,7 @@ export function Start({ store }: { store: Store }) {
   // В настоящем запуске сводка честно показывает, что готово: создание кампаний ещё не подключено.
   const step = store.reader && s.step === STEPS.length - 1
     ? { ...base, title: "Что готово к запуску", lead: "Сервис проверил всё, что нужно для запуска рекламы." }
-    : store.writer && s.step === 3
+    : store.writer && s.step === STEP.ads
       ? { ...base, lead: "Тексты пишет ИИ только по вашим фактам, код проверяет каждое. Изображения добавлю позже." }
       : base;
   const Body = STEP_BODIES[s.step] ?? STEP_BODIES[0]!;
@@ -54,7 +54,7 @@ export function Start({ store }: { store: Store }) {
     title.current?.focus();
   }, [s.step]);
 
-  const isBusy = s.step === 0 && s.reading !== null;
+  const isBusy = s.step === STEP.site && s.reading !== null;
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -79,19 +79,19 @@ export function Start({ store }: { store: Store }) {
           <p className="st-lead">{step.lead}</p>
           <Body store={store} s={s} />
           <div className="st-actions">
-            {!(s.step === 3 && s.ads.length === 0 && !s.writing) && (
+            {!(s.step === STEP.ads && s.ads.length === 0 && !s.writing) && (
               <button type="submit" className="ah-btn ah-btn-primary st-next" disabled={isBusy}>{store.reader && s.step === STEPS.length - 1 ? "Открыть кабинет" : step.cta}</button>
             )}
-            {s.step > 0 && <button type="button" className="ah-btn" onClick={() => store.set({ step: s.step - 1, block: "" })}>Назад</button>}
-            {s.block && !(store.writer && s.step === 3 && s.ads.length === 0 && !s.writing) && (
+            {s.step > STEP.site && <button type="button" className="ah-btn" onClick={() => store.set({ step: s.step - 1, block: "" })}>Назад</button>}
+            {s.block && !(store.writer && s.step === STEP.ads && s.ads.length === 0 && !s.writing) && (
               <span className="st-block-wrap">
                 <span role="alert" className="st-block">{s.block}</span>
-                {s.step === 3 && (
+                {s.step === STEP.ads && (
                   <button type="button" className="ah-btn st-block-action" onClick={() => store.set({ step: 1, block: "" })}>
                     К услугам
                   </button>
                 )}
-                {s.step >= 4 && s.block.includes("У вас уже есть бизнес") && (
+                {s.step >= STEP.cabinet && s.block.includes("У вас уже есть бизнес") && (
                   <button
                     type="button"
                     className="ah-btn ah-btn-primary st-block-action"

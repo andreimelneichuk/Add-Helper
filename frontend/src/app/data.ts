@@ -36,6 +36,9 @@ export const STEPS: Step[] = [
   { label: 'Запуск', title: 'Всё готово к запуску', lead: 'Яндекс проверит объявления, обычно до суток. Я напишу, когда начнутся показы.', cta: 'Запустить рекламу', ai: '' },
 ];
 
+/** Шаги мастера по именам: номер в коде не пишем, порядок задаёт один список. */
+export const STEP = { site: 0, profile: 1, budget: 2, ads: 3, cabinet: 4, marking: 5, stats: 6, launch: 7 } as const;
+
 /** Наименьшие суммы для своего значения; на этапе R7 их задают правила и площадка. */
 export const MIN_BUDGET = 1000;
 export const MIN_GOAL = 100;

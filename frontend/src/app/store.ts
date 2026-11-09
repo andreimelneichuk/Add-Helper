@@ -4,7 +4,7 @@ import type { AdDraftProfile, AdSet, AdvertiserKind, Api, ChatCommand, Me, Busin
 import { pollUntil } from "./polling";
 import { clearDraft, clearStartReading, clearWizard, draftProfile, loadDraft, loadWizard, saveDraft, saveStartReading, saveStartSite, transferDraft } from "./draft";
 import type { TransferDeps } from "./draft";
-import { leadsWord, MIN_BUDGET, rub, STEPS } from "./data";
+import { leadsWord, MIN_BUDGET, rub, STEP, STEPS } from "./data";
 import { fixtures } from "./fixtures";
 import type { Ad, Day, Fact, HistoryEntry, HistoryKind, Live, Period, PeriodStats, SettingKey, Situation, View } from "./data";
 
@@ -376,12 +376,12 @@ export class Store {
   }
   protected sendStart(text: string, t: string) {
     const s = this.state;
-    if (s.step === 0 && this.reader) { this.set({ site: text, input: "", msgs: [...s.msgs, msg("me", text)] }); void this.study(); return; }
-    if (s.step === 0) { this.set({ site: s.site || text, input: "", step: 1, block: "", msgs: [...s.msgs, msg("me", text), msg("ai", STEPS[0]!.ai)] }); return; }
-    if (s.step === 1 && !/верно|(^|\s)да(\s|$)|дальше/.test(t)) return this.reply(text, "Записал в профиль. Только такие факты попадут в рекламу.", { facts: [...s.facts, newFact(text)] });
+    if (s.step === STEP.site && this.reader) { this.set({ site: text, input: "", msgs: [...s.msgs, msg("me", text)] }); void this.study(); return; }
+    if (s.step === STEP.site) { this.set({ site: s.site || text, input: "", step: 1, block: "", msgs: [...s.msgs, msg("me", text), msg("ai", STEPS[0]!.ai)] }); return; }
+    if (s.step === STEP.profile && !/верно|(^|\s)да(\s|$)|дальше/.test(t)) return this.reply(text, "Записал в профиль. Только такие факты попадут в рекламу.", { facts: [...s.facts, newFact(text)] });
     const num = Number((t.match(/\d[\d\s]*/) || ["0"])[0].replace(/\s/g, ""));
     const hasPause = /пауз|останов|выходн|воскрес/.test(t);
-    const hasBudget = (s.step === 2 || /бюджет|трат/.test(t)) && num >= 1000;
+    const hasBudget = (s.step === STEP.budget || /бюджет|трат/.test(t)) && num >= 1000;
     if (hasPause && hasBudget) {
       return this.reply(text, `Поставил ${rub(num)} в месяц. Расписание и паузы смогу настроить после запуска рекламы.`, { f: { ...s.f, budget: num } });
     }
@@ -431,7 +431,7 @@ export class Store {
   /** Продолжить опрос разбора сайта, запущенного до перезагрузки страницы. */
   async resumeReading(id: number, token: string, url: string) {
     const reader = this.reader;
-    if (!reader || this.state.reading || this.state.step !== 0) return;
+    if (!reader || this.state.reading || this.state.step !== STEP.site) return;
     this.set({ site: url, reading: { id, token }, block: "" });
     try {
       await this.awaitRead(reader, id, token);
@@ -633,18 +633,18 @@ export class Store {
   }
   /** Шаги после входа в настоящем запуске: данные уходят в сервис, сводку проверяет сервис. */
   private nextReal(s: State) {
-    if (s.step === 4 && !s.account) return this.set({ block: "Войдите через Яндекс: так профиль и бюджет сохранятся." });
+    if (s.step === STEP.cabinet && !s.account) return this.set({ block: "Войдите через Яндекс: так профиль и бюджет сохранятся." });
     // Вошли раньше, мастер для нового сайта: сохраняем черновик отдельным бизнесом, а не выбрасываем.
-    if (s.step === 4 && !this.wizard && this.transferDeps && !this.keptExisting) { void this.saveNewSite(this.transferDeps); return; }
+    if (s.step === STEP.cabinet && !this.wizard && this.transferDeps && !this.keptExisting) { void this.saveNewSite(this.transferDeps); return; }
     // Бизнес уже был: мастер его не трогает, дальше кабинет.
-    if (s.step >= 4 && !this.wizard) { clearDraft(); return this.navigate("/"); }
-    if (s.step === 4 && !s.yandex) return this.set({ block: "Подключите кабинет Директа: получите код доступа и вставьте токен." });
-    if (s.step === 5) {
+    if (s.step >= STEP.cabinet && !this.wizard) { clearDraft(); return this.navigate("/"); }
+    if (s.step === STEP.cabinet && !s.yandex) return this.set({ block: "Подключите кабинет Директа: получите код доступа и вставьте токен." });
+    if (s.step === STEP.marking) {
       if (s.marked) return this.advance();
       if (s.inn) { void this.saveMarking(); return; }
       return this.set({ block: "Укажите реквизиты рекламодателя в кабинете Директа и нажмите «Проверить снова»." });
     }
-    if (s.step === 6) return this.advance("Проверьте сводку: в ней видно, что готово и чего не хватает.");
+    if (s.step === STEP.stats) return this.advance("Проверьте сводку: в ней видно, что готово и чего не хватает.");
     if (s.step === STEPS.length - 1) { clearDraft(); clearWizard(); return this.navigate("/"); }
     return this.advance();
   }
@@ -653,31 +653,31 @@ export class Store {
     const s = this.state;
     if (s.factEdit) return this.set({ block: "Сохраните или отмените правку факта." });
     const limits = s.budgetOptions ?? { min: MIN_BUDGET, max: Infinity };
-    if (s.step === 2 && s.budgetDraft !== null && Number(s.budgetDraft) < limits.min) return this.set({ block: `Укажите сумму от ${rub(limits.min)} в месяц: от 50 ₽ в день по правилам Яндекса плюс 10% резерва.` });
-    if (s.step === 2 && s.budgetDraft !== null && Number(s.budgetDraft) > limits.max) return this.set({ block: `Больше ${rub(limits.max)} в месяц здесь не ставлю: проверьте, нет ли лишнего нуля.` });
-    if (s.step === 2 && s.budgetDraft === null && (Number(s.f.budget) < limits.min || Number(s.f.budget) > limits.max)) {
+    if (s.step === STEP.budget && s.budgetDraft !== null && Number(s.budgetDraft) < limits.min) return this.set({ block: `Укажите сумму от ${rub(limits.min)} в месяц: от 50 ₽ в день по правилам Яндекса плюс 10% резерва.` });
+    if (s.step === STEP.budget && s.budgetDraft !== null && Number(s.budgetDraft) > limits.max) return this.set({ block: `Больше ${rub(limits.max)} в месяц здесь не ставлю: проверьте, нет ли лишнего нуля.` });
+    if (s.step === STEP.budget && s.budgetDraft === null && (Number(s.f.budget) < limits.min || Number(s.f.budget) > limits.max)) {
       return this.set({ block: `Укажите сумму от ${rub(limits.min)} в месяц: от 50 ₽ в день по правилам Яндекса плюс 10% резерва.` });
     }
-    if (s.step === 0 && !s.site.trim()) return this.set({ block: this.reader ? "Вставьте ссылку или заполните профиль вручную." : "Вставьте ссылку или расскажите о бизнесе в чате." });
-    if (s.step === 0 && this.reader) { void this.study(); return; }
-    if (s.step === 1 && s.facts.length === 0) return this.set({ block: "Добавьте хотя бы один факт: рекламу пишу только по ним." });
-    if (s.step === 1 && !s.facts.some((f) => f.field === "service" || f.id === "prices")) {
+    if (s.step === STEP.site && !s.site.trim()) return this.set({ block: this.reader ? "Вставьте ссылку или заполните профиль вручную." : "Вставьте ссылку или расскажите о бизнесе в чате." });
+    if (s.step === STEP.site && this.reader) { void this.study(); return; }
+    if (s.step === STEP.profile && s.facts.length === 0) return this.set({ block: "Добавьте хотя бы один факт: рекламу пишу только по ним." });
+    if (s.step === STEP.profile && !s.facts.some((f) => f.field === "service" || f.id === "prices")) {
       return this.set({ block: "Добавьте хотя бы одну услугу: объявления пишу по услугам." });
     }
-    if (s.step === 2 && this.writer) { this.advance("Пишу объявления по вашим фактам. Посмотрите их на вкладке «Настройка» и уберите лишние."); void this.writeAds(); return; }
-    if (s.step === 3 && this.writer && s.writing) return this.set({ block: "Объявления ещё пишутся: это обычно меньше минуты." });
-    if (s.step === 3 && this.writer && !s.ads.length) {
+    if (s.step === STEP.budget && this.writer) { this.advance("Пишу объявления по вашим фактам. Посмотрите их на вкладке «Настройка» и уберите лишние."); void this.writeAds(); return; }
+    if (s.step === STEP.ads && this.writer && s.writing) return this.set({ block: "Объявления ещё пишутся: это обычно меньше минуты." });
+    if (s.step === STEP.ads && this.writer && !s.ads.length) {
       if (/писали|перегружен|лимит/i.test(s.block)) {
         return this.advance("Переходим к кабинету: объявления можно составить внутри настроек.");
       }
       return this.set({ block: "Объявлений пока нет: нажмите «Написать ещё раз»." });
     }
     // Без объявлений (исчерпан лимит) идём дальше: шаг «Реклама» сам обещает, что их напишем в кабинете.
-    if (s.step >= 3 && s.ads.length > 0 && s.ads.every((a) => s.draftOff[a.id])) return this.set({ block: "Оставьте хотя бы одно объявление." });
-    if (s.step >= 4 && this.reader) return this.nextReal(s);
-    if (s.step === 4 && !s.yandex) return this.set({ block: "Подключите кабинет Яндекса." });
-    if (s.step === 5 && !/^(\d{10}|\d{12})$/.test(s.inn)) return this.set({ block: "ИНН это 10 или 12 цифр." });
-    if (s.step === 6 && !s.metrica) return this.set({ block: "Проверьте установку кода." });
+    if (s.step >= STEP.ads && s.ads.length > 0 && s.ads.every((a) => s.draftOff[a.id])) return this.set({ block: "Оставьте хотя бы одно объявление." });
+    if (s.step >= STEP.cabinet && this.reader) return this.nextReal(s);
+    if (s.step === STEP.cabinet && !s.yandex) return this.set({ block: "Подключите кабинет Яндекса." });
+    if (s.step === STEP.marking && !/^(\d{10}|\d{12})$/.test(s.inn)) return this.set({ block: "ИНН это 10 или 12 цифр." });
+    if (s.step === STEP.stats && !s.metrica) return this.set({ block: "Проверьте установку кода." });
     const msgs = [...s.msgs];
     if (userText) msgs.push(msg("me", userText));
     if (s.step === STEPS.length - 1) {

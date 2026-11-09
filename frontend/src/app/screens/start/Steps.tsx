@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ComponentType } from "react";
-import { MIN_BUDGET, rub } from "../../data";
+import { MIN_BUDGET, rub, STEP } from "../../data";
 import { fixtures } from "../../fixtures";
 import { isInn } from "../../schemas";
 import type { Fact } from "../../data";
@@ -315,4 +315,15 @@ function LaunchStep({ store, s }: StepProps) {
   );
 }
 
-export const STEP_BODIES: ComponentType<StepProps>[] = [AboutStep, ProfileStep, BudgetStep, AdsStep, YandexStep, InnStep, CodeStep, LaunchStep];
+const BODIES: Record<keyof typeof STEP, ComponentType<StepProps>> = {
+  site: AboutStep,
+  profile: ProfileStep,
+  budget: BudgetStep,
+  ads: AdsStep,
+  cabinet: YandexStep,
+  marking: InnStep,
+  stats: CodeStep,
+  launch: LaunchStep,
+};
+/** Экраны шагов в порядке `STEP`: пропустить шаг в списке нельзя, не сойдётся тип. */
+export const STEP_BODIES: ComponentType<StepProps>[] = (Object.keys(STEP) as (keyof typeof STEP)[]).map((name) => BODIES[name]!);
