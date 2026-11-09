@@ -407,8 +407,41 @@ async def test_business_spend_uses_only_its_managed_campaign_ids(
         await client.aclose()
 
 
+async def test_managed_campaign_ids_resolves_campaigns_from_open_launch_markers(
+    direct: FakeDirect,
+) -> None:
+    client = DirectHttpClient(transport=direct.transport(), sleep=_no_sleep)
+    platform = DirectPlatform(
+        client,
+        _token,
+        lambda: NOW,
+        lambda _account: _campaign_ids(),
+        lambda _account: _open_campaign_targets(),
+    )
+    direct.campaigns[101] = {
+        "Id": 101,
+        "Name": "Applied campaign",
+        "Type": "UNIFIED_CAMPAIGN",
+        "State": "ON",
+    }
+    direct.campaigns[303] = {
+        "Id": 303,
+        "Name": "Perm business (ah-1-1)",
+        "Type": "UNIFIED_CAMPAIGN",
+        "State": "ON",
+    }
+    try:
+        assert await platform.managed_campaign_ids(ACCOUNT) == ("101", "303")
+    finally:
+        await client.aclose()
+
+
 async def _campaign_ids() -> tuple[str, ...]:
     return ("101",)
+
+
+async def _open_campaign_targets() -> tuple[str, ...]:
+    return ("launch:ah-1-1",)
 
 
 def test_rubles_become_micros_without_rounding() -> None:
