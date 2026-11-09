@@ -37,7 +37,7 @@ function AdsTable({ s, store }: { s: State; store: Store }) {
                     </td>
                     <td>{empty ? "—" : a.leads}</td>
                     <td>{empty ? "—" : rub(a.cost / a.leads)}</td>
-                    <td>{empty ? "—" : rub(a.cost)}</td>
+                    <td>{first || a.cost <= 0 ? "—" : rub(a.cost)}</td>
                   </tr>
                 );
               })}

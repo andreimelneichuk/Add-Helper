@@ -89,7 +89,7 @@ function toAd(line: AdLine, photoUrl: (id: number) => string): Ad {
 
 function kindOf(line: HistoryLine): HistoryKind {
   if (line.source === "experiment") return "tests";
-  return line.kind === "set_limit" || line.kind === "pause" ? "money" : "ads";
+  return line.kind === "set_limit" || line.kind === "pause" || line.kind === "resume" ? "money" : "ads";
 }
 
 function toEntry(line: HistoryLine, ads: Ad[]): HistoryEntry {
