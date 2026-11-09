@@ -267,7 +267,8 @@ async def test_owner_archive_survives_inventory_sync(
         for ad_id, state in (("mine", "archived"), ("back", "archived"), ("other", "archived")):
             await session.execute(
                 text(
-                    "INSERT INTO ads (business_id, account, ad_id, campaign_id, title, text, href, state)"
+                    "INSERT INTO ads"
+                    " (business_id, account, ad_id, campaign_id, title, text, href, state)"
                     " VALUES (:b, 'anna-direct', :a, '42', 't', 'x', 'https://example.com/', :s)"
                 ),
                 {"b": business_id, "a": ad_id, "s": state},
