@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.sql import ColumnElement, TableClause
 
 from adhelper.ledger.domain.failures import failure_text
-from adhelper.platforms.domain.ports import AdDay, CampaignDay
+from adhelper.platforms.domain.ports import AdDay, AdInventory, CampaignDay, CampaignInventory
 from adhelper.stats.domain.model import (
     AdLine,
     AlertLine,
@@ -229,6 +229,62 @@ class SqlReportStats:
     def __init__(self, sessions: async_sessionmaker[AsyncSession], business_id: UUID) -> None:
         self._sessions = sessions
         self._business_id = business_id
+
+    async def sync_inventory(
+        self,
+        account: str,
+        campaigns: list[CampaignInventory],
+        ads: list[AdInventory],
+    ) -> None:
+        """Upsert managed campaign and ad details from the current platform snapshot."""
+        async with self._sessions.begin() as session:
+            if campaigns:
+                statement = pg_insert(CAMPAIGNS).values(
+                    [
+                        {
+                            "business_id": self._business_id,
+                            "account": account,
+                            "campaign_id": campaign.campaign_id,
+                            "name": campaign.name,
+                            "state": campaign.state,
+                        }
+                        for campaign in campaigns
+                    ]
+                )
+                await session.execute(
+                    statement.on_conflict_do_update(
+                        index_elements=["business_id", "account", "campaign_id"],
+                        set_={"name": statement.excluded.name, "state": statement.excluded.state},
+                    )
+                )
+            if ads:
+                statement = pg_insert(ADS).values(
+                    [
+                        {
+                            "business_id": self._business_id,
+                            "account": account,
+                            "ad_id": ad.ad_id,
+                            "campaign_id": ad.campaign_id,
+                            "title": ad.title,
+                            "text": ad.text,
+                            "href": ad.href,
+                            "state": ad.state,
+                        }
+                        for ad in ads
+                    ]
+                )
+                await session.execute(
+                    statement.on_conflict_do_update(
+                        index_elements=["business_id", "account", "ad_id"],
+                        set_={
+                            "campaign_id": statement.excluded.campaign_id,
+                            "title": statement.excluded.title,
+                            "text": statement.excluded.text,
+                            "href": statement.excluded.href,
+                            "state": statement.excluded.state,
+                        },
+                    )
+                )
 
     async def save(self, account: str, campaigns: list[CampaignDay], ads: list[AdDay]) -> int:
         async with self._sessions.begin() as session:

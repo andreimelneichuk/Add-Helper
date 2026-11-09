@@ -21,6 +21,8 @@ from adhelper.ledger.domain.model import ChangeKind, plan_reached
 from adhelper.platforms.adapters.direct.platform import (
     NO_LIMIT,
     DirectPlatform,
+    _ad_view_state,
+    _campaign_view_state,
     mark_href,
     parse_schedule,
     schedule_items,
@@ -44,6 +46,36 @@ ACCOUNT = "andreimelneichuk"
 NOW = datetime(2026, 11, 5, 9, 0, tzinfo=UTC)
 RECORDED = Path(__file__).parent / "recorded"
 RUB = 1_000_000
+
+
+@pytest.mark.parametrize(
+    ("direct", "expected"),
+    [
+        ({"State": "ON", "Status": "ACCEPTED"}, "on"),
+        ({"State": "ON", "Status": "MODERATION"}, "moderation"),
+        ({"State": "SUSPENDED", "Status": "ACCEPTED"}, "suspended"),
+        ({"State": "ARCHIVED", "Status": "MODERATION"}, "archived"),
+    ],
+)
+def test_direct_ad_inventory_maps_state_and_moderation(
+    direct: dict[str, str], expected: str
+) -> None:
+    assert _ad_view_state(direct) == expected
+
+
+@pytest.mark.parametrize(
+    ("direct", "expected"),
+    [
+        ({"State": "ON", "Status": "ACCEPTED"}, "on"),
+        ({"State": "OFF", "Status": "MODERATION"}, "moderation"),
+        ({"State": "OFF", "Status": "ACCEPTED"}, "suspended"),
+        ({"State": "ARCHIVED", "Status": "MODERATION"}, "archived"),
+    ],
+)
+def test_direct_campaign_inventory_maps_state_and_moderation(
+    direct: dict[str, str], expected: str
+) -> None:
+    assert _campaign_view_state(direct) == expected
 
 
 async def _no_sleep(_: float) -> None:
@@ -185,12 +217,52 @@ class Replay(httpx.AsyncBaseTransport):
 
     def __init__(self, path: Path) -> None:
         self.entries: list[dict[str, Any]] = json.loads(path.read_text())
+        self.last_adgroup_id: int | None = None
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        entry = self.entries.pop(0)
-        assert str(request.url) == entry["url"]
+        entry = self.entries[0]
         body = json.loads(request.content)
         body.pop("token", None)
+        if (
+            request.url.path.endswith("/adgroups")
+            and body.get("method") == "get"
+            and entry["url"].endswith("/ads")
+        ):
+            assert self.last_adgroup_id is not None
+            return httpx.Response(
+                200,
+                headers={"content-type": "application/json;charset=utf-8"},
+                json={
+                    "result": {
+                        "AdGroups": [
+                            {
+                                "Id": self.last_adgroup_id,
+                                "CampaignId": 715840559,
+                                "Name": "Ad Helper проверка API (ah-probe-1)",
+                                "RegionIds": [213],
+                            }
+                        ]
+                    }
+                },
+            )
+        assert str(request.url) == entry["url"]
+        if (
+            request.url.path.endswith("/ads")
+            and body.get("method") == "get"
+            and entry["request"].get("method") == "add"
+        ):
+            # These older recordings predate the ads.get quota check that runs before ads.add.
+            criteria = body.get("params", {}).get("SelectionCriteria", {})
+            assert criteria.get("AdGroupIds")
+            return httpx.Response(
+                200,
+                headers={"content-type": "application/json;charset=utf-8"},
+                text='{"result":{"Ads":[]}}',
+            )
+        entry = self.entries.pop(0)
+        if request.url.path.endswith("/adgroups") and body.get("method") == "add":
+            response_data = json.loads(entry["body"])
+            self.last_adgroup_id = response_data["result"]["AddResults"][0]["Id"]
         # Байты картинки в записи заменены их SHA-256: запись не тащит файл дважды.
         for image in body.get("params", {}).get("AdImages", []):
             data = base64.b64decode(image["ImageData"])

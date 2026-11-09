@@ -120,6 +120,27 @@ class CampaignDay:
 
 
 @dataclass(frozen=True)
+class CampaignInventory:
+    """Current campaign details used to refresh the owner's local view."""
+
+    campaign_id: str
+    name: str
+    state: str
+
+
+@dataclass(frozen=True)
+class AdInventory:
+    """Current ad details and serving state from the advertising platform."""
+
+    ad_id: str
+    campaign_id: str
+    title: str
+    text: str
+    href: str
+    state: str
+
+
+@dataclass(frozen=True)
 class AdDay:
     """Строка отчёта площадки по объявлению за сутки площадки. Деньги в микроединицах."""
 

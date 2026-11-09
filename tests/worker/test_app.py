@@ -22,6 +22,7 @@ from adhelper.worker.app import (
     site_read,
     site_tag_check,
     state_reconcile,
+    stats_sync,
     telegram_poll,
     worker_heartbeat_budget,
 )
@@ -76,6 +77,7 @@ async def test_worker_runs_money_tasks_from_real_database(
             await site_read.defer_async(**periodic_arguments)
             await site_tag_check.defer_async(**periodic_arguments)
             await experiments_run.defer_async(**periodic_arguments)
+            await stats_sync.defer_async(**periodic_arguments)
             await test_app.run_worker_async(
                 queues=["budget", "creatives", "notifications"],
                 wait=False,
@@ -98,6 +100,7 @@ async def test_worker_runs_money_tasks_from_real_database(
         "site.read": "succeeded",
         "site.tag_check": "succeeded",
         "experiments.run": "succeeded",
+        "stats.sync": "succeeded",
         "worker.heartbeat": "succeeded",
         "worker.heartbeat.creatives": "succeeded",
         "worker.heartbeat.budget": "succeeded",

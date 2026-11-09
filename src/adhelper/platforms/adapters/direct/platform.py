@@ -31,8 +31,10 @@ from adhelper.platforms.adapters.direct.transport import (
 from adhelper.platforms.domain.ports import (
     AdDay,
     AdImage,
+    AdInventory,
     Advertiser,
     CampaignDay,
+    CampaignInventory,
     ModerationState,
     ModerationVerdict,
     PublishedAd,
@@ -65,6 +67,29 @@ logger = logging.getLogger(__name__)
 # Директ допускает не более трёх комбинаторных объявлений в группе.
 MAX_COMBINATORIAL_ADS_PER_GROUP = 3
 MAX_KEYWORDS_PER_GROUP = 200
+
+
+def _campaign_view_state(campaign: Mapping[str, Any]) -> str:
+    state = str(campaign.get("State") or "")
+    if state == "ARCHIVED":
+        return "archived"
+    if campaign.get("Status") == "MODERATION":
+        return "moderation"
+    return "on" if state == "ON" else "suspended"
+
+
+def _ad_view_state(ad: Mapping[str, Any]) -> str:
+    state = str(ad.get("State") or "")
+    status = str(ad.get("Status") or "")
+    if state == "ARCHIVED":
+        return "archived"
+    if state == "SUSPENDED":
+        return "suspended"
+    if status == "REJECTED":
+        return "rejected"
+    if status == "MODERATION":
+        return "moderation"
+    return "on" if state == "ON" else "suspended"
 
 
 def _today(now: datetime) -> date:
@@ -723,6 +748,38 @@ class DirectPlatform:
         for chunk in _chunks(campaign_ids, CAMPAIGN_CHUNK):
             ads.extend(await self._ads(account, {"CampaignIds": chunk}))
         return sorted(ads, key=lambda ad: int(ad["Id"]))
+
+    async def inventory(
+        self, account: str, campaign_ids: Sequence[str]
+    ) -> tuple[list[CampaignInventory], list[AdInventory]]:
+        """Read managed campaign and ad names and states for the owner's dashboard."""
+        ids = [int(campaign_id) for campaign_id in campaign_ids]
+        if not ids:
+            return [], []
+        campaigns = await self._campaigns(account, ids)
+        ads = await self._ads_of_campaigns(account, ids)
+        campaign_rows = [
+            CampaignInventory(
+                campaign_id=str(campaign["Id"]),
+                name=str(campaign.get("Name") or ""),
+                state=_campaign_view_state(campaign),
+            )
+            for campaign in campaigns
+        ]
+        ad_rows = []
+        for ad in ads:
+            text_ad = ad.get("TextAd") or {}
+            ad_rows.append(
+                AdInventory(
+                    ad_id=str(ad["Id"]),
+                    campaign_id=str(ad.get("CampaignId") or ""),
+                    title=str(text_ad.get("Title") or ""),
+                    text=str(text_ad.get("Text") or ""),
+                    href=str(text_ad.get("Href") or ""),
+                    state=_ad_view_state(ad),
+                )
+            )
+        return campaign_rows, ad_rows
 
     async def read_ad(self, account: str, ad_ref: str) -> Mapping[str, Any]:
         ad_id = int(ad_ref.removeprefix("ad:"))

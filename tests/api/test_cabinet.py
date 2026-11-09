@@ -16,7 +16,7 @@ from adhelper.budget.domain.limits import BudgetPeriod
 from adhelper.budget.domain.watch import SpendSnapshot
 from adhelper.config import Settings
 from adhelper.notifications.adapters.sql import SqlAlerts
-from adhelper.platforms.domain.ports import AdDay, CampaignDay
+from adhelper.platforms.domain.ports import AdDay, AdInventory, CampaignDay, CampaignInventory
 from adhelper.stats.adapters.sql import SqlReportStats
 from tests.accounts.fake_provider import FakeProvider
 from tests.accounts.test_flow import (
@@ -185,6 +185,70 @@ async def test_direct_report_rows_are_upserted_for_dashboard_and_ads(
             {"b": business_id},
         )
         assert counts.one() == (1, 1)
+
+
+async def test_direct_inventory_sync_updates_states_and_inserts_new_ads(
+    anna: tuple[httpx.AsyncClient, str, uuid.UUID], sessions: Sessions
+) -> None:
+    _client, _csrf, business_id = anna
+    async with sessions.begin() as session:
+        await session.execute(
+            text(
+                "INSERT INTO campaigns"
+                " (business_id, account, campaign_id, name, state)"
+                " VALUES (:b, 'anna-direct', '42', 'Old campaign name', 'moderation')"
+            ),
+            {"b": business_id},
+        )
+        await session.execute(
+            text(
+                "INSERT INTO ads"
+                " (business_id, account, ad_id, campaign_id, title, text, href, state)"
+                " VALUES (:b, 'anna-direct', 'old-ad', '42', 'Old title', 'Old text',"
+                " 'https://example.com/', 'moderation')"
+            ),
+            {"b": business_id},
+        )
+
+    await SqlReportStats(sessions, business_id).sync_inventory(
+        "anna-direct",
+        [CampaignInventory("42", "Campaign from Direct", "on")],
+        [
+            AdInventory(
+                "old-ad", "42", "Updated title", "Updated text", "https://example.com/", "on"
+            ),
+            AdInventory("new-ad", "42", "New ad", "New text", "https://example.com/", "moderation"),
+            AdInventory(
+                "archived-ad", "42", "Old duplicate", "Old text", "https://example.com/", "archived"
+            ),
+        ],
+    )
+
+    async with sessions() as session:
+        campaign = (
+            await session.execute(
+                text(
+                    "SELECT name, state FROM campaigns"
+                    " WHERE business_id = :b AND campaign_id = '42'"
+                ),
+                {"b": business_id},
+            )
+        ).one()
+        ads = (
+            await session.execute(
+                text(
+                    "SELECT ad_id, title, state FROM ads"
+                    " WHERE business_id = :b AND campaign_id = '42' ORDER BY ad_id"
+                ),
+                {"b": business_id},
+            )
+        ).all()
+    assert campaign == ("Campaign from Direct", "on")
+    assert ads == [
+        ("archived-ad", "Old duplicate", "archived"),
+        ("new-ad", "New ad", "moderation"),
+        ("old-ad", "Updated title", "on"),
+    ]
 
 
 async def test_overview_shows_saved_account_balance_when_no_periods(

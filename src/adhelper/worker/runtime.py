@@ -398,6 +398,10 @@ class Runtime:
                         account,
                     )
                     continue
+                campaign_inventory, ad_inventory = await platform.inventory(account, campaign_ids)
+                await SqlReportStats(self.sessions, business_id).sync_inventory(
+                    account, campaign_inventory, ad_inventory
+                )
                 campaign_rows = await platform.campaign_days(account, campaign_ids, since, until)
                 ad_rows = await platform.ad_days(account, campaign_ids, since, until)
                 account_saved = await SqlReportStats(self.sessions, business_id).save(

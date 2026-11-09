@@ -12,8 +12,10 @@ from adhelper.platforms.adapters.direct.transport import DirectRejected
 from adhelper.platforms.domain.ports import (
     AdDay,
     AdImage,
+    AdInventory,
     Advertiser,
     CampaignDay,
+    CampaignInventory,
     ModerationState,
     ModerationVerdict,
     PublishedAd,
@@ -300,6 +302,37 @@ class FakePlatform:
         self._check_fault("campaign_days", after_apply=False)
         self.campaign_report_calls.append((account, tuple(campaign_ids), since, until))
         return [row for row in self.campaign_report if since <= row.day <= until]
+
+    async def inventory(
+        self, account: str, campaign_ids: Sequence[str]
+    ) -> tuple[list[CampaignInventory], list[AdInventory]]:
+        self._check_fault("inventory", after_apply=False)
+        names = {row.campaign_id: row.campaign.name for row in self.created.values()}
+        campaigns = [
+            CampaignInventory(
+                campaign_id,
+                names.get(campaign_id, campaign_id),
+                "on" if self.campaigns[campaign_id].active else "suspended",
+            )
+            for campaign_id in campaign_ids
+            if campaign_id in self.campaigns
+        ]
+        ads = []
+        for ad in self.published.values():
+            if ad.campaign_id not in campaign_ids:
+                continue
+            verdict = self.verdicts.get(ad.ad_id)
+            state = (
+                "suspended"
+                if not self.ads.get(f"ad:{ad.ad_id}", False)
+                else "rejected"
+                if verdict is not None and verdict.state is ModerationState.REJECTED
+                else "on"
+                if verdict is not None and verdict.state is ModerationState.ACCEPTED
+                else "moderation"
+            )
+            ads.append(AdInventory(ad.ad_id, ad.campaign_id, ad.headline, ad.text, ad.href, state))
+        return campaigns, ads
 
     async def ad_visits(self, counter: str, since: date, until: date) -> int | None:
         self.visit_calls.append((counter, since, until))
