@@ -1,6 +1,7 @@
 """Набор рецензента и ворота «не пропускает рискованное». Платная модель не вызывается."""
 
 import json
+import re
 from collections.abc import Sequence
 
 from evals.meter import MAX_OUTPUT_MICRO_PER_M, Price
@@ -96,3 +97,19 @@ def test_worst_case_at_the_most_expensive_allowed_model_is_within_five_cents() -
     calls, worst = estimate(price)
     assert calls == 40
     assert worst <= 50_000  # $0,05, предел из CLAUDE.md
+
+
+def test_refs_sent_to_the_model_do_not_leak_the_label_or_the_case_number() -> None:
+    from evals.review_cases import CASE_BY_REF, CASES
+
+    from adhelper.autopilot.domain.review import build_request
+
+    assert len(CASE_BY_REF) == len(CASES)
+    for case in CASES:
+        request = build_request([case.candidate])
+        assert case.id not in request
+        # В `ref` нет ни метки, ни слов разметки: только вид и число.
+        assert re.fullmatch(r"(ad|c):\d+", case.candidate.ref)
+    # Номера не идут в порядке набора, где метки сгруппированы.
+    order = [int(case.candidate.ref.split(":")[1]) for case in CASES]
+    assert order != sorted(order)

@@ -2,13 +2,13 @@
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from adhelper.autopilot.adapters.rules_file import load_policy_rules, load_rules
 from adhelper.autopilot.application.cycle import AccountData, AutopilotCycle
 from adhelper.autopilot.application.gate import GateFacts, PolicyGate
-from adhelper.autopilot.domain.decide import ActionKind, Mode
+from adhelper.autopilot.domain.decide import Action, ActionKind, Mode
 from adhelper.autopilot.domain.health import Window
 from adhelper.autopilot.domain.model import AdStats, CampaignStats
 from adhelper.autopilot.domain.review import Candidate, ReviewResult, nothing_passed
@@ -31,6 +31,7 @@ def facts(**over: Any) -> GateFacts:
         "data_alert": False,
         "api_points_rest": 10_000,
         "operating_budget": 1_000_000_000_000,
+        "last_limit_change": {},
     }
     return GateFacts(**(values | over))
 
@@ -223,3 +224,93 @@ async def test_limit_rise_runs_when_campaign_is_known_manual_and_calm() -> None:
     )
     await run_self(c)
     assert actions.raised and actions.raised[0][0] == "c1"
+
+
+def ad(ref: str, group: str, campaign: str = "c1") -> AdStats:
+    return AdStats(ref, campaign, group, TARGET * 5, 0, 30, True)
+
+
+def pause(ref: str) -> Action:
+    return Action(ActionKind.PAUSE_AD, ref, "c1", {"spend_micros": 1}, "autopilot-1", False)
+
+
+def rise(ref: str, campaign: str, new_limit: int) -> Action:
+    return Action(
+        ActionKind.INCREASE_LIMIT, ref, campaign, {"leads": 20}, "autopilot-1", False, new_limit
+    )
+
+
+def account(ads: list[AdStats], campaigns: list[CampaignStats] | None = None) -> AccountData:
+    return AccountData(ads, campaigns or [], HEALTHY, BASELINE, False, False)
+
+
+async def test_changes_accumulate_inside_one_cycle() -> None:
+    ads = [ad(f"p{k}", f"g{k}") for k in (1, 2, 3)] + [ad(f"q{k}", f"g{k}") for k in (1, 2, 3)]
+    notes = await gate(Facts(facts(changes_today=1))).screen(
+        "acc", [pause("p1"), pause("p2"), pause("p3")], account(ads), None, NOW
+    )
+    # Лимит 3 в сутки, одно изменение уже было: проходят два, третье держим.
+    assert [notes[ref].held for ref in ("p1", "p2", "p3")] == [False, False, True]
+    assert notes["p3"].notes["held_by"] == "daily_limit"
+
+
+async def test_weekly_share_accumulates_inside_one_cycle() -> None:
+    campaigns = [
+        CampaignStats(c, 500_000_000, True, None, auto_strategy=False, in_learning=False)
+        for c in ("c1", "c2")
+    ]
+    # Рабочий бюджет 1 000 000 000, потолок недели 20% = 200 000 000; каждый рост 150 000 000.
+    notes = await gate(Facts(facts(operating_budget=1_000_000_000))).screen(
+        "acc",
+        [rise("c1", "c1", 650_000_000), rise("c2", "c2", 650_000_000)],
+        account([], campaigns),
+        None,
+        NOW,
+    )
+    assert notes["c1"].held is False
+    assert notes["c2"].held is True
+    assert notes["c2"].notes["held_by"] == "weekly_share"
+
+
+async def test_empty_allowed_set_allows_nothing() -> None:
+    notes = await gate().screen(
+        "acc", [pause("p1")], account([ad("p1", "g1"), ad("q1", "g1")]), frozenset(), NOW
+    )
+    assert notes["p1"].held is True
+    assert notes["p1"].notes["held_by"] == "class_not_allowed"
+
+
+class Exploding:
+    async def review(self, candidates: Sequence[Candidate]) -> ReviewResult:
+        raise RuntimeError("модель упала")
+
+
+async def test_reviewer_exception_holds_actions_instead_of_crashing_the_cycle() -> None:
+    notes = await PolicyGate(POLICY, Facts(), Exploding()).screen(
+        "acc", [pause("p1")], account([ad("p1", "g1"), ad("q1", "g1")]), None, NOW
+    )
+    assert notes["p1"].held is True
+    assert notes["p1"].notes["held_by"] == "review_unavailable"
+
+
+async def test_duplicate_ref_any_refusal_wins() -> None:
+    good = CampaignStats("c1", 500_000_000, True, None, auto_strategy=False, in_learning=False)
+    bad = CampaignStats("c2", 500_000_000, True, None, auto_strategy=True, in_learning=False)
+    notes = await gate(reviewer=Reviewer(True)).screen(
+        "acc",
+        [rise("r", "c1", 600_000_000), rise("r", "c2", 600_000_000)],
+        account([], [good, bad]),
+        None,
+        NOW,
+    )
+    assert notes["r"].held is True
+
+
+async def test_recent_decrease_counts_for_the_interval() -> None:
+    campaign = CampaignStats("c1", 500_000_000, True, None, auto_strategy=True, in_learning=False)
+    last = NOW - timedelta(days=3)
+    notes = await gate(Facts(facts(last_limit_change={"c1": last}))).screen(
+        "acc", [rise("c1", "c1", 600_000_000)], account([], [campaign]), None, NOW
+    )
+    assert notes["c1"].held is True
+    assert notes["c1"].notes["held_by"] == "auto_strategy_interval"

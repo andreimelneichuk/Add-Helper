@@ -42,7 +42,8 @@ class ModelReviewer:
             reply = await self._model.complete_json(
                 SYSTEM, build_request(candidates), REPLY_SCHEMA, max_tokens_for(len(candidates))
             )
+            return parse_reply(reply.text, candidates)
         except Exception as error:
+            # Сюда же: ответ без текста и слишком глубокий JSON. Не пропускаем ничего.
             logger.warning("Рецензент недоступен: %s", type(error).__name__)
             return nothing_passed(candidates, "рецензент недоступен", False)
-        return parse_reply(reply.text, candidates)

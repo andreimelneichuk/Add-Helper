@@ -152,3 +152,26 @@ async def test_no_candidates_means_no_call() -> None:
     result = await ModelReviewer(model).review(())
     assert model.calls == []
     assert result.passed == frozenset()
+
+
+async def test_reply_that_cannot_be_parsed_at_all_passes_nothing_and_does_not_raise() -> None:
+    deep = "[" * 100_000
+    for text in (deep, "null", '{"verdicts": [null]}'):
+        result = await run(FakeModel(text))
+        assert result.passed == frozenset()
+
+
+class NoText:
+    pass
+
+
+async def test_reply_without_text_passes_nothing() -> None:
+    class Model:
+        async def complete_json(
+            self, system: str, user: str, schema: dict[str, object], max_tokens: int
+        ) -> NoText:
+            return NoText()
+
+    result = await ModelReviewer(Model()).review(CANDS)  # type: ignore[arg-type]
+    assert not result.available
+    assert result.passed == frozenset()

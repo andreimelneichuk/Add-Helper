@@ -197,3 +197,34 @@ def test_decision_is_deterministic_and_allowed_means_no_reason(
     assert first.allowed == (first.reason is None)
     if action is PolicyAction.PAUSE_CAMPAIGN or alert:
         assert not first.allowed
+
+
+def test_auto_strategy_with_unknown_last_change_is_refused_not_allowed() -> None:
+    for strategy in (True, None):
+        decision = check_policy(
+            base(
+                PolicyAction.INCREASE_LIMIT,
+                amount=M,
+                auto_strategy=strategy,
+                last_limit_change_at=None,
+            ),
+            RULES,
+        )
+        assert decision.reason is PolicyReason.AUTO_STRATEGY_INTERVAL
+
+
+def test_manual_strategy_with_no_change_history_may_rise() -> None:
+    decision = check_policy(base(PolicyAction.INCREASE_LIMIT, amount=M, auto_strategy=False), RULES)
+    assert decision.allowed
+
+
+def test_pause_of_ad_in_a_campaign_known_to_be_learning_is_refused() -> None:
+    assert check_policy(base(campaign_in_learning=True), RULES).reason is PolicyReason.IN_LEARNING
+    # Неизвестное обучение кампании паузе объявления не мешает: решает возраст самого объявления.
+    assert check_policy(base(campaign_in_learning=None), RULES).allowed
+
+
+def test_ad_younger_than_the_learning_threshold_is_refused_by_the_policy_itself() -> None:
+    young = RULES.ad_learning_days - 1
+    assert check_policy(base(ad_age_days=young), RULES).reason is PolicyReason.IN_LEARNING
+    assert check_policy(base(ad_age_days=RULES.ad_learning_days), RULES).allowed

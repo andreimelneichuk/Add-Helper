@@ -87,14 +87,17 @@ class PolicyInput:
     # None: состав группы неизвестен. Трактуем как последнее объявление.
     active_ads_in_group: int | None
     ad_in_learning: bool
-    # None: неизвестно. Трактуем как обучение.
+    # Возраст объявления в днях; моложе `ad_learning_days` значит обучение. None: возраст не знаем,
+    # тогда решает только `ad_in_learning`.
     campaign_in_learning: bool | None
     # None: неизвестно. Трактуем как автостратегию.
     auto_strategy: bool | None
+    # Последнее изменение лимита кампании, рост или снижение. None: данных нет, а не «не менялся».
     last_limit_change_at: datetime | None
     data_alert: bool
     # None: баллы не читали, тогда не блокируем: бюджет охраняет страж, а не политика.
     api_points_rest: int | None
+    ad_age_days: int | None = None
 
 
 @dataclass(frozen=True)
@@ -127,6 +130,7 @@ def _inputs(inp: PolicyInput) -> dict[str, Any]:
         else "",
         "data_alert": int(inp.data_alert),
         "api_points_rest": number(inp.api_points_rest),
+        "ad_age_days": number(inp.ad_age_days),
     }
 
 
@@ -150,7 +154,12 @@ def _reason(inp: PolicyInput, rules: PolicyRules) -> PolicyReason | None:
     if action is PolicyAction.PAUSE_AD:
         if inp.active_ads_in_group is None or inp.active_ads_in_group < rules.min_group_active_ads:
             return PolicyReason.LAST_AD_IN_GROUP
-        if inp.ad_in_learning:
+        if inp.ad_in_learning or (
+            inp.ad_age_days is not None and inp.ad_age_days < rules.ad_learning_days
+        ):
+            return PolicyReason.IN_LEARNING
+        # Обучение кампании паузе объявления мешает только если известно точно.
+        if inp.campaign_in_learning:
             return PolicyReason.IN_LEARNING
     if action in _MONEY:
         return _money_reason(inp, rules)
@@ -163,8 +172,9 @@ def _money_reason(inp: PolicyInput, rules: PolicyRules) -> PolicyReason | None:
     if inp.campaign_in_learning is None or inp.campaign_in_learning:
         return PolicyReason.IN_LEARNING
     if inp.auto_strategy is None or inp.auto_strategy:
+        # Нет сведений о последнем изменении: не отличаем «не менялся» от «не знаем», отказываем.
         wait = timedelta(days=rules.auto_strategy_interval_days)
-        if inp.last_limit_change_at is not None and inp.now - inp.last_limit_change_at < wait:
+        if inp.last_limit_change_at is None or inp.now - inp.last_limit_change_at < wait:
             return PolicyReason.AUTO_STRATEGY_INTERVAL
     cap = inp.operating_budget * rules.max_weekly_move_bp // BASIS_POINTS
     if inp.moved_this_week + inp.amount > cap:

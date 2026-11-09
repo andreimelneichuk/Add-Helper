@@ -5,20 +5,20 @@
 """
 
 import logging
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
 
 from adhelper.autopilot.domain.decide import Action, ActionKind
-from adhelper.autopilot.domain.model import AccountData
+from adhelper.autopilot.domain.model import AccountData, CampaignStats
 from adhelper.autopilot.domain.policy import (
     PolicyAction,
     PolicyInput,
     PolicyRules,
     check_policy,
 )
-from adhelper.autopilot.domain.review import Candidate, Reviewer
+from adhelper.autopilot.domain.review import Candidate, Reviewer, nothing_passed
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +38,8 @@ class GateFacts:
     data_alert: bool
     api_points_rest: int | None
     operating_budget: int
+    # Последнее изменение лимита кампании по журналу (рост или снижение, в том числе донором).
+    last_limit_change: Mapping[str, datetime] = field(default_factory=dict)
 
 
 class GateFactsSource(Protocol):
@@ -80,35 +82,58 @@ class PolicyGate:
             return {a.ref: GateNote(True, version | {"held_by": "gate_error"}) for a in todo}
         notes: dict[str, GateNote] = {}
         passed: list[Action] = []
-        permitted = frozenset(POLICY_ACTION[kind] for kind in (allowed or frozenset(ActionKind)))
+        # Пустой набор разрешений не значит «всё»: всё разрешено только при `None`.
+        kinds = frozenset(ActionKind) if allowed is None else allowed
+        permitted = frozenset(POLICY_ACTION[kind] for kind in kinds)
+        # Счётчики копятся внутри цикла: каждое пропущенное действие занимает место следующим.
+        changes, moved = facts.changes_today, facts.moved_this_week
         for action in todo:
             try:
-                decision = check_policy(
-                    self._input(action, data, facts, permitted, now), self._rules
-                )
+                inp = self._input(action, data, facts, permitted, now, changes, moved)
+                decision = check_policy(inp, self._rules)
             except Exception as error:
                 logger.warning("Политика не посчитана: %s", type(error).__name__)
-                notes[action.ref] = GateNote(True, version | {"held_by": "gate_error"})
+                self._put(notes, action.ref, GateNote(True, version | {"held_by": "gate_error"}))
                 continue
             if decision.reason is not None:
-                notes[action.ref] = GateNote(True, version | {"held_by": decision.reason.value})
-            else:
-                passed.append(action)
+                self._put(
+                    notes, action.ref, GateNote(True, version | {"held_by": decision.reason.value})
+                )
+                continue
+            passed.append(action)
+            changes += 1
+            moved += max(inp.amount, 0)
         if passed and self._reviewer is not None:
-            result = await self._reviewer.review([self._candidate(a) for a in passed])
+            try:
+                result = await self._reviewer.review([self._candidate(a) for a in passed])
+            except Exception as error:
+                logger.warning("Рецензент не отработал: %s", type(error).__name__)
+                result = nothing_passed(
+                    [self._candidate(a) for a in passed], "рецензент недоступен", False
+                )
             for action in passed:
                 if action.ref in result.passed:
-                    notes[action.ref] = GateNote(False, version | {"review": "ok"})
+                    self._put(notes, action.ref, GateNote(False, version | {"review": "ok"}))
                     continue
                 held_by = "review_doubt" if result.available else "review_unavailable"
                 reason = result.doubts.get(action.ref, "")
-                notes[action.ref] = GateNote(
-                    True, version | {"held_by": held_by, "review": reason[:200]}
+                self._put(
+                    notes,
+                    action.ref,
+                    GateNote(True, version | {"held_by": held_by, "review": reason[:200]}),
                 )
         else:
             for action in passed:
-                notes[action.ref] = GateNote(False, version | {"review": "off"})
+                self._put(notes, action.ref, GateNote(False, version | {"review": "off"}))
         return notes
+
+    @staticmethod
+    def _put(notes: dict[str, GateNote], ref: str, note: GateNote) -> None:
+        """Одинаковый `ref` у двух действий: любой отказ сильнее пропуска."""
+        existing = notes.get(ref)
+        if existing is not None and existing.held and not note.held:
+            return
+        notes[ref] = note
 
     def _candidate(self, action: Action) -> Candidate:
         return Candidate(
@@ -122,6 +147,8 @@ class PolicyGate:
         facts: GateFacts,
         permitted: frozenset[PolicyAction],
         now: datetime,
+        changes_today: int,
+        moved_this_week: int,
     ) -> PolicyInput:
         campaign = next((c for c in data.campaigns if c.campaign_id == action.campaign_id), None)
         ad = next((a for a in data.ads if a.ref == action.ref), None)
@@ -138,15 +165,29 @@ class PolicyGate:
             campaign_id=action.campaign_id,
             allowed=permitted,
             now=now,
-            changes_today=facts.changes_today,
-            moved_this_week=facts.moved_this_week,
+            changes_today=changes_today,
+            moved_this_week=moved_this_week,
             amount=amount,
             operating_budget=facts.operating_budget,
             active_ads_in_group=active_in_group,
-            ad_in_learning=bool(ad and ad.age_days < self._rules.ad_learning_days),
+            # Объявление не нашли: возраст неизвестен, а паузе нужен известный возраст.
+            ad_in_learning=ad is None and action.kind is ActionKind.PAUSE_AD,
+            ad_age_days=ad.age_days if ad else None,
             campaign_in_learning=campaign.in_learning if campaign else None,
             auto_strategy=campaign.auto_strategy if campaign else None,
-            last_limit_change_at=campaign.last_change_at if campaign else None,
+            last_limit_change_at=self._last_change(campaign, facts),
             data_alert=facts.data_alert,
             api_points_rest=facts.api_points_rest,
         )
+
+    @staticmethod
+    def _last_change(campaign: CampaignStats | None, facts: GateFacts) -> datetime | None:
+        """Самое позднее из известных изменений лимита: рост, снижение донором, журнал."""
+        if campaign is None:
+            return None
+        known = [
+            t
+            for t in (campaign.last_change_at, facts.last_limit_change.get(campaign.campaign_id))
+            if t
+        ]
+        return max(known) if known else None

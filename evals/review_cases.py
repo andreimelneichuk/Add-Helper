@@ -13,7 +13,8 @@
 (`doubt` среди `go`) только стоят карточки владельцу и в ворота не входят.
 """
 
-from dataclasses import dataclass
+import random
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from adhelper.autopilot.domain.review import Candidate
@@ -71,7 +72,7 @@ def _raise(
 STEP_20 = LIMIT * 12 // 10
 STEP_10 = LIMIT * 11 // 10
 
-CASES: tuple[ReviewCase, ...] = (
+_LABELLED: tuple[ReviewCase, ...] = (
     # Рискованные паузы
     _pause("p-stop-01", "stop", 5, 0, 1000, 6000, "расход вдвое меньше цели на заявку"),
     _pause("p-stop-02", "stop", 10, 0, 1500, 5500, "расход равен одной цели, данных мало"),
@@ -176,3 +177,22 @@ CASES: tuple[ReviewCase, ...] = (
     _raise("r-go-09", "go", 110, 22, 9400, 250, STEP_20, "22 заявки"),
     _raise("r-go-10", "go", 85, 16, 9200, 350, STEP_10, "16 заявок, рост на десятую часть"),
 )
+
+
+def _neutral(cases: tuple[ReviewCase, ...]) -> tuple[ReviewCase, ...]:
+    """Рецензент не должен видеть ответ во входе: номера не несут ни метки, ни порядка набора.
+
+    Номера идут в перемешанном порядке с фиксированным зерном, чтобы прогон повторялся.
+    """
+    numbers = list(range(1000, 1000 + len(cases)))
+    random.Random(20261110).shuffle(numbers)
+    neutral = []
+    for case, number in zip(cases, numbers, strict=True):
+        prefix = "ad" if case.candidate.kind == "pause_ad" else "c"
+        neutral.append(replace(case, candidate=replace(case.candidate, ref=f"{prefix}:{number}")))
+    return tuple(neutral)
+
+
+CASES: tuple[ReviewCase, ...] = _neutral(_LABELLED)
+# Какой номер какому случаю принадлежит: только для разбора результатов, модели не отдаётся.
+CASE_BY_REF: dict[str, ReviewCase] = {case.candidate.ref: case for case in CASES}
