@@ -33,6 +33,9 @@ export const CONNECT_RESULT: Record<string, string> = {
 
 const message = (e: unknown) => (e instanceof Error ? e.message : "Сервис не ответил. Попробуйте позже.");
 
+/** Блок подтверждения появляется ниже экрана: прокручиваем к нему, иначе его не заметить. */
+const reveal = (el: HTMLElement | null): void => { el?.scrollIntoView?.({ block: "nearest", behavior: "smooth" }); };
+
 function MetricaSettings({ api }: { api: Api }) {
   const [view, setView] = useState<TagCheckView | null>(null);
   const [busy, setBusy] = useState(false);
@@ -284,7 +287,7 @@ function BudgetForm({ store }: { store: LiveStore }) {
         <p className="set-hint">Введите другую сумму, и кнопка «Изменить бюджет» станет активной.</p>
       )}
       {asking ? (
-        <div className="set-confirm" role="group" aria-label="Подтверждение бюджета">
+        <div className="set-confirm" ref={reveal} role="group" aria-label="Подтверждение бюджета">
           <p>
             {mode === "shared"
               ? `Поставить общий бюджет ${rub(sharedAmount)} на все бизнесы? Сумма поделится между ${count} ${count === 1 ? "бизнесом" : "бизнесами"}, у запущенных лимиты сменятся по очереди. Если на каком-то бизнесе не получится, остановлюсь и скажу, что уже изменено.`
@@ -419,7 +422,7 @@ function DisplayForm({ api, store }: { api: Api; store: LiveStore }) {
         </div>
       </div>
       {ask && (
-        <div className="set-confirm" role="group" aria-label="Подтверждение показа">
+        <div className="set-confirm" ref={reveal} role="group" aria-label="Подтверждение показа">
           <p>{ask.text}</p>
           <div className="set-actions">
             <button type="button" className="ah-btn ah-btn-primary" disabled={busy} onClick={confirm}>Применить</button>
@@ -1124,7 +1127,7 @@ function DeleteBusiness({ store, businessId, businessName }: { store: Store; bus
     <div className="set-danger">
       <p className="set-hint">Удалит бизнес «{businessName}» из сервиса. Кампании этого бизнеса будут остановлены и перенесены в архив. Другие ваши бизнесы в этом кабинете продолжат работу.</p>
       {asking ? (
-        <div className="set-confirm" role="group" aria-label="Подтверждение удаления бизнеса" style={{ marginTop: 12 }}>
+        <div className="set-confirm" ref={reveal} role="group" aria-label="Подтверждение удаления бизнеса" style={{ marginTop: 12 }}>
           <p>Удалить бизнес «{businessName}»? Это действие нельзя отменить.</p>
           <div className="set-actions" style={{ marginTop: 12 }}>
             <button type="button" className="ah-btn ah-btn-danger" disabled={busy} onClick={remove}>

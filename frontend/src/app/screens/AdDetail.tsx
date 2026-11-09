@@ -110,13 +110,16 @@ export function Compose({ s, base, current, useLabel, onUse, onCancel }: Compose
   const result = draft ?? (photo && base ? base : null);
   const final = result && photo ? { ...result, photo, facts: `${result.facts}, фото ваше` } : result;
   const blocked = !final || (!!photo && !consent);
+  // Темы берём из услуг профиля: чужие примеры («Маникюр») путают владельца другого бизнеса.
+  const own = [...new Set((s.live?.rawProfile?.services ?? []).map((x) => x.name.trim()).filter(Boolean))].slice(0, 3);
+  const topics = own.length ? [...own, "Акция"] : TOPICS;
 
   return (
     <section className="ah-panel anno-compose" aria-label={base ? "Переделать объявление" : "Новое объявление"}>
       <div role="group" aria-label={base ? "Что поменять" : "О чём объявление"}>
         <div className="ah-label">{base ? "Что поменять" : "О чём объявление"}</div>
         <div className="ah-chips">
-          {(base ? STYLES : TOPICS).map((label) => (
+          {(base ? STYLES : topics).map((label) => (
             <button key={label} type="button" className="ah-chip" aria-pressed={ask === label} onClick={() => make(label)}>{label}</button>
           ))}
         </div>
