@@ -88,7 +88,8 @@ async def test_worker_runs_money_tasks_from_real_database(
         rows = await connection.execute(
             text("SELECT task_name, status FROM procrastinate_jobs WHERE scheduled_at IS NULL")
         )
-        statuses = {name: str(status) for name, status in rows}
+        # Часовой автопилот ставится по часам (:20) и попадает в прогон только в это окно.
+        statuses = {name: str(status) for name, status in rows if name != "autopilot.tick"}
     assert statuses == {
         "budget.watch": "succeeded",
         "state.reconcile": "succeeded",
