@@ -17,7 +17,7 @@ describe("живые данные", () => {
 
   it("показывает черновики и сохраняет статус ожидающей или отправленной публикации", async () => {
     const wizardAds = vi.fn().mockResolvedValue({ ads: [
-      { id: "w0", headline: "Маникюр", text: "Текст", facts: [], submitted: true, publication_status: "submitted" },
+      { id: "w0", headline: "Другая услуга", text: "Текст", facts: [], submitted: true, publication_status: "submitted" },
       { id: "w1", headline: "Новое объявление", text: "Запишитесь", facts: [], active: true, submitted: false },
       { id: "w2", headline: "Выключенный черновик", text: "Запишитесь", facts: [], active: false },
       { id: "w3", headline: "Архивный черновик", text: "Запишитесь", facts: [], archived: true },
@@ -76,6 +76,22 @@ describe("живые данные", () => {
     expect(store.state.ads.map(({ id, tag }) => [id, tag])).toEqual([
       ["anna/11", "заменено"],
       ["anna/12", "на проверке Яндекса"],
+    ]);
+  });
+
+  it("не дублирует карточку мастера, когда объявление уже есть в Direct", async () => {
+    const api = fakeApi({
+      ads: vi.fn(async () => [line({ state: "archived" })]),
+      wizardAds: vi.fn(async () => ({ ads: [
+        { id: "w0", headline: "Маникюр", text: "Текст", facts: [], submitted: true, publication_status: "submitted" },
+        { id: "w1", headline: "Новый черновик", text: "Приходите", facts: [], submitted: true, publication_status: "submitted" },
+      ] })),
+    } as Partial<Api>);
+    const store = await open(api);
+
+    expect(store.state.ads.map(({ id, tag }) => [id, tag])).toEqual([
+      ["anna/11", "заменено"],
+      ["w1", "на проверке Яндекса"],
     ]);
   });
 

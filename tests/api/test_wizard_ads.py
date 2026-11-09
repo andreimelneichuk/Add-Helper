@@ -174,7 +174,7 @@ async def test_wizard_ads_identify_confirmed_submissions(
         assert (await client.post(url, json=body, headers=headers)).status_code == 201
     planned = {"ads": [sent]} if kind is ChangeKind.CREATE_CAMPAIGN else sent
     repo = SqlChangeRepository(sessions, business_id)
-    # Отправленная кампания подтверждает объявление только после применения.
+    # Запись CREATE_CAMPAIGN не подтверждает каждое объявление из плана.
     await repo.add(
         ProposedChange("anna-direct", ChangeSource.USER, kind, "sent", planned, "Запуск", "sent"),
         {},
@@ -188,9 +188,10 @@ async def test_wizard_ads_identify_confirmed_submissions(
         ChangeStatus.PLANNED,
     )
     saved = (await client.get(url)).json()["ads"]
-    assert [ad["submitted"] for ad in saved] == [True, False, False]
+    submitted = kind is ChangeKind.CREATE_AD
+    assert [ad["submitted"] for ad in saved] == [submitted, False, False]
     assert [ad["publication_status"] for ad in saved] == [
-        "submitted",
+        "submitted" if submitted else None,
         None,
         "pending" if kind is ChangeKind.CREATE_AD else None,
     ]

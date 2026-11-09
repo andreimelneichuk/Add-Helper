@@ -250,16 +250,13 @@ class SqlWizardAds:
             ).all()
         publication_statuses: dict[tuple[str, str], list[str]] = {}
         for kind, status, planned, after in publication_rows:
-            # Кампания считается отправленной только после подтверждения Direct.
+            # Создание кампании не доказывает, что каждое объявление из её плана
+            # действительно появилось в Direct. Это подтверждаем отдельной записью.
             # Отдельное объявление блокируем уже при постановке в очередь: повторный
             # клик не должен породить ещё одну попытку, пока первая не завершилась.
             # Failed с сохранённым AdId тоже блокируем: Direct мог создать объявление,
             # хотя сверка журнала завершилась ошибкой.
-            if kind == ChangeKind.CREATE_CAMPAIGN.value:
-                if status != ChangeStatus.APPLIED.value:
-                    continue
-                publication_status = "submitted"
-            elif kind == ChangeKind.CREATE_AD.value:
+            if kind == ChangeKind.CREATE_AD.value:
                 if status in {ChangeStatus.PLANNED.value, ChangeStatus.APPLYING.value}:
                     publication_status = "pending"
                 elif status == ChangeStatus.APPLIED.value or (

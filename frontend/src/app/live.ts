@@ -165,18 +165,24 @@ async function loadAds(api: Api) {
       totals: { impressions: 0, clicks: 0, cost: 0, conversions: 0 },
     })),
   ];
+  const copyKey = (title: string, text: string) =>
+    `${title.trim().replace(/\s+/g, " ").toLocaleLowerCase()}\0${text.trim().replace(/\s+/g, " ").toLocaleLowerCase()}`;
+  const directCopies = new Set(lines.map((line) => copyKey(line.title, line.text)));
   let ads = lines.map((line) => toAd(line, api.photoUrl));
   if (api.wizardAds) {
     try {
       const wizard = await api.wizardAds(true);
       if (wizard?.ads?.length) {
-        ads = [...ads, ...wizard.ads.map((w, i) => {
+        ads = [...ads, ...wizard.ads.flatMap((w, i) => {
+          // Direct inventory owns the live status for copies that already exist there.
+          // Keep the wizard copy only while it is still a draft or awaiting publication.
+          if (directCopies.has(copyKey(w.headline, w.text))) return [];
           const isArchived = !!w.archived;
           const isActive = w.active !== false && !isArchived;
           const publicationStatus = w.publication_status ?? (w.submitted ? "submitted" : null);
           const tag = isArchived ? "в архиве" : publicationStatus === "pending" ? "отправляется" : publicationStatus === "submitted" ? "на проверке Яндекса" : isActive ? "готово к запуску" : "отключено";
           const tagTone: Ad["tagTone"] = isArchived || publicationStatus ? "neutral" : isActive ? "accent" : "neutral";
-          return {
+          return [{
             id: w.id || `w${i}`,
             name: w.headline,
             tag,
@@ -187,7 +193,7 @@ async function loadAds(api: Api) {
             title: w.headline,
             text: w.text,
             facts: Array.isArray(w.facts) ? w.facts.join(", ") : "",
-          };
+          }];
         })];
       }
     } catch { /* без мастера */ }
