@@ -227,3 +227,21 @@ async def test_numbers_from_earlier_tool_results_are_allowed_in_the_reply() -> N
     agent, _ = _agent(_reply("Это 10 800 ₽."))
     turn = await agent.invoke("и сколько это?", KNOWN, CTX, history=history)
     assert turn is not None and "10800" in turn.facts
+
+
+async def test_ad_on_moderation_is_not_listed_twice_or_called_running() -> None:
+    from dataclasses import replace
+
+    ctx = replace(
+        CTX,
+        ads=(AdStatSummary("a/1", "Стрижка у метро", 0, 0, 0, 0, 0.0, True),),
+        on_moderation=("Стрижка у метро", "Окрашивание"),
+        wizard_ads=("Стрижка у метро", "Маникюр"),
+        has_campaigns=True,
+    )
+    agent, bound = _agent(_reply(calls=[("get_ads", {})]), _reply("Готово."))
+    await agent.invoke("какие объявления", KNOWN, ctx)
+    payload = json.loads(bound.seen[1][-1].content)
+    assert payload["ads"] == [{"n": 0, "title": "Стрижка у метро", "status": "на проверке Яндекса"}]
+    assert payload["on_moderation"] == ["Окрашивание"]
+    assert payload["drafts"] == ["Маникюр"]

@@ -168,19 +168,28 @@ def read_tools(ctx: ToolContext) -> list[BaseTool]:
 
     @tool
     async def get_ads() -> str:
-        """Объявления бизнеса: номер n (его же принимают инструменты изменения), название,
-        работает ли, плюс черновики мастера и объявления на проверке Яндекса."""
+        """Объявления бизнеса: номер n (его же принимают инструменты изменения), название и
+        статус, плюс другие черновики мастера и объявления на проверке Яндекса."""
         a = ctx.analytics
-        running = {ad.title: ad.active for ad in a.ads} if a else {}
+        moderation = set(a.on_moderation) if a else set()
+        active = {ad.title: ad.active for ad in a.ads} if a else {}
+
+        def status(title: str) -> str:
+            if title in moderation:
+                return "на проверке Яндекса"
+            return "работает" if active.get(title) else "остановлено"
+
+        listed = {ad.name for ad in ctx.known.ads}
         return ctx.remember(
             {
                 "ads": [
-                    {"n": n, "title": ad.name, "running": running.get(ad.name)}
+                    {"n": n, "title": ad.name, "status": status(ad.name)}
                     for n, ad in enumerate(ctx.known.ads)
                 ],
                 "services": list(ctx.known.services),
-                "drafts": list(a.wizard_ads) if a else [],
-                "on_moderation": list(a.on_moderation) if a else [],
+                # Названия, уже названные в «ads», здесь не повторяем: один и тот же текст.
+                "drafts": [t for t in (a.wizard_ads if a else ()) if t not in listed],
+                "on_moderation": [t for t in (a.on_moderation if a else ()) if t not in listed],
                 "has_campaigns": bool(a and a.has_campaigns),
                 "cabinet_connected": bool(a and a.connected_account),
             }
