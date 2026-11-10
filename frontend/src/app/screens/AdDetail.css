@@ -10,7 +10,7 @@
 .anno-preview { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--r-field); background: var(--panel); }
 .anno-preview-label { margin: 8px var(--gap) 0; }
 .anno-preview-body { display: flex; flex-direction: column; gap: 4px; padding: var(--gap); }
-.ah-art-photo { background-position: center; background-size: cover; color: #fff; }
+.ah-art.ah-art-photo { height: auto; aspect-ratio: 16 / 9; background-position: center; background-size: cover; color: #fff; }
 
 .anno-facts, .anno-management, .anno-events, .anno-compose { display: flex; flex-direction: column; gap: var(--gap); }
 .anno-photo-controls { display: flex; flex-direction: column; gap: 10px; }
