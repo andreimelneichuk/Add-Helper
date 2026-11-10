@@ -97,13 +97,28 @@ class SqlAutopilotSettings:
             row = (await session.execute(statement)).one_or_none()
         return _settings(row) if row else None
 
-    async def save(self, settings: AutopilotSettings, lines: Sequence[str]) -> None:
-        """Настройки и строка истории пишутся вместе: нет строки без смены и смены без строки."""
-        values = {"business_id": self._business_id, **_values(settings)}
-        statement = insert(SETTINGS).values(**values)
+    async def save(
+        self,
+        settings: AutopilotSettings,
+        lines: Sequence[str],
+        before: AutopilotSettings | None = None,
+    ) -> None:
+        """Настройки и строка истории пишутся вместе: нет строки без смены и смены без строки.
+
+        С `before` перезаписываются только поля, которые правка изменила: устаревшее чтение
+        не возвращает закрытую ступень, снятый режим «Сам» или остановку (поля меняют
+        разные люди и воркер). Строки ещё нет: пишется всё.
+        """
+        values = _values(settings)
+        changed = (
+            values
+            if before is None
+            else {key: value for key, value in values.items() if _values(before)[key] != value}
+        )
+        statement = insert(SETTINGS).values(business_id=self._business_id, **values)
         statement = statement.on_conflict_do_update(
             index_elements=[SETTINGS.c.business_id],
-            set_={**_values(settings), "updated_at": func.now()},
+            set_={**changed, "updated_at": func.now()},
         )
         async with self._sessions() as session, session.begin():
             await session.execute(statement)

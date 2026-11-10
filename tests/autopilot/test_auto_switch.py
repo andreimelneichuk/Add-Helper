@@ -28,7 +28,12 @@ class Store:
     async def get(self) -> AutopilotSettings | None:
         return self.settings
 
-    async def save(self, settings: AutopilotSettings, lines: Sequence[str]) -> None:
+    async def save(
+        self,
+        settings: AutopilotSettings,
+        lines: Sequence[str],
+        before: AutopilotSettings | None = None,
+    ) -> None:
         self.settings = settings
         self.lines += lines
 

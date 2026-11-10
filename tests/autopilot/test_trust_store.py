@@ -143,3 +143,84 @@ async def test_first_step_classes_cannot_be_revoked(sessions: Sessions) -> None:
     store = await auto_cabinet(sessions)
     with pytest.raises(GrantDenied):
         await revoke(store, TrustClass.PAUSE_AD, NOW)
+
+
+async def test_budget_alert_open_since_before_the_window_still_counts(sessions: Sessions) -> None:
+    await SqlAlerts(sessions, BUSINESS).raise_alert("budget_stopped", {})
+    later = datetime.now(UTC) + timedelta(hours=1)
+
+    # Остановка бюджета началась до окна и не снята: кабинет в срыве и сейчас.
+    assert await SqlTrustFacts(sessions, BUSINESS).failures_since(later) == 1
+    await SqlAlerts(sessions, BUSINESS).resolve("budget_stopped")
+    later = datetime.now(UTC) + timedelta(hours=1)
+    assert await SqlTrustFacts(sessions, BUSINESS).failures_since(later) == 0
+
+
+@pytest.mark.parametrize("status", ["failed", "rejected", "conflict"])
+async def test_failed_auto_rollback_counts_as_a_failure(sessions: Sessions, status: str) -> None:
+    await change(
+        sessions, BUSINESS, "rollback", status, "outcome-rollback", SINCE + timedelta(days=1)
+    )
+    assert await SqlTrustFacts(sessions, BUSINESS).failures_since(SINCE) == 1
+
+
+async def test_grant_needs_auto_mode_now(sessions: Sessions) -> None:
+    store = SqlAutopilotSettings(sessions, BUSINESS)
+    # Вышел из «Сам» в «Предлагает», прошла неделя без единого самостоятельного действия.
+    await store.save(replace(DEFAULT_SETTINGS, mode=AutopilotMode.CONFIRM, granted_at=SINCE), [])
+
+    with pytest.raises(GrantDenied) as denied:
+        await grant(store, SqlTrustFacts(sessions, BUSINESS), TrustClass.SHIFT_LIMIT, NOW)
+
+    assert denied.value.refusal is GrantRefusal.NOT_AUTO
+    saved = await store.get()
+    assert saved is not None and TrustClass.SHIFT_LIMIT not in saved.granted
+
+
+async def test_grant_refused_for_a_stopped_cabinet(sessions: Sessions) -> None:
+    store = SqlAutopilotSettings(sessions, BUSINESS)
+    await store.save(
+        replace(DEFAULT_SETTINGS, mode=AutopilotMode.AUTO, auto_since=SINCE, stopped_at=NOW),
+        [],
+    )
+
+    with pytest.raises(GrantDenied) as denied:
+        await grant(store, SqlTrustFacts(sessions, BUSINESS), TrustClass.SHIFT_LIMIT, NOW)
+
+    assert denied.value.refusal is GrantRefusal.NOT_AUTO
+
+
+async def test_wait_counts_from_the_later_of_last_grant_and_auto_start(
+    sessions: Sessions,
+) -> None:
+    store = SqlAutopilotSettings(sessions, BUSINESS)
+    # Ступень закрыта давно, но в «Сам» кабинет вошёл только 3 дня назад: неделя ещё не прошла.
+    await store.save(
+        replace(
+            DEFAULT_SETTINGS,
+            mode=AutopilotMode.AUTO,
+            granted_at=NOW - timedelta(days=30),
+            auto_since=NOW - timedelta(days=3),
+        ),
+        [],
+    )
+
+    with pytest.raises(GrantDenied) as denied:
+        await grant(store, SqlTrustFacts(sessions, BUSINESS), TrustClass.SHIFT_LIMIT, NOW)
+
+    assert denied.value.refusal is GrantRefusal.TOO_EARLY
+
+
+async def test_revoking_a_closed_class_changes_nothing_and_writes_nothing(
+    sessions: Sessions,
+) -> None:
+    store = await auto_cabinet(sessions)
+    before = await store.get()
+    assert before is not None
+
+    with pytest.raises(GrantDenied):
+        await revoke(store, TrustClass.SHIFT_LIMIT, NOW)
+
+    after = await store.get()
+    assert after is not None and after.granted_at == before.granted_at
+    assert not any("Закрыл" in line.text for line in await store.history())

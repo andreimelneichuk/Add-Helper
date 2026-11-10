@@ -29,6 +29,9 @@ LADDER: tuple[frozenset[TrustClass], ...] = (
     frozenset({TrustClass.SET_SCHEDULE}),
 )
 START_CLASSES = LADDER[0]
+# Открыть можно, исполнять цикл ещё не умеет: рост лимита идёт карточкой владельцу
+# (worker/runtime.py, `_increase_needs_owner`), а планировщик не выдаёт смену расписания.
+NOT_EXECUTED = frozenset({TrustClass.SHIFT_LIMIT, TrustClass.SET_SCHEDULE})
 
 # Какому классу доверия соответствует действие цикла. Перенос лимита идёт как рост лимита.
 ACTION_CLASS = {
@@ -47,6 +50,8 @@ class GrantRefusal(StrEnum):
     NOT_NEXT_STEP = "not_next_step"
     TOO_EARLY = "too_early"
     HAD_FAILURES = "had_failures"
+    # Неделя работы без срывов считается только в «Сам» без остановки: вне его работы не было.
+    NOT_AUTO = "not_auto"
 
 
 def effective_allowed(

@@ -24,7 +24,7 @@ class SqlTrustFacts:
         statements: tuple[tuple[str, dict[str, Any]], ...] = (
             (
                 "SELECT count(*) FROM changes WHERE business_id = :b AND created_at >= :s"
-                " AND decision_id = :d AND status = 'applied'",
+                " AND decision_id = :d AND status IN ('applied', 'failed', 'rejected', 'conflict')",
                 {"d": AUTO_ROLLBACK_DECISION},
             ),
             (
@@ -33,8 +33,9 @@ class SqlTrustFacts:
                 {},
             ),
             (
-                "SELECT count(*) FROM alerts WHERE business_id = :b AND created_at >= :s"
-                " AND kind = ANY(:kinds)",
+                # Тревога, начавшаяся до окна и не снятая, тоже срыв: бюджет остановлен сейчас.
+                "SELECT count(*) FROM alerts WHERE business_id = :b"
+                " AND (resolved_at IS NULL OR resolved_at >= :s) AND kind = ANY(:kinds)",
                 {"kinds": list(BUDGET_ALERTS)},
             ),
             (

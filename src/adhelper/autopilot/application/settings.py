@@ -58,7 +58,12 @@ class AutoNotAllowed(Exception):
 
 class Store(Protocol):
     async def get(self) -> AutopilotSettings | None: ...
-    async def save(self, settings: AutopilotSettings, lines: Sequence[str]) -> None: ...
+    async def save(
+        self,
+        settings: AutopilotSettings,
+        lines: Sequence[str],
+        before: AutopilotSettings | None = None,
+    ) -> None: ...
     async def demote_from_auto(self, line: str) -> bool: ...
 
 
@@ -126,7 +131,7 @@ async def update_settings(
     validated(after)
     lines = _lines(before, after)
     if after != before:
-        await store.save(after, lines)
+        await store.save(after, lines, before=before)
     return after
 
 
@@ -135,7 +140,7 @@ async def stop(store: Store, now: datetime) -> AutopilotSettings:
     if before.stopped_at is not None:
         return before
     after = replace(before, stopped_at=now)
-    await store.save(after, [STOPPED_LINE])
+    await store.save(after, [STOPPED_LINE], before=before)
     return after
 
 

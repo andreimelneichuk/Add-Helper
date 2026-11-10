@@ -27,7 +27,14 @@ from adhelper.autopilot.adapters.trust import SqlTrustFacts
 from adhelper.autopilot.application.settings import DEFAULT_SETTINGS
 from adhelper.autopilot.application.shadow_report import build_report, render_text
 from adhelper.autopilot.application.simulator import Difference, compare
-from adhelper.autopilot.application.trust import CLASS_WORDS, GrantDenied, TrustClass, grant, revoke
+from adhelper.autopilot.application.trust import (
+    CLASS_WORDS,
+    NOT_EXECUTED,
+    GrantDenied,
+    TrustClass,
+    grant,
+    revoke,
+)
 from adhelper.budget.adapters.rules_file import load_rules as load_budget_rules
 from adhelper.budget.application.emergency import StopReport, stop_account
 from adhelper.business.adapters.browser import browser_starts
@@ -534,7 +541,15 @@ async def _trust(
         return 1
     opened = (current or DEFAULT_SETTINGS).granted
     for item in TrustClass:
-        _say(f"{'открыто' if item in opened else 'закрыто'}: {item.value} ({CLASS_WORDS[item]})")
+        note = (
+            " (пока только предлагает карточкой: цикл это не исполняет)"
+            if (item in opened and item in NOT_EXECUTED)
+            else ""
+        )
+        _say(
+            f"{'открыто' if item in opened else 'закрыто'}: {item.value} "
+            f"({CLASS_WORDS[item]}){note}"
+        )
     return 0
 
 
