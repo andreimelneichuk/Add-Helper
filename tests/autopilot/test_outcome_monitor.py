@@ -21,6 +21,7 @@ from adhelper.ledger.application.service import Ledger
 from adhelper.ledger.domain.model import ChangeKind, ChangeSource
 from adhelper.notifications.adapters.sql import SqlAlerts
 from adhelper.platforms.adapters.gateway import RoutingGateway
+from adhelper.stats.adapters.sql import SqlDashboard
 from tests.budget.fake_platform import FakePlatform, Fault
 from tests.seed import seed_account
 
@@ -188,6 +189,10 @@ async def test_real_worsening_rolls_back_through_the_journal(
             )
         ).one()
     assert (row.verdict, row.rollback_change_id, row.status) == ("worse", rollback.id, "evaluated")
+    # Владелец видит такой откат как «автопилот вернул»: признак идёт из журнала, не из текста.
+    lines = await SqlDashboard(sessions, BUSINESS).history(20)
+    assert [line.auto_rollback for line in lines if line.ref == f"change-{rollback.id}"] == [True]
+    assert not any(line.auto_rollback for line in lines if line.ref == f"change-{change_id}")
 
 
 async def test_noise_does_not_trigger_rollback(sessions: Sessions, engine: AsyncEngine) -> None:

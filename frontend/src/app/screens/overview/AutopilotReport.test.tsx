@@ -38,6 +38,17 @@ describe("карточка «Что автопилот сделал за сут�
     expect(container).toBeEmptyDOMElement();
   });
 
+  it("не показывает −0% и не падает на ответе без списка исходов", async () => {
+    const small = { change_id: 9, object_ref: "ad:11", verdict: "worse", cpl_change_bp: -20, noise_bp: 0, rolled_back: false, note: null, evaluated_at: "2026-11-10T01:00:00Z" };
+    const store = await open(withReport({ ...empty, done: 1, worse: 1, outcomes: [small] }));
+    const { unmount } = render(<AutopilotReport store={store} />);
+    expect(await screen.findByText(/цена обращения 0%/)).toBeInTheDocument();
+    unmount();
+    const partial = await open(withReport({ done: 2 } as unknown as Report));
+    render(<AutopilotReport store={partial} />);
+    expect(await screen.findByText(/Сделано: 2 действия/)).toBeInTheDocument();
+  });
+
   it("кнопка открывает историю с фильтром «Автопилот»", async () => {
     const store = await open(withReport({ ...empty, done: 1, better: 1 }));
     render(<AutopilotReport store={store} />);
@@ -48,14 +59,14 @@ describe("карточка «Что автопилот сделал за сут�
 });
 
 const autoLine: HistoryLine = { ...change, ref: "change-7", source: "autopilot", kind: "pause_ad", explanation: "Остановил объявление: цена обращения выше цели." };
-const autoUndo: HistoryLine = { ...change, ref: "change-8", source: "rollback", kind: "resume_ad", explanation: "Вернули объявление в показ: после его остановки цена обращения выросла на 30%. Остановку можно сделать снова вручную." };
+const autoUndo: HistoryLine = { ...change, ref: "change-8", source: "rollback", auto_rollback: true, kind: "resume_ad", explanation: "Вернули объявление в показ: после его остановки цена обращения выросла на 30%. Остановку можно сделать снова вручную." };
 const ownUndo: HistoryLine = { ...change, ref: "change-9", source: "rollback", kind: "resume_ad", explanation: "Вернул: вы отменили." };
 
 describe("история: фильтр «Автопилот»", () => {
   it("показывает действия автопилота и его автооткаты, но не отмену владельца", async () => {
     const store = await open(fakeApi({ history: vi.fn(async () => [autoLine, autoUndo, ownUndo, change]) } as Partial<Api>));
     expect(store.state.hist.map((h) => !!h.auto)).toEqual([true, true, false, false]);
-    expect(store.state.hist[1]).toMatchObject({ mine: false, canUndo: false });
+    expect(store.state.hist[1]).toMatchObject({ mine: false, canUndo: true });
     expect(store.state.hist[1]?.title).toMatch(/^Автопилот вернул/);
     store.set({ filter: "autopilot" });
     render(<History store={store} />);

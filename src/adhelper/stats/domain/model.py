@@ -154,6 +154,8 @@ class HistoryLine:
     reverted: bool = False
     # Почему не применилось, словами владельца; для записей без сбоя — None.
     failure: str | None = None
+    # Откат, который сделал сам автопилот (решение outcome-rollback), а не владелец.
+    auto_rollback: bool = False
 
 
 class Dashboard(Protocol):

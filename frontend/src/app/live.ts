@@ -94,12 +94,11 @@ function kindOf(line: HistoryLine): HistoryKind {
 }
 
 /** Автооткат пишется как «rollback», как и отмена владельцем; различает их текст сервиса. */
-const AUTO_ROLLBACK = "Вернули объявление в показ: после его остановки";
-export const isAutoRollback = (line: HistoryLine): boolean => line.source === "rollback" && line.explanation.startsWith(AUTO_ROLLBACK);
+export const isAutoRollback = (line: HistoryLine): boolean => line.source === "rollback" && line.auto_rollback === true;
 
 function toEntry(line: HistoryLine, ads: Ad[]): HistoryEntry {
   const about = ads.find((a) => line.target === `ad:${a.id.split("/").pop()}`);
-  const canUndo = line.ref.startsWith("change-") && line.status === "applied" && line.source !== "external" && line.source !== "rollback" && UNDOABLE.has(line.kind) && !line.reverted;
+  const canUndo = line.ref.startsWith("change-") && line.status === "applied" && line.source !== "external" && (line.source !== "rollback" || isAutoRollback(line)) && UNDOABLE.has(line.kind) && !line.reverted;
   const when = new Date(line.at).toLocaleDateString("ru-RU", { day: "numeric", month: "short", timeZone: "Europe/Moscow" });
   return {
     id: line.ref,

@@ -159,6 +159,7 @@ CHANGES = table(
     column("after", JSONB),
     column("reverts_change_id", BigInteger),
     column("failure_reason", Text),
+    column("decision_id", Text),
     column("created_at", DateTime(timezone=True)),
 )
 DECISIONS = table(
@@ -207,6 +208,8 @@ def _totals(impressions: int, clicks: int, cost: int, conversions: int) -> Total
 
 # Статусы, у которых журнал записывает причину сбоя.
 FAILED_STATUSES = ("failed", "rejected", "conflict")
+# Метка решения у отката автопилота (то же значение в autopilot.domain.outcomes).
+AUTO_ROLLBACK_DECISION = "outcome-rollback"
 
 
 async def report_accounts(
@@ -766,6 +769,7 @@ class SqlDashboard:
                 failure=failure_text(row["failure_reason"])
                 if row["status"] in FAILED_STATUSES
                 else None,
+                auto_rollback=row["decision_id"] == AUTO_ROLLBACK_DECISION,
             )
             for row in change_rows
         ] + [

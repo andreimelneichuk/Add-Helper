@@ -89,7 +89,8 @@
 .ov-feed-when { color: var(--muted); font-size: var(--t-caption); }
 .ov-feed-all { align-self: flex-start; }
 .ov-auto { display: flex; flex-direction: column; gap: 8px; }
-.ov-auto p { margin: 0; }
+.ov-auto p, .ov-auto li { margin: 0; overflow-wrap: anywhere; }
+.ov-auto li { margin: 0 0 4px; }
 .ov-auto-list { margin: 0; padding-left: 18px; }
 .ov-auto-all { align-self: flex-start; }
 
