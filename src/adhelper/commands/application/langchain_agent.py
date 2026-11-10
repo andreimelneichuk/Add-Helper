@@ -133,12 +133,54 @@ SYSTEM_TEMPLATE = (
     "- Никогда не говори 'этого я пока не умею' на обычные человеческие фразы и приветствия.\n"
     "- Будь лаконичен, доброжелателен и полезен (2-4 емких предложения).\n"
     "- Если пользователь называет число без команды, уточни, это бюджет или новая цена услуги.\n"
-    "- Все суммы и параметры бери только из сообщения пользователя. Не придумывай новые числа.\n"
+    "- Параметры команд (суммы, цены, дни) бери только из сообщения пользователя. "
+    "Цифры о рекламе (показы, клики, расход, бюджет) бери только из business_data: можешь "
+    "пересказывать и объяснять их, но не придумывай новых. Нет данных — так и скажи.\n"
     "- Если в analytics указано has_campaigns=false, реклама в Директе ещё не запущена "
     "(кампаний 0). Если draft_ads_count > 0, объясни владельцу, что объявления уже подготовлены "
     "в мастере и ждут старта, но показы ещё не идут: для старта нужно завершить запуск рекламы. "
     "Не говори, что объявления 'выключены'."
 )
+
+
+def analytics_payload(known: Known, ctx: AnalyticsContext | None) -> dict[str, object]:
+    """Всё, что агент вправе пересказывать: данные кабинета, посчитанные кодом."""
+    payload: dict[str, object] = {
+        "ads": [{"id": ad.id, "title": ad.name} for ad in known.ads],
+        "services": list(known.services),
+    }
+    if ctx is None:
+        return payload
+    payload["analytics"] = {
+        "period": ctx.period_label,
+        "impressions": ctx.impressions,
+        "clicks": ctx.clicks,
+        "leads": ctx.conversions,
+        "cost_rub": ctx.cost_micros // 1_000_000,
+        "budget_month_rub": ctx.budget_rubles,
+        "spent_month_rub": ctx.spent_rubles,
+        "has_campaigns": ctx.has_campaigns,
+        "cabinet_connected": bool(ctx.connected_account),
+        "account_login": ctx.connected_account,
+        "draft_ads_count": len(ctx.wizard_ads),
+        "draft_ads": list(ctx.wizard_ads),
+        "on_moderation": list(ctx.on_moderation),
+        "autopilot": ctx.autopilot,
+        "ads_stats": [
+            {
+                "title": ad.title,
+                "running": ad.active,
+                "impressions": ad.impressions,
+                "clicks": ad.clicks,
+                "leads": ad.conversions,
+                "cost_rub": ad.cost_micros // 1_000_000,
+                "ctr_percent": round(ad.ctr_percent, 1),
+            }
+            for ad in ctx.ads
+        ],
+        "recent_history": list(ctx.recent_history)[:10],
+    }
+    return payload
 
 
 class LangChainChatAgent:
@@ -153,23 +195,7 @@ class LangChainChatAgent:
         known: Known,
         analytics_context: AnalyticsContext | None = None,
     ) -> AgentResult | None:
-        context_payload: dict[str, object] = {
-            "ads": [{"id": ad.id, "title": ad.name} for ad in known.ads],
-            "services": list(known.services),
-        }
-        if analytics_context:
-            context_payload["analytics"] = {
-                "period": analytics_context.period_label,
-                "impressions": analytics_context.impressions,
-                "clicks": analytics_context.clicks,
-                "leads": analytics_context.conversions,
-                "cost_rub": analytics_context.cost_micros // 1_000_000,
-                "has_campaigns": analytics_context.has_campaigns,
-                "cabinet_connected": bool(analytics_context.connected_account),
-                "account_login": analytics_context.connected_account,
-                "draft_ads_count": len(analytics_context.wizard_ads),
-                "draft_ads": list(analytics_context.wizard_ads),
-            }
+        context_payload = analytics_payload(known, analytics_context)
 
         user_content = json.dumps(
             {

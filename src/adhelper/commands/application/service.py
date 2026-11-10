@@ -11,7 +11,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 
 from adhelper.commands.application.analytics import AnalyticsAgent, AnalyticsContext
-from adhelper.commands.application.langchain_agent import LangChainChatAgent
+from adhelper.commands.application.langchain_agent import LangChainChatAgent, analytics_payload
 from adhelper.commands.domain.model import (
     CHANGING,
     Command,
@@ -63,8 +63,14 @@ COMMAND_LIKE = re.compile(
 )
 # Свободный ответ не вправе говорить, что действие выполнено: выполняет только подтверждение.
 ACTION_CLAIM = re.compile(
-    r"принял|устанавлива|настро[юи]|поставил|выполнил|отключил|включил|сделал"
+    r"\b(?:принял|поставил|выполнил|отключил|включил|сделал|изменил|поменял|установил)[аои]?\b"
 )
+# Сумма в рублях: число рядом с ₽ или «руб». Проценты и обычные числа («за 3 дня») не проверяем.
+MONEY = re.compile(r"(\d[\d \u00a0]*)\s*(?:₽|руб)")
+
+
+def _digits(text: str) -> set[str]:
+    return {re.sub(r"\D", "", found) for found in re.findall(r"\d[\d \u00a0]*\d|\d", text)}
 
 
 def _leads_word(match: re.Match[str]) -> str:
@@ -74,14 +80,16 @@ def _leads_word(match: re.Match[str]) -> str:
     return "обращение" if word.endswith(("а", "у")) else "обращения"
 
 
-def safe_small_talk(reply: str, message: str) -> str:
-    """Ответ свободной беседы без чисел, которых нет в сообщении, и без обещаний действий.
+def safe_small_talk(reply: str, message: str, facts: str = "") -> str:
+    """Ответ свободной беседы: без выдуманных сумм и без обещаний, что действие уже сделано.
 
+    Суммы вправе быть из сообщения и из данных кабинета (`facts`), которые код дал модели.
     Слово интерфейса — «обращения», а не «заявки» (спецификация, словарь).
     """
-    reply = re.sub(r"[Зз]аявк\w*", _leads_word, reply)
-    allowed = set(re.findall(r"\d+", message))
-    if set(re.findall(r"\d+", reply)) - allowed or ACTION_CLAIM.search(reply.lower()):
+    reply = re.sub(r"[Зз]аяв(?:к\w*|ок)", _leads_word, reply)
+    allowed = _digits(message) | _digits(facts)
+    sums = {re.sub(r"\D", "", found) for found in MONEY.findall(reply)}
+    if sums - allowed or ACTION_CLAIM.search(reply.lower()):
         return SMALL_TALK_FALLBACK
     return reply
 
@@ -218,19 +226,19 @@ async def interpret(
         first = Parsed(Command(Kind.STATS), Source.RULES, reply=budget_reply(analytics_context))
         return _single(first, message, rules)
 
-    # Свободная беседа (приветствие, «что умеешь», шутка) — только для сообщений, в которых нет
-    # слов о рекламе и деньгах. Она ничего не меняет, а её ответ проходит `safe_small_talk`.
+    # Свободная беседа (приветствие, совет, вопрос о цифрах) идёт к диалоговому агенту. Агент
+    # видит данные кабинета, посчитанные кодом, и ничего не меняет: меняющая просьба проходит
+    # через разбор команд и подтверждение. Сообщения со словами о деньгах и рекламе сначала
+    # получают шанс стать командой, к агенту они попадают, если команды не вышло.
     if (
         langchain_agent
         and first.command.kind is Kind.UNKNOWN
         and not first.question
         and not COMMAND_LIKE.search(text)
-        and may_call_model()
     ):
-        res = await langchain_agent.invoke(message, known, analytics_context)
-        if res is not None:
-            reply = safe_small_talk(res.reply, message)
-            return Answer(Command(Kind.UNKNOWN), res.source, rules.version, confirm="", reply=reply)
+        chat = await _chat(langchain_agent, message, known, analytics_context, may_call_model)
+        if chat is not None:
+            return Answer(Command(Kind.UNKNOWN), Source.MODEL, rules.version, "", chat)
 
     specific_refusal = refusal(message)
     if first.command.kind is Kind.UNKNOWN and not first.question and specific_refusal != REFUSAL:
@@ -255,11 +263,39 @@ async def interpret(
             )
             first = Parsed(Command(ans.kind), ans.source, reply=ans.reply)
 
+    if (
+        langchain_agent
+        and len(found) == 1
+        and first.command.kind is Kind.UNKNOWN
+        and not first.question
+        and specific_refusal == REFUSAL
+    ):
+        chat = await _chat(langchain_agent, message, known, analytics_context, may_call_model)
+        if chat is not None:
+            return Answer(Command(Kind.UNKNOWN), Source.MODEL, rules.version, "", chat)
+
     answers = [
         _with_current(_answer(parsed, message, rules), analytics_context)
         for parsed in (first, *found[1:])
     ]
     return replace(answers[0], more=tuple(answers[1:]))
+
+
+async def _chat(
+    agent: LangChainChatAgent,
+    message: str,
+    known: Known,
+    context: AnalyticsContext | None,
+    may_call_model: Callable[[], bool],
+) -> str | None:
+    """Свободный ответ агента или None, если модель не ответила или лимит исчерпан."""
+    if not may_call_model():
+        return None
+    res = await agent.invoke(message, known, context)
+    if res is None:
+        return None
+    facts = json.dumps(analytics_payload(known, context), ensure_ascii=False)
+    return safe_small_talk(res.reply, message, facts)
 
 
 def _budget_now(context: AnalyticsContext | None) -> int | None:

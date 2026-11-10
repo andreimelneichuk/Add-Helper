@@ -1,5 +1,5 @@
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from adhelper.commands.adapters.rules_file import load_rules
 from adhelper.commands.application.service import CallBudget, interpret
@@ -109,7 +109,6 @@ async def test_free_reply_cannot_claim_an_action_or_invent_numbers() -> None:
     )
     assert answer.command.kind is Kind.UNKNOWN
     assert "Принял" not in answer.reply and "777" not in answer.reply
-    agent.invoke.assert_not_called()
 
 
 async def test_small_talk_reply_with_foreign_numbers_is_replaced() -> None:
@@ -118,12 +117,61 @@ async def test_small_talk_reply_with_foreign_numbers_is_replaced() -> None:
     from adhelper.commands.application.langchain_agent import AgentResult, LangChainChatAgent
 
     agent = AsyncMock(spec=LangChainChatAgent)
-    agent.invoke.return_value = AgentResult(Command(Kind.UNKNOWN), "Привет! У вас 5 объявлений.")
+    agent.invoke.return_value = AgentResult(Command(Kind.UNKNOWN), "Привет! На счёте 777 ₽.")
     answer = await interpret("привет", KNOWN, RULES, None, always, langchain_agent=agent)
-    assert "5" not in answer.reply
+    assert "777" not in answer.reply
     agent.invoke.return_value = AgentResult(Command(Kind.UNKNOWN), "Привет! Чем помочь?")
     answer = await interpret("привет", KNOWN, RULES, None, always, langchain_agent=agent)
     assert answer.reply == "Привет! Чем помочь?"
+
+
+async def test_greeting_may_offer_help_with_setup() -> None:
+    from unittest.mock import AsyncMock
+
+    from adhelper.commands.application.langchain_agent import AgentResult, LangChainChatAgent
+
+    agent = AsyncMock(spec=LangChainChatAgent)
+    text = "Привет! Помогу настроить Директ и привлечь клиентов. Чем помочь?"
+    agent.invoke.return_value = AgentResult(Command(Kind.UNKNOWN), text)
+    answer = await interpret("привет", KNOWN, RULES, None, always, langchain_agent=agent)
+    assert answer.reply == text
+
+
+async def test_advice_question_with_ad_words_reaches_the_agent() -> None:
+    from unittest.mock import AsyncMock
+
+    from adhelper.commands.application.langchain_agent import AgentResult, LangChainChatAgent
+
+    agent = AsyncMock(spec=LangChainChatAgent)
+    text = "Добавьте в объявление конкретную выгоду, например скидку на первый визит."
+    agent.invoke.return_value = AgentResult(Command(Kind.UNKNOWN), text)
+    answer = await interpret(
+        "Что посоветуешь, чтобы привлечь больше клиентов?",
+        KNOWN,
+        RULES,
+        None,
+        always,
+        langchain_agent=agent,
+    )
+    assert answer.reply == text
+    agent.invoke.assert_called_once()
+
+
+async def test_agent_may_retell_numbers_from_the_cabinet() -> None:
+    from unittest.mock import AsyncMock
+
+    from adhelper.commands.application.langchain_agent import AgentResult, LangChainChatAgent
+
+    agent = AsyncMock(spec=LangChainChatAgent)
+    agent.invoke.return_value = AgentResult(
+        Command(Kind.UNKNOWN), "Потрачено 4 200 ₽ из 15 000 ₽, клики дорожают."
+    )
+    ctx = _ctx()
+    ctx = replace(ctx, spent_rubles=4200)
+    answer = await interpret(
+        "почему так дорого", KNOWN, RULES, None, always, ctx, langchain_agent=agent
+    )
+    assert "4 200" in answer.reply
 
 
 def _ctx(budget: int | None = 15_000):  # type: ignore[no-untyped-def]
@@ -181,6 +229,12 @@ async def test_small_talk_uses_the_interface_word_for_leads() -> None:
     agent.invoke.return_value = AgentResult(Command(Kind.UNKNOWN), "Привет! Новые заявки ждут.")
     answer = await interpret("привет", KNOWN, RULES, None, always, langchain_agent=agent)
     assert "заявк" not in answer.reply and "обращения" in answer.reply
+
+
+def test_genitive_plural_of_leads_uses_the_interface_word() -> None:
+    from adhelper.commands.application.service import safe_small_talk
+
+    assert "заяв" not in safe_small_talk("Пришло 12 заявок.", "как дела?")
 
 
 def test_zero_budget_is_refused() -> None:
