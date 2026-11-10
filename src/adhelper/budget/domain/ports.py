@@ -1,6 +1,6 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Protocol
 from uuid import UUID
 
@@ -19,6 +19,18 @@ class PlatformRejected(Exception):
 
 class PlatformAuthError(PlatformUnavailable):
     """Токен отозван или нет доступа: требуется действие владельца по переподключению."""
+
+
+@dataclass(frozen=True)
+class CampaignStrategy:
+    """Что площадка говорит о стратегии кампании. None — не знаем; политика трактует строго."""
+
+    # Ставками и расходом внутри лимита управляет площадка (автостратегия).
+    auto: bool | None
+    # Стратегия учится на конверсиях, и её обучение через API не видно.
+    learns: bool | None
+    # День старта кампании по Москве: раньше него лимит точно не менялся.
+    started: date | None
 
 
 class BudgetPlatform(Protocol):

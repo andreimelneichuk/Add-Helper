@@ -1,4 +1,4 @@
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 
 from adhelper.ledger.application.service import Ledger
 from adhelper.ledger.domain.model import ChangeKind, ChangeSource, ChangeStatus, ProposedChange
@@ -11,7 +11,7 @@ class LedgeredActions:
     def __init__(
         self,
         ledger: Ledger,
-        increase: Callable[[str, str, int], Awaitable[str]],
+        increase: Callable[[str, str, int, Sequence[str]], Awaitable[str]],
     ) -> None:
         self._ledger = ledger
         self._increase = increase
@@ -36,5 +36,7 @@ class LedgeredActions:
         current = await self._ledger.status_of(change.id)
         return "executed" if current is ChangeStatus.APPLIED else "pending"
 
-    async def increase_limit(self, account: str, campaign_id: str, new_limit: int) -> str:
-        return await self._increase(account, campaign_id, new_limit)
+    async def increase_limit(
+        self, account: str, campaign_id: str, new_limit: int, donors: Sequence[str]
+    ) -> str:
+        return await self._increase(account, campaign_id, new_limit, donors)

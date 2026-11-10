@@ -2,5 +2,6 @@
 
 from adhelper.budget.domain.calendar import platform_date
 from adhelper.budget.domain.ports import PlatformUnavailable
+from adhelper.budget.domain.watch import burn_from_history
 
-__all__ = ["PlatformUnavailable", "platform_date"]
+__all__ = ["PlatformUnavailable", "burn_from_history", "platform_date"]

@@ -94,7 +94,9 @@ class Actions:
         self.paused.append(ad_ref)
         return "applied"
 
-    async def increase_limit(self, account: str, campaign_id: str, new_limit: int) -> str:
+    async def increase_limit(
+        self, account: str, campaign_id: str, new_limit: int, donors: Sequence[str] = ()
+    ) -> str:
         self.raised.append((campaign_id, new_limit))
         return "applied"
 

@@ -1,6 +1,6 @@
 """Теневой режим autopilot-3: считает рядом с рабочими правилами и пишет «сделала бы»."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -87,7 +87,9 @@ class Hands:
         self.paused.append(ad_ref)
         return "applied"
 
-    async def increase_limit(self, account: str, campaign_id: str, new_limit: int) -> str:
+    async def increase_limit(
+        self, account: str, campaign_id: str, new_limit: int, donors: Sequence[str] = ()
+    ) -> str:
         return "applied"
 
     async def raise_alert(self, kind: str, details: Mapping[str, Any]) -> None:

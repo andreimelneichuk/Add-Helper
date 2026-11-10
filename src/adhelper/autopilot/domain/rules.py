@@ -43,6 +43,9 @@ class AutopilotRules:
     min_weekly_leads: int = 0
     # Больше вариантов в одном направлении не сравниваем.
     max_variants: int = 2
+    # Кампания «упирается в лимит», если тратит не медленнее этой доли равномерного темпа
+    # периода (docs/04-autopilot.md §4). 0 — признак выключен: рост лимита не планируется.
+    budget_limited_pace_bp: int = 0
 
     def __post_init__(self) -> None:
         """Бессмысленные пороги отклоняем при загрузке файла, а не в середине цикла."""
@@ -59,6 +62,8 @@ class AutopilotRules:
             problems.append("max_variants должен быть не меньше 2")
         if self.min_weekly_leads < 0 or self.min_clicks < 0 or self.error_cost_target_multiple < 0:
             problems.append("пороги не могут быть отрицательными")
+        if not 0 <= self.budget_limited_pace_bp <= 10_000:
+            problems.append("budget_limited_pace_bp вне 0..10000")
         if self.min_clicks > 10_000_000:
             problems.append("min_clicks больше 10 000 000")
         if problems:

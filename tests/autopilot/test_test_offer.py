@@ -1,5 +1,6 @@
 """Тест по итогам анализа: предложение, согласие и отказ владельца. docs/04-autopilot.md §5."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from adhelper.autopilot.adapters.rules_file import load_rules
@@ -43,7 +44,9 @@ class NoActions:
     async def pause_ad(self, account: str, ad_ref: str, explanation: str, decision_id: int) -> str:
         raise AssertionError("тест не трогает показы")
 
-    async def increase_limit(self, account: str, campaign_id: str, new_limit: int) -> str:
+    async def increase_limit(
+        self, account: str, campaign_id: str, new_limit: int, donors: Sequence[str] = ()
+    ) -> str:
         raise AssertionError("тест не трогает лимит")
 
 

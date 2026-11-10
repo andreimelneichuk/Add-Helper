@@ -1,5 +1,5 @@
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -39,6 +39,16 @@ def _window_inputs(data: AccountData) -> dict[str, Any]:
     return out
 
 
+def _donors(data: AccountData, evaluations: Mapping[str, Any]) -> list[str]:
+    """Кампании, с которых можно перенести лимит: оценены, и ни одно объявление не эффективно."""
+    rated: dict[str, list[Verdict]] = {}
+    for ad in data.ads:
+        evaluation = evaluations.get(ad.ref)
+        if evaluation is not None:
+            rated.setdefault(ad.campaign_id, []).append(evaluation.verdict)
+    return sorted(cid for cid, verdicts in rated.items() if Verdict.EFFICIENT not in verdicts)
+
+
 class AutopilotData(Protocol):
     async def load(self, account: str, now: datetime) -> AccountData: ...
 
@@ -76,7 +86,9 @@ class Actions(Protocol):
     async def pause_ad(
         self, account: str, ad_ref: str, explanation: str, decision_id: int
     ) -> str: ...
-    async def increase_limit(self, account: str, campaign_id: str, new_limit: int) -> str: ...
+    async def increase_limit(
+        self, account: str, campaign_id: str, new_limit: int, donors: Sequence[str]
+    ) -> str: ...
 
 
 class TestPlanner(Protocol):
@@ -180,11 +192,12 @@ class AutopilotCycle:
             if self._gate
             else {}
         )
+        donors = _donors(data, plan.evaluations)
         for action in planned:
             note = screened.get(action.ref)
             if note is not None and note.held:
                 action = replace(action, needs_confirmation=True)
-            await self._execute(account, action, now, note.notes if note else None)
+            await self._execute(account, action, now, note.notes if note else None, donors)
         await self._shadow(account, data, target, mode, now)
 
     async def _shadow(
@@ -274,7 +287,12 @@ class AutopilotCycle:
         )
 
     async def _execute(
-        self, account: str, action: Action, now: datetime, notes: Mapping[str, str] | None = None
+        self,
+        account: str,
+        action: Action,
+        now: datetime,
+        notes: Mapping[str, str] | None = None,
+        donors: Sequence[str] = (),
     ) -> None:
         verdict = {
             ActionKind.PAUSE_AD: Verdict.INEFFICIENT,
@@ -296,7 +314,9 @@ class AutopilotCycle:
             return
         if action.new_limit is None:
             raise ValueError("У увеличения лимита должно быть новое значение")
-        status = await self._actions.increase_limit(account, action.ref, action.new_limit)
+        status = await self._actions.increase_limit(
+            account, action.ref, action.new_limit, [d for d in donors if d != action.ref]
+        )
         await self._log(account, action, verdict, status, now, notes)
 
     async def _start_test(

@@ -121,7 +121,7 @@ class Rig:
         )
 
     async def pause_bad(self) -> int:
-        async def no_increase(account: str, campaign: str, limit: int) -> str:
+        async def no_increase(account: str, campaign: str, limit: int, donors: object) -> str:
             return "rejected"
 
         actions = LedgeredActions(self.ledger, no_increase)

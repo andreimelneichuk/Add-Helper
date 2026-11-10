@@ -49,7 +49,7 @@ async def test_borderline_ad_gets_test_offer_and_nothing_changes(
     assert decision is not None
     assert (decision.action, decision.status) == ("start_test", "awaiting_confirmation")
     assert decision.inputs["hypothesis"] == "price"
-    assert decision.rules_version == "autopilot-2"
+    assert decision.rules_version == "autopilot-4"
     assert await SqlDecisionLog(sessions, OTHER).latest("acc", "ad:1") is None
 
 

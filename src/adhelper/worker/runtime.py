@@ -1,5 +1,5 @@
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -22,9 +22,16 @@ from adhelper.autopilot.adapters.sql import SqlDecisionLog
 from adhelper.autopilot.adapters.tests import SqlTestPlanner
 from adhelper.autopilot.adapters.ticks import SqlTicks
 from adhelper.autopilot.adapters.transfers import SqlTransferStore
+from adhelper.autopilot.application.budgets import WithBudgets
 from adhelper.autopilot.application.cycle import AutopilotCycle
 from adhelper.autopilot.application.gate import ClosedGate, Gate, PolicyGate
 from adhelper.autopilot.application.outcomes import OutcomeMonitor
+from adhelper.autopilot.application.raise_limit import (
+    CARD,
+    increase_facts,
+    raise_limit,
+    strategy_traits,
+)
 from adhelper.autopilot.application.settings import (
     DEFAULT_SETTINGS,
     AutopilotMode,
@@ -45,7 +52,11 @@ from adhelper.budget.adapters.ledgered import (
 )
 from adhelper.budget.adapters.rules_file import load_rules
 from adhelper.budget.adapters.sql import SqlPeriodStore
-from adhelper.budget.application.facade import PlatformUnavailable, platform_date
+from adhelper.budget.application.facade import (
+    PlatformUnavailable,
+    burn_from_history,
+    platform_date,
+)
 from adhelper.budget.application.preflight import StoredPeriodPreflight
 from adhelper.budget.application.watch_cycle import run_watch_cycle
 from adhelper.business.adapters.browser import ChromiumRenderer
@@ -125,7 +136,7 @@ from adhelper.stats.adapters.sql import SqlReportStats, report_accounts
 logger = logging.getLogger(__name__)
 
 MAX_CHANGE_ATTEMPTS = 3
-CURRENT_AUTOPILOT_RULES = "autopilot-2"
+CURRENT_AUTOPILOT_RULES = "autopilot-4"
 # Оценка исходов и предохранители: docs/17-autopilot-plan.md, этап 7.
 CURRENT_OUTCOME_RULES = "outcomes-1"
 CURRENT_POLICY_RULES = "policy-1"
@@ -134,10 +145,10 @@ SHADOW_AUTOPILOT_RULES = "autopilot-3"
 CURRENT_EXPERIMENT_RULES = "experiments-2"
 
 
-async def _increase_needs_owner(account: str, campaign_id: str, new_limit: int) -> str:
-    # Рост лимита автопилот сейчас только предлагает карточкой, даже в режиме «Сам» и при
-    # открытой ступени shift_limit: самостоятельный перенос лимитов не подключён к циклу.
-    return "awaiting_confirmation"
+async def _strategies(platform: Any, account: str) -> Any:
+    """Стратегии кампаний; площадка без такого чтения — «не знаем», политика строга."""
+    read = getattr(platform, "campaign_strategies", None)
+    return await read(account) if read is not None else {}
 
 
 def _utc_now() -> datetime:
@@ -356,6 +367,19 @@ class Runtime:
     def autopilot_cycle(self, business_id: UUID, account: str) -> AutopilotCycle:
         rules = load_autopilot_rules(CURRENT_AUTOPILOT_RULES)
         data: Any = SqlAutopilotData(self.sessions, business_id, rules)
+        platform = self.platform_for(business_id, account)
+        if platform is not None:
+            # Витрина лимитов не хранит: лимит, темп расхода и стратегию читаем с площадки.
+            periods = SqlPeriodStore(self.sessions)
+
+            async def period() -> Any:
+                record = await periods.active_for(business_id, account, self.clock())
+                return record.period if record else None
+
+            async def strategies(login: str) -> Any:
+                return await _strategies(platform, login)
+
+            data = WithBudgets(data, platform, period, rules, strategies)
         visits = self.visits_for(business_id)
         if visits is not None:
             counter = SqlTagChecks(self.sessions, business_id).counter
@@ -386,7 +410,9 @@ class Runtime:
         return AutopilotCycle(
             data,
             SqlDecisionLog(self.sessions, business_id),
-            LedgeredActions(self.ledger_for(business_id, account), _increase_needs_owner),
+            LedgeredActions(
+                self.ledger_for(business_id, account), self.autopilot_increase(business_id)
+            ),
             SqlAlerts(self.sessions, business_id),
             self.clock,
             rules,
@@ -394,6 +420,50 @@ class Runtime:
             shadow_rules=shadow_rules,
             gate=gate,
         )
+
+    def autopilot_increase(
+        self, business_id: UUID
+    ) -> Callable[[str, str, int, Sequence[str]], Any]:
+        """Рост лимита в «Сам»: свободные деньги через стража, иначе перенос с донора.
+
+        Нет площадки или действующего периода — карточка владельцу, площадка не тронута.
+        """
+
+        async def increase(
+            account: str, campaign_id: str, new_limit: int, donors: Sequence[str]
+        ) -> str:
+            now = self.clock()
+            platform = self.platform_for(business_id, account)
+            periods = SqlPeriodStore(self.sessions)
+            record = await periods.active_for(business_id, account, now)
+            if platform is None or record is None:
+                return CARD
+            if record.period.ends_at is None or record.period.ends_at <= now:
+                return CARD
+            gate = await SqlGateFacts(self.sessions, business_id, periods).load(account, now)
+            try:
+                traits = strategy_traits(await _strategies(platform, account))
+            except PlatformUnavailable:
+                return CARD
+            return await raise_limit(
+                LedgeredBudgetPlatform(
+                    platform, self.ledger_for(business_id, account), autopilot_source()
+                ),
+                SqlTransferStore(self.sessions, business_id),
+                account,
+                record.period,
+                campaign_id,
+                new_limit,
+                donors,
+                increase_facts(gate),
+                traits,
+                burn_from_history(await periods.recent_snapshots(record.id)),
+                now,
+                load_rules(record.rules_version),
+                load_policy_rules(CURRENT_POLICY_RULES),
+            )
+
+        return increase
 
     def autopilot_monitor(self, business_id: UUID, account: str) -> OutcomeMonitor:
         settings_store = SqlAutopilotSettings(self.sessions, business_id)

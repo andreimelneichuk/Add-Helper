@@ -1,6 +1,7 @@
 """Цикл автопилота на настоящих журнале и PostgreSQL, площадка поддельная."""
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -65,6 +66,9 @@ def data(
     return AccountData(ads, campaigns or [], recent, BASELINE, incident, False)
 
 
+donors_seen: list[tuple[str, ...]] = []
+
+
 def build(
     source: AccountData, platform: FakePlatform, sessions: Sessions, engine: AsyncEngine, hard: int
 ) -> AutopilotCycle:
@@ -76,7 +80,10 @@ def build(
     )
     budget_platform = LedgeredBudgetPlatform(platform, ledger, ChangeSource.AUTOPILOT)
 
-    async def increase(account: str, campaign_id: str, new_limit: int) -> str:
+    async def increase(
+        account: str, campaign_id: str, new_limit: int, donors: Sequence[str]
+    ) -> str:
+        donors_seen.append(tuple(donors))
         outcome = await apply_limit_change(
             budget_platform,
             account,
@@ -184,6 +191,31 @@ async def test_budget_guard_can_refuse_autopilot_increase(
     assert platform.campaigns["c1"].limit == 1_000_000_000
     logged = await SqlDecisionLog(sessions, BUSINESS).recent("acc")
     assert next(item for item in logged if item.object_ref == "c1").status == "rejected"
+
+
+async def test_increase_offers_campaigns_without_efficient_ads_as_donors(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    # c2 без эффективных объявлений — с неё можно снять деньги; c3 сама эффективна — нельзя.
+    other_bad = AdStats("ad:other", "c2", "g2", TARGET * 5, 0, 30, True)
+    other_good = AdStats("ad:third", "c3", "g3", TARGET * 10, 20, 30, True)
+    platform = fake(
+        CampaignBudget("c1", 1_000_000_000, 0, True, None),
+        CampaignBudget("c2", 1_000_000_000, 0, True, None),
+        CampaignBudget("c3", 1_000_000_000, 0, True, None),
+    )
+    campaigns = [
+        CampaignStats("c1", 1_000_000_000, True, None),
+        CampaignStats("c2", 1_000_000_000, False, None),
+        CampaignStats("c3", 1_000_000_000, False, None),
+    ]
+    donors_seen.clear()
+
+    await build(
+        data([GOOD, other_bad, other_good], campaigns), platform, sessions, engine, 10**10
+    ).run("acc", TARGET, Mode.AUTO)
+
+    assert donors_seen == [("c2",)]
 
 
 async def test_untrusted_data_records_alert_and_touches_nothing(
