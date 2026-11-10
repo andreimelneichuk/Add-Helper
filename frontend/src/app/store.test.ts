@@ -195,7 +195,7 @@ describe("хранилище прототипа", () => {
     const store = new MockStore(initialState("start"));
     const saveMarking = vi.fn().mockResolvedValue({});
     store.reader = { readSite: vi.fn(), siteRead: vi.fn() };
-    store.wizard = { accounts: vi.fn(), availableAccounts: vi.fn(), attachAccount: vi.fn(), connect: vi.fn(), marking: vi.fn(), saveMarking, tagCheck: vi.fn(), requestTagCheck: vi.fn(), launchCheck: vi.fn(), startLaunch: vi.fn(), wizardAds: vi.fn(), manualTokenLink: vi.fn(), saveManualToken: vi.fn() };
+    store.wizard = { accounts: vi.fn(), availableAccounts: vi.fn(), attachAccount: vi.fn(), connect: vi.fn(), marking: vi.fn(), saveMarking, tagCheck: vi.fn(), requestTagCheck: vi.fn(), launchCheck: vi.fn(), startLaunch: vi.fn(), wizardAds: vi.fn(), budgetPlan: vi.fn(), autopilot: vi.fn(), economics: vi.fn(), manualTokenLink: vi.fn(), saveManualToken: vi.fn() };
     store.navigate = vi.fn();
 
     // Шаг 4 без входа
@@ -210,7 +210,7 @@ describe("хранилище прототипа", () => {
     expect(store.navigate).toHaveBeenCalledWith("/");
 
     // Шаг 5 сохранение маркировки
-    store.wizard = { accounts: vi.fn(), availableAccounts: vi.fn(), attachAccount: vi.fn(), connect: vi.fn(), marking: vi.fn(), saveMarking, tagCheck: vi.fn(), requestTagCheck: vi.fn(), launchCheck: vi.fn(), startLaunch: vi.fn(), wizardAds: vi.fn(), manualTokenLink: vi.fn(), saveManualToken: vi.fn() };
+    store.wizard = { accounts: vi.fn(), availableAccounts: vi.fn(), attachAccount: vi.fn(), connect: vi.fn(), marking: vi.fn(), saveMarking, tagCheck: vi.fn(), requestTagCheck: vi.fn(), launchCheck: vi.fn(), startLaunch: vi.fn(), wizardAds: vi.fn(), budgetPlan: vi.fn(), autopilot: vi.fn(), economics: vi.fn(), manualTokenLink: vi.fn(), saveManualToken: vi.fn() };
     store.set({ step: 6, inn: "7701234567", advertiser: { kind: "legal", name: "ООО Салон", phone: "", okved: "96.02" } });
     store.next();
     await new Promise((r) => setTimeout(r, 10));
@@ -637,6 +637,22 @@ describe("хранилище прототипа", () => {
       open: vi.fn(() => mockWizard as any),
     }, null);
     expect(storeConnect.state.ads[0]?.name).toBe("От писателя");
+
+    // Вернулись с подключения: боковая колонка показывает сохранённое в сервисе, а не начальные цифры.
+    const storeSaved = new MockStore(initialState("start"));
+    storeSaved.writer = { writeAds: vi.fn(), adSet: vi.fn() };
+    const savedWizard = {
+      wizardAds: vi.fn().mockResolvedValue({ ads: [] }),
+      budgetPlan: vi.fn().mockResolvedValue({ rubles: 3000 }),
+      autopilot: vi.fn().mockResolvedValue({ mode: "confirm", cadence: "weekly" }),
+      economics: vi.fn().mockResolvedValue({ goal_rubles: 300 }),
+    };
+    await storeSaved.resumeConnect({
+      session: vi.fn(async () => ({ me: { email: "u@test.ru", csrf_token: "c" } as any, businesses: [{ id: "b1", name: "Бизнес" }] })),
+      open: vi.fn(() => savedWizard as any),
+    }, null);
+    expect(storeSaved.state.f.budget).toBe(3000);
+    expect(storeSaved.state.autopilot).toEqual({ mode: "confirm", cadence: "weekly", goal: "300" });
   });
 
   it("проверяет все граничные ветки next() и nextReal()", async () => {

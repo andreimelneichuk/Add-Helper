@@ -128,7 +128,7 @@ export type State = SessionState & ChatState & WizardState & CabinetState;
 export type BudgetOptions = { min: number; max: number; presets: number[] };
 /** Шаги мастера после входа работают с бизнесом через эти методы. */
 export type ReworkApi = Pick<Api, "rework" | "reworkSet" | "chooseRework">;
-export type WizardApi = Pick<Api, "accounts" | "availableAccounts" | "attachAccount" | "connect" | "marking" | "saveMarking" | "tagCheck" | "requestTagCheck" | "launchCheck" | "startLaunch" | "wizardAds" | "manualTokenLink" | "saveManualToken">;
+export type WizardApi = Pick<Api, "accounts" | "availableAccounts" | "attachAccount" | "connect" | "marking" | "saveMarking" | "tagCheck" | "requestTagCheck" | "launchCheck" | "startLaunch" | "wizardAds" | "budgetPlan" | "autopilot" | "economics" | "manualTokenLink" | "saveManualToken">;
 export type WizardDeps = {
   session: () => Promise<{ me: Me; businesses: Business[] } | null>;
   open: (businessId: string, csrf: string) => WizardApi;
@@ -576,6 +576,21 @@ export class Store {
     this.wizard = deps.open(business.id, session.me.csrf_token);
     this.set({ account: { email: session.me.email }, step: STEP.cabinet, block: problem ?? "" });
     await this.loadChosen();
+    await this.loadSaved();
+  }
+  /** После возврата боковая колонка показывает то, что уже сохранено в сервисе, а не начальные цифры. */
+  private async loadSaved() {
+    const wizard = this.wizard;
+    if (!wizard) return;
+    try {
+      const [plan, autopilot, economics] = await Promise.all([wizard.budgetPlan(), wizard.autopilot(), wizard.economics()]);
+      this.set({
+        ...(plan.rubles ? { f: { ...this.state.f, budget: plan.rubles } } : {}),
+        autopilot: { mode: autopilot.mode === "watch" ? "watch" : "confirm", cadence: autopilot.cadence === "weekly" ? "weekly" : "daily", goal: economics.goal_rubles ? String(economics.goal_rubles) : this.state.autopilot.goal },
+      });
+    } catch {
+      // Боковая колонка только подпись: запуск всё равно берёт цифры из сервиса.
+    }
   }
   /** Выбор объявлений уже в сервисе: после перезагрузки сводка показывает его, а не подставные. */
   private async loadChosen() {
