@@ -162,6 +162,6 @@ test.describe("Интерактивная переделка объявлени�
     await removeBtn.click();
 
     // Статус об архивации фото
-    await expect(photosSection.getByRole("status")).toContainText("Фото убрал из подбора");
+    await expect(photosSection.getByRole("status")).toContainText("Фото убрал.");
   });
 });
