@@ -88,6 +88,10 @@
 .ov-feed ul { display: flex; flex-direction: column; gap: var(--gap); margin: 0; padding: 0; list-style: none; }
 .ov-feed-when { color: var(--muted); font-size: var(--t-caption); }
 .ov-feed-all { align-self: flex-start; }
+.ov-auto { display: flex; flex-direction: column; gap: 8px; }
+.ov-auto p { margin: 0; }
+.ov-auto-list { margin: 0; padding-left: 18px; }
+.ov-auto-all { align-self: flex-start; }
 
 @media (max-width: 767px) {
   .ov-row { grid-template-columns: minmax(0, 1fr); }

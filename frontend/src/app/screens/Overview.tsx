@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { rub } from "../data";
 import { adName, useStoreState } from "../store";
 import type { State, Store } from "../store";
 import { AiNow } from "./overview/AiNow";
 import { Attention } from "./overview/Attention";
+import { AutopilotReport } from "./overview/AutopilotReport";
 import { Clients } from "./overview/Clients";
 import { DayChart } from "./overview/DayChart";
 import { Kpis } from "./overview/Kpis";
@@ -50,11 +52,18 @@ function AdsTable({ s, store }: { s: State; store: Store }) {
 }
 
 function Feed({ s, store }: { s: State; store: Store }) {
+  const [onlyAuto, setOnlyAuto] = useState(false);
+  const list = onlyAuto ? s.hist.filter((h) => h.auto) : s.hist;
   return (
     <section aria-labelledby="ov-feed-title" className="ah-panel ov-feed">
       <h2 id="ov-feed-title" className="ah-panel-title">Последние действия</h2>
+      <div className="ah-hist-filters" role="group" aria-label="Какие действия показать">
+        <button type="button" className="ah-chip" aria-pressed={!onlyAuto} onClick={() => setOnlyAuto(false)}>Все</button>
+        <button type="button" className="ah-chip" aria-pressed={onlyAuto} onClick={() => setOnlyAuto(true)}>Автопилот</button>
+      </div>
+      {onlyAuto && list.length === 0 && <p className="ah-muted">Автопилот пока ничего не менял.</p>}
       <ul>
-        {s.hist.slice(0, 3).map((h) => (
+        {list.slice(0, 3).map((h) => (
           <li key={h.id}><span className="ov-feed-when">{h.when}</span><div>{h.title}</div></li>
         ))}
       </ul>
@@ -68,6 +77,7 @@ export function Overview({ store }: { store: Store }) {
   return (
     <div className="ov">
       <Attention s={s} store={store} />
+      <AutopilotReport store={store} />
       <Clients s={s} store={store} />
       <Kpis s={s} />
       <div className="ov-row">

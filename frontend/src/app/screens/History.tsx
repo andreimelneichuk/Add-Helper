@@ -5,7 +5,7 @@ import { useStore } from "../store";
 import type { State, Store } from "../store";
 import "./History.css";
 
-const FILTERS: [State["filter"], string][] = [["all", "Все"], ["money", "Деньги"], ["ads", "Объявления"], ["tests", "Проверки"], ["yours", "Ваши"]];
+const FILTERS: [State["filter"], string][] = [["all", "Все"], ["money", "Деньги"], ["ads", "Объявления"], ["tests", "Проверки"], ["autopilot", "Автопилот"], ["yours", "Ваши"]];
 
 type EntryProps = {
   entry: HistoryEntry;
@@ -72,7 +72,7 @@ const Entry = memo(function Entry({ entry, undone, undoing, working, asked, info
 
 export function History({ store }: { store: Store }) {
   const s = useStore(store, (x) => ({ hist: x.hist, filter: x.filter, undone: x.undone, undoing: x.undoing, asked: x.asked, undoInfo: x.undoInfo, working: x.working }));
-  const list = s.hist.filter((h) => s.filter === "all" || (s.filter === "yours" ? h.mine || h.kind === "yours" : h.kind === s.filter));
+  const list = s.hist.filter((h) => s.filter === "all" || (s.filter === "yours" ? h.mine || h.kind === "yours" : s.filter === "autopilot" ? !!h.auto : h.kind === s.filter));
 
   const handleAskUndo = (id: string) => store.askUndo(id);
   const handleRunUndo = (id: string, whole?: boolean) => store.run({ action: "undo", value: id, whole });

@@ -117,7 +117,7 @@ export type CabinetState = {
   metric: "cost" | "leads";
   selDay: number | null;
   period: Period;
-  filter: "all" | HistoryKind;
+  filter: "all" | "autopilot" | HistoryKind;
   clientsInput: string;
   clients: number | null;
   f: Record<SettingKey, string | number>;

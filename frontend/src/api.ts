@@ -393,6 +393,7 @@ export function createApi(businessId: string, csrf: string) {
     autopilot: (init?: RequestInit) => request<AutopilotView>(`${base}/autopilot`, init),
     saveAutopilot: (body: AutopilotPatch) =>
       request<AutopilotView>(`${base}/autopilot`, { method: "PUT", body: JSON.stringify(body) }, csrf),
+    autopilotReport: () => request<AutopilotReport>(`${base}/autopilot/report`),
     economics: () => request<EconomicsView>(`${base}/economics`),
     saveEconomics: (body: EconomicsPatch) =>
       request<EconomicsView>(`${base}/economics`, { method: "PUT", body: JSON.stringify(body) }, csrf),
@@ -512,6 +513,17 @@ export type EconomicsPatch = Partial<Pick<EconomicsView, "lead_to_client_bp" | "
 export type AutopilotMode = "watch" | "confirm" | "auto";
 export type AutopilotAction = "pause_ad" | "increase_limit" | "start_test";
 export type AutopilotStatus = "ok" | "no_goal" | "data_untrusted" | "stopped" | "not_connected";
+/** Итог за сутки: сколько действий сделал автопилот и как они сработали. Числа считает сервис. */
+export type AutopilotReport = {
+  since: string;
+  done: number;
+  better: number;
+  same: number;
+  worse: number;
+  insufficient: number;
+  rolled_back: number;
+  outcomes: { change_id: number; object_ref: string; verdict: string; cpl_change_bp: number | null; noise_bp: number | null; rolled_back: boolean; note: string | null; evaluated_at: string | null }[];
+};
 export type AutopilotView = {
   mode: AutopilotMode;
   allowed_actions: AutopilotAction[];

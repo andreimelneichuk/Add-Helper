@@ -93,6 +93,10 @@ function kindOf(line: HistoryLine): HistoryKind {
   return line.kind === "set_limit" || line.kind === "pause" || line.kind === "resume" ? "money" : "ads";
 }
 
+/** Автооткат пишется как «rollback», как и отмена владельцем; различает их текст сервиса. */
+const AUTO_ROLLBACK = "Вернули объявление в показ: после его остановки";
+export const isAutoRollback = (line: HistoryLine): boolean => line.source === "rollback" && line.explanation.startsWith(AUTO_ROLLBACK);
+
 function toEntry(line: HistoryLine, ads: Ad[]): HistoryEntry {
   const about = ads.find((a) => line.target === `ad:${a.id.split("/").pop()}`);
   const canUndo = line.ref.startsWith("change-") && line.status === "applied" && line.source !== "external" && line.source !== "rollback" && UNDOABLE.has(line.kind) && !line.reverted;
@@ -100,9 +104,10 @@ function toEntry(line: HistoryLine, ads: Ad[]): HistoryEntry {
   return {
     id: line.ref,
     kind: kindOf(line),
-    mine: line.source === "user" || line.source === "rollback",
+    mine: line.source === "user" || (line.source === "rollback" && !isAutoRollback(line)),
+    auto: line.source === "autopilot" || isAutoRollback(line),
     when,
-    title: (line.source === "rollback" ? "Отмена. " : "") + (about ? `${KIND_TITLE[line.kind] ?? "Изменил"}: «${about.name}»` : (KIND_TITLE[line.kind] ?? "Оценил результат")),
+    title: (isAutoRollback(line) ? "Автопилот вернул. " : line.source === "rollback" ? "Отмена. " : "") + (about ? `${KIND_TITLE[line.kind] ?? "Изменил"}: «${about.name}»` : (KIND_TITLE[line.kind] ?? "Оценил результат")),
     why: line.explanation,
     next: line.failure ? `Причина: ${line.failure}` : "",
     canUndo,

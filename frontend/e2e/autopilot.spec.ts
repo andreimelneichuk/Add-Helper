@@ -90,3 +90,22 @@ test("на телефоне 360 px настройки автопилота и э
   const overflow = await page.evaluate(() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 });
+
+test("«Сегодня»: итог автопилота за сутки и фильтр «Автопилот» в ленте и истории", async ({ page }) => {
+  await page.goto("/");
+  const card = page.getByRole("region", { name: "Что автопилот сделал за сутки" });
+  await expect(card).toBeVisible();
+  // На чистом стенде автопилот ничего не менял: говорим это словами, без нулей.
+  await expect(card).toContainText("За сутки автопилот ничего не менял");
+
+  const feed = page.getByRole("region", { name: "Последние действия" });
+  await feed.getByRole("button", { name: "Автопилот" }).click();
+  await expect(feed.getByRole("button", { name: "Автопилот" })).toHaveAttribute("aria-pressed", "true");
+  // В ленте остаются только записи автопилота; если их нет, так и сказано.
+  const rows = feed.locator("li");
+  if ((await rows.count()) === 0) await expect(feed).toContainText("Автопилот пока ничего не менял");
+
+  await card.getByRole("button", { name: "Посмотреть и отменить" }).click();
+  const filters = page.getByRole("group", { name: "Какие записи показать" });
+  await expect(filters.getByRole("button", { name: "Автопилот" })).toHaveAttribute("aria-pressed", "true");
+});
