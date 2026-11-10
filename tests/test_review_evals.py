@@ -85,11 +85,29 @@ async def test_gate_fails_when_the_model_is_down_even_though_nothing_passed() ->
     assert not metrics.gate_passed
 
 
-def test_over_cautious_model_is_not_a_gate_failure_but_is_counted() -> None:
+def test_over_cautious_model_fails_the_gate_on_false_stops() -> None:
     runs = [CaseRun(case, False, True) for case in CASES]
     metrics = score(runs)
+    assert metrics.misses == 0 and metrics.false_stops == 20
+    assert not metrics.gate_passed
+
+
+def test_false_stops_up_to_five_percent_are_allowed() -> None:
+    safe = [case for case in CASES if case.label == "go"]
+    one_extra = {safe[0].candidate.ref}
+    runs = [
+        CaseRun(case, case.label == "go" and case.candidate.ref not in one_extra, True)
+        for case in CASES
+    ]
+    metrics = score(runs)
+    assert metrics.misses == 0 and metrics.false_stops == 1
     assert metrics.gate_passed
-    assert metrics.false_stops == 20
+    two_extra = {safe[0].candidate.ref, safe[1].candidate.ref}
+    runs = [
+        CaseRun(case, case.label == "go" and case.candidate.ref not in two_extra, True)
+        for case in CASES
+    ]
+    assert not score(runs).gate_passed
 
 
 def test_worst_case_at_the_most_expensive_allowed_model_is_within_five_cents() -> None:
