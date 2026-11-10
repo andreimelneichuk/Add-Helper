@@ -529,6 +529,8 @@ export type AutopilotReport = {
 export type AutopilotView = {
   mode: AutopilotMode;
   allowed_actions: AutopilotAction[];
+  /** Что владелец проекта уже открыл кабинету; отсутствует у старого сервиса — тогда всё открыто. */
+  granted_actions?: AutopilotAction[];
   cadence: "daily" | "weekly";
   run_hour: number;
   envelope: Record<string, number>;

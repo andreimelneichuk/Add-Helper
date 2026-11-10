@@ -61,6 +61,15 @@ describe("настройки автопилота", () => {
     expect(mock.saveAutopilot).not.toHaveBeenCalled();
   });
 
+  it("не открытое владельцем действие отключено и объяснено", async () => {
+    const { api } = fake({ ...BASE, granted_actions: ["pause_ad", "start_test"] });
+    render(<AutopilotSettings api={api} />);
+    const box = (await screen.findByLabelText(/Поднимать лимит/)) as HTMLInputElement;
+    expect(box.disabled).toBe(true);
+    expect(box.checked).toBe(false);
+    expect(screen.getByText(/Пока только предлагаю/)).toBeTruthy();
+  });
+
   it("остановка просит подтверждения, потом можно включить снова", async () => {
     const { api, mock } = fake();
     render(<AutopilotSettings api={api} />);

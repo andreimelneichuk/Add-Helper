@@ -113,12 +113,18 @@ export function AutopilotSettings({ api }: { api: Api }) {
       <fieldset className="ap-actions" disabled={busy}>
         <legend className="ah-label">Что можно делать</legend>
         <p className="set-hint">Когда автопилот действует сам, он делает только отмеченное. В положении «Предлагает» вы видите всё.</p>
-        {ACTIONS.map((a) => (
-          <label key={a.id} className="ap-check">
-            <input type="checkbox" checked={view.allowed_actions.includes(a.id)} onChange={() => toggle(a.id)} />
-            <span>{a.label}</span>
-          </label>
-        ))}
+        {ACTIONS.map((a) => {
+          const closed = view.granted_actions !== undefined && !view.granted_actions.includes(a.id);
+          return (
+            <label key={a.id} className="ap-check">
+              <input type="checkbox" checked={!closed && view.allowed_actions.includes(a.id)} disabled={closed} onChange={() => toggle(a.id)} />
+              <span>
+                {a.label}
+                {closed && <em> Пока только предлагаю: сам смогу после недели спокойной работы, когда вы откроете это</em>}
+              </span>
+            </label>
+          );
+        })}
       </fieldset>
       <div className="ap-when">
         <label>
