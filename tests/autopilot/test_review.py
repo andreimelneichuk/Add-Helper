@@ -175,3 +175,30 @@ async def test_reply_without_text_passes_nothing() -> None:
     result = await ModelReviewer(Model()).review(CANDS)  # type: ignore[arg-type]
     assert not result.available
     assert result.passed == frozenset()
+
+
+def test_request_adds_readable_integer_percentages_computed_by_code() -> None:
+    cand = Candidate(
+        "c:1",
+        "increase_limit",
+        "c1",
+        {
+            "spend_micros": 2_000_000_000,
+            "target_micros": 400_000_000,
+            "leads": 12,
+            "p_good_bp": 9350,
+            "p_bad_bp": 480,
+            "limit_micros": 500_000_000,
+        },
+        600_000_000,
+    )
+    item = json.loads(build_request([cand]))["candidates"][0]
+    assert item["spend_percent_of_target"] == 500
+    assert (item["leads"], item["p_good_percent"], item["p_bad_percent"]) == (12, 93, 4)
+    assert item["limit_growth_percent"] == 20
+    assert all(isinstance(v, int) for v in item.values() if not isinstance(v, (str, dict)))
+
+
+def test_request_without_known_facts_has_no_readable_fields() -> None:
+    item = json.loads(build_request(CANDS[:1]))["candidates"][0]
+    assert "spend_percent_of_target" not in item and "limit_growth_percent" not in item
