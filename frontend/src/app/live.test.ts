@@ -236,12 +236,26 @@ describe("действия идут через сервис", () => {
     expect(store.state.notice).toContain("остановил не вы");
   });
 
+  it("чат передаёт агенту последние реплики без текущего сообщения", async () => {
+    const api = fakeApi({ command: vi.fn(async () => said({ reply: "Хорошо." })) } as Partial<Api>);
+    const store = await open(api);
+    store.send("Привет");
+    await settled();
+    store.send("Что посоветуешь?");
+    await settled();
+    const history = vi.mocked(api.command).mock.calls[1]?.[1] ?? [];
+    expect(history.at(-2)).toEqual({ role: "user", text: "Привет" });
+    expect(history.at(-1)).toEqual({ role: "assistant", text: "Хорошо." });
+    expect(history.some((h) => h.text === "Что посоветуешь?")).toBe(false);
+    expect(history.length).toBeLessThanOrEqual(10);
+  });
+
   it("чат не применяет без подтверждения и честно отказывает вне набора", async () => {
     const api = fakeApi({ command: vi.fn(async () => said({ kind: "pause", confirm: "Понял так: остановить все показы. Настройки сохранятся. Применить?" })) } as Partial<Api>);
     const store = await open(api);
     store.send("Поставь на паузу");
     await settled();
-    expect(api.command).toHaveBeenCalledWith("Поставь на паузу");
+    expect(api.command).toHaveBeenCalledWith("Поставь на паузу", expect.any(Array));
     expect(api.pause).not.toHaveBeenCalled();
     expect(store.state.pending).toEqual({ action: "pause" });
     store.send("да");
@@ -697,7 +711,7 @@ describe("сетевые ошибки и граничные сценарии (50
     );
     store.send("Не показывай рекламу по выходным");
     await settled();
-    expect(api.command).toHaveBeenCalledWith("Не показывай рекламу по выходным");
+    expect(api.command).toHaveBeenCalledWith("Не показывай рекламу по выходным", expect.any(Array));
     expect(store.state.msgs.some((m) => m.text.includes("ничего не меняю"))).toBe(false);
     expect(store.state.pending?.action).not.toBe("pause");
   });

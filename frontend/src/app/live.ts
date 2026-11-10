@@ -17,6 +17,8 @@ const KIND_TITLE: Record<string, string> = { set_limit: "Изменил днев
 const UNDOABLE = new Set(["set_limit", "resume", "pause_ad", "resume_ad", "set_schedule", "set_regions"]);
 const STATUS_WORD: Record<string, string> = { planned: "Запланировано", applying: "Применяется", failed: "Не удалось", rejected: "Отклонено правилами", conflict: "Изменено кем-то ещё" };
 const DAY_NAMES = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"];
+// Сколько последних реплик уходит агенту: столько он и помнит.
+const HISTORY_TURNS = 10;
 const SLOW_MS = 15_000;
 const SLOW_ANSWER = "Долго отвечаю. Ничего не изменено, можно повторить.";
 const NO_ANSWER = "Сервис не ответил. Ничего не изменилось, попробуйте позже.";
@@ -678,6 +680,15 @@ export class LiveStore extends Store {
     }
   }
 
+  /** Последние реплики переписки без текущего сообщения: агент помнит, о чём шла речь. */
+  private recent(): { role: "user" | "assistant"; text: string }[] {
+    const turns = this.state.msgs
+      .filter((m) => m.who !== "note")
+      .map((m) => ({ role: m.who === "me" ? ("user" as const) : ("assistant" as const), text: m.text }));
+    // Текущее сообщение уже в ленте, а в запросе идёт отдельным полем.
+    return turns.slice(0, -1).slice(-HISTORY_TURNS);
+  }
+
   /** Сервис переводит сообщение в команду из закрытого набора; меняющие ждут «да». */
   private async understand(text: string) {
     let c: ChatCommand;
@@ -685,7 +696,7 @@ export class LiveStore extends Store {
     // Модель отвечает долго; если больше 15 секунд, честно говорим, что ничего не менялось.
     const slow = setTimeout(() => this.say(SLOW_ANSWER), SLOW_MS);
     try {
-      c = await this.api.command(text);
+      c = await this.api.command(text, this.recent());
     } catch (error) {
       this.say(error instanceof ApiError ? error.message : NO_ANSWER);
       return;

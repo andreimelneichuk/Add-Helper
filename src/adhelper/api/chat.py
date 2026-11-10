@@ -6,8 +6,8 @@
 
 from collections.abc import Sequence
 from dataclasses import asdict
-from datetime import datetime
-from typing import Any
+from datetime import date, datetime, timedelta
+from typing import Any, Literal
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
@@ -27,16 +27,27 @@ from adhelper.commands.application.service import (
     interpret,
     known_from,
 )
+from adhelper.commands.application.tool_agent import (
+    HISTORY_MESSAGES,
+    ChatTurn,
+)
 from adhelper.creatives.adapters.sql import SqlProfiles
 from adhelper.creatives.adapters.wizard import SqlWizardAds, WizardAdItem
 from adhelper.stats.adapters.sql import SqlDashboard
 from adhelper.stats.application.facade import AdLine
-from adhelper.stats.application.overview import PLATFORM_ZONE, ads, platform_today, window
+from adhelper.stats.application.overview import PLATFORM_ZONE, Window, ads, platform_today, window
+
+
+class HistoryItem(BaseModel):
+    role: Literal["user", "assistant"]
+    text: str = Field(max_length=2000)
 
 
 class CommandBody(BaseModel):
     # Длиннее правила всё равно попросят написать короче; предел защищает разбор и модель.
     text: str = Field(min_length=1, max_length=2000)
+    # Последние реплики переписки: агент помнит, о чём шла речь. Лишнее отбрасываем.
+    history: list[HistoryItem] = Field(default_factory=list, max_length=40)
 
 
 def _shown(answer: Answer, ttl: int) -> dict[str, Any]:
@@ -78,6 +89,44 @@ def awaiting_review(wizard: Sequence[WizardAdItem], direct: Sequence[AdLine]) ->
     )
 
 
+def summaries(lines: Sequence[tuple[AdLine, Any]]) -> tuple[AdStatSummary, ...]:
+    return tuple(
+        AdStatSummary(
+            id=f"{line.account}/{line.ad_id}",
+            title=line.title,
+            impressions=line.totals.impressions,
+            clicks=line.totals.clicks,
+            conversions=line.totals.conversions,
+            cost_micros=line.totals.cost,
+            ctr_percent=((ratios.ctr_bp or 0) / 100.0) if ratios else 0.0,
+            active=line.state in ("on", "moderation"),
+        )
+        for line, ratios in lines
+    )
+
+
+PERIOD_LABELS = {
+    "today": "Сегодня",
+    "yesterday": "Вчера",
+    "7d": "За 7 дней",
+    "14d": "За 14 дней",
+    "30d": "За 30 дней",
+    "month": "С начала месяца",
+}
+
+
+def period_window(period: str, today: date) -> Window:
+    """Окно статистики по названию периода: границы суток площадки, московские."""
+    if period == "today":
+        return window(today, today, today)
+    if period == "yesterday":
+        day = today - timedelta(days=1)
+        return window(today, day, day)
+    if period == "month":
+        return window(today, today.replace(day=1), today)
+    return window(today, None, None, days=int(period.removesuffix("d")))
+
+
 def chat_router() -> APIRouter:
     router = APIRouter(prefix="/api/businesses/{business_id}/chat")
 
@@ -88,7 +137,8 @@ def chat_router() -> APIRouter:
         sessions: async_sessionmaker[AsyncSession] = request.app.state.sessions
         now: datetime = request.app.state.clock()
         dashboard = SqlDashboard(sessions, business_id)
-        lines = await ads(dashboard, window(platform_today(now), None, None))
+        today = platform_today(now)
+        lines = await ads(dashboard, window(today, None, None, days=7))
         history_lines = await dashboard.history(limit=10)
         found = await SqlProfiles(sessions, business_id).get()
         all_wizard_ads = await SqlWizardAds(sessions, business_id).all_ads()
@@ -105,19 +155,7 @@ def chat_router() -> APIRouter:
         impressions = sum(line.totals.impressions for line, _ in lines)
         clicks = sum(line.totals.clicks for line, _ in lines)
         conversions = sum(line.totals.conversions for line, _ in lines)
-        ad_summaries = tuple(
-            AdStatSummary(
-                id=f"{line.account}/{line.ad_id}",
-                title=line.title,
-                impressions=line.totals.impressions,
-                clicks=line.totals.clicks,
-                conversions=line.totals.conversions,
-                cost_micros=line.totals.cost,
-                ctr_percent=((ratios.ctr_bp or 0) / 100.0) if ratios else 0.0,
-                active=line.state in ("on", "moderation"),
-            )
-            for line, ratios in lines
-        )
+        ad_summaries = summaries(lines)
         recent_history = tuple(
             {
                 "at": h.at.isoformat() if hasattr(h.at, "isoformat") else str(h.at),
@@ -151,6 +189,11 @@ def chat_router() -> APIRouter:
             autopilot=ap_report,
         )
 
+        async def stats_loader(period: str) -> tuple[str, tuple[AdStatSummary, ...]]:
+            found_lines = await ads(dashboard, period_window(period, today))
+            return PERIOD_LABELS[period], summaries(found_lines)
+
+        history = [ChatTurn(item.role, item.text) for item in body.history[-HISTORY_MESSAGES:]]
         rules = load_rules(CURRENT_RULES)
         calls: CallBudget = request.app.state.command_calls
         day = now.astimezone(PLATFORM_ZONE).date().isoformat()
@@ -161,7 +204,9 @@ def chat_router() -> APIRouter:
             request.app.state.command_model,
             lambda: calls.take(str(business_id), day, rules.model_calls_per_day),
             analytics_context=analytics_context,
-            langchain_agent=getattr(request.app.state, "langchain_agent", None),
+            agent=getattr(request.app.state, "tool_agent", None),
+            history=history,
+            stats_loader=stats_loader,
         )
         ttl = rules.confirm_ttl_seconds
         return {**_shown(answer, ttl), "next": [_shown(more, ttl) for more in answer.more]}

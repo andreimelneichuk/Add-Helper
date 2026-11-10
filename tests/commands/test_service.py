@@ -3,6 +3,7 @@ from dataclasses import dataclass, field, replace
 
 from adhelper.commands.adapters.rules_file import load_rules
 from adhelper.commands.application.service import CallBudget, interpret
+from adhelper.commands.application.tool_agent import AgentTurn, ToolChatAgent
 from adhelper.commands.domain.model import Command, Kind, Known, KnownAd
 from adhelper.creatives.domain.model import ModelReply, ModelUnavailable
 
@@ -98,15 +99,11 @@ async def test_two_requests_get_two_confirmations() -> None:
 async def test_free_reply_cannot_claim_an_action_or_invent_numbers() -> None:
     from unittest.mock import AsyncMock
 
-    from adhelper.commands.application.langchain_agent import AgentResult, LangChainChatAgent
+    from adhelper.commands.application.tool_agent import AgentTurn, ToolChatAgent
 
-    agent = AsyncMock(spec=LangChainChatAgent)
-    agent.invoke.return_value = AgentResult(
-        Command(Kind.UNKNOWN), "Принял! Устанавливаю бюджет 777 ₽. Сейчас всё настрою!"
-    )
-    answer = await interpret(
-        "бюджет как у соседа", KNOWN, RULES, None, always, langchain_agent=agent
-    )
+    agent = AsyncMock(spec=ToolChatAgent)
+    agent.invoke.return_value = AgentTurn("Принял! Устанавливаю бюджет 777 ₽. Сейчас всё настрою!")
+    answer = await interpret("бюджет как у соседа", KNOWN, RULES, None, always, agent=agent)
     assert answer.command.kind is Kind.UNKNOWN
     assert "Принял" not in answer.reply and "777" not in answer.reply
 
@@ -114,44 +111,44 @@ async def test_free_reply_cannot_claim_an_action_or_invent_numbers() -> None:
 async def test_small_talk_reply_with_foreign_numbers_is_replaced() -> None:
     from unittest.mock import AsyncMock
 
-    from adhelper.commands.application.langchain_agent import AgentResult, LangChainChatAgent
+    from adhelper.commands.application.tool_agent import AgentTurn, ToolChatAgent
 
-    agent = AsyncMock(spec=LangChainChatAgent)
-    agent.invoke.return_value = AgentResult(Command(Kind.UNKNOWN), "Привет! На счёте 777 ₽.")
-    answer = await interpret("привет", KNOWN, RULES, None, always, langchain_agent=agent)
+    agent = AsyncMock(spec=ToolChatAgent)
+    agent.invoke.return_value = AgentTurn("Привет! На счёте 777 ₽.")
+    answer = await interpret("привет", KNOWN, RULES, None, always, agent=agent)
     assert "777" not in answer.reply
-    agent.invoke.return_value = AgentResult(Command(Kind.UNKNOWN), "Привет! Чем помочь?")
-    answer = await interpret("привет", KNOWN, RULES, None, always, langchain_agent=agent)
+    agent.invoke.return_value = AgentTurn("Привет! Чем помочь?")
+    answer = await interpret("привет", KNOWN, RULES, None, always, agent=agent)
     assert answer.reply == "Привет! Чем помочь?"
 
 
 async def test_greeting_may_offer_help_with_setup() -> None:
     from unittest.mock import AsyncMock
 
-    from adhelper.commands.application.langchain_agent import AgentResult, LangChainChatAgent
+    from adhelper.commands.application.tool_agent import AgentTurn, ToolChatAgent
 
-    agent = AsyncMock(spec=LangChainChatAgent)
+    agent = AsyncMock(spec=ToolChatAgent)
     text = "Привет! Помогу настроить Директ и привлечь клиентов. Чем помочь?"
-    agent.invoke.return_value = AgentResult(Command(Kind.UNKNOWN), text)
-    answer = await interpret("привет", KNOWN, RULES, None, always, langchain_agent=agent)
+    agent.invoke.return_value = AgentTurn(text)
+    answer = await interpret("привет", KNOWN, RULES, None, always, agent=agent)
     assert answer.reply == text
 
 
 async def test_advice_question_with_ad_words_reaches_the_agent() -> None:
     from unittest.mock import AsyncMock
 
-    from adhelper.commands.application.langchain_agent import AgentResult, LangChainChatAgent
+    from adhelper.commands.application.tool_agent import AgentTurn, ToolChatAgent
 
-    agent = AsyncMock(spec=LangChainChatAgent)
+    agent = AsyncMock(spec=ToolChatAgent)
     text = "Добавьте в объявление конкретную выгоду, например скидку на первый визит."
-    agent.invoke.return_value = AgentResult(Command(Kind.UNKNOWN), text)
+    agent.invoke.return_value = AgentTurn(text)
     answer = await interpret(
         "Что посоветуешь, чтобы привлечь больше клиентов?",
         KNOWN,
         RULES,
         None,
         always,
-        langchain_agent=agent,
+        agent=agent,
     )
     assert answer.reply == text
     agent.invoke.assert_called_once()
@@ -160,17 +157,15 @@ async def test_advice_question_with_ad_words_reaches_the_agent() -> None:
 async def test_agent_may_retell_numbers_from_the_cabinet() -> None:
     from unittest.mock import AsyncMock
 
-    from adhelper.commands.application.langchain_agent import AgentResult, LangChainChatAgent
+    from adhelper.commands.application.tool_agent import AgentTurn, ToolChatAgent
 
-    agent = AsyncMock(spec=LangChainChatAgent)
-    agent.invoke.return_value = AgentResult(
-        Command(Kind.UNKNOWN), "Потрачено 4 200 ₽ из 15 000 ₽, клики дорожают."
+    agent = AsyncMock(spec=ToolChatAgent)
+    agent.invoke.return_value = AgentTurn(
+        "Потрачено 4 200 ₽ из 15 000 ₽, клики дорожают.", facts='{"spent": 4200, "budget": 15000}'
     )
     ctx = _ctx()
     ctx = replace(ctx, spent_rubles=4200)
-    answer = await interpret(
-        "почему так дорого", KNOWN, RULES, None, always, ctx, langchain_agent=agent
-    )
+    answer = await interpret("почему так дорого", KNOWN, RULES, None, always, ctx, agent=agent)
     assert "4 200" in answer.reply
 
 
@@ -223,11 +218,11 @@ async def test_delete_ads_is_refused_with_the_safe_alternative() -> None:
 async def test_small_talk_uses_the_interface_word_for_leads() -> None:
     from unittest.mock import AsyncMock
 
-    from adhelper.commands.application.langchain_agent import AgentResult, LangChainChatAgent
+    from adhelper.commands.application.tool_agent import AgentTurn, ToolChatAgent
 
-    agent = AsyncMock(spec=LangChainChatAgent)
-    agent.invoke.return_value = AgentResult(Command(Kind.UNKNOWN), "Привет! Новые заявки ждут.")
-    answer = await interpret("привет", KNOWN, RULES, None, always, langchain_agent=agent)
+    agent = AsyncMock(spec=ToolChatAgent)
+    agent.invoke.return_value = AgentTurn("Привет! Новые заявки ждут.")
+    answer = await interpret("привет", KNOWN, RULES, None, always, agent=agent)
     assert "заявк" not in answer.reply and "обращения" in answer.reply
 
 
@@ -302,3 +297,39 @@ async def test_autopilot_switch_asks_for_confirmation() -> None:
     assert answer.confirm.startswith("Понял так: остановить автопилот") and answer.confirm.endswith(
         "Применить?"
     )
+
+
+async def test_agent_proposal_goes_through_the_confirmation_question() -> None:
+    from unittest.mock import AsyncMock
+
+    agent = AsyncMock(spec=ToolChatAgent)
+    agent.invoke.return_value = AgentTurn(
+        "Предлагаю.", proposals=(Command(Kind.SET_BUDGET, rubles=9000),)
+    )
+    answer = await interpret(
+        "сделай расход поменьше, девять тысяч", KNOWN, RULES, None, always, agent=agent
+    )
+    assert answer.command.kind is Kind.SET_BUDGET and answer.command.rubles == 9000
+    assert answer.confirm.endswith("Применить?")
+
+
+async def test_period_question_goes_to_the_agent_not_to_the_weekly_summary() -> None:
+    from unittest.mock import AsyncMock
+
+    agent = AsyncMock(spec=ToolChatAgent)
+    agent.invoke.return_value = AgentTurn("Сегодня 12 кликов, вчера 20.", facts="12 20")
+    answer = await interpret(
+        "Покажи цифры за сегодня и вчера", KNOWN, RULES, None, always, _ctx(), agent=agent
+    )
+    assert answer.reply == "Сегодня 12 кликов, вчера 20."
+
+
+async def test_long_message_gets_the_agent_without_change_tools() -> None:
+    from unittest.mock import AsyncMock
+
+    agent = AsyncMock(spec=ToolChatAgent)
+    agent.invoke.return_value = AgentTurn("Коротко: смотрите на цену обращения.")
+    await interpret(
+        "Расскажи подробно " + "про рекламу " * 40, KNOWN, RULES, None, always, agent=agent
+    )
+    assert agent.invoke.call_args.kwargs["allow_changes"] is False

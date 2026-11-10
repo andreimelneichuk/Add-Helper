@@ -11,7 +11,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 
 from adhelper.commands.application.analytics import AnalyticsAgent, AnalyticsContext
-from adhelper.commands.application.langchain_agent import LangChainChatAgent, analytics_payload
+from adhelper.commands.application.tool_agent import AgentTurn, ChatTurn, StatsLoader, ToolChatAgent
 from adhelper.commands.domain.model import (
     CHANGING,
     Command,
@@ -25,12 +25,14 @@ from adhelper.commands.domain.model import (
 from adhelper.commands.domain.parse import (
     QUESTION_BUDGET,
     QUESTION_CEILING,
+    QUESTION_LONG,
     SCHEMA,
     from_model,
     normalize,
     parse_all,
     scaled_budget,
 )
+from adhelper.commands.domain.router import Intent, match_layer_1
 from adhelper.commands.domain.words import REFUSAL, meaning, refusal
 from adhelper.creatives.domain.model import BusinessProfile, ModelUnavailable, TextModel
 
@@ -65,6 +67,8 @@ COMMAND_LIKE = re.compile(
 ACTION_CLAIM = re.compile(
     r"\b(?:принял|поставил|выполнил|отключил|включил|сделал|изменил|поменял|установил)[аои]?\b"
 )
+# Просьба о цифрах за конкретный период: сводку за неделю кодом не подменяем.
+PERIOD_WORDS = re.compile(r"сегодня|вчера|позавчера|месяц|\d+ дн")
 # Сумма в рублях: число рядом с ₽ или «руб». Проценты и обычные числа («за 3 дня») не проверяем.
 MONEY = re.compile(r"(\d[\d \u00a0]*)\s*(?:₽|руб)")
 
@@ -197,7 +201,9 @@ async def interpret(
     model: TextModel | None,
     may_call_model: Callable[[], bool],
     analytics_context: AnalyticsContext | None = None,
-    langchain_agent: LangChainChatAgent | None = None,
+    agent: ToolChatAgent | None = None,
+    history: Sequence[ChatTurn] = (),
+    stats_loader: StatsLoader | None = None,
 ) -> Answer:
     found = parse_all(message, known, rules)
     first = found[0]
@@ -226,21 +232,36 @@ async def interpret(
         first = Parsed(Command(Kind.STATS), Source.RULES, reply=budget_reply(analytics_context))
         return _single(first, message, rules)
 
-    # Свободная беседа (приветствие, совет, вопрос о цифрах) идёт к диалоговому агенту. Агент
-    # видит данные кабинета, посчитанные кодом, и ничего не меняет: меняющая просьба проходит
-    # через разбор команд и подтверждение. Сообщения со словами о деньгах и рекламе сначала
-    # получают шанс стать командой, к агенту они попадают, если команды не вышло.
-    if (
-        langchain_agent
-        and first.command.kind is Kind.UNKNOWN
-        and not first.question
-        and not COMMAND_LIKE.search(text)
-    ):
-        chat = await _chat(langchain_agent, message, known, analytics_context, may_call_model)
-        if chat is not None:
-            return Answer(Command(Kind.UNKNOWN), Source.MODEL, rules.version, "", chat)
-
     specific_refusal = refusal(message)
+    too_long = first.question == QUESTION_LONG
+    # Цифры за сегодня, вчера или месяц код сводкой не покажет: период выбирает агент.
+    period_asked = first.command.kind is Kind.STATS and PERIOD_WORDS.search(text) is not None
+    if (
+        agent
+        and len(found) == 1
+        and (
+            period_asked
+            or (
+                first.command.kind is Kind.UNKNOWN
+                and (not first.question or too_long)
+                and specific_refusal == REFUSAL
+            )
+        )
+        and may_call_model()
+    ):
+        turn = await agent.invoke(
+            message,
+            known,
+            analytics_context,
+            history=history,
+            stats_loader=stats_loader,
+            # Длинное сообщение смешивает просьбы, а явный вопрос о цифрах ничего не меняет:
+            # им даём агента только с инструментами чтения.
+            allow_changes=not too_long and not _is_information(message),
+            max_budget=rules.max_budget,
+        )
+        if turn is not None:
+            return _from_turn(turn, message, rules, analytics_context)
     if first.command.kind is Kind.UNKNOWN and not first.question and specific_refusal != REFUSAL:
         first = Parsed(Command(Kind.UNKNOWN), Source.RULES, reply=specific_refusal)
     elif len(found) == 1 and first.command.kind in (Kind.STATS, Kind.HISTORY) and analytics_context:
@@ -263,17 +284,6 @@ async def interpret(
             )
             first = Parsed(Command(ans.kind), ans.source, reply=ans.reply)
 
-    if (
-        langchain_agent
-        and len(found) == 1
-        and first.command.kind is Kind.UNKNOWN
-        and not first.question
-        and specific_refusal == REFUSAL
-    ):
-        chat = await _chat(langchain_agent, message, known, analytics_context, may_call_model)
-        if chat is not None:
-            return Answer(Command(Kind.UNKNOWN), Source.MODEL, rules.version, "", chat)
-
     answers = [
         _with_current(_answer(parsed, message, rules), analytics_context)
         for parsed in (first, *found[1:])
@@ -281,21 +291,25 @@ async def interpret(
     return replace(answers[0], more=tuple(answers[1:]))
 
 
-async def _chat(
-    agent: LangChainChatAgent,
-    message: str,
-    known: Known,
-    context: AnalyticsContext | None,
-    may_call_model: Callable[[], bool],
-) -> str | None:
-    """Свободный ответ агента или None, если модель не ответила или лимит исчерпан."""
-    if not may_call_model():
-        return None
-    res = await agent.invoke(message, known, context)
-    if res is None:
-        return None
-    facts = json.dumps(analytics_payload(known, context), ensure_ascii=False)
-    return safe_small_talk(res.reply, message, facts)
+def _is_information(message: str) -> bool:
+    found = match_layer_1(message)
+    return found is not None and found.intent is Intent.INFORMATION
+
+
+def _from_turn(
+    turn: AgentTurn, message: str, rules: CommandRules, context: AnalyticsContext | None
+) -> Answer:
+    """Ответ агента: предложения идут вопросом «Применить?» по одному, текст — через фильтр."""
+    if turn.proposals:
+        asked = [
+            _with_current(_answer(Parsed(command, Source.MODEL), message, rules), context)
+            for command in turn.proposals[: rules.max_requests]
+        ]
+        return replace(asked[0], more=tuple(asked[1:]))
+    reply = safe_small_talk(turn.reply, message, turn.facts) if turn.reply else ""
+    return Answer(
+        Command(Kind.UNKNOWN), Source.MODEL, rules.version, "", reply or "".join(turn.questions)
+    )
 
 
 def _budget_now(context: AnalyticsContext | None) -> int | None:

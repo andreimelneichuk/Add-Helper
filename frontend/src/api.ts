@@ -447,8 +447,8 @@ export function createApi(businessId: string, csrf: string) {
     setBudget: (rubles: number, requestId: string) =>
       request<{ status: string; cuts: number }>(`${base}/budget`, { method: "POST", body: JSON.stringify({ rubles, request_id: requestId }) }, csrf),
     display: (init?: RequestInit) => request<Display>(`${base}/display`, init),
-    command: (text: string) =>
-      request<ChatCommand>(`${base}/chat/command`, { method: "POST", body: JSON.stringify({ text }) }, csrf),
+    command: (text: string, history: { role: "user" | "assistant"; text: string }[] = []) =>
+      request<ChatCommand>(`${base}/chat/command`, { method: "POST", body: JSON.stringify({ text, history }) }, csrf),
     /** Дни (0 — понедельник) и часы [start, end) показа; меняется через журнал. */
     setSchedule: (days: number[], start: number, end: number, requestId: string) =>
       request<{ applied: string[] }>(`${base}/display/schedule`, { method: "POST", body: JSON.stringify({ days, start, end, request_id: requestId }) }, csrf),

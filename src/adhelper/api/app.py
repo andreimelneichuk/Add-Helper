@@ -217,9 +217,9 @@ def create_app(
         settings.text_model_project,
     )
     app.state.text_model = app.state.command_model
-    from adhelper.commands.application.langchain_agent import build_langchain_agent
+    from adhelper.commands.application.tool_agent import build_tool_agent
 
-    app.state.langchain_agent = build_langchain_agent(
+    app.state.tool_agent = build_tool_agent(
         settings.text_model_base_url,
         settings.text_model_api_key,
         settings.text_model_name,

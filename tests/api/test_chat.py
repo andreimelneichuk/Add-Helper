@@ -101,24 +101,49 @@ async def test_chat_history_inquiry_answers_with_details(anna: Anna) -> None:  #
     assert len(answer["reply"]) > 0
 
 
-async def test_chat_langchain_agent_handles_conversational_greeting(anna: Anna) -> None:  # noqa: F811
+async def test_chat_tool_agent_handles_conversational_greeting(anna: Anna) -> None:  # noqa: F811
     from unittest.mock import AsyncMock, MagicMock
 
-    from adhelper.commands.application.langchain_agent import LangChainChatAgent
+    from adhelper.commands.application.tool_agent import ToolChatAgent
 
     client, csrf, business = anna
     expected_reply = "Здравствуйте! Я ваш рекламный ассистент по Яндекс Директу. Чем могу помочь?"
-    mock_llm = MagicMock()
-    msg_mock = MagicMock()
-    msg_mock.content = json.dumps({"reply": expected_reply, "action": None}, ensure_ascii=False)
-    mock_llm.ainvoke = AsyncMock(return_value=msg_mock)
-    agent = LangChainChatAgent(mock_llm)
+    bound = MagicMock()
+    reply = MagicMock()
+    reply.content = expected_reply
+    reply.tool_calls = []
+    bound.ainvoke = AsyncMock(return_value=reply)
+    llm = MagicMock()
+    llm.bind_tools = MagicMock(return_value=bound)
 
-    _app(client).state.langchain_agent = agent
+    _app(client).state.tool_agent = ToolChatAgent(llm)
     answer = await _say(client, csrf, business, "Привет")
     assert answer["kind"] == "unknown"
     assert answer["reply"] == expected_reply
     assert answer["confirm"] == ""
+
+
+async def test_chat_passes_the_recent_messages_to_the_agent(anna: Anna) -> None:  # noqa: F811
+    from unittest.mock import AsyncMock
+
+    from adhelper.commands.application.tool_agent import AgentTurn, ToolChatAgent
+
+    client, csrf, business = anna
+    agent = AsyncMock(spec=ToolChatAgent)
+    agent.invoke.return_value = AgentTurn(reply="Тогда лучше снизить бюджет.")
+    _app(client).state.tool_agent = agent
+    history = [{"role": "user", "text": "Привет"}, {"role": "assistant", "text": "Здравствуйте"}]
+    response = await client.post(
+        f"/api/businesses/{business}/chat/command",
+        json={"text": "Что посоветуешь?", "history": history},
+        headers=csrf,
+    )
+    assert response.status_code == 200
+    seen = agent.invoke.call_args.kwargs["history"]
+    assert [(turn.role, turn.text) for turn in seen] == [
+        ("user", "Привет"),
+        ("assistant", "Здравствуйте"),
+    ]
 
 
 async def test_every_answer_tells_how_long_the_question_stays_valid(
