@@ -23,6 +23,9 @@ const ACTIONS: { id: AutopilotAction; label: string }[] = [
   { id: "increase_limit", label: "Поднимать лимит направлению, которое приводит обращения дёшево" },
 ];
 
+// Открыть можно, но сам автопилот это пока не делает: такое действие приходит предложением.
+const ONLY_PROPOSED: AutopilotAction[] = ["increase_limit"];
+
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 
 function when(iso: string | null): string {
@@ -120,7 +123,8 @@ export function AutopilotSettings({ api }: { api: Api }) {
               <input type="checkbox" checked={!closed && view.allowed_actions.includes(a.id)} disabled={closed} onChange={() => toggle(a.id)} />
               <span>
                 {a.label}
-                {closed && <em> Пока только предлагаю: сам смогу после недели спокойной работы, когда вы откроете это</em>}
+                {closed && <em> Пока только предлагаю: сам смогу позже, это откроет команда сервиса</em>}
+                {!closed && ONLY_PROPOSED.includes(a.id) && <em> Пока только предлагаю: сам это делать ещё не умею</em>}
               </span>
             </label>
           );

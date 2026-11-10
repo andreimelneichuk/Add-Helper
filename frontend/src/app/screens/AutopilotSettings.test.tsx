@@ -67,7 +67,15 @@ describe("настройки автопилота", () => {
     const box = (await screen.findByLabelText(/Поднимать лимит/)) as HTMLInputElement;
     expect(box.disabled).toBe(true);
     expect(box.checked).toBe(false);
-    expect(screen.getByText(/Пока только предлагаю/)).toBeTruthy();
+    expect(screen.getByText(/сам смогу позже, это откроет команда сервиса/)).toBeTruthy();
+  });
+
+  it("открытый рост лимита честно назван предложением: сам он его пока не делает", async () => {
+    const { api } = fake({ ...BASE, granted_actions: ["pause_ad", "start_test", "increase_limit"] });
+    render(<AutopilotSettings api={api} />);
+    const box = (await screen.findByLabelText(/Поднимать лимит/)) as HTMLInputElement;
+    expect(box.disabled).toBe(false);
+    expect(screen.getByText(/сам это делать ещё не умею/)).toBeTruthy();
   });
 
   it("остановка просит подтверждения, потом можно включить снова", async () => {
