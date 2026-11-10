@@ -19,6 +19,9 @@ COPY src ./src
 COPY migrations ./migrations
 COPY alembic.ini ./
 RUN uv sync --locked --no-dev
+# Проверяем загрузку приложения очереди прямо в образе: worker ссылается на тот же модуль,
+# который запускает scripts/start.sh. Ошибку импорта ловим при сборке, до выкладки.
+RUN python -c "from procrastinate.cli import load_app; load_app('adhelper.worker.app.app')"
 
 # Браузер для сайтов, которые рисует скрипт (правила site-2). Только headless-оболочка
 # с системными библиотеками; путь общий, чтобы её видел непривилегированный пользователь.
