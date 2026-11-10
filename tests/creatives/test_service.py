@@ -112,6 +112,7 @@ async def _keep(
     business_id: uuid.UUID,
     now: datetime = NOW,
     attention: FakeAttention | None = None,
+    owner_decides: bool = False,
 ) -> None:
     await keep_ads(
         business_id,
@@ -121,7 +122,7 @@ async def _keep(
         SLOTS,
         RULES,
         now,
-        owner_decides=False,
+        owner_decides=owner_decides,
     )
 
 
@@ -177,6 +178,25 @@ async def test_new_campaign_is_written_for_and_ads_take_places(
     assert {c.state for c in placed} == {CreativeState.NEEDS_OWNER}
     # Третье место свободно: дописываем один текст.
     assert [(s["reason"], s["wanted"]) for s in (await _sets(sessions))[1:]] == [("refill", 1)]
+
+
+@pytest.mark.parametrize(
+    ("owner_decides", "state"),
+    [(True, CreativeState.NEEDS_OWNER), (False, CreativeState.LAUNCH_PENDING)],
+)
+async def test_checked_ad_takes_place_on_its_own_only_when_autopilot_acts_alone(
+    sessions: Sessions, business: uuid.UUID, owner_decides: bool, state: CreativeState
+) -> None:
+    """В «Следит» и «Предлагает» объявление ждёт владельца, в «Сам» уходит в очередь отправки."""
+    await _keep(sessions, business, owner_decides=owner_decides)
+    await _run(sessions, None)
+    attention = FakeAttention()
+    await _keep(
+        sessions, business, NOW + timedelta(minutes=5), attention, owner_decides=owner_decides
+    )
+    placed = await SqlCreatives(sessions, business).all()
+    assert placed and {c.state for c in placed} >= {state}
+    assert ("ads_need_confirmation" in attention.open) is owner_decides
 
 
 async def test_owner_launches_or_withdraws_and_report_shows_basis(
