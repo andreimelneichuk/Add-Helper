@@ -49,6 +49,7 @@ def settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[Settings]:
     monkeypatch.setenv("TEXT_MODEL_PROJECT", "")
     monkeypatch.setenv("TEXT_MODEL_NAME", "")
     monkeypatch.setenv("JUDGE_MODEL_NAME", "")
+    monkeypatch.setenv("REVIEW_MODEL_NAME", "")
     # Каналы тревог тоже: тест не должен отправить письмо через SMTP разработчика.
     monkeypatch.setenv("SMTP_HOST", "")
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "")

@@ -89,7 +89,7 @@ async def test_worker_runs_money_tasks_from_real_database(
             text("SELECT task_name, status FROM procrastinate_jobs WHERE scheduled_at IS NULL")
         )
         # Часовые задачи (автопилот в :20, очистка заданий) попадают в прогон только в своё окно.
-        skipped = {"autopilot.tick", "cleanup.jobs"}
+        skipped = {"autopilot.tick", "cleanup.jobs", "ads.summary"}
         statuses = {name: str(status) for name, status in rows if name not in skipped}
     assert statuses == {
         "budget.watch": "succeeded",

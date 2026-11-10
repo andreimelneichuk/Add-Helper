@@ -36,14 +36,24 @@ class ModelReviewer:
         self._model = model
 
     async def review(self, candidates: Sequence[Candidate]) -> ReviewResult:
-        if not candidates:
-            return ReviewResult(frozenset())
+        """Один вызов на кандидата: так рецензент измерен воротами `evals.review_gate`."""
+        passed: set[str] = set()
+        doubts: dict[str, str] = {}
+        available = True
+        for candidate in candidates:
+            one = await self._review_one(candidate)
+            passed |= one.passed
+            doubts |= dict(one.doubts)
+            available = available and one.available
+        return ReviewResult(frozenset(passed), doubts, available)
+
+    async def _review_one(self, candidate: Candidate) -> ReviewResult:
         try:
             reply = await self._model.complete_json(
-                SYSTEM, build_request(candidates), REPLY_SCHEMA, max_tokens_for(len(candidates))
+                SYSTEM, build_request([candidate]), REPLY_SCHEMA, max_tokens_for(1)
             )
-            return parse_reply(reply.text, candidates)
+            return parse_reply(reply.text, [candidate])
         except Exception as error:
             # Сюда же: ответ без текста и слишком глубокий JSON. Не пропускаем ничего.
             logger.warning("Рецензент недоступен: %s", type(error).__name__)
-            return nothing_passed(candidates, "рецензент недоступен", False)
+            return nothing_passed([candidate], "рецензент недоступен", False)

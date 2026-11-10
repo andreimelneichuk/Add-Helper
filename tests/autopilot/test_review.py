@@ -202,3 +202,38 @@ def test_request_adds_readable_integer_percentages_computed_by_code() -> None:
 def test_request_without_known_facts_has_no_readable_fields() -> None:
     item = json.loads(build_request(CANDS[:1]))["candidates"][0]
     assert "spend_percent_of_target" not in item and "limit_growth_percent" not in item
+
+
+async def test_each_candidate_gets_its_own_call_and_verdict() -> None:
+    class Model:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def complete_json(
+            self, system: str, user: str, schema: dict[str, object], max_tokens: int
+        ) -> Reply:
+            self.calls += 1
+            ref = json.loads(user)["candidates"][0]["ref"]
+            verdict = "ok" if ref == "ad-1" else "doubt"
+            return Reply(reply({"ref": ref, "verdict": verdict, "reason": "причина"}))
+
+    model = Model()
+    result = await ModelReviewer(model).review(CANDS)
+    assert model.calls == 2
+    assert result.passed == frozenset({"ad-1"}) and set(result.doubts) == {"c1"}
+    assert result.available
+
+
+async def test_one_failed_call_makes_result_unavailable_but_keeps_other_verdicts() -> None:
+    class Model:
+        async def complete_json(
+            self, system: str, user: str, schema: dict[str, object], max_tokens: int
+        ) -> Reply:
+            ref = json.loads(user)["candidates"][0]["ref"]
+            if ref == "c1":
+                raise RuntimeError("503")
+            return Reply(reply({"ref": ref, "verdict": "ok", "reason": ""}))
+
+    result = await ModelReviewer(Model()).review(CANDS)
+    assert result.passed == frozenset({"ad-1"}) and "c1" in result.doubts
+    assert not result.available

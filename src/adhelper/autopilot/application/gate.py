@@ -71,6 +71,10 @@ class ClosedGate:
         return {a.ref: GateNote(True, dict(note)) for a in actions if not a.needs_confirmation}
 
 
+# Действия, которые смотрит рецензент: те, что гасят показ или двигают деньги.
+REVIEWED_KINDS = frozenset({ActionKind.PAUSE_AD, ActionKind.INCREASE_LIMIT})
+
+
 class PolicyGate:
     def __init__(
         self, rules: PolicyRules, facts: GateFactsSource, reviewer: Reviewer | None = None
@@ -125,15 +129,21 @@ class PolicyGate:
             passed.append(action)
             changes += 1
             moved += max(inp.amount, 0)
-        if passed and self._reviewer is not None:
+        # Проверка двух вариантов объявления не двигает деньги и не гасит показ: рецензент
+        # (измерен только на паузе и росте лимита) её не смотрит, остаётся политика.
+        reviewed = [a for a in passed if a.kind in REVIEWED_KINDS]
+        for action in passed:
+            if action.kind not in REVIEWED_KINDS:
+                self._put(notes, action.ref, GateNote(False, version | {"review": "not_needed"}))
+        if reviewed and self._reviewer is not None:
             try:
-                result = await self._reviewer.review([self._candidate(a) for a in passed])
+                result = await self._reviewer.review([self._candidate(a) for a in reviewed])
             except Exception as error:
                 logger.warning("Рецензент не отработал: %s", type(error).__name__)
                 result = nothing_passed(
-                    [self._candidate(a) for a in passed], "рецензент недоступен", False
+                    [self._candidate(a) for a in reviewed], "рецензент недоступен", False
                 )
-            for action in passed:
+            for action in reviewed:
                 if action.ref in result.passed:
                     self._put(notes, action.ref, GateNote(False, version | {"review": "ok"}))
                     continue
@@ -145,7 +155,7 @@ class PolicyGate:
                     GateNote(True, version | {"held_by": held_by, "review": reason[:200]}),
                 )
         else:
-            for action in passed:
+            for action in reviewed:
                 self._put(notes, action.ref, GateNote(False, version | {"review": "off"}))
         return notes
 

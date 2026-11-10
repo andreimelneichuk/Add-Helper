@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     text_model_name: str = "google/gemma-4-31b-it"
     # Семантическая проверка объявлений тем же API. Пусто — судья выключен, остаётся код.
     judge_model_name: str = "deepseek/deepseek-v4.1-flash"
+    # Рецензент автопилота (docs/12-agents.md): без ключа всё идёт карточкой.
+    review_model_name: str = "google/gemma-4-31b-it"
     # Генерация картинок тем же ключом OpenRouter (один баланс), модели в правилах images-1.
     # Каждая картинка стоит денег (около $0,03), расход ограничен правилами images-1
     # (`generated_per_day` на бизнес). Владелец 2026-11-06 попросил добавлять картинки сами;

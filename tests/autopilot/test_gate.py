@@ -361,3 +361,13 @@ async def test_zero_changes_in_the_envelope_means_cards_only() -> None:
     assert actions.paused == []
     held = [row for row in log.rows if row[1] == "pause_ad"]
     assert held and all(row[2] == "awaiting_confirmation" for row in held)
+
+
+async def test_start_test_is_not_sent_to_the_reviewer_but_pause_is() -> None:
+    reviewer = Reviewer(True)
+    data = AccountData([BAD, GOOD], [], HEALTHY, BASELINE, False, False)
+    test = Action(ActionKind.START_TEST, "ad:good", "c1", {"leads": 3}, "autopilot-2", False)
+    pause = Action(ActionKind.PAUSE_AD, "ad:bad", "c1", {"leads": 0}, "autopilot-2", False)
+    notes = await gate(reviewer=reviewer).screen("acc", [test, pause], data, None, NOW)
+    assert [c.kind for batch in reviewer.seen for c in batch] == ["pause_ad"]
+    assert not notes["ad:good"].held and notes["ad:good"].notes["review"] == "not_needed"

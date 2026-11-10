@@ -14,6 +14,7 @@ from adhelper.autopilot.adapters.data import SqlAutopilotData, autopilot_account
 from adhelper.autopilot.adapters.gate_facts import SqlGateFacts
 from adhelper.autopilot.adapters.ledgered import LedgeredActions
 from adhelper.autopilot.adapters.outcomes import SqlOutcomeStore
+from adhelper.autopilot.adapters.reviewer import ModelReviewer
 from adhelper.autopilot.adapters.rules_file import load_outcome_rules, load_policy_rules
 from adhelper.autopilot.adapters.rules_file import load_rules as load_autopilot_rules
 from adhelper.autopilot.adapters.settings import SqlAutopilotSettings, settings_of_businesses
@@ -154,6 +155,8 @@ class Runtime:
     # Без ключа или модели генерация отдаёт шаблоны из профиля, без судьи — только проверку кодом.
     text_model: Any = None
     judge_model: Any = None
+    # Рецензент самостоятельных действий; без модели ничего не проходит ворота, всё идёт карточкой.
+    review_model: Any = None
     # Генераторы картинок: основной и запасной из images-1; пусто — только свои фото.
     image_models: tuple[Any, ...] = ()
     # Имя модели пишется в каждый разбор сайта: по нему сравниваем извлекатели.
@@ -366,6 +369,7 @@ class Runtime:
             gate = PolicyGate(
                 load_policy_rules(CURRENT_POLICY_RULES),
                 SqlGateFacts(self.sessions, business_id, SqlPeriodStore(self.sessions)),
+                ModelReviewer(self.review_model),
             )
         except Exception as error:
             logger.error(
@@ -744,6 +748,7 @@ async def open_runtime(settings: Settings) -> AsyncIterator[Runtime]:
             text_model=_model(settings, settings.text_model_name),
             text_model_name=settings.text_model_name,
             judge_model=_model(settings, settings.judge_model_name),
+            review_model=_model(settings, settings.review_model_name),
             image_models=_image_models(settings),
             email=_email(settings),
             telegram=_telegram(settings),
