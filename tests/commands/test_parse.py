@@ -57,6 +57,10 @@ def test_days() -> None:
         ("отмени последнее", Kind.UNDO_LAST),
         ("что ты сделал за неделю", Kind.HISTORY),
         ("как дела", Kind.STATS),
+        ("Покажи цифры", Kind.STATS),
+        ("Покажи цифры за сегодня и вчера", Kind.STATS),
+        ("какие показатели", Kind.STATS),
+        ("как идёт реклама", Kind.STATS),
     ],
 )
 def test_simple_commands(text: str, kind: Kind) -> None:

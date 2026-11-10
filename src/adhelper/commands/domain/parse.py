@@ -243,7 +243,11 @@ def by_rules(message: str, known: Known, max_chars: int, max_budget: int = 500_0
             return Parsed(found, Source.RULES)
     if re.search(r"истори|что (ты )?(делал|сделал|менял)", text):
         return Parsed(Command(Kind.HISTORY), Source.RULES)
-    if re.search(r"статист|как дела|итог|сколько (заяв|клиент|обращ)", text):
+    if re.search(
+        r"статист|как дела|итог|цифр|показател|результат|как идет|как иду"
+        r"|сколько (заяв|клиент|обращ)",
+        text,
+    ):
         return Parsed(Command(Kind.STATS), Source.RULES)
     if re.search(r"отмени|верни как было", text):
         return Parsed(Command(Kind.UNDO_LAST), Source.RULES)
