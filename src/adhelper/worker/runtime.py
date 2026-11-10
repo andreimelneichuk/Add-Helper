@@ -133,7 +133,8 @@ CURRENT_EXPERIMENT_RULES = "experiments-2"
 
 
 async def _increase_needs_owner(account: str, campaign_id: str, new_limit: int) -> str:
-    # Лимит автопилот сейчас только предлагает, даже в режиме «Сам»: деньги до этапа 9 не трогает.
+    # Рост лимита автопилот сейчас только предлагает карточкой, даже в режиме «Сам» и при
+    # открытой ступени shift_limit: самостоятельный перенос лимитов не подключён к циклу.
     return "awaiting_confirmation"
 
 
@@ -562,6 +563,19 @@ class Runtime:
                         )
                 except Exception as error:
                     logger.warning("Исходы не проверены: %s", type(error).__name__)
+            if (
+                self.auto_allowed
+                and settings.mode is AutopilotMode.AUTO
+                and settings.stopped_at is None
+                and self.platform_for(business_id, account) is not None
+                and daily_report_due(settings.auto_since, now)
+            ):
+                # Ежедневное письмо первых 14 суток не зависит от расписания разбора; повтор
+                # в те же сутки по Москве письма не дублирует (ключ сводки по дате).
+                try:
+                    await self.autopilot_monitor(business_id, account).digest(account, always=True)
+                except Exception as error:
+                    logger.warning("Сводка автопилота не отправлена: %s", type(error).__name__)
             if only is None and not is_due(settings, now):
                 continue
             if settings.stopped_at is not None or self.platform_for(business_id, account) is None:
@@ -580,11 +594,7 @@ class Runtime:
             # Слот закрывается сразу после разбора: сбой на следующем кабинете его не открывает.
             await SqlAutopilotSettings(self.sessions, business_id).mark_run(settings, now)
             try:
-                await self.autopilot_monitor(business_id, account).digest(
-                    account,
-                    always=settings.mode is AutopilotMode.AUTO
-                    and daily_report_due(settings.auto_since, now),
-                )
+                await self.autopilot_monitor(business_id, account).digest(account, always=False)
             except Exception as error:
                 logger.warning("Сводка автопилота не отправлена: %s", type(error).__name__)
             done += 1

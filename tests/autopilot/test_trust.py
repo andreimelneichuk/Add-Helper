@@ -80,6 +80,15 @@ def test_envelope_only_narrows_never_widens() -> None:
 
 def test_daily_report_runs_only_the_first_14_days_of_auto() -> None:
     assert daily_report_due(NOW - timedelta(days=3), NOW) is True
-    assert daily_report_due(NOW - timedelta(days=13, hours=23), NOW) is True
+    assert daily_report_due(NOW - timedelta(days=13), NOW) is True
     assert daily_report_due(NOW - timedelta(days=14), NOW) is False
     assert daily_report_due(None, NOW) is False
+
+
+def test_daily_report_counts_14_calendar_days_in_moscow() -> None:
+    started = datetime(2026, 12, 1, 21, 30, tzinfo=UTC)  # 2 декабря 00:30 по Москве
+    last_day = datetime(2026, 12, 15, 20, 59, tzinfo=UTC)  # 15 декабря 23:59 по Москве
+    next_day = datetime(2026, 12, 15, 21, 0, tzinfo=UTC)  # 16 декабря 00:00 по Москве
+    assert daily_report_due(started, last_day) is True
+    assert daily_report_due(started, next_day) is False
+    assert daily_report_due(None, last_day) is False

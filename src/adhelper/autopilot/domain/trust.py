@@ -6,13 +6,14 @@ docs/17-autopilot-plan.md, этап 9. Ступени открывает тол�
 """
 
 from collections.abc import Mapping
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 
 from adhelper.autopilot.domain.decide import ActionKind
 
 CLEAN_DAYS = 7
 REPORT_DAYS = 14
+MSK = timezone(timedelta(hours=3))
 
 
 class TrustClass(StrEnum):
@@ -103,5 +104,8 @@ def narrowed_value(rule_value: int, envelope: Mapping[str, int], name: str) -> i
 
 
 def daily_report_due(auto_since: datetime | None, now: datetime) -> bool:
-    """Ежедневное письмо в первые 14 суток самостоятельного режима кабинета."""
-    return auto_since is not None and now - auto_since < timedelta(days=REPORT_DAYS)
+    """Ежедневное письмо в первые 14 календарных суток по Москве, считая день включения."""
+    if auto_since is None:
+        return False
+    days = (now.astimezone(MSK).date() - auto_since.astimezone(MSK).date()).days
+    return 0 <= days < REPORT_DAYS

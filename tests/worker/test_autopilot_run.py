@@ -439,9 +439,15 @@ async def test_auto_cabinet_acts_only_inside_granted_classes_and_envelope(
     assert passed_envelope == envelope
 
 
-async def test_daily_report_is_sent_only_in_the_first_14_days_of_auto(
-    sessions: Sessions, engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def _digest_calls(
+    sessions: Sessions,
+    engine: AsyncEngine,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    settings: Any,
+    auto_allowed: bool = True,
+    later: timedelta = timedelta(0),
+) -> list[bool]:
     from adhelper.autopilot.application.outcomes import OutcomeMonitor
 
     await _borderline(sessions)
@@ -452,17 +458,71 @@ async def test_daily_report_is_sent_only_in_the_first_14_days_of_auto(
         return False
 
     monkeypatch.setattr(OutcomeMonitor, "digest", digest)
-    store = SqlAutopilotSettings(sessions, BUSINESS)
+    await SqlAutopilotSettings(sessions, BUSINESS).save(settings, [])
+    worker = runtime(sessions, engine, {BUSINESS})
+    worker.auto_allowed = auto_allowed
+    worker.clock = lambda: NOW + later
+    await worker.autopilot_run()
+    return calls
+
+
+async def test_daily_report_is_sent_in_the_first_14_days_of_auto(
+    sessions: Sessions, engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    auto = replace(DEFAULT_SETTINGS, mode=AutopilotMode.AUTO, auto_since=NOW - timedelta(days=3))
+
+    assert True in await _digest_calls(sessions, engine, monkeypatch, settings=auto)
+
+
+async def test_daily_report_stops_after_14_days(
+    sessions: Sessions, engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    auto = replace(DEFAULT_SETTINGS, mode=AutopilotMode.AUTO, auto_since=NOW - timedelta(days=3))
+
+    calls = await _digest_calls(
+        sessions, engine, monkeypatch, settings=auto, later=timedelta(days=12)
+    )
+
+    assert True not in calls  # 15 суток от включения
+
+
+async def test_daily_report_does_not_wait_for_a_weekly_cadence(
+    sessions: Sessions, engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from adhelper.autopilot.application.outcomes import OutcomeMonitor
+
+    # Разбор раз в неделю: сегодняшний слот уже отработан, а письмо за сутки всё равно уходит.
+    weekly = replace(
+        DEFAULT_SETTINGS,
+        mode=AutopilotMode.AUTO,
+        cadence=Cadence.WEEKLY,
+        auto_since=NOW - timedelta(days=3),
+        last_run_at=NOW - timedelta(hours=2),
+    )
+    calls: list[bool] = []
+
+    async def digest(self: OutcomeMonitor, account: str, *, always: bool) -> bool:
+        calls.append(always)
+        return False
+
+    monkeypatch.setattr(OutcomeMonitor, "digest", digest)
+    await _borderline(sessions)
+    await SqlAutopilotSettings(sessions, BUSINESS).save(weekly, [])
     worker = runtime(sessions, engine, {BUSINESS})
     worker.auto_allowed = True
-    await store.save(
-        replace(DEFAULT_SETTINGS, mode=AutopilotMode.AUTO, auto_since=NOW - timedelta(days=3)), []
-    )
-    await worker.autopilot_run()
-    worker.clock = lambda: NOW + timedelta(days=12)  # 15 суток от включения
-    await worker.autopilot_run()
+    assert await worker.autopilot_run() == 0  # цикл по расписанию не идёт
 
-    assert calls == [True, False]
+    assert calls == [True]
+
+
+async def test_daily_report_is_not_sent_while_auto_is_not_allowed(
+    sessions: Sessions, engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    auto = replace(DEFAULT_SETTINGS, mode=AutopilotMode.AUTO, auto_since=NOW - timedelta(days=3))
+
+    calls = await _digest_calls(sessions, engine, monkeypatch, settings=auto, auto_allowed=False)
+
+    assert True not in calls
 
 
 async def test_header_stop_keeps_an_auto_cabinet_quiet(
