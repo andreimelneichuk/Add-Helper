@@ -786,7 +786,8 @@ class SqlReworks:
                     select(CreativeImageRow.id).where(
                         CreativeImageRow.business_id == self._business_id,
                         CreativeImageRow.id == image_id,
-                        CreativeImageRow.source == "owner",
+                        # Владелец выбирает сам: и своё фото, и сделанное сервисом.
+                        CreativeImageRow.source.in_(("owner", "generated")),
                         CreativeImageRow.state == ACTIVE_IMAGE,
                     )
                 )

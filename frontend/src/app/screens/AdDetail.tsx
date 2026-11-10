@@ -17,14 +17,16 @@ export function AdArt({ ad, hook }: { ad: Ad; hook: string }) {
   return <div className="ah-art ah-art-photo" style={{ backgroundImage: `linear-gradient(transparent 30%, rgb(0 0 0 / 65%)), url(${ad.photo})` }}>{hook}</div>;
 }
 
-function PhotoControls({ api, ad, disabled }: { api: Api; ad: Ad; disabled: boolean }) {
+export function PhotoControls({ api, ad, disabled, services = [] }: { api: Api; ad: Ad; disabled: boolean; services?: string[] }) {
   const [photos, setPhotos] = useState<Photo[] | null>(null);
+  const [service, setService] = useState(services[0] ?? "");
+  const [making, setMaking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   useEffect(() => {
     let active = true;
-    void api.photos().then((result) => { if (active) setPhotos(result.photos); }, (e: unknown) => {
+    void api.photos(undefined, true).then((result) => { if (active) setPhotos(result.photos); }, (e: unknown) => {
       if (active) setError(e instanceof Error ? e.message : "Не удалось загрузить фото бизнеса.");
     });
     return () => { active = false; };
@@ -44,7 +46,20 @@ function PhotoControls({ api, ad, disabled }: { api: Api; ad: Ad; disabled: bool
       setBusy(false);
     }
   };
-  const canChange = !disabled && !busy;
+  const make = async () => {
+    if (!service || making) return;
+    setMaking(true);
+    setError("");
+    try {
+      const made = await api.generatePhoto(service);
+      setPhotos((prev) => [...(prev ?? []).filter((x) => x.id !== made.id), { id: made.id, url: made.url, width: 1024, height: 1024, source: "generated" }]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не получилось сделать фото. Попробуйте позже.");
+    } finally {
+      setMaking(false);
+    }
+  };
+  const canChange = !disabled && !busy && !making;
   return (
     <section className="ah-panel anno-photo-controls" aria-labelledby="anno-photo-title">
       <h3 id="anno-photo-title" className="ah-panel-title">Фото в объявлении</h3>
@@ -54,7 +69,7 @@ function PhotoControls({ api, ad, disabled }: { api: Api; ad: Ad; disabled: bool
         <ul className="anno-photo-list" aria-label="Фото бизнеса для замены">
           {photos.map((photo, index) => (
             <li key={photo.id}>
-              <img src={photo.url} alt={`Фото бизнеса ${index + 1}`} width={photo.width} height={photo.height} />
+              <img src={photo.url} alt={photo.source === "generated" ? `Фото от сервиса ${index + 1}` : `Фото бизнеса ${index + 1}`} />
               <button type="button" className="ah-btn" disabled={!canChange || ad.photoId === photo.id} onClick={() => void request(photo.id)}>
                 {ad.photoId === photo.id ? "Сейчас в объявлении" : "Поставить фото"}
               </button>
@@ -62,7 +77,19 @@ function PhotoControls({ api, ad, disabled }: { api: Api; ad: Ad; disabled: bool
           ))}
         </ul>
       )}
-      {photos?.length === 0 && <p className="ah-muted">Пока нет одобренных фото бизнеса. Добавьте их в настройках или оставьте автоизображение.</p>}
+      {photos?.length === 0 && <p className="ah-muted">Пока нет фото. Добавьте свои в настройках или попросите сервис нарисовать сцену по услуге.</p>}
+      {services.length > 0 && !disabled && (
+        <div className="anno-photo-make">
+          <div className="ah-label">Сделать фото по услуге</div>
+          <div className="ah-chips">
+            {services.map((name) => (
+              <button key={name} type="button" className="ah-chip" aria-pressed={service === name} disabled={!canChange} onClick={() => setService(name)}>{name}</button>
+            ))}
+          </div>
+          <button type="button" className="ah-btn" disabled={!canChange || !service} onClick={() => void make()}>{making ? "Рисую сцену…" : "Сделать фото"}</button>
+          <p className="ah-muted">Сцена рисуется без надписей и цен. Новое фото появится в списке, поставьте его кнопкой. Не больше 3 новых в сутки.</p>
+        </div>
+      )}
       <button type="button" className="ah-btn" disabled={!canChange || ad.photoId === undefined} onClick={() => void request(null)}>Оставить без фото</button>
       {disabled && <p className="ah-muted">Для отключённого или архивного объявления фото изменить нельзя.</p>}
       {status && <p className="ah-muted" role="status">{status}</p>}
@@ -469,7 +496,7 @@ export function AdDetail({ store, id }: { store: Store; id: string }) {
           </div>
           <div className="anno-side">
             {photoApi && ad.id.includes("/") && (
-              <PhotoControls api={photoApi} ad={ad} disabled={off || isArchived || ad.tag === "отклонено Яндексом"} />
+              <PhotoControls api={photoApi} ad={ad} services={profileServices} disabled={off || isArchived || ad.tag === "отклонено Яндексом"} />
             )}
             <section className="ah-panel anno-facts">
               <div className="anno-performance">

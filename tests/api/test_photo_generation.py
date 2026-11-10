@@ -298,3 +298,20 @@ async def test_without_a_vision_model_nothing_is_guessed(anna: Anna) -> None:  #
     )
 
     assert found.json()["matches"] == [{"image_id": None, "missing": "Маникюр"}]
+
+
+async def test_ad_can_be_switched_to_a_photo_made_by_the_service(anna: Anna) -> None:  # noqa: F811
+    client, csrf, business = anna
+    base = f"/api/businesses/{business}"
+    _app(client).state.image_models = (FakeImageModel(),)
+    _app(client).state.text_model = None
+    await _profile(client, base, csrf)
+    made = (
+        await client.post(f"{base}/photos/generate", json={"service": "Маникюр"}, headers=csrf)
+    ).json()["id"]
+
+    queued = await client.post(
+        f"{base}/ads/anna-direct/11/photo", json={"image_id": made}, headers=csrf
+    )
+
+    assert queued.status_code == 202, queued.text
