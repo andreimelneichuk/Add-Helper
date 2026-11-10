@@ -41,10 +41,9 @@ from adhelper.budget.adapters.ledgered import (
 )
 from adhelper.budget.adapters.rules_file import load_rules
 from adhelper.budget.adapters.sql import SqlPeriodStore
+from adhelper.budget.application.facade import PlatformUnavailable, platform_date
 from adhelper.budget.application.preflight import StoredPeriodPreflight
 from adhelper.budget.application.watch_cycle import run_watch_cycle
-from adhelper.budget.domain.calendar import platform_date
-from adhelper.budget.domain.ports import PlatformUnavailable
 from adhelper.business.adapters.browser import ChromiumRenderer
 from adhelper.business.adapters.economics import SqlEconomics
 from adhelper.business.adapters.fetcher import SafeFetcher
@@ -220,9 +219,15 @@ class Runtime:
                 return None
             return self.ledger_for(business_id, account)
 
-        await reconcile_open_changes(
-            await accounts_with_open_changes(self.sessions), ledger_or_none
-        )
+        open_accounts = await accounts_with_open_changes(self.sessions)
+        await reconcile_open_changes(open_accounts, ledger_or_none)
+        # Дошедшее до площадки меняет состояние кампаний и объявлений: обновляем их сразу,
+        # иначе шапка и список до плановой сверки показывают прежнее.
+        for business_id in dict.fromkeys(business for business, _ in open_accounts):
+            try:
+                await self.stats_sync(only=business_id)
+            except Exception as error:
+                logger.error("Сверка после согласования журнала: %s", type(error).__name__)
 
     async def creatives_generate(self) -> None:
         await run_queued(

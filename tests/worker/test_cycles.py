@@ -205,6 +205,27 @@ async def test_reconcile_finishes_change_left_by_crash(
     assert await accounts_with_open_changes(sessions) == []
 
 
+async def test_reconcile_refreshes_stats_of_businesses_it_finished(
+    sessions: Sessions, engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Отложенная пауза дошла до площадки: экран не ждёт 15 минут плановой сверки."""
+    platform = FakePlatform([CampaignBudget("a", 300_000_000, 0, True, None)], NOW)
+    rt = runtime(sessions, engine, {(BUSINESS, "acc"): platform})
+    await add_period(SqlPeriodStore(sessions))
+    await rt.ledger_for(BUSINESS, "acc").submit(rt.limit_proposal("acc", "a", 200_000_000))
+    refreshed: list[uuid.UUID | None] = []
+
+    async def fake_sync(only: uuid.UUID | None = None) -> int:
+        refreshed.append(only)
+        return 0
+
+    monkeypatch.setattr(rt, "stats_sync", fake_sync)
+
+    await rt.state_reconcile()
+
+    assert refreshed == [BUSINESS]
+
+
 async def test_reconcile_without_period_refuses_increase_but_allows_decrease(
     sessions: Sessions, engine: AsyncEngine
 ) -> None:
