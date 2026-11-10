@@ -87,7 +87,7 @@ export function PhotoControls({ api, ad, disabled, services = [] }: { api: Api; 
             ))}
           </div>
           <button type="button" className="ah-btn" disabled={!canChange || !service} onClick={() => void make()}>{making ? "Рисую сцену…" : "Сделать фото"}</button>
-          <p className="ah-muted">Сцена рисуется без надписей и цен. Новое фото появится в списке, поставьте его кнопкой. Не больше 3 новых в сутки.</p>
+          <p className="ah-muted">Сцена рисуется без надписей и цен. Новое фото появится в списке, поставьте его кнопкой. Не больше 10 новых в сутки.</p>
         </div>
       )}
       <button type="button" className="ah-btn" disabled={!canChange || ad.photoId === undefined} onClick={() => void request(null)}>Оставить без фото</button>
@@ -169,7 +169,7 @@ export function PublishPhoto({ api, services, value, onChange, disabled }: { api
             ))}
           </div>
           <button type="button" className="ah-btn" disabled={locked || !service} onClick={() => void generate()}>Сделать фото</button>
-          <p className="ah-muted">Сцена рисуется без надписей, цен и людей крупным планом. Не больше 3 новых фото в сутки.</p>
+          <p className="ah-muted">Сцена рисуется без надписей, цен и людей крупным планом. Не больше 10 новых фото в сутки.</p>
         </div>
       )}
       <div className="anno-photo-upload">

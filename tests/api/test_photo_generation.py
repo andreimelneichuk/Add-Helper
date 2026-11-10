@@ -6,6 +6,7 @@ import httpx
 from PIL import Image
 from sqlalchemy import text
 
+from adhelper.creatives.adapters.rules_file import load_image_rules
 from adhelper.creatives.domain.images import GeneratedImage
 from adhelper.ledger.adapters.sql import SqlChangeRepository
 from adhelper.ledger.domain.model import ChangeKind, ChangeSource, ChangeStatus, ProposedChange
@@ -32,7 +33,7 @@ class FakeImageModel:
     async def generate(self, prompt: str, aspect_ratio: str) -> GeneratedImage:
         self.calls.append(prompt)
         out = io.BytesIO()
-        Image.new("RGB", (900, 900), (len(self.calls) * 40, 90, 160)).save(out, format="PNG")
+        Image.new("RGB", (900, 900), (len(self.calls) * 20, 90, 160)).save(out, format="PNG")
         return GeneratedImage(out.getvalue(), "image/png", 30_000)
 
 
@@ -81,12 +82,13 @@ async def test_generation_stops_at_daily_limit_and_without_generator(anna: Anna)
 
     model = FakeImageModel()
     _app(client).state.image_models = (model,)
-    for _ in range(3):
+    limit_per_day = load_image_rules().generated_per_day
+    for _ in range(limit_per_day):
         ok = await client.post(f"{base}/photos/generate", json={"service": "Маникюр"}, headers=csrf)
         assert ok.status_code == 201, ok.text
     limit = await client.post(f"{base}/photos/generate", json={"service": "Маникюр"}, headers=csrf)
-    assert limit.status_code == 429 and "3" in limit.json()["detail"]
-    assert len(model.calls) == 3
+    assert limit.status_code == 429 and str(limit_per_day) in limit.json()["detail"]
+    assert len(model.calls) == limit_per_day
 
 
 async def test_wizard_ad_goes_out_with_chosen_photo(
