@@ -771,3 +771,54 @@ async def test_auto_rollback_closes_the_next_trust_step(
     with pytest.raises(GrantDenied) as denied:
         await grant(store, facts, TrustClass.SHIFT_LIMIT, datetime.now(UTC))
     assert denied.value.refusal is GrantRefusal.HAD_FAILURES
+
+
+async def raise_limit_by_autopilot(rig: "Rig", before: int, after: int) -> int:
+    """Рост лимита кампании c1 автопилотом через настоящий журнал и поддельную площадку."""
+    from adhelper.budget.domain.limits import CampaignBudget
+    from adhelper.ledger.domain.model import ProposedChange
+
+    rig.platform.campaigns["c1"] = CampaignBudget("c1", before, 0, True, None)
+    change = await rig.ledger.submit(
+        ProposedChange(
+            "acc",
+            ChangeSource.AUTOPILOT,
+            ChangeKind.SET_LIMIT,
+            "c1",
+            {"limit": after},
+            "рост",
+            f"raise:{before}:{after}",
+        )
+    )
+    await rig.ledger.execute_pending("acc")
+    return change.id
+
+
+async def test_worse_limit_increase_is_rolled_back_to_the_old_limit(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    rig = Rig(sessions, engine)
+    change_id = await raise_limit_by_autopilot(rig, 100 * RUB, 150 * RUB)
+    # До роста по 3 обращения в день на объявление; после — одно в день: цена выросла в разы.
+    await history(sessions, after_leads_per_day=1)
+
+    result = await rig.monitor.run("acc")
+    assert result.rolled_back == 1 and result.verdicts == [OutcomeVerdict.WORSE]
+    assert rig.platform.campaigns["c1"].limit == 100 * RUB
+    rows = await SqlChangeRepository(sessions, BUSINESS).all()
+    rollback = next(row for row in rows if row.reverts_change_id == change_id)
+    assert rollback.kind is ChangeKind.SET_LIMIT
+    assert "лимит" in rollback.explanation.lower() and "100 ₽" in rollback.explanation
+
+
+async def test_decrease_of_a_limit_is_never_evaluated_or_rolled_back(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    rig = Rig(sessions, engine)
+    await raise_limit_by_autopilot(rig, 150 * RUB, 100 * RUB)
+    await history(sessions, after_leads_per_day=1)
+
+    result = await rig.monitor.run("acc")
+
+    assert result.registered == 0 and result.rolled_back == 0
+    assert rig.platform.campaigns["c1"].limit == 100 * RUB

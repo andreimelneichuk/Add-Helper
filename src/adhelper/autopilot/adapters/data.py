@@ -3,9 +3,10 @@
 Только SELECT и только одного бизнеса.
 
 Чего витрина пока не знает, то заменено осторожным значением, а не догадкой:
-- группы объявлений: каждое объявление считается последним в своей группе, поэтому
-  автопилот не выключает объявления, пока отчёт не принесёт группы (T5);
-- ограничение кампании бюджетом: «нет», поэтому лимит сам не растёт;
+- группа объявления: пока синхронизация не принесла её с площадки, объявление считается
+  последним в своей группе, и автопилот его не выключает;
+- лимит кампании и упор в него: их добавляет `application/budgets.py` с площадки, без неё
+  лимит из витрины (обычно пусто) и «не упирается», поэтому лимит сам не растёт;
 - визиты: витрина их не хранит; их добавляет `application/visits.py` из Метрики,
   без неё проверки визитов пропускаются.
 """
@@ -38,6 +39,7 @@ ADS = table(
     column("ad_id", Text),
     column("campaign_id", Text),
     column("state", Text),
+    column("group_id", Text),
 )
 AD_STATS = table(
     "ad_stats",
@@ -92,6 +94,7 @@ ALERTS = table(
 )
 ON = "on"
 AD_PREFIX = "ad:"
+GROUP_PREFIX = "group:"
 TARGETING = "targeting:"
 OPEN_TESTS = ("review", "running", "paused")
 DECLINED = "declined"
@@ -150,7 +153,9 @@ class SqlAutopilotData:
         async with self._sessions() as session:
             ads = (
                 await session.execute(
-                    select(ADS.c.ad_id, ADS.c.campaign_id, ADS.c.state).where(own_ads)
+                    select(ADS.c.ad_id, ADS.c.campaign_id, ADS.c.state, ADS.c.group_id).where(
+                        own_ads
+                    )
                 )
             ).all()
             stats = (
@@ -197,7 +202,7 @@ class SqlAutopilotData:
         running = {cid for cid, state, _ in campaigns if state == ON}
         today = platform_date(now)
         ad_stats = []
-        for ad_id, campaign_id, state in ads:
+        for ad_id, campaign_id, state, group_id in ads:
             ref = AD_PREFIX + ad_id
             totals = mature_totals(rows[ad_id], now, self._rules)
             first = min((r.day for r in rows[ad_id]), default=today)
@@ -205,8 +210,8 @@ class SqlAutopilotData:
                 AdStats(
                     ref,
                     campaign_id,
-                    # Групп витрина не знает: объявление — сама себе группа, см. выше.
-                    ref,
+                    # Группа неизвестна — объявление само себе группа, см. выше.
+                    GROUP_PREFIX + group_id if group_id else ref,
                     totals.spend,
                     totals.leads,
                     (today - first).days,
@@ -217,7 +222,7 @@ class SqlAutopilotData:
                 )
             )
         # Изменение направления — это его лимит, показ или любое его объявление.
-        owner = {AD_PREFIX + ad_id: cid for ad_id, cid, _ in ads}
+        owner = {AD_PREFIX + ad_id: cid for ad_id, cid, _, _ in ads}
         for cid, _, _ in campaigns:
             owner[cid] = cid
             owner[TARGETING + cid] = cid

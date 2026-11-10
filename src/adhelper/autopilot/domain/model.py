@@ -137,6 +137,7 @@ def classify(stats: AdStats, target: int, rules: AutopilotRules) -> Evaluation:
     if (
         result.p_bad_bp >= rules.bad_probability_bp
         and stats.spend >= rules.bad_min_spend_multiple * target
+        and stats.clicks >= rules.bad_min_clicks
     ):
         return Evaluation(Verdict.INEFFICIENT, result)
     if result.p_good_bp >= rules.good_probability_bp:

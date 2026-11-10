@@ -20,15 +20,17 @@ ALL_ACTIONS = frozenset(ActionKind)
 
 def test_start_is_only_pause_and_test() -> None:
     assert {TrustClass.PAUSE_AD, TrustClass.START_TEST} == START_CLASSES
+    # Рост лимита открыт всем сразу (решение владельца проекта 2026-11-10).
     assert effective_allowed(ALL_ACTIONS, START_CLASSES) == {
         ActionKind.PAUSE_AD,
         ActionKind.START_TEST,
+        ActionKind.INCREASE_LIMIT,
     }
 
 
 def test_owner_cannot_widen_beyond_what_was_granted() -> None:
-    # Владелец кабинета отметил рост лимита, но класс не открыт: самому нельзя.
-    allowed = frozenset({ActionKind.INCREASE_LIMIT, ActionKind.PAUSE_AD})
+    # Владелец кабинета не отметил рост лимита: самому нельзя, даже когда класс открыт.
+    allowed = frozenset({ActionKind.PAUSE_AD})
     assert effective_allowed(allowed, START_CLASSES) == {ActionKind.PAUSE_AD}
 
 

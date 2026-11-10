@@ -1,10 +1,11 @@
 """Факты для ворот политики из журнала изменений и действующего бюджетного периода.
 
 Запросы ограничены business_id. Что неизвестно, отдаём как неизвестное: рабочий бюджет без
-периода равен нулю (рост лимита не пройдёт), число оставшихся баллов API не отслеживается и
-остаётся None, что политика не принимает за запас.
+периода равен нулю (рост лимита не пройдёт). Остаток баллов API берётся из последних ответов
+площадки; пока их не было, он None, и политика не принимает это за запас, но и не блокирует.
 """
 
+from collections.abc import Callable
 from datetime import datetime, time, timedelta
 from uuid import UUID
 
@@ -33,7 +34,9 @@ class SqlGateFacts:
         sessions: async_sessionmaker[AsyncSession],
         business_id: UUID,
         periods: SqlPeriodStore,
+        api_points: Callable[[str], int | None] | None = None,
     ) -> None:
+        self._api_points = api_points
         self._sessions = sessions
         self._business_id = business_id
         self._periods = periods
@@ -80,7 +83,7 @@ class SqlGateFacts:
             changes_today=changes_today,
             moved_this_week=moved,
             data_alert=False,
-            api_points_rest=None,
+            api_points_rest=self._api_points(account) if self._api_points else None,
             operating_budget=period.operating_budget if period is not None and current else 0,
             last_limit_change=last,
         )

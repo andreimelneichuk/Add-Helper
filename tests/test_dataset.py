@@ -130,7 +130,7 @@ def test_gold_needs_full_agreement_or_human() -> None:
 
 
 def test_upper_bound_matches_docs() -> None:
-    # Цифры 
+    # Цифры
     assert round(upper_bound(1, 49) * 100, 1) == 9.3
     assert round(upper_bound(0, 299) * 100, 2) == pytest.approx(1.0, abs=0.01)
     assert upper_bound(0, 0) == 1.0

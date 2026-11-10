@@ -18,6 +18,7 @@ x-app: &app
     DIRECT_ENABLED: ${DIRECT_ENABLED:-false}
     AUTOPILOT_AUTO_ALLOWED: ${AUTOPILOT_AUTO_ALLOWED:-false}
     DIRECT_API_URL: ${DIRECT_API_URL:-https://api.direct.yandex.com}
+    METRIKA_API_URL: ${METRIKA_API_URL:-https://api-metrika.yandex.net}
     DIRECT_LIVE_URL: ${DIRECT_LIVE_URL:-https://api.direct.yandex.ru/live/v4/json/}
     TEXT_MODEL_BASE_URL: ${TEXT_MODEL_BASE_URL:-https://openrouter.ai/api/v1}
     TEXT_MODEL_API_KEY: ${TEXT_MODEL_API_KEY:-}

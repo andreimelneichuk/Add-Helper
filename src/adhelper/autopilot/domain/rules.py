@@ -19,6 +19,10 @@ class AutopilotRules:
     health_min_visit_share_bp: int
     health_min_expected_leads: int
     health_gap_share_bp: int
+    # Объявление с меньшим числом кликов «неэффективным» не признаём, сколько бы ни потратило:
+    # при дорогом клике и редкой конверсии потраченная сумма ещё не показывает провал. 0 — нет
+    # порога (autopilot-1…4).
+    bad_min_clicks: int = 0
     # A/B-тест по итогам анализа. Нули сохраняют решения autopilot-1:
     # тогда пограничное объявление сразу получает тест, без проверки бюджета и отказов.
     test_days: int = 7
@@ -64,6 +68,8 @@ class AutopilotRules:
             problems.append("пороги не могут быть отрицательными")
         if not 0 <= self.budget_limited_pace_bp <= 10_000:
             problems.append("budget_limited_pace_bp вне 0..10000")
+        if not 0 <= self.bad_min_clicks <= 10_000_000:
+            problems.append("bad_min_clicks вне 0..10 000 000")
         if self.min_clicks > 10_000_000:
             problems.append("min_clicks больше 10 000 000")
         if problems:

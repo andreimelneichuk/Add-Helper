@@ -35,7 +35,7 @@ def settings(**changes: object) -> AutopilotSettings:
 def test_defaults_match_the_plan() -> None:
     assert DEFAULT_SETTINGS.mode is AutopilotMode.CONFIRM
     assert DEFAULT_SETTINGS.allowed_actions == frozenset(
-        {ActionKind.PAUSE_AD, ActionKind.START_TEST}
+        {ActionKind.PAUSE_AD, ActionKind.START_TEST, ActionKind.INCREASE_LIMIT}
     )
     assert (DEFAULT_SETTINGS.cadence, DEFAULT_SETTINGS.run_hour) == (Cadence.DAILY, 6)
     assert DEFAULT_SETTINGS.stopped_at is None

@@ -49,7 +49,7 @@ async def test_borderline_ad_gets_test_offer_and_nothing_changes(
     assert decision is not None
     assert (decision.action, decision.status) == ("start_test", "awaiting_confirmation")
     assert decision.inputs["hypothesis"] == "price"
-    assert decision.rules_version == "autopilot-4"
+    assert decision.rules_version == "autopilot-5"
     assert await SqlDecisionLog(sessions, OTHER).latest("acc", "ad:1") is None
 
 
@@ -80,7 +80,7 @@ async def test_zero_visits_from_metrika_stop_conclusions_honestly(
     metrika = FakePlatform([], NOW)
     metrika.visits = {NOW.date(): 0}
     worker = runtime(sessions, engine, {BUSINESS})
-    worker.visits_for = lambda business: metrika if business == BUSINESS else None
+    worker.visits_for = lambda business, _account: metrika if business == BUSINESS else None
 
     assert await worker.autopilot_run() == 1
 
@@ -103,7 +103,7 @@ async def test_metrika_without_data_keeps_cycle_as_before(
     await _found_counter(sessions, BUSINESS, 98765432)
     metrika = FakePlatform([], NOW)
     worker = runtime(sessions, engine, {BUSINESS})
-    worker.visits_for = lambda _business: metrika
+    worker.visits_for = lambda _business, _account: metrika
 
     assert await worker.autopilot_run() == 1
     decision = await SqlDecisionLog(sessions, BUSINESS).latest("acc", "ad:1")
@@ -435,7 +435,7 @@ async def test_auto_cabinet_acts_only_inside_granted_classes_and_envelope(
     await worker.autopilot_run()
 
     allowed, passed_envelope = seen["rest"]
-    assert allowed == {ActionKind.PAUSE_AD, ActionKind.START_TEST}
+    assert allowed == {ActionKind.PAUSE_AD, ActionKind.START_TEST, ActionKind.INCREASE_LIMIT}
     assert passed_envelope == envelope
 
 

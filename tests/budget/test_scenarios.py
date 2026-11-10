@@ -1,4 +1,4 @@
-"""Сценарии 4–7 """
+"""Сценарии 4–7"""
 
 from datetime import UTC, datetime, timedelta
 

@@ -17,7 +17,7 @@ async def test_without_profile_prices_there_is_no_goal_and_values_are_reference(
     client, _, business = anna
     body = (await client.get(URL.format(business))).json()
     assert body["confirmed"] is False
-    assert (body["margin_bp"], body["ad_share_bp"]) == (5000, 3000)
+    assert (body["margin_bp"], body["ad_share_bp"]) == (5000, 5000)
     assert body["goal_rubles"] is None and body["services"] == []
     async with sessions() as session:
         assert await session.scalar(text("SELECT count(*) FROM business_economics")) == 0
@@ -27,14 +27,14 @@ async def test_goal_is_counted_from_profile_prices_and_explained_with_numbers(an
     client, csrf, business = anna
     await client.put(f"/api/businesses/{business}/profile", json=PROFILE, headers=csrf)
     body = (await client.get(URL.format(business))).json()
-    # Средний чек (1500 + 2000) / 2 = 1750 ₽; 1750 × 0,5 × 0,3 × 1,3 × 0,3 = 102,375 ₽.
+    # Средний чек (1500 + 2000) / 2 = 1750 ₽; 1750 × 0,5 × 0,4 × 2 × 0,5 = 350 ₽.
     assert body["check_rubles"] == 1750 and body["check_from_profile"] is True
-    assert body["goal_rubles"] == 102
+    assert body["goal_rubles"] == 350
     assert [(s["service"], s["goal_rubles"]) for s in body["services"]] == [
-        ("Маникюр", 88),
-        ("Педикюр", 117),
+        ("Маникюр", 300),
+        ("Педикюр", 400),
     ]
-    assert "1 750 ₽" in body["how"] and "= 102 ₽ за обращение" in body["how"]
+    assert "1 750 ₽" in body["how"] and "= 350 ₽ за обращение" in body["how"]
     assert body["confirmed"] is False
 
 
@@ -47,7 +47,7 @@ async def test_owner_check_replaces_profile_average_and_confirmation_is_explicit
     assert done.status_code == 200
     body = done.json()
     assert (body["check_rubles"], body["check_from_profile"]) == (3000, False)
-    assert body["goal_rubles"] == 176  # 175,5 ₽ округляется к рублю вверх
+    assert body["goal_rubles"] == 600
     assert body["confirmed"] is True
     # Смена любого числа без повторного подтверждения возвращает «ориентир».
     again = await client.put(url, json={"margin_bp": 4000}, headers=csrf)
@@ -122,7 +122,7 @@ async def test_estimate_is_open_before_login_and_uses_the_same_formula(anna: Ann
     client, _, _ = anna
     client.cookies.clear()
     body = (await client.get("/api/economics/estimate?check=3000")).json()
-    assert body["goal_rubles"] == 176  # 175,5 ₽ округляется к рублю вверх
+    assert body["goal_rubles"] == 600
     assert "3 000 ₽" in body["how"]
     for bad in ("0", "-5", "abc", "2000000"):
         assert (await client.get(f"/api/economics/estimate?check={bad}")).status_code == 422

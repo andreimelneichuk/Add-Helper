@@ -97,9 +97,10 @@ ALERTS = table(
     column("resolved_at", DateTime(timezone=True)),
 )
 AD_PREFIX = "ad:"
-# Что оцениваем: остановки объявлений. Лимиты и переносы трогают общий бюджет, их откат
-# отдельное решение с проверкой бюджета, а не автоматика.
-EVALUATED_KINDS = ("pause_ad",)
+# Что оцениваем: остановки объявлений и рост лимита кампании. Откат роста — снижение лимита до
+# прежнего, он бюджет не увеличивает. Снижение лимита (донор переноса) не оцениваем и не
+# откатываем: откат был бы ростом, а рост идёт только через страж бюджета.
+EVALUATED_KINDS = ("pause_ad", "set_limit")
 DATA_ALERT = "data_untrusted"
 # Захваченный исход считается брошенным, если за это время его не записали: воркер упал.
 CLAIM_LEASE = timedelta(minutes=30)
@@ -132,6 +133,8 @@ class SqlOutcomeStore:
             " FROM changes c WHERE c.business_id = :business AND c.account = :account"
             " AND c.source = 'autopilot' AND c.status = 'applied' AND c.kind = ANY(:kinds)"
             " AND c.created_at >= :since"
+            " AND (c.kind <> 'set_limit'"
+            " OR (c.planned->>'limit')::bigint > (c.before->>'limit')::bigint)"
             " ON CONFLICT (business_id, change_id) DO NOTHING"
         )
         async with self._sessions.begin() as session:
@@ -250,7 +253,8 @@ class SqlOutcomeStore:
 
     async def _campaign_of(self, session: AsyncSession, account: str, ref: str) -> str | None:
         if not ref.startswith(AD_PREFIX):
-            return None
+            # Лимит кампании: объект действия — сама кампания.
+            return ref
         return await session.scalar(
             select(ADS.c.campaign_id).where(
                 ADS.c.business_id == self._business_id,

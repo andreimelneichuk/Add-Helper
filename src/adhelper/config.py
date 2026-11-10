@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     # сервер отклоняет этот режим. Включать только после ворот этапа 9.
     autopilot_auto_allowed: bool = False
     direct_api_url: str = "https://api.direct.yandex.com"
+    metrika_api_url: str = "https://api-metrika.yandex.net"
     direct_live_url: str = "https://api.direct.yandex.ru/live/v4/json/"
 
     # Любой OpenAI-совместимый API. Без ключа или модели объявления собираются из шаблонов.

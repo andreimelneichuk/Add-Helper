@@ -338,7 +338,11 @@ class FakePlatform:
                 if verdict is not None and verdict.state is ModerationState.ACCEPTED
                 else "moderation"
             )
-            ads.append(AdInventory(ad.ad_id, ad.campaign_id, ad.headline, ad.text, ad.href, state))
+            ads.append(
+                AdInventory(
+                    ad.ad_id, ad.campaign_id, ad.headline, ad.text, ad.href, state, ad.group_id
+                )
+            )
         return campaigns, ads
 
     async def ad_visits(self, counter: str, since: date, until: date) -> int | None:

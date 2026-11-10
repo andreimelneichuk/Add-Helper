@@ -20,6 +20,8 @@ from adhelper.accounts.application.service import (
     TokenVault,
 )
 from adhelper.accounts.domain.ports import TokenCipher
+from adhelper.budget.domain.ports import PlatformUnavailable
+from adhelper.business.adapters.tag_checks import SqlTagChecks
 from adhelper.config import Settings
 from adhelper.ledger.adapters.sql import SqlChangeRepository
 from adhelper.platforms.adapters.direct.geo_cache_sql import SqlGeoRegionCache
@@ -30,6 +32,7 @@ from adhelper.platforms.adapters.direct.transport import (
     DirectHttpClient,
     TokenSource,
 )
+from adhelper.platforms.adapters.metrika import MetrikaClient
 
 
 def yandex_provider(settings: Settings, clock: Callable[[], datetime]) -> OAuthProvider | None:
@@ -69,7 +72,9 @@ class DirectPlatforms:
         provider: OAuthProvider,
         cipher: TokenCipher,
         clock: Callable[[], datetime],
+        metrika_url: str = "https://api-metrika.yandex.net",
     ) -> None:
+        self._metrika_url = metrika_url
         self._client = client
         self._sessions = sessions
         self._provider = provider
@@ -106,6 +111,22 @@ class DirectPlatforms:
         except DirectError:
             return None
 
+    def api_points(self, account: str) -> int | None:
+        """Сколько баллов API осталось у логина по последнему ответу Директа."""
+        return self._client.points_rest(account)
+
+    def metrika(self, business_id: UUID, login: str) -> MetrikaClient:
+        """Метрика кабинета: токен тот же, что у Директа."""
+        token_for = self._tokens(business_id)
+
+        async def token() -> str:
+            try:
+                return await token_for(login)
+            except DirectAuthError as error:
+                raise PlatformUnavailable("metrika token unavailable") from error
+
+        return MetrikaClient(token, self._metrika_url)
+
     def __call__(self, business_id: UUID, login: str) -> DirectPlatform:
         async def campaign_ids_for(account: str) -> tuple[str, ...]:
             return await SqlChangeRepository.campaign_ids_for(self._sessions, business_id, account)
@@ -115,6 +136,15 @@ class DirectPlatforms:
                 self._sessions, business_id, account
             )
 
+        counters = SqlTagChecks(self._sessions, business_id)
+
+        async def goals_for(account: str) -> list[int]:
+            # Нет счётчика — целей не знаем, отчёт идёт по всем целям, как раньше.
+            counter = await counters.counter()
+            if counter is None:
+                return []
+            return await self.metrika(business_id, account).lead_goals(counter)
+
         return DirectPlatform(
             self._client,
             self._tokens(business_id),
@@ -122,6 +152,7 @@ class DirectPlatforms:
             campaign_ids_for,
             campaign_targets_for,
             self._geo_region_cache,
+            goals_for,
         )
 
     async def aclose(self) -> None:
@@ -139,4 +170,4 @@ def build_direct_platforms(
     if not settings.direct_enabled or provider is None or cipher is None:
         return None
     client = DirectHttpClient(settings.direct_api_url, settings.direct_live_url)
-    return DirectPlatforms(client, sessions, provider, cipher, clock)
+    return DirectPlatforms(client, sessions, provider, cipher, clock, settings.metrika_api_url)

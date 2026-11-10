@@ -15,6 +15,7 @@ from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
 from adhelper.budget.domain.limits import CampaignBudget, LimitChange, LimitDecision
+from adhelper.budget.domain.ports import CampaignStrategy, PlatformUnavailable
 from adhelper.budget.domain.watch import SpendSnapshot
 from adhelper.campaigns.domain.launch import LAUNCH_PREFIX, NewAd, NewCampaign, Placement
 from adhelper.campaigns.domain.ports import CreatedCampaign, Targeting
@@ -140,6 +141,48 @@ def period_limit(strategy: Mapping[str, Any]) -> int:
     return sum(int(budget["SpendLimit"]) for _, _, budget in found)
 
 
+# Ручное управление ставками: площадка не распределяет расход внутри лимита сама.
+MANUAL_STRATEGIES = frozenset({"HIGHEST_POSITION", "MAXIMUM_COVERAGE"})
+# Стратегии по кликам: учиться на конверсиях им не на чем.
+CLICK_STRATEGIES = frozenset({"WB_MAXIMUM_CLICKS", "AVERAGE_CPC", "WEEKLY_CLICK_PACKAGE"})
+# Стратегии по конверсиям учатся, и их обучение через API не видно.
+CONVERSION_STRATEGIES = frozenset(
+    {
+        "WB_MAXIMUM_CONVERSION_RATE",
+        "AVERAGE_CPA",
+        "AVERAGE_ROI",
+        "AVERAGE_CRR",
+        "PAY_FOR_CONVERSION",
+        "PAY_FOR_CONVERSION_CRR",
+        "AVERAGE_CPA_MULTIPLE_GOALS",
+        "PAY_FOR_CONVERSION_MULTIPLE_GOALS",
+        "MAX_PROFIT",
+    }
+)
+
+
+def strategy_of(strategy: Mapping[str, Any], start: str | None) -> CampaignStrategy:
+    """Автостратегия и обучение по `BiddingStrategyType` обеих сторон.
+
+    Обучение стратегии по конверсиям для нас «не знаем» (None), и политика денег не трогает.
+    Незнакомый тип — тоже «не знаем» и по автостратегии, и по обучению.
+    """
+    types = [str((strategy.get(side) or {}).get("BiddingStrategyType") or "") for side in SIDES]
+    active = [kind for kind in types if kind and kind not in (SERVING_OFF, NETWORK_DEFAULT)]
+    known = MANUAL_STRATEGIES | CLICK_STRATEGIES | CONVERSION_STRATEGIES
+    auto: bool | None = None
+    learns: bool | None = None
+    if active and all(kind in known for kind in active):
+        auto = any(kind not in MANUAL_STRATEGIES for kind in active)
+        if not any(kind in CONVERSION_STRATEGIES for kind in active):
+            learns = False
+    try:
+        started = date.fromisoformat(start) if start else None
+    except ValueError:
+        started = None
+    return CampaignStrategy(auto=auto, learns=learns, started=started)
+
+
 def placement_of(strategy: Mapping[str, Any]) -> Placement:
     on = [
         side
@@ -236,6 +279,11 @@ def _cost(raw: str) -> int:
     return int(raw) if raw.strip().isdigit() else 0
 
 
+def _conversions(row: Mapping[str, str]) -> int:
+    """Обращения за строку отчёта: без отбора целей один столбец, с отбором по столбцу на цель."""
+    return sum(_count(value) for name, value in row.items() if name.startswith("Conversions"))
+
+
 def _count(raw: str) -> int:
     # «--» — значения нет: конверсий не было или Метрика не связана.
     return int(raw) if raw.strip().isdigit() else 0
@@ -252,7 +300,9 @@ class DirectPlatform:
         campaign_ids_for: Callable[[str], Awaitable[Sequence[str]]] | None = None,
         campaign_targets_for: Callable[[str], Awaitable[Sequence[str]]] | None = None,
         geo_region_cache: GeoRegionCache | None = None,
+        goals_for: Callable[[str], Awaitable[Sequence[int]]] | None = None,
     ) -> None:
+        self._goals_for = goals_for
         self._client = client
         self._token_for = token_for
         self._clock = clock
@@ -273,6 +323,21 @@ class DirectPlatform:
     ) -> Mapping[str, Any]:
         token = await self._token_for(account)
         return await self._client.call(account, token, service, method, params)
+
+    async def _goal_filter(self, account: str) -> dict[str, Any]:
+        goals = await self._lead_goals(account)
+        return {"Goals": goals} if goals else {}
+
+    async def _lead_goals(self, account: str) -> list[int]:
+        """Цели-обращения счётчика; пусто — счётчик или цели неизвестны (тогда все цели)."""
+        if self._goals_for is None:
+            return []
+        try:
+            return list(await self._goals_for(account))
+        except PlatformUnavailable as error:
+            # Без списка целей служебную цель от обращения не отличить. Тихо взять все цели
+            # значило бы исказить число и цену обращения, поэтому отчёт не сохраняем.
+            raise DirectError(None, "metrika goals unavailable") from error
 
     async def _report(self, account: str, definition: dict[str, Any]) -> list[dict[str, str]]:
         # Директ кэширует отчёт по имени: одно имя — одно определение.
@@ -399,6 +464,17 @@ class DirectPlatform:
             )
             for campaign in campaigns
         ]
+
+    async def campaign_strategies(self, account: str) -> dict[str, CampaignStrategy]:
+        """Стратегия и день старта управляемых кампаний для политики автопилота."""
+        if self._campaign_ids_for is None:
+            campaigns = await self._campaigns(account, extra=["StartDate"])
+        else:
+            ids = await self._campaign_ids_for(account)
+            if not ids:
+                return {}
+            campaigns = await self._campaigns(account, [int(i) for i in ids], extra=["StartDate"])
+        return {str(c["Id"]): strategy_of(self._strategy(c), c.get("StartDate")) for c in campaigns}
 
     async def read_account_campaigns(self, account: str) -> list[CampaignBudget]:
         """Все кампании аккаунта для проверки общего лимита, включая созданные вне сервиса."""
@@ -531,6 +607,7 @@ class DirectPlatform:
                     ],
                 },
                 "FieldNames": ["Date", "AdId", "Impressions", "Clicks", "Cost", "Conversions"],
+                **await self._goal_filter(account),
                 "ReportType": "AD_PERFORMANCE_REPORT",
                 "DateRangeType": "CUSTOM_DATE",
                 "Format": "TSV",
@@ -546,7 +623,7 @@ class DirectPlatform:
                 impressions=_count(row["Impressions"]),
                 clicks=_count(row["Clicks"]),
                 cost=_cost(row["Cost"]),
-                conversions=_count(row["Conversions"]),
+                conversions=_conversions(row),
             )
             for row in rows
         ]
@@ -579,6 +656,7 @@ class DirectPlatform:
                     "Cost",
                     "Conversions",
                 ],
+                **await self._goal_filter(account),
                 "ReportType": "CAMPAIGN_PERFORMANCE_REPORT",
                 "DateRangeType": "CUSTOM_DATE",
                 "Format": "TSV",
@@ -593,7 +671,7 @@ class DirectPlatform:
                 impressions=_count(row["Impressions"]),
                 clicks=_count(row["Clicks"]),
                 cost=_cost(row["Cost"]),
-                conversions=_count(row["Conversions"]),
+                conversions=_conversions(row),
             )
             for row in rows
         ]
@@ -742,6 +820,7 @@ class DirectPlatform:
                     text=str(text_ad.get("Text") or ""),
                     href=str(text_ad.get("Href") or ""),
                     state=_ad_view_state(ad),
+                    group_id=str(ad.get("AdGroupId") or ""),
                 )
             )
         return campaign_rows, ad_rows

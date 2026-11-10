@@ -179,3 +179,21 @@ async def test_expired_period_is_not_a_working_budget(sessions: Sessions) -> Non
     assert (
         await SqlGateFacts(sessions, BUSINESS, store).load("acc", now)
     ).operating_budget == 2_000
+
+
+async def test_api_points_come_from_the_platform_and_unknown_stays_unknown(
+    sessions: Sessions,
+) -> None:
+    await seed_account(sessions, BUSINESS, "acc")
+    periods = SqlPeriodStore(sessions)
+    now = datetime.now(UTC)
+
+    known = await SqlGateFacts(
+        sessions, BUSINESS, periods, lambda account: {"acc": 120}.get(account)
+    ).load("acc", now)
+    unseen = await SqlGateFacts(sessions, BUSINESS, periods, lambda _account: None).load("acc", now)
+    untracked = await SqlGateFacts(sessions, BUSINESS, periods).load("acc", now)
+
+    assert known.api_points_rest == 120
+    assert unseen.api_points_rest is None
+    assert untracked.api_points_rest is None

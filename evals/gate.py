@@ -32,7 +32,13 @@ from pydantic import SecretStr
 from adhelper.config import Settings
 from adhelper.creatives.adapters.openai_compatible import OpenAiCompatibleModel
 from adhelper.creatives.adapters.rules_file import load_rules
-from adhelper.creatives.application.generate import ADS_SCHEMA, SYSTEM_PROMPT, _parse, build_prompt
+from adhelper.creatives.application.generate import (
+    ADS_SCHEMA,
+    SYSTEM_PROMPT,
+    WRITER_TEMPERATURE,
+    _parse,
+    build_prompt,
+)
 from adhelper.creatives.domain.facts import Claim, check_claims, keyed_facts
 from adhelper.creatives.domain.model import (
     AdDraft,
@@ -165,7 +171,9 @@ def sample_profiles(profiles: dict[str, Any], size: int) -> dict[str, Any]:
     return {pid: profiles[pid] for pid in (ordered[:size] if size else ordered)}
 
 
-def _endpoint(spec: str, meter: Meter, prices: dict[str, Price]) -> _Endpoint:
+def _endpoint(
+    spec: str, meter: Meter, prices: dict[str, Price], temperature: float = 0, writer: bool = False
+) -> _Endpoint:
     provider, _, name = spec.partition(":")
     if provider == "groq":
         base, key = os.environ.get("OPENAI_BASE_URL", ""), os.environ.get("OPENAI_API_KEY", "")
@@ -179,7 +187,12 @@ def _endpoint(spec: str, meter: Meter, prices: dict[str, Price]) -> _Endpoint:
     # Бесплатный уровень Groq денег не берёт: токены считаем, стоимость ноль.
     price = prices.get(name, FREE) if provider == "or" else FREE
     model = OpenAiCompatibleModel(
-        base, SecretStr(key), name, on_usage=lambda usage: meter.record(price, usage)
+        base,
+        SecretStr(key),
+        name,
+        on_usage=lambda usage: meter.record(price, usage),
+        temperature=temperature,
+        no_reasoning=writer and provider == "or",
     )
     return _Endpoint(model, limited, asyncio.Semaphore(1 if limited else 8), meter, price)
 
@@ -428,7 +441,12 @@ async def run(args: argparse.Namespace) -> None:
             f"цена {name}: {usd(price.input_micro_per_m)} и {usd(price.output_micro_per_m)}"
             " за 1M входных и выходных\n"
         )
-    await _write(_endpoint(args.writer, meter, prices), profiles, written, rules)
+    await _write(
+        _endpoint(args.writer, meter, prices, WRITER_TEMPERATURE, writer=True),
+        profiles,
+        written,
+        rules,
+    )
 
     judge_name = f"{writer_name}--judge--{_slug(args.judge)}"
     audit_name = f"{writer_name}--audit--{_slug(args.auditor)}"

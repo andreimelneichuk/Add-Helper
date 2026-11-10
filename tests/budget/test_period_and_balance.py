@@ -1,4 +1,4 @@
-"""Слой 5 и сценарии 11–12 """
+"""Слой 5 и сценарии 11–12"""
 
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta

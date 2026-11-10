@@ -139,6 +139,8 @@ class AdInventory:
     text: str
     href: str
     state: str
+    # Группа объявления на площадке; пусто — неизвестна.
+    group_id: str = ""
 
 
 @dataclass(frozen=True)

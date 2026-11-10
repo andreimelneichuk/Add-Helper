@@ -59,7 +59,7 @@ def load_tag_rules(version: str = CURRENT_TAG_RULES) -> TagRules:
     return TagRules(raw["version"], raw["max_checks_per_day"], raw["max_attempts"])
 
 
-CURRENT_ECONOMICS_RULES = "economics-1"
+CURRENT_ECONOMICS_RULES = "economics-2"
 
 
 def load_economics_rules(version: str = CURRENT_ECONOMICS_RULES) -> EconomicsRules:

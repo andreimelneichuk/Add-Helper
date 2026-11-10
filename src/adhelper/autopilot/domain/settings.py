@@ -39,7 +39,9 @@ class AutopilotSettings:
     mode: AutopilotMode = AutopilotMode.CONFIRM
     # Что автопилот вправе сделать сам, когда включён режим «Сам». В режиме «Предлагает»
     # владелец видит все предложения, как и раньше.
-    allowed_actions: frozenset[ActionKind] = frozenset({ActionKind.PAUSE_AD, ActionKind.START_TEST})
+    allowed_actions: frozenset[ActionKind] = frozenset(
+        {ActionKind.PAUSE_AD, ActionKind.START_TEST, ActionKind.INCREASE_LIMIT}
+    )
     cadence: Cadence = Cadence.DAILY
     run_hour: int = 6
     # Рамки словами: целые числа (доли в bp, дни, копейки). Этап 3 наполнит их смыслом.

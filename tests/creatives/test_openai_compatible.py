@@ -156,3 +156,33 @@ async def test_usage_without_cost_field() -> None:
     )
     await call(subject)
     assert [(u.prompt_tokens, u.completion_tokens, u.cost_usd) for u in seen] == [(10, 5, None)]
+
+
+async def test_judge_stays_at_zero_temperature_and_writer_gets_its_own() -> None:
+    bodies: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json=reply())
+
+    transport = httpx.MockTransport(handler)
+    await call(model(transport))
+    writer = OpenAiCompatibleModel(
+        OPENROUTER, KEY, "some/model", "", transport, temperature=0.9, no_reasoning=True
+    )
+    await call(writer)
+
+    assert bodies[0]["temperature"] == 0 and "reasoning" not in bodies[0]
+    assert bodies[1]["temperature"] == 0.9
+    assert bodies[1]["reasoning"] == {"enabled": False}
+
+
+def test_prompt_asks_for_different_moves_and_bans_cliches() -> None:
+    from adhelper.creatives.adapters.rules_file import load_rules
+    from adhelper.creatives.application.generate import WRITER_TEMPERATURE, build_prompt
+    from adhelper.creatives.domain.model import BusinessProfile
+
+    prompt = build_prompt(BusinessProfile("Лак", ()), load_rules("creatives-3"))
+
+    assert "пять разных ходов" in prompt and "приходите к нам" in prompt
+    assert 0 < WRITER_TEMPERATURE <= 1

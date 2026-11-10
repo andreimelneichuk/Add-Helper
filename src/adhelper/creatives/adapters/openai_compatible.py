@@ -36,7 +36,11 @@ class OpenAiCompatibleModel:
         project: str = "",
         transport: httpx.AsyncBaseTransport | None = None,
         on_usage: Callable[[Usage], None] | None = None,
+        temperature: float = 0,
+        no_reasoning: bool = False,
     ) -> None:
+        self._temperature = temperature
+        self._no_reasoning = no_reasoning
         self._url = f"{base_url.rstrip('/')}/chat/completions"
         self._api_key = api_key
         self._model = model
@@ -54,13 +58,17 @@ class OpenAiCompatibleModel:
         body = {
             "model": self._model,
             "max_tokens": max_tokens,
-            "temperature": 0,
+            "temperature": self._temperature,
             "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
         }
+        if self._no_reasoning:
+            # Писателю рассуждение не нужно, а исписанные им токены стоят денег и срывают ответ.
+            # Параметр OpenRouter; модели без рассуждения его игнорируют.
+            body["reasoning"] = {"enabled": False}
         headers = {"Authorization": f"Bearer {self._api_key.get_secret_value()}"}
         # Так OpenAI SDK передаёт `project`; Yandex AI Studio ждёт здесь каталог.
         if self._project:

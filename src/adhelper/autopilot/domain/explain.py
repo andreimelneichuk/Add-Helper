@@ -49,6 +49,28 @@ def explain_rollback(facts: Mapping[str, int]) -> str:
     )
 
 
+def explain_limit_rollback(facts: Mapping[str, int]) -> str:
+    """Откат роста лимита: вернули прежний лимит, потому что цена обращения выросла."""
+    return (
+        f"Вернули прежний дневной лимит кампании {rubles(facts['old_limit_micros'])} вместо "
+        f"{rubles(facts['new_limit_micros'])}: после роста лимита цена обращения выросла на "
+        f"{percent(facts['cpl_change_bp'])} (было {rubles(facts['before_cpl_micros'])}, "
+        f"стало {rubles(facts['after_cpl_micros'])}), а случайный разброс объясняет не больше "
+        f"{percent(facts['noise_bp'])}. Рост денег не окупился, поэтому он отменён. "
+        f"Отменить возврат можно в истории одной кнопкой."
+    )
+
+
+def explain_limit_rollback_no_leads(facts: Mapping[str, int]) -> str:
+    """Откат роста лимита при нуле обращений: цены «после» нет, говорим о расходе."""
+    return (
+        f"Вернули прежний дневной лимит кампании {rubles(facts['old_limit_micros'])} вместо "
+        f"{rubles(facts['new_limit_micros'])}: после роста лимита обращений 0 при расходе "
+        f"{rubles(facts['after_spend_micros'])}, а обычно одно обращение стоило "
+        f"{rubles(facts['before_cpl_micros'])}. Отменить возврат можно в истории одной кнопкой."
+    )
+
+
 def explain_rollback_no_leads(facts: Mapping[str, int]) -> str:
     """Откат при нуле обращений: цены обращения «после» нет, поэтому говорим об расходе."""
     return (

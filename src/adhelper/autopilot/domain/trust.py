@@ -30,9 +30,13 @@ LADDER: tuple[frozenset[TrustClass], ...] = (
     frozenset({TrustClass.SET_SCHEDULE}),
 )
 START_CLASSES = LADDER[0]
-# Открыть можно, исполнять цикл ещё не умеет: рост лимита идёт карточкой владельцу
-# (worker/runtime.py, `_increase_needs_owner`), а планировщик не выдаёт смену расписания.
-NOT_EXECUTED = frozenset({TrustClass.SHIFT_LIMIT, TrustClass.SET_SCHEDULE})
+# Рост лимита цикл исполняет сам: свободными деньгами или переносом с донора
+# (`application/raise_limit.py`). Смену расписания планировщик пока не выдаёт.
+NOT_EXECUTED = frozenset({TrustClass.SET_SCHEDULE})
+# По решению владельца проекта (2026-11-10) рост лимита открыт всем кабинетам сразу, без недели
+# ожидания: цикл считает его открытым всегда. Рамки первого кабинета и политика остаются в силе,
+# а лестница по-прежнему нужна для смены расписания.
+ALWAYS_GRANTED = START_CLASSES | {TrustClass.SHIFT_LIMIT}
 
 # Какому классу доверия соответствует действие цикла. Перенос лимита идёт как рост лимита.
 ACTION_CLASS = {
@@ -67,7 +71,8 @@ def effective_allowed(
     allowed: frozenset[ActionKind], granted: frozenset[TrustClass]
 ) -> frozenset[ActionKind]:
     """Действия, которые цикл вправе сделать сам: отмечено владельцем кабинета и открыто."""
-    return frozenset(kind for kind in allowed if ACTION_CLASS[kind] in granted)
+    opened = granted | ALWAYS_GRANTED
+    return frozenset(kind for kind in allowed if ACTION_CLASS[kind] in opened)
 
 
 def next_step(granted: frozenset[TrustClass]) -> TrustClass | None:

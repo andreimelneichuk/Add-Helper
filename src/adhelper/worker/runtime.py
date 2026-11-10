@@ -88,6 +88,7 @@ from adhelper.creatives.adapters.sql import (
     SqlProfiles,
     SqlProfileSource,
 )
+from adhelper.creatives.application.generate import WRITER_TEMPERATURE
 from adhelper.creatives.application.images import attach_images
 from adhelper.creatives.application.moderation import (
     CURRENT_MODERATION_RULES,
@@ -136,7 +137,7 @@ from adhelper.stats.adapters.sql import SqlReportStats, report_accounts
 logger = logging.getLogger(__name__)
 
 MAX_CHANGE_ATTEMPTS = 3
-CURRENT_AUTOPILOT_RULES = "autopilot-4"
+CURRENT_AUTOPILOT_RULES = "autopilot-5"
 # Оценка исходов и предохранители.
 CURRENT_OUTCOME_RULES = "outcomes-1"
 CURRENT_POLICY_RULES = "policy-1"
@@ -166,6 +167,8 @@ class Runtime:
     clock: Callable[[], datetime] = _utc_now
     # Без ключа или модели генерация отдаёт шаблоны из профиля, без судьи — только проверку кодом.
     text_model: Any = None
+    # Писатель объявлений: та же модель, но с температурой выше нуля. None — как text_model.
+    writer_model: Any = None
     judge_model: Any = None
     # Рецензент самостоятельных действий; без модели ничего не проходит ворота, всё идёт карточкой.
     review_model: Any = None
@@ -178,7 +181,9 @@ class Runtime:
     telegram: Any = None
     cabinet_url: str = "http://localhost:8000"
     # Визиты Метрики (T6); без источника проверки визитов в автопилоте пропускаются.
-    visits_for: Callable[[UUID], Any] = lambda _business_id: None
+    visits_for: Callable[[UUID, str], Any] = lambda _business_id, _account: None
+    # Остаток баллов API логина по последним ответам площадки: политика откладывает оптимизацию.
+    api_points: Callable[[str], int | None] = lambda _account: None
     # Разрешение владельца проекта на режим «Сам» (AUTOPILOT_AUTO_ALLOWED); false — «Предлагает».
     auto_allowed: bool = False
 
@@ -251,7 +256,7 @@ class Runtime:
         await run_queued(
             SqlCreativeQueue(self.sessions),
             SqlProfileSource(self.sessions),
-            self.text_model,
+            self.writer_model or self.text_model,
             self.judge_model,
             load_creative_rules,
             self.clock,
@@ -380,7 +385,7 @@ class Runtime:
                 return await _strategies(platform, login)
 
             data = WithBudgets(data, platform, period, rules, strategies)
-        visits = self.visits_for(business_id)
+        visits = self.visits_for(business_id, account)
         if visits is not None:
             counter = SqlTagChecks(self.sessions, business_id).counter
             data = WithVisits(data, visits, counter, rules)
@@ -397,7 +402,12 @@ class Runtime:
         try:
             gate = PolicyGate(
                 load_policy_rules(CURRENT_POLICY_RULES),
-                SqlGateFacts(self.sessions, business_id, SqlPeriodStore(self.sessions)),
+                SqlGateFacts(
+                    self.sessions,
+                    business_id,
+                    SqlPeriodStore(self.sessions),
+                    lambda login: self.api_points(login),
+                ),
                 ModelReviewer(self.review_model),
             )
         except Exception as error:
@@ -440,7 +450,9 @@ class Runtime:
                 return CARD
             if record.period.ends_at is None or record.period.ends_at <= now:
                 return CARD
-            gate = await SqlGateFacts(self.sessions, business_id, periods).load(account, now)
+            gate = await SqlGateFacts(self.sessions, business_id, periods, self.api_points).load(
+                account, now
+            )
             try:
                 traits = strategy_traits(await _strategies(platform, account))
             except PlatformUnavailable:
@@ -760,12 +772,16 @@ def _no_platform(business_id: UUID, account: str) -> None:
     return None
 
 
-def _model(settings: Settings, name: str) -> Any:
+def _model(
+    settings: Settings, name: str, temperature: float = 0, no_reasoning: bool = False
+) -> Any:
     return build_text_model(
         settings.text_model_base_url,
         settings.text_model_api_key,
         name,
         settings.text_model_project,
+        temperature,
+        no_reasoning,
     )
 
 
@@ -820,7 +836,12 @@ async def open_runtime(settings: Settings) -> AsyncIterator[Runtime]:
             sessions=sessions,
             engine=engine,
             platform_for=platforms or _no_platform,
+            visits_for=platforms.metrika if platforms is not None else (lambda _b, _a: None),
+            api_points=platforms.api_points if platforms is not None else (lambda _a: None),
             text_model=_model(settings, settings.text_model_name),
+            writer_model=_model(
+                settings, settings.text_model_name, WRITER_TEMPERATURE, no_reasoning=True
+            ),
             text_model_name=settings.text_model_name,
             judge_model=_model(settings, settings.judge_model_name),
             review_model=_model(settings, settings.review_model_name),

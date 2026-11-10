@@ -100,3 +100,24 @@ def test_maturity_boundary_uses_moscow_date() -> None:
     late_utc = datetime(2026, 11, 20, 21, 30, tzinfo=UTC)  # В Москве уже 21 ноября.
     rows = [DailyStat(date(2026, 11, 19), 100, 1, 1, 1), DailyStat(date(2026, 11, 18), 7, 0, 1, 1)]
     assert mature_totals(rows, late_utc, RULES).spend == 107
+
+
+def test_ad_with_few_clicks_is_not_called_inefficient_even_when_spend_is_high() -> None:
+    # Цена обращения 105 ₽, а 40 кликов по 5 ₽ ещё ничего не говорят: объявление не получило шанса.
+    rules = load_rules("autopilot-5")
+    few = AdStats(
+        "ad:1", "c1", "g1", TARGET * 4, 0, 30, active=True, clicks=rules.bad_min_clicks - 1
+    )
+    enough = AdStats(
+        "ad:1", "c1", "g1", TARGET * 4, 0, 30, active=True, clicks=rules.bad_min_clicks
+    )
+
+    assert classify(few, TARGET, rules).verdict is not Verdict.INEFFICIENT
+    assert classify(enough, TARGET, rules).verdict is Verdict.INEFFICIENT
+
+
+def test_older_rules_keep_deciding_without_a_click_floor() -> None:
+    assert load_rules("autopilot-2").bad_min_clicks == 0
+    assert classify(ad(TARGET * 5, 0), TARGET, load_rules("autopilot-2")).verdict is (
+        Verdict.INEFFICIENT
+    )

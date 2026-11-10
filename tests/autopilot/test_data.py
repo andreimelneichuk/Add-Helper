@@ -91,10 +91,18 @@ async def test_totals_use_only_mature_days_of_own_business(sessions: Sessions) -
     assert data.recent.visits is None
 
 
-async def test_ad_is_its_own_group_so_autopilot_never_pauses_it(sessions: Sessions) -> None:
+async def test_ad_without_known_group_is_its_own_group(sessions: Sessions) -> None:
     await ad(sessions, BUSINESS, "2", "c1")
     data = await SqlAutopilotData(sessions, BUSINESS, RULES).load("acc", NOW)
     assert {a.group_id for a in data.ads} == {"ad:1", "ad:2"}
+
+
+async def test_ads_of_one_platform_group_share_it(sessions: Sessions) -> None:
+    # Группа с площадки: два объявления одной группы — пауза одного из них допустима.
+    await ad(sessions, BUSINESS, "2", "c1")
+    await run(sessions, "UPDATE ads SET group_id = '777' WHERE business_id = :b", b=BUSINESS)
+    data = await SqlAutopilotData(sessions, BUSINESS, RULES).load("acc", NOW)
+    assert {a.group_id for a in data.ads} == {"group:777"}
 
 
 async def test_suspended_campaign_makes_its_ads_inactive(sessions: Sessions) -> None:

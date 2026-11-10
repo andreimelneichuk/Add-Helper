@@ -151,6 +151,20 @@ class DirectHttpClient:
     async def aclose(self) -> None:
         await self._http.aclose()
 
+    def points_rest(self, account: str) -> int | None:
+        """Остаток баллов по последнему ответу Директа; None — этого логина ещё не видели."""
+        units = self.units.get(account)
+        return units.rest if units is not None else None
+
+    def _error(self, account: str, code: int | None, error: Mapping[str, Any]) -> DirectError:
+        result = _request_error(code, error)
+        if isinstance(result, DirectPointsExhausted):
+            # Площадка отказала по баллам и могла не прислать заголовок: считаем остаток нулём,
+            # пока следующий ответ не покажет иное.
+            limit = self.units[account].limit if account in self.units else 0
+            self.units[account] = Units(0, 0, limit)
+        return result
+
     def _url(self, service: str) -> str:
         return f"{self._base_url}/json/{SERVICE_VERSIONS[service]}/{service}"
 
@@ -240,7 +254,7 @@ class DirectHttpClient:
             if code in retryable and attempt + 1 < self._attempts:
                 await self._sleep(self._backoff * 2**attempt)
                 continue
-            raise _request_error(code, error)
+            raise self._error(account, code, error)
         raise DirectError(None, f"{service}.{method} retries exhausted")
 
     async def token_owner(self, token: str) -> str | None:
@@ -261,7 +275,7 @@ class DirectHttpClient:
         payload = _json(response)
         if "error_code" in payload:
             code = _int(payload.get("error_code"))
-            raise _request_error(code, payload)
+            raise self._error(account, code, payload)
         return payload.get("data")
 
     async def report(
@@ -288,7 +302,7 @@ class DirectHttpClient:
                 continue
             payload = _json(response)
             error = payload.get("error", payload)
-            raise _request_error(_code(error), error)
+            raise self._error(account, _code(error), error)
         raise DirectError(None, "report is not ready")
 
 

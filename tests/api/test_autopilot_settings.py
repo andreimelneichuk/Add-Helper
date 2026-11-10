@@ -16,7 +16,7 @@ async def test_defaults_are_read_without_a_stored_row(anna: Anna, sessions: Sess
     assert answer.status_code == 200
     body = answer.json()
     assert body["mode"] == "confirm"
-    assert body["allowed_actions"] == ["pause_ad", "start_test"]
+    assert body["allowed_actions"] == ["increase_limit", "pause_ad", "start_test"]
     assert (body["cadence"], body["run_hour"]) == ("daily", 6)
     assert body["status"] == "no_goal"
     assert body["auto_allowed"] is False

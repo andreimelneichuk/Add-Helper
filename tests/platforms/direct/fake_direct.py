@@ -325,7 +325,18 @@ class FakeDirect:
         if campaign_filter is not None:
             campaign_ids = set(campaign_filter["Values"])
             rows = [row for row in rows if row[1] in campaign_ids]
-        lines = ["\t".join(fields)]
+        goals = definition.get("Goals") or []
+        # С отбором целей Директ называет столбец «Conversions_<цель>_<модель>», по одному на цель.
+        columns = [
+            name
+            for field_name in fields
+            for name in (
+                [f"Conversions_{goal}_LSC" for goal in goals]
+                if field_name == "Conversions" and goals
+                else [field_name]
+            )
+        ]
+        lines = ["\t".join(columns)]
         if fields == ["Cost"]:
             lines.append(str(sum(cost for _, _, cost in rows)))
         else:
@@ -339,7 +350,8 @@ class FakeDirect:
                     "Conversions": "0",
                     "AdId": "1010",
                 }
-                lines.append("\t".join(values[f] for f in fields))
+                values |= {f"Conversions_{goal}_LSC": "2" for goal in goals}
+                lines.append("\t".join(values[c] for c in columns))
         return httpx.Response(
             200,
             text="\n".join(lines) + "\n",

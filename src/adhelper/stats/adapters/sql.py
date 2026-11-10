@@ -133,6 +133,7 @@ ADS = table(
     column("text", Text),
     column("href", Text),
     column("state", Text),
+    column("group_id", Text),
 )
 AD_STATS = table(
     "ad_stats",
@@ -274,6 +275,7 @@ class SqlReportStats:
                             "text": ad.text,
                             "href": ad.href,
                             "state": ad.state,
+                            "group_id": ad.group_id or None,
                         }
                         for ad in ads
                     ]
@@ -286,6 +288,8 @@ class SqlReportStats:
                             "title": statement.excluded.title,
                             "text": statement.excluded.text,
                             "href": statement.excluded.href,
+                            # Пустая группа в ответе не стирает известную.
+                            "group_id": func.coalesce(statement.excluded.group_id, ADS.c.group_id),
                             # Архив владельца живёт у нас, в Яндексе объявление просто остановлено.
                             "state": case(
                                 (

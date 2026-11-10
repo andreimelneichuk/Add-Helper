@@ -12,7 +12,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 
-from adhelper.autopilot.domain.explain import explain_rollback, explain_rollback_no_leads
+from adhelper.autopilot.domain.explain import (
+    explain_limit_rollback,
+    explain_limit_rollback_no_leads,
+    explain_rollback,
+    explain_rollback_no_leads,
+)
 from adhelper.autopilot.domain.outcomes import (
     AUTO_ROLLBACK_DECISION,
     ROLLBACK_STARTED,
@@ -29,7 +34,7 @@ from adhelper.autopilot.domain.safeguards import SafeguardState, check_safeguard
 from adhelper.budget.domain.calendar import platform_date
 from adhelper.ledger.application.rollback import RollbackStatus, rollback_change
 from adhelper.ledger.application.service import Ledger
-from adhelper.ledger.domain.model import Change, ChangeStatus
+from adhelper.ledger.domain.model import Change, ChangeKind, ChangeStatus
 from adhelper.ledger.domain.ports import GatewayUnavailable
 
 DAY = timedelta(days=1)
@@ -211,22 +216,7 @@ class OutcomeMonitor:
             # Не окончательный «хуже»: исход ждёт решения, а не теряет откат навсегда.
             await self._store.release(pending.id, "хуже, откат остановлен предохранителем")
             return None
-        if outcome.cpl_change_bp is None:
-            explanation = explain_rollback_no_leads(
-                {
-                    "after_spend_micros": measured.after.spend,
-                    "before_cpl_micros": _cpl(measured.before),
-                }
-            )
-        else:
-            explanation = explain_rollback(
-                {
-                    "cpl_change_bp": outcome.cpl_change_bp,
-                    "before_cpl_micros": _cpl(measured.before),
-                    "after_cpl_micros": _cpl(measured.after),
-                    "noise_bp": outcome.noise_bp,
-                }
-            )
+        explanation = await self._explanation(pending, measured, outcome)
         # Метка до отката: упавший воркер потом доведёт начатый откат, а не оценит заново.
         await self._store.mark_rollback_started(pending.id)
         rolled = await rollback_change(
@@ -245,6 +235,27 @@ class OutcomeMonitor:
             result.halted = True  # площадка не отвечает: следующие откаты не начинаем
             return None
         return None, f"откат не выполнен: {rolled.status.value}"
+
+    async def _explanation(
+        self, pending: PendingOutcome, measured: Measured, outcome: OutcomeResult
+    ) -> str:
+        facts = {
+            "before_cpl_micros": _cpl(measured.before),
+            "after_cpl_micros": _cpl(measured.after),
+            "after_spend_micros": measured.after.spend,
+            "cpl_change_bp": outcome.cpl_change_bp or 0,
+            "noise_bp": outcome.noise_bp,
+        }
+        if pending.kind == ChangeKind.SET_LIMIT.value:
+            change = await self._ledger.get_change(pending.change_id)
+            facts["old_limit_micros"] = int(change.before.get("limit", 0)) if change else 0
+            facts["new_limit_micros"] = int(change.planned.get("limit", 0)) if change else 0
+            if outcome.cpl_change_bp is None:
+                return explain_limit_rollback_no_leads(facts)
+            return explain_limit_rollback(facts)
+        if outcome.cpl_change_bp is None:
+            return explain_rollback_no_leads(facts)
+        return explain_rollback(facts)
 
     async def _latest_rollback(self, account: str, pending: PendingOutcome) -> Change | None:
         rows = await self._ledger.changes_on_target(account, pending.object_ref)

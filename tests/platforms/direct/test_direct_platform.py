@@ -27,6 +27,7 @@ from adhelper.platforms.adapters.direct.platform import (
     parse_schedule,
     schedule_items,
     split_limit,
+    strategy_of,
     unmark_href,
 )
 from adhelper.platforms.adapters.direct.transport import (
@@ -382,6 +383,21 @@ async def test_request_errors_come_with_http_200(
     direct.request_errors["campaigns.get"] = code
     with pytest.raises(error):
         await platform.read_campaigns(ACCOUNT)
+
+
+async def test_points_rest_follows_units_header_and_exhaustion() -> None:
+    direct = FakeDirect()
+    platform, client = _platform(direct.transport())
+    assert client.points_rest(ACCOUNT) is None
+    await platform.read_campaigns(ACCOUNT)
+    seen = client.points_rest(ACCOUNT)
+    assert seen is not None and seen > 0
+    direct.request_errors["campaigns.get"] = 152
+    with pytest.raises(DirectPointsExhausted):
+        await platform.read_campaigns(ACCOUNT)
+    # Отказ по баллам без заголовка Units: остаток считаем нулём, оптимизацию откладываем.
+    assert client.points_rest(ACCOUNT) == 0
+    await client.aclose()
 
 
 async def test_every_direct_error_is_platform_unavailable_for_the_ledger(
@@ -895,3 +911,58 @@ async def test_archived_campaign_does_not_count_toward_account_limit(
     counted = await platform.read_account_campaigns(ACCOUNT)
     assert str(archived) not in [c.campaign_id for c in counted]
     assert sum(c.limit for c in counted) == 2_700 * RUB
+
+
+@pytest.mark.parametrize(
+    ("search", "network", "auto", "learns"),
+    [
+        ("WB_MAXIMUM_CLICKS", "NETWORK_DEFAULT", True, False),
+        ("WB_MAXIMUM_CLICKS", "SERVING_OFF", True, False),
+        ("HIGHEST_POSITION", "SERVING_OFF", False, False),
+        ("AVERAGE_CPA", "NETWORK_DEFAULT", True, None),
+        ("SOMETHING_NEW", "SERVING_OFF", None, None),
+        ("SERVING_OFF", "SERVING_OFF", None, None),
+    ],
+)
+def test_strategy_of_tells_auto_strategy_and_learning(
+    search: str, network: str, auto: bool | None, learns: bool | None
+) -> None:
+    strategy = {
+        "Search": {"BiddingStrategyType": search},
+        "Network": {"BiddingStrategyType": network},
+    }
+    result = strategy_of(strategy, "2026-10-01")
+    assert (result.auto, result.learns) == (auto, learns)
+    assert result.started == date(2026, 10, 1)
+    assert strategy_of(strategy, "не дата").started is None
+
+
+async def test_reports_count_only_lead_goals_when_the_counter_is_known(
+    direct: FakeDirect,
+) -> None:
+    async def goals(account: str) -> list[int]:
+        return [11, 12]
+
+    client = DirectHttpClient(transport=direct.transport(), sleep=_no_sleep)
+    platform = DirectPlatform(client, _token, lambda: NOW, goals_for=goals)
+    direct.report_rows = [("2026-11-09", "101", 57_550_000)]
+
+    ad_rows = await platform.ad_days(ACCOUNT, ["101"], date(2026, 11, 9), date(2026, 11, 9))
+    campaign_rows = await platform.campaign_days(
+        ACCOUNT, ["101"], date(2026, 11, 9), date(2026, 11, 9)
+    )
+
+    assert direct.requests[-1]["body"]["params"]["Goals"] == [11, 12]
+    assert direct.requests[-2]["body"]["params"]["Goals"] == [11, 12]
+    # По два обращения на каждую из двух целей.
+    assert ad_rows[0].conversions == 4
+    assert campaign_rows[0].conversions == 4
+    await client.aclose()
+
+
+async def test_reports_without_goals_do_not_send_a_goal_filter(
+    platform: DirectPlatform, direct: FakeDirect
+) -> None:
+    direct.report_rows = [("2026-11-09", "101", 57_550_000)]
+    await platform.ad_days(ACCOUNT, ["101"], date(2026, 11, 9), date(2026, 11, 9))
+    assert "Goals" not in direct.requests[-1]["body"]["params"]
