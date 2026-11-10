@@ -250,6 +250,19 @@ describe("действия идут через сервис", () => {
     expect(history.length).toBeLessThanOrEqual(10);
   });
 
+  it("вызовы инструментов остаются у ответа и уходят в историю следующего запроса", async () => {
+    const tools = [{ name: "get_budget", args: {}, result: '{"left_month_rub":10800}' }];
+    const api = fakeApi({ command: vi.fn(async () => said({ reply: "Осталось 10 800 ₽.", tools })) } as Partial<Api>);
+    const store = await open(api);
+    store.send("Сколько осталось?");
+    await settled();
+    expect(store.state.msgs.at(-1)?.tools).toEqual(tools);
+    store.send("А в процентах?");
+    await settled();
+    const history = vi.mocked(api.command).mock.calls[1]?.[1] ?? [];
+    expect(history.at(-1)).toEqual({ role: "assistant", text: "Осталось 10 800 ₽.", tools });
+  });
+
   it("чат не применяет без подтверждения и честно отказывает вне набора", async () => {
     const api = fakeApi({ command: vi.fn(async () => said({ kind: "pause", confirm: "Понял так: остановить все показы. Настройки сохранятся. Применить?" })) } as Partial<Api>);
     const store = await open(api);

@@ -9,7 +9,7 @@ import { fixtures } from "./fixtures";
 import type { Ad, Day, Fact, HistoryEntry, HistoryKind, Live, Period, PeriodStats, SettingKey, Situation, View } from "./data";
 
 export type Who = "me" | "ai" | "note";
-export type Message = { id: number; who: Who; text: string; link?: { label: string; view: View } };
+export type Message = { id: number; who: Who; text: string; link?: { label: string; view: View }; tools?: { name: string; args: Record<string, unknown>; result: string }[] };
 type Pending =
   | { action: "pause" }
   | { action: "setting"; value: [SettingKey, string | number] }

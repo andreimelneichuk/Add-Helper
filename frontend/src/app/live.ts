@@ -2,7 +2,7 @@
 // Деньги приходят целыми микроединицами; в рубли переводим только здесь и только для показа.
 import { announceAutopilotChange } from "./autopilotEvents";
 import { ApiError, createApi, createBusiness, createGuestApi, openSession } from "../api";
-import type { AdLine, Alert, Api, ChatCommand, HistoryLine, Money, OutdatedAd, Overview, Profile, UndoPreview } from "../api";
+import type { AdLine, Alert, Api, ChatCommand, ChatTurn, HistoryLine, Money, OutdatedAd, Overview, Profile, UndoPreview } from "../api";
 import { clearDraft, clearStartReading, clearStartSite } from "./draft";
 import { ALERT } from "./words";
 import { MICROS_PER_RUBLE } from "./money";
@@ -293,7 +293,7 @@ function loadFeed(id: string | null): Message[] {
     if (!Array.isArray(list)) return [];
     return list
       .filter((m): m is Message => typeof m?.text === "string" && ["ai", "me", "note"].includes(m?.who))
-      .map((m) => msg(m.who, m.text, m.link));
+      .map((m) => ({ ...msg(m.who, m.text, m.link), ...(Array.isArray(m.tools) ? { tools: m.tools } : {}) }));
   } catch {
     return [];
   }
@@ -302,7 +302,7 @@ function loadFeed(id: string | null): Message[] {
 function saveFeed(id: string | null, msgs: Message[]) {
   if (!id) return;
   try {
-    const kept = msgs.slice(-FEED_MAX).map(({ who, text, link }) => ({ who, text, link }));
+    const kept = msgs.slice(-FEED_MAX).map(({ who, text, link, tools }) => ({ who, text, link, tools }));
     window.sessionStorage.setItem(FEED_KEY + id, JSON.stringify(kept));
   } catch { /* без хранилища лента живёт до перезагрузки */ }
 }
@@ -681,10 +681,10 @@ export class LiveStore extends Store {
   }
 
   /** Последние реплики переписки без текущего сообщения: агент помнит, о чём шла речь. */
-  private recent(): { role: "user" | "assistant"; text: string }[] {
+  private recent(): ChatTurn[] {
     const turns = this.state.msgs
       .filter((m) => m.who !== "note")
-      .map((m) => ({ role: m.who === "me" ? ("user" as const) : ("assistant" as const), text: m.text }));
+      .map((m) => ({ role: m.who === "me" ? ("user" as const) : ("assistant" as const), text: m.text, ...(m.tools?.length ? { tools: m.tools } : {}) }));
     // Текущее сообщение уже в ленте, а в запросе идёт отдельным полем.
     return turns.slice(0, -1).slice(-HISTORY_TURNS);
   }
@@ -714,6 +714,19 @@ export class LiveStore extends Store {
     if (this.queue.length) this.say(`Вижу ${this.queue.length + 1} просьбы, спрошу про каждую по очереди.`);
     this.handle(c);
     this.nextRequest();
+    this.keepTools(c);
+  }
+
+  /** Вызовы инструментов остаются в ленте у ответа агента и уходят в историю следующего запроса. */
+  private keepTools(c: ChatCommand) {
+    if (!c.tools?.length) return;
+    const msgs = [...this.state.msgs];
+    // Первый ответ после последней реплики владельца: к нему и относятся вызовы.
+    const mine = msgs.map((m) => m.who).lastIndexOf("me");
+    const at = msgs.findIndex((m, i) => i > mine && m.who === "ai");
+    if (at < 0) return;
+    msgs[at] = { ...msgs[at]!, tools: c.tools };
+    this.set({ msgs });
   }
 
   /** Следующая просьба из того же сообщения, когда прошлая решена. */

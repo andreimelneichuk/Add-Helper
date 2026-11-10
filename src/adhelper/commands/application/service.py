@@ -11,7 +11,13 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 
 from adhelper.commands.application.analytics import AnalyticsAgent, AnalyticsContext
-from adhelper.commands.application.tool_agent import AgentTurn, ChatTurn, StatsLoader, ToolChatAgent
+from adhelper.commands.application.tool_agent import (
+    AgentTurn,
+    ChatTurn,
+    StatsLoader,
+    ToolChatAgent,
+    ToolRecord,
+)
 from adhelper.commands.domain.model import (
     CHANGING,
     Command,
@@ -141,6 +147,8 @@ class Answer:
     reply: str
     # Остальные просьбы того же сообщения: каждую владелец подтверждает отдельно, по очереди.
     more: tuple["Answer", ...] = ()
+    # Инструменты, которые звал агент: клиент вернёт их в истории следующего сообщения.
+    tools: tuple[ToolRecord, ...] = ()
 
 
 class CallBudget:
@@ -305,10 +313,15 @@ def _from_turn(
             _with_current(_answer(Parsed(command, Source.MODEL), message, rules), context)
             for command in turn.proposals[: rules.max_requests]
         ]
-        return replace(asked[0], more=tuple(asked[1:]))
+        return replace(asked[0], more=tuple(asked[1:]), tools=turn.tool_calls)
     reply = safe_small_talk(turn.reply, message, turn.facts) if turn.reply else ""
     return Answer(
-        Command(Kind.UNKNOWN), Source.MODEL, rules.version, "", reply or "".join(turn.questions)
+        Command(Kind.UNKNOWN),
+        Source.MODEL,
+        rules.version,
+        "",
+        reply or "".join(turn.questions),
+        tools=turn.tool_calls,
     )
 
 

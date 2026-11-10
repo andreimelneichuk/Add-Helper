@@ -196,3 +196,29 @@ async def test_autopilot_report_and_switch_through_chat(
     assert off["kind"] == "autopilot_off" and off["confirm"].endswith("Применить?")
     weekly = await _say(client, csrf, business, "пусть автопилот работает раз в неделю")
     assert (weekly["kind"], weekly["cadence"]) == ("autopilot_cadence", "weekly")
+
+
+async def test_chat_returns_tool_calls_and_takes_them_back_in_history(anna: Anna) -> None:  # noqa: F811
+    from unittest.mock import AsyncMock
+
+    from adhelper.commands.application.tool_agent import AgentTurn, ToolChatAgent, ToolRecord
+
+    client, csrf, business = anna
+    agent = AsyncMock(spec=ToolChatAgent)
+    agent.invoke.return_value = AgentTurn(
+        reply="Осталось 10 800 ₽.", tool_calls=(ToolRecord("get_budget", {}, '{"left": 10800}'),)
+    )
+    _app(client).state.tool_agent = agent
+    first = await _say(client, csrf, business, "Как у меня с деньгами, подробнее?")
+    assert first["tools"] == [{"name": "get_budget", "args": {}, "result": '{"left": 10800}'}]
+    history = [
+        {"role": "user", "text": "Как у меня с деньгами, подробнее?"},
+        {"role": "assistant", "text": first["reply"], "tools": first["tools"]},
+    ]
+    await client.post(
+        f"/api/businesses/{business}/chat/command",
+        json={"text": "а в процентах?", "history": history},
+        headers=csrf,
+    )
+    seen = agent.invoke.call_args.kwargs["history"]
+    assert seen[-1].tools[0].name == "get_budget" and seen[-1].tools[0].result == '{"left": 10800}'

@@ -166,3 +166,64 @@ async def test_confirmation_wording_without_a_proposal_is_sent_back_to_the_model
     turn = await agent.invoke("отключи его", KNOWN, CTX, history=history)
     assert turn is not None and turn.proposals[0].kind is Kind.AD_OFF
     assert len(bound.seen) == 3
+
+
+def _turn_with(n: int, tag: str) -> list[ChatTurn]:
+    from adhelper.commands.application.tool_agent import ToolRecord
+
+    tools = tuple(ToolRecord("get_budget", {}, f"{tag}{k}") for k in range(n))
+    return [ChatTurn("user", "вопрос"), ChatTurn("assistant", "ответ", tools)]
+
+
+def test_tool_calls_of_earlier_turns_go_to_the_model_as_call_result_pairs() -> None:
+    from langchain_core.messages import AIMessage, ToolMessage
+
+    from adhelper.commands.application.tool_agent import history_messages
+
+    messages = history_messages(_turn_with(2, "R"))
+    assert [type(m).__name__ for m in messages] == [
+        "HumanMessage",
+        "AIMessage",
+        "ToolMessage",
+        "ToolMessage",
+        "AIMessage",
+    ]
+    calls = messages[1]
+    assert isinstance(calls, AIMessage) and len(calls.tool_calls) == 2
+    results = [m for m in messages if isinstance(m, ToolMessage)]
+    assert [m.content for m in results] == ["R0", "R1"]
+    assert [m.tool_call_id for m in results] == [c["id"] for c in calls.tool_calls]
+
+
+def test_only_the_last_twenty_calls_keep_their_results() -> None:
+    from langchain_core.messages import ToolMessage
+
+    from adhelper.commands.application.tool_agent import NO_RESULT, history_messages
+
+    turns = _turn_with(15, "old") + _turn_with(15, "new")
+    results = [m.content for m in history_messages(turns) if isinstance(m, ToolMessage)]
+    assert len(results) == 30
+    assert results.count(NO_RESULT) == 10
+    assert results[:10] == [NO_RESULT] * 10
+    assert results[10:15] == [f"old{k}" for k in range(10, 15)]
+    assert results[-15:] == [f"new{k}" for k in range(15)]
+
+
+async def test_calls_of_the_turn_are_returned_for_the_next_history() -> None:
+    agent, _ = _agent(_reply(calls=[("get_budget", {})]), _reply("Осталось 10 800 ₽."))
+    turn = await agent.invoke("сколько осталось", KNOWN, CTX)
+    assert turn is not None
+    assert [(c.name, c.args) for c in turn.tool_calls] == [("get_budget", {})]
+    assert "10800" in turn.tool_calls[0].result
+
+
+async def test_numbers_from_earlier_tool_results_are_allowed_in_the_reply() -> None:
+    from adhelper.commands.application.tool_agent import ToolRecord
+
+    history = [
+        ChatTurn("user", "сколько осталось"),
+        ChatTurn("assistant", "Осталось", (ToolRecord("get_budget", {}, '{"left": 10800}'),)),
+    ]
+    agent, _ = _agent(_reply("Это 10 800 ₽."))
+    turn = await agent.invoke("и сколько это?", KNOWN, CTX, history=history)
+    assert turn is not None and "10800" in turn.facts

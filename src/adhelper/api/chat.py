@@ -30,6 +30,7 @@ from adhelper.commands.application.service import (
 from adhelper.commands.application.tool_agent import (
     HISTORY_MESSAGES,
     ChatTurn,
+    ToolRecord,
 )
 from adhelper.creatives.adapters.sql import SqlProfiles
 from adhelper.creatives.adapters.wizard import SqlWizardAds, WizardAdItem
@@ -38,9 +39,17 @@ from adhelper.stats.application.facade import AdLine
 from adhelper.stats.application.overview import PLATFORM_ZONE, Window, ads, platform_today, window
 
 
+class ToolItem(BaseModel):
+    name: str = Field(max_length=60)
+    args: dict[str, Any] = Field(default_factory=dict)
+    result: str = Field(default="", max_length=4000)
+
+
 class HistoryItem(BaseModel):
     role: Literal["user", "assistant"]
     text: str = Field(max_length=2000)
+    # Вызовы инструментов, из которых получился этот ответ агента.
+    tools: list[ToolItem] = Field(default_factory=list, max_length=20)
 
 
 class CommandBody(BaseModel):
@@ -65,6 +74,7 @@ def _shown(answer: Answer, ttl: int) -> dict[str, Any]:
         "source": answer.source,
         "rules": answer.rules,
         "expires_in": ttl,
+        "tools": [asdict(record) for record in answer.tools],
     }
 
 
@@ -193,7 +203,14 @@ def chat_router() -> APIRouter:
             found_lines = await ads(dashboard, period_window(period, today))
             return PERIOD_LABELS[period], summaries(found_lines)
 
-        history = [ChatTurn(item.role, item.text) for item in body.history[-HISTORY_MESSAGES:]]
+        history = [
+            ChatTurn(
+                item.role,
+                item.text,
+                tuple(ToolRecord(t.name, t.args, t.result) for t in item.tools),
+            )
+            for item in body.history[-HISTORY_MESSAGES:]
+        ]
         rules = load_rules(CURRENT_RULES)
         calls: CallBudget = request.app.state.command_calls
         day = now.astimezone(PLATFORM_ZONE).date().isoformat()

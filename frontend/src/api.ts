@@ -283,6 +283,10 @@ export type TodayCard = { kind: string; tone: "bad" | "warn" | "info" | "good"; 
 /** Что будет после отмены: текст собирает сервис из журнала, до нажатия. */
 export type UndoPreview = { possible: boolean; status: string; text: string; directions: number };
 
+/** Вызов инструмента агентом чата: возвращается в истории, чтобы агент помнил, откуда цифры. */
+export type ToolCall = { name: string; args: Record<string, unknown>; result: string };
+export type ChatTurn = { role: "user" | "assistant"; text: string; tools?: ToolCall[] };
+
 export type ChatCommand = {
   kind: "pause" | "resume" | "set_budget" | "set_price" | "skip_days" | "ad_off" | "ad_on" | "rework_ad" | "undo_last" | "stats" | "history" | "autopilot_on" | "autopilot_off" | "autopilot_cadence" | "autopilot_report" | "unknown";
   rubles: number | null;
@@ -301,6 +305,8 @@ export type ChatCommand = {
   expires_in?: number;
   /** Остальные просьбы того же сообщения, по очереди после этой. */
   next?: ChatCommand[];
+  /** Что звал агент, пока готовил ответ. */
+  tools?: ToolCall[];
 };
 
 export type Channels = {
@@ -447,7 +453,7 @@ export function createApi(businessId: string, csrf: string) {
     setBudget: (rubles: number, requestId: string) =>
       request<{ status: string; cuts: number }>(`${base}/budget`, { method: "POST", body: JSON.stringify({ rubles, request_id: requestId }) }, csrf),
     display: (init?: RequestInit) => request<Display>(`${base}/display`, init),
-    command: (text: string, history: { role: "user" | "assistant"; text: string }[] = []) =>
+    command: (text: string, history: ChatTurn[] = []) =>
       request<ChatCommand>(`${base}/chat/command`, { method: "POST", body: JSON.stringify({ text, history }) }, csrf),
     /** Дни (0 — понедельник) и часы [start, end) показа; меняется через журнал. */
     setSchedule: (days: number[], start: number, end: number, requestId: string) =>

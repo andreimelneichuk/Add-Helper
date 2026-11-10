@@ -35,15 +35,30 @@ PERIODS = ("today", "yesterday", "7d", "14d", "30d", "month")
 MAX_STEPS = 5
 HISTORY_MESSAGES = 10
 HISTORY_CHARS = 600
+# Результаты помним у последних вызовов; у более старых остаётся только сам вызов.
+REMEMBERED_RESULTS = 20
+RESULT_CHARS = 1500
+NO_RESULT = "(результат не сохранён: вызови инструмент снова, если нужны цифры)"
 
 # Цифры за период: подпись периода и объявления с итогами. Читает кабинет, реализует API.
 StatsLoader = Callable[[str], Awaitable[tuple[str, tuple[AdStatSummary, ...]]]]
 
 
 @dataclass(frozen=True)
+class ToolRecord:
+    """Один вызов инструмента: что звали и что вернулось. Результат уходит в историю."""
+
+    name: str
+    args: dict[str, Any] = field(default_factory=dict)
+    result: str = ""
+
+
+@dataclass(frozen=True)
 class ChatTurn:
     role: str  # "user" | "assistant"
     text: str
+    # Что агент вызывал, пока готовил этот ответ (только у реплик агента).
+    tools: tuple[ToolRecord, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -56,6 +71,8 @@ class AgentTurn:
     questions: tuple[str, ...] = ()
     # Всё, что агент видел из кабинета: фильтр ответа сверяет суммы с этим текстом.
     facts: str = ""
+    # Вызовы этого хода: клиент вернёт их в истории следующего сообщения.
+    tool_calls: tuple[ToolRecord, ...] = ()
 
 
 @dataclass
@@ -70,6 +87,7 @@ class ToolContext:
     proposals: list[Command] = field(default_factory=list)
     questions: list[str] = field(default_factory=list)
     seen: list[str] = field(default_factory=list)
+    calls: list[ToolRecord] = field(default_factory=list)
 
     def remember(self, payload: object) -> str:
         text = json.dumps(payload, ensure_ascii=False)
@@ -292,6 +310,32 @@ MUTATION_SYSTEM = COMMON + (
 )
 
 
+def history_messages(turns: Sequence[ChatTurn]) -> list[BaseMessage]:
+    """Переписка для модели. Вызовы инструментов прошлых ходов идут настоящими парами
+    «вызов — результат»; результат есть у последних REMEMBERED_RESULTS вызовов."""
+    total = sum(len(t.tools) for t in turns)
+    # Сколько вызовов с начала истории остаётся без результата.
+    bare = max(total - REMEMBERED_RESULTS, 0)
+    messages: list[BaseMessage] = []
+    seen = 0
+    for n, turn in enumerate(turns):
+        if turn.role == "user":
+            messages.append(HumanMessage(content=turn.text[:HISTORY_CHARS]))
+            continue
+        if turn.tools:
+            calls = [
+                {"name": t.name, "args": t.args, "id": f"h{n}_{k}"}
+                for k, t in enumerate(turn.tools)
+            ]
+            messages.append(AIMessage(content="", tool_calls=calls))
+            for k, record in enumerate(turn.tools):
+                seen += 1
+                content = NO_RESULT if seen <= bare else record.result[:RESULT_CHARS]
+                messages.append(ToolMessage(content=content or NO_RESULT, tool_call_id=f"h{n}_{k}"))
+        messages.append(AIMessage(content=turn.text[:HISTORY_CHARS]))
+    return messages
+
+
 class ToolChatAgent:
     """Цикл «модель → инструмент → модель» поверх ChatOpenAI."""
 
@@ -322,9 +366,7 @@ class ToolChatAgent:
         messages: list[BaseMessage] = [
             SystemMessage(content=MUTATION_SYSTEM if allow_changes else READ_SYSTEM)
         ]
-        for turn in turns:
-            cls = HumanMessage if turn.role == "user" else AIMessage
-            messages.append(cls(content=turn.text[:HISTORY_CHARS]))
+        messages.extend(history_messages(turns))
         messages.append(HumanMessage(content=message))
         model = self._llm.bind_tools(tools)
         nudged = False
@@ -356,6 +398,9 @@ class ToolChatAgent:
                         except Exception as error:  # инструмент не должен ронять чат
                             logger.warning("Инструмент %s: %s", call["name"], type(error).__name__)
                             output = json.dumps({"error": "не получилось, скажи об этом"})
+                        ctx.calls.append(
+                            ToolRecord(call["name"], dict(call["args"]), output[:RESULT_CHARS])
+                        )
                     messages.append(ToolMessage(content=output, tool_call_id=call["id"]))
             # Шаги кончились: просим ответить тем, что есть.
             final = await self._llm.ainvoke(
@@ -373,12 +418,16 @@ class ToolChatAgent:
         reply = content.strip()
         if not reply and not ctx.proposals:
             return None
-        facts = " ".join([*ctx.seen, message, *(t.text for t in turns if t.role == "user")])
+        earlier = [r.result for t in turns for r in t.tools]
+        facts = " ".join(
+            [*ctx.seen, *earlier, message, *(t.text for t in turns if t.role == "user")]
+        )
         return AgentTurn(
             reply=reply,
             proposals=tuple(ctx.proposals),
             questions=tuple(q for q in ctx.questions if q),
             facts=facts,
+            tool_calls=tuple(ctx.calls),
         )
 
 
@@ -404,4 +453,11 @@ def build_tool_agent(
     return ToolChatAgent(llm)
 
 
-__all__ = ["AgentTurn", "ChatTurn", "StatsLoader", "ToolChatAgent", "build_tool_agent"]
+__all__ = [
+    "AgentTurn",
+    "ChatTurn",
+    "StatsLoader",
+    "ToolChatAgent",
+    "ToolRecord",
+    "build_tool_agent",
+]
