@@ -17,9 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from adhelper.accounts.adapters.crypto import AesGcmCipher, CipherConfigError
 from adhelper.accounts.adapters.sql import logins_of_business
 from adhelper.autopilot.adapters.data import SqlHistory, autopilot_accounts
-from adhelper.autopilot.adapters.rules_file import load_policy_rules
+from adhelper.autopilot.adapters.rules_file import load_gate_thresholds, load_policy_rules
 from adhelper.autopilot.adapters.rules_file import load_rules as load_autopilot_rules
+from adhelper.autopilot.adapters.shadow_report import SqlShadowReport
 from adhelper.autopilot.adapters.sql import LoggedDecision, SqlDecisionLog
+from adhelper.autopilot.adapters.ticks import SqlTicks
+from adhelper.autopilot.application.shadow_report import build_report, render_text
 from adhelper.autopilot.application.simulator import Difference, compare
 from adhelper.budget.adapters.rules_file import load_rules as load_budget_rules
 from adhelper.budget.application.emergency import StopReport, stop_account
@@ -47,6 +50,7 @@ RULE_LOADERS = (
     (load_autopilot_rules, "autopilot-2"),
     (load_autopilot_rules, "autopilot-3"),
     (load_policy_rules, "policy-1"),
+    (load_gate_thresholds, "gates-1"),
     (load_experiment_rules, "experiments-1"),
     (load_experiment_rules, "experiments-2"),
     (load_creative_rules, "creatives-1"),
@@ -471,6 +475,31 @@ async def _shadow(settings: Settings, business_id: uuid.UUID, limit: int) -> int
     return 0
 
 
+GATES_VERSION = "gates-1"
+
+
+async def _shadow_report(settings: Settings, days: int, gates: str) -> int:
+    """Недельный отчёт теневого периода по всем кабинетам. Только чтение."""
+    try:
+        thresholds = load_gate_thresholds(gates)
+    except (OSError, ValueError, TypeError):
+        _say(f"Нет таких порогов: {gates}")
+        return 2
+    try:
+        async with open_runtime(settings) as runtime:
+            businesses = sorted({b for b, _, _ in await autopilot_accounts(runtime.sessions)})
+            sources = {b: SqlShadowReport(runtime.sessions, b) for b in businesses}
+            report = await build_report(
+                sources, SqlTicks(runtime.sessions), runtime.clock(), thresholds, days
+            )
+    except (SQLAlchemyError, OSError) as error:
+        _say(f"База недоступна: {type(error).__name__}")
+        return 1
+    for line in render_text(report):
+        _say(line)
+    return 0
+
+
 async def _sync_stats(settings: Settings) -> int:
     try:
         async with open_runtime(settings) as runtime:
@@ -513,6 +542,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     shadow.add_argument("--business", type=uuid.UUID, required=True)
     shadow.add_argument("--limit", type=int, default=50, help="Сколько записей на кабинет")
+    report = commands.add_parser(
+        "shadow-report", help="Недельный отчёт теневого периода: метрики, ворота этапа 9, выборка"
+    )
+    report.add_argument("--days", type=int, default=7, help="За сколько суток")
+    report.add_argument("--gates", default=GATES_VERSION, help="Версия порогов ворот")
     args = parser.parse_args(argv)
 
     settings = Settings()
@@ -524,6 +558,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return asyncio.run(_demo_seed(settings, args.mismatch))
     if args.command == "shadow":
         return asyncio.run(_shadow(settings, args.business, args.limit))
+    if args.command == "shadow-report":
+        return asyncio.run(_shadow_report(settings, args.days, args.gates))
     if args.command == "simulate":
         unknown = [v for v in (args.rules, args.against) if not _known_rules(v)]
         if unknown:

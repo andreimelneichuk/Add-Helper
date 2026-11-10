@@ -311,3 +311,21 @@ def test_check_reads_the_policy_rules_file() -> None:
     from adhelper.autopilot.adapters.rules_file import load_policy_rules
 
     assert (load_policy_rules, "policy-1") in cli.RULE_LOADERS
+
+
+def test_check_reads_the_gate_thresholds_file() -> None:
+    from adhelper.autopilot.adapters.rules_file import load_gate_thresholds
+
+    assert (load_gate_thresholds, "gates-1") in cli.RULE_LOADERS
+    thresholds = load_gate_thresholds("gates-1")
+    # Значения по умолчанию задаёт владелец: пока не подтверждены, вердикта нет.
+    assert thresholds.confirmed_by_owner is False
+
+
+async def test_shadow_report_command_prints_the_week_and_changes_nothing(
+    migrated: Settings, engine: AsyncEngine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert await cli._shadow_report(migrated, 7, "gates-1") == 0
+    out = capsys.readouterr().out
+    assert "Отчёт теневого периода" in out and "Ворота этапа 9" in out
+    assert await cli._shadow_report(migrated, 7, "gates-nope") == 2
