@@ -58,14 +58,40 @@ async def test_first_auto_starts_the_clock_and_narrows_the_envelope() -> None:
     assert any("узк" in line for line in store.lines)
 
 
-async def test_owner_envelope_is_kept_and_the_clock_is_not_restarted() -> None:
-    mine = {"max_changes_per_day": 2}
+async def test_owner_may_narrow_the_envelope_and_the_clock_is_not_restarted() -> None:
+    mine = {"max_changes_per_day": 0}
     store = Store(replace(DEFAULT_SETTINGS, envelope=mine))
     await update_settings(store, Patch(mode=AutopilotMode.AUTO), auto_allowed=True, now=NOW)
     again = await update_settings(
         store, Patch(run_hour=8), auto_allowed=True, now=NOW + timedelta(days=3)
     )
-    assert dict(again.envelope) == mine and again.auto_since == NOW
+    assert dict(again.envelope) == {"max_changes_per_day": 0, "max_weekly_move_bp": 500}
+    assert again.auto_since == NOW
+
+
+async def test_owner_cannot_widen_or_drop_the_default_envelope_in_auto() -> None:
+    store = Store()
+    await update_settings(store, Patch(mode=AutopilotMode.AUTO), auto_allowed=True, now=NOW)
+
+    dropped = await update_settings(store, Patch(envelope={}), auto_allowed=True, now=NOW)
+    widened = await update_settings(
+        store,
+        Patch(envelope={"max_changes_per_day": 9, "max_weekly_move_bp": 5000}),
+        auto_allowed=True,
+        now=NOW,
+    )
+
+    assert dict(dropped.envelope) == dict(FIRST_CABINET_ENVELOPE)
+    assert dict(widened.envelope) == dict(FIRST_CABINET_ENVELOPE)
+
+
+async def test_envelope_edit_while_already_in_auto_is_clamped_too() -> None:
+    # Кабинет уже в «Сам» (например, включён до этой правки) и рамок нет: правка тоже сужается.
+    store = Store(replace(DEFAULT_SETTINGS, mode=AutopilotMode.AUTO, auto_since=NOW, envelope={}))
+
+    after = await update_settings(store, Patch(run_hour=8), auto_allowed=True, now=NOW)
+
+    assert dict(after.envelope) == dict(FIRST_CABINET_ENVELOPE)
 
 
 async def test_leaving_auto_clears_the_clock_and_coming_back_restarts_it() -> None:

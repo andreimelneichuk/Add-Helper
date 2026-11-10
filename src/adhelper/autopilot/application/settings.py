@@ -18,7 +18,7 @@ from adhelper.autopilot.domain.settings import (
     next_run_at,
     validated,
 )
-from adhelper.autopilot.domain.trust import FIRST_CABINET_ENVELOPE
+from adhelper.autopilot.domain.trust import confined_envelope
 
 # HTTP-слой и воркер берут эти имена здесь, а не из домена.
 __all__ = [
@@ -90,10 +90,10 @@ def _lines(before: AutopilotSettings, after: AutopilotSettings) -> list[str]:
     if after.allowed_actions != before.allowed_actions:
         lines.append("Изменил, что автопилот вправе делать сам")
     if after.envelope != before.envelope:
-        narrowed = after.mode is AutopilotMode.AUTO and before.mode is not AutopilotMode.AUTO
+        narrowed = after.mode is AutopilotMode.AUTO and not before.envelope
         lines.append(
             "Поставил узкие рамки: одно изменение в сутки и до 5% бюджета в неделю"
-            if narrowed and not before.envelope
+            if narrowed
             else "Изменил рамки автопилота"
         )
     return lines
@@ -104,8 +104,9 @@ async def update_settings(
 ) -> AutopilotSettings:
     """Применяет изменения. Остановка снимается только явным resume, не сменой расписания.
 
-    Первое включение «Сам» на кабинете начинает отсчёт ежедневного отчёта (`auto_since`) и,
-    если рамок нет, ставит узкие по умолчанию. Выход из «Сам» отсчёт сбрасывает.
+    Первое включение «Сам» на кабинете начинает отсчёт ежедневного отчёта (`auto_since`). В «Сам»
+    рамки только сужаются относительно рамок первого кабинета: убрать или расширить их правкой
+    нельзя. Выход из «Сам» отсчёт сбрасывает.
     """
     before = await store.get() or DEFAULT_SETTINGS
     if patch.mode is AutopilotMode.AUTO and not auto_allowed:
@@ -119,14 +120,13 @@ async def update_settings(
         envelope=before.envelope if patch.envelope is None else patch.envelope,
         stopped_at=None if patch.resume else before.stopped_at,
     )
-    if after.mode is AutopilotMode.AUTO and before.mode is not AutopilotMode.AUTO:
-        narrow = {} if after.envelope else dict(FIRST_CABINET_ENVELOPE)
-        after = replace(
-            after,
-            auto_since=now or datetime.now(UTC),
-            envelope=after.envelope or narrow,
-        )
-    elif after.mode is not AutopilotMode.AUTO:
+    if after.mode is AutopilotMode.AUTO:
+        # В «Сам» рамки только сужаются: правка владельца кабинета не снимает и не расширяет
+        # рамки первого самостоятельного кабинета.
+        after = replace(after, envelope=confined_envelope(after.envelope))
+        if before.mode is not AutopilotMode.AUTO:
+            after = replace(after, auto_since=now or datetime.now(UTC))
+    else:
         after = replace(after, auto_since=None)
     validated(after)
     lines = _lines(before, after)

@@ -45,6 +45,14 @@ ACTION_CLASS = {
 FIRST_CABINET_ENVELOPE: Mapping[str, int] = {"max_changes_per_day": 1, "max_weekly_move_bp": 500}
 
 
+def confined_envelope(envelope: Mapping[str, int]) -> dict[str, int]:
+    """Рамки «Сам»: свои значения только уже, чем у первого кабинета; пропущенные берутся оттуда."""
+    result = dict(envelope)
+    for name, limit in FIRST_CABINET_ENVELOPE.items():
+        result[name] = min(result.get(name, limit), limit)
+    return result
+
+
 class GrantRefusal(StrEnum):
     ALREADY = "already"
     NOT_NEXT_STEP = "not_next_step"
