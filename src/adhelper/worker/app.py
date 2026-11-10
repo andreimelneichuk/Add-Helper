@@ -62,7 +62,7 @@ async def creatives_generate(timestamp: int) -> None:
         await runtime.creatives_generate()
 
 
-# Хранитель объявлений: сам решает, когда писать и что ставить на место (docs/05 §8).
+# Хранитель объявлений: сам решает, когда писать и что ставить на место.
 @app.periodic(cron="*/5 * * * *")
 @app.task(name="ads.keep", queue=CREATIVES_QUEUE, queueing_lock="ads.keep")
 async def ads_keep(timestamp: int) -> None:
@@ -70,7 +70,7 @@ async def ads_keep(timestamp: int) -> None:
         await runtime.ads_keep()
 
 
-# Отправка занявших место объявлений через журнал и итог проверки Яндекса (docs/05 §8).
+# Отправка занявших место объявлений через журнал и итог проверки Яндекса.
 # Очередь креативов: может генерировать картинки через модель.
 @app.periodic(cron="*/5 * * * *")
 @app.task(name="ads.moderate", queue=CREATIVES_QUEUE, queueing_lock="ads.moderate")

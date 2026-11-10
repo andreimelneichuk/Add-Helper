@@ -1,4 +1,4 @@
-"""Качество данных: docs/04-autopilot.md §3."""
+"""Качество данных"""
 
 from adhelper.autopilot.adapters.rules_file import load_rules
 from adhelper.autopilot.domain.health import HealthInput, HealthReason, Window, check_health

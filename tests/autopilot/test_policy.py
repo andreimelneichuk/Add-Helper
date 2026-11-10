@@ -1,4 +1,4 @@
-"""Политика автопилота: жёсткие рамки автоматического действия (docs/04-autopilot.md §7)."""
+"""Политика автопилота: жёсткие рамки автоматического действия."""
 
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta

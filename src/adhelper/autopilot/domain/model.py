@@ -59,7 +59,7 @@ class CampaignStats:
     budget_limited: bool
     last_change_at: datetime | None
     test_running: bool = False
-    # None: площадка не сказала. Политика трактует неизвестное строго (docs/04-autopilot.md §7).
+    # None: площадка не сказала. Политика трактует неизвестное строго.
     auto_strategy: bool | None = None
     in_learning: bool | None = None
 
@@ -115,7 +115,7 @@ def _to_bp(probability: float) -> int:
 
 
 def posterior(spend: int, leads: int, target: int, rules: AutopilotRules) -> Posterior:
-    """Гамма-Пуассон из docs/04-autopilot.md §4; для целого a это точная сумма Пуассона.
+    """Гамма-Пуассон ; для целого a это точная сумма Пуассона.
 
     Вероятности вещественные, но деньги на входе целые и результат детерминирован.
     """

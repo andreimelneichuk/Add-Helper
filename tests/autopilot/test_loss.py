@@ -1,4 +1,4 @@
-"""Математика autopilot-3: Beta-Binomial, интервалы, ожидаемая потеря (docs/16, §11)."""
+"""Математика autopilot-3: Beta-Binomial, интервалы, ожидаемая потеря."""
 
 import random
 

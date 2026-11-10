@@ -114,7 +114,7 @@ def test_worst_case_at_the_most_expensive_allowed_model_is_within_five_cents() -
     price = Price(MAX_OUTPUT_MICRO_PER_M, MAX_OUTPUT_MICRO_PER_M)
     calls, worst = estimate(price)
     assert calls == 40
-    assert worst <= 50_000  # $0,05, предел из CLAUDE.md
+    assert worst <= 50_000  # $0,05, предел на прогон
 
 
 def test_refs_sent_to_the_model_do_not_leak_the_label_or_the_case_number() -> None:

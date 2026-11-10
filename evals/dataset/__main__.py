@@ -1,4 +1,4 @@
-"""Обучающая, проверочная и тестовая выборки для агентов (docs/12-agents.md §9, AI1).
+"""Обучающая, проверочная и тестовая выборки для агентов.
 
     uv run python -m evals.dataset write             # объявления писателя по профилям
     uv run python -m evals.dataset blind --labeler claude-b --out DIR --chunks 4
@@ -73,7 +73,7 @@ from evals.meter import (
 # Бесплатный уровень Groq даёт 8000 токенов в минуту на модель: ждём долго, а не падаем.
 PARALLEL = 2
 ATTEMPTS = 6
-# Оплаченный негодный ответ повторяем не больше двух раз: docs/13-model-spend.md.
+# Оплаченный негодный ответ повторяем не больше двух раз.
 PAID_RETRIES = 2
 MAX_TOKENS = 3000
 

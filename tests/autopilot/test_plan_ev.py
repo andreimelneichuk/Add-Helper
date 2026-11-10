@@ -1,4 +1,4 @@
-"""Решения autopilot-3 по ожидаемой потере (docs/16, §11; docs/04, §4)."""
+"""Решения autopilot-3 по ожидаемой потере."""
 
 import dataclasses
 from datetime import UTC, datetime

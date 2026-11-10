@@ -1,4 +1,4 @@
-"""Симулятор на истории: две версии правил на одних днях. docs/04-autopilot.md §4."""
+"""Симулятор на истории: две версии правил на одних днях."""
 
 from datetime import date, timedelta
 from itertools import pairwise

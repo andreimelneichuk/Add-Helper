@@ -1,4 +1,4 @@
-"""Оценка эффективности: docs/04-autopilot.md §4."""
+"""Оценка эффективности"""
 
 from datetime import UTC, date, datetime
 

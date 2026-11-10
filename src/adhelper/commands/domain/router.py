@@ -1,4 +1,4 @@
-"""Гибридный роутер намерений (Intent Router): docs/tasks/13-chat-assistant-verification.md §2.А.
+"""Гибридный роутер намерений (Intent Router).
 
 Трехуровневая архитектура:
 - Слой 1: Детерминированный фильтр (Regex / Rules) — 0 мс, 0$, confidence = 1.0.

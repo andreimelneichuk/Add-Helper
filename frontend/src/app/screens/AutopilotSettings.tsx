@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { announceAutopilotChange } from "../autopilotEvents";
 import type { Api, AutopilotAction, AutopilotMode, AutopilotPatch, AutopilotStatus, AutopilotView } from "../../api";
 
-// Слова владельца: «положение» вместо «режим», «разбор» вместо «цикл» (docs/01-product-spec.md).
+// Слова владельца: «положение» вместо «режим», «разбор» вместо «цикл».
 export const AUTOPILOT_STATUS: Record<AutopilotStatus, string> = {
   ok: "Автопилот работает",
   no_goal: "Не задана желаемая цена обращения: без неё мне не с чем сравнивать",

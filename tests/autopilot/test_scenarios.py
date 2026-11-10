@@ -1,4 +1,4 @@
-"""Сценарии 1–3 из docs/07-testing-acceptance.md §2 на симуляторе."""
+"""Сценарии 1–3  на симуляторе."""
 
 from datetime import UTC, date, datetime, timedelta
 

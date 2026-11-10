@@ -1,4 +1,4 @@
-"""Ссылки писателя на факты профиля проверяет код (docs/12-agents.md §4)."""
+"""Ссылки писателя на факты профиля проверяет код."""
 
 from adhelper.creatives.domain.facts import Claim, check_claims, keyed_facts
 from adhelper.creatives.domain.model import AdDraft, BusinessProfile, Service, ViolationKind

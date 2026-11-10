@@ -92,7 +92,7 @@ class Actions(Protocol):
 
 
 class TestPlanner(Protocol):
-    """Гипотеза по фактам профиля и подготовка теста. docs/04-autopilot.md §5."""
+    """Гипотеза по фактам профиля и подготовка теста."""
 
     async def hypothesis(self, account: str, ad_ref: str) -> str | None: ...
     async def prepare(

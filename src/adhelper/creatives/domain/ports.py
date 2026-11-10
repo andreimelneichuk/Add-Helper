@@ -114,7 +114,7 @@ class Outgoing:
     campaign_id: str
     draft: AdDraft
     href: str
-    # SHA-256 картинки объявления; None — без картинки (docs/05-creatives.md §3).
+    # SHA-256 картинки объявления; None — без картинки.
     image: str | None = None
     image_disabled: bool = False
 

@@ -1,4 +1,4 @@
-"""Тест по итогам анализа: предложение, согласие и отказ владельца. docs/04-autopilot.md §5."""
+"""Тест по итогам анализа: предложение, согласие и отказ владельца."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field

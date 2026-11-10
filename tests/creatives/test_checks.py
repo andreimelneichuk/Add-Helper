@@ -1,4 +1,4 @@
-"""Проверка фактов и лимитов: docs/05-creatives.md §5."""
+"""Проверка фактов и лимитов"""
 
 import pytest
 from hypothesis import given

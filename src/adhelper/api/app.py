@@ -204,7 +204,7 @@ def create_app(
         settings, sessions, oauth_provider, app.state.cipher, _utc_now
     )
     app.state.platform_for = platforms or _no_platform
-    # Режим «Сам» у автопилота до ворот этапа 9 закрыт (docs/17-autopilot-plan.md).
+    # Режим «Сам» у автопилота до ворот этапа 9 закрыт.
     app.state.autopilot_auto_allowed = settings.autopilot_auto_allowed
     app.include_router(notifications_router())
     app.include_router(chat_router())

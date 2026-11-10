@@ -1,4 +1,4 @@
-"""Защищенный агент изменений (Mutation Agent): docs/tasks/13-chat-assistant-verification.md §2.Б.
+"""Защищенный агент изменений (Mutation Agent).
 
 Переводит просьбу владельца в предложение действия (Proposal Pattern).
 Гардрейлы:

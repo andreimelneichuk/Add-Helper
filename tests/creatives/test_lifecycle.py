@@ -145,7 +145,7 @@ def test_sensitive_niche_or_unjudged_text_waits_for_owner() -> None:
 
 
 def test_new_ad_waits_for_owner_unless_autopilot_acts_on_its_own() -> None:
-    """Режим автопилота решает, уходит ли новое объявление на место само (docs/04, docs/05 §8)."""
+    """Режим автопилота решает, уходит ли новое объявление на место само."""
     ready = [candidate(1, CreativeState.READY, PRICE)]
     asked = plan([campaign(live=(NEAR, NAME))], ready, owner_decides=True)
     assert asked.moves[0].state is CreativeState.NEEDS_OWNER

@@ -137,10 +137,10 @@ logger = logging.getLogger(__name__)
 
 MAX_CHANGE_ATTEMPTS = 3
 CURRENT_AUTOPILOT_RULES = "autopilot-4"
-# Оценка исходов и предохранители: docs/17-autopilot-plan.md, этап 7.
+# Оценка исходов и предохранители.
 CURRENT_OUTCOME_RULES = "outcomes-1"
 CURRENT_POLICY_RULES = "policy-1"
-# Считает рядом с рабочими правилами и пишет «сделала бы»: docs/17-autopilot-plan.md, этап 5.
+# Считает рядом с рабочими правилами и пишет «сделала бы».
 SHADOW_AUTOPILOT_RULES = "autopilot-3"
 CURRENT_EXPERIMENT_RULES = "experiments-2"
 

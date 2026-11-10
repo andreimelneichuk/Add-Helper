@@ -40,14 +40,14 @@ class Settings(BaseSettings):
     # Боевой адаптер Директа. Выключен: действия с площадкой отвечают 503, страж шлёт тревогу.
     # Включать после согласования боевого запуска с владельцем; для проверки — адрес песочницы.
     direct_enabled: bool = False
-    # Разрешение владельца проекта на режим «Сам» у автопилота (docs/16, docs/17). Пока false,
+    # Разрешение владельца проекта на режим «Сам» у автопилота. Пока false,
     # сервер отклоняет этот режим. Включать только после ворот этапа 9.
     autopilot_auto_allowed: bool = False
     direct_api_url: str = "https://api.direct.yandex.com"
     direct_live_url: str = "https://api.direct.yandex.ru/live/v4/json/"
 
     # Любой OpenAI-совместимый API. Без ключа или модели объявления собираются из шаблонов.
-    # По умолчанию пара, прошедшая ворота выпуска на OpenRouter 2026-11-05 (docs/12-agents.md §4).
+    # По умолчанию пара, прошедшая ворота выпуска на OpenRouter 2026-11-05.
     # Другую пару ставь только после своих ворот: evals.gate.
     text_model_base_url: str = "https://openrouter.ai/api/v1"
     text_model_api_key: SecretStr | None = None
@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     text_model_name: str = "google/gemma-4-31b-it"
     # Семантическая проверка объявлений тем же API. Пусто — судья выключен, остаётся код.
     judge_model_name: str = "deepseek/deepseek-v4.1-flash"
-    # Рецензент автопилота (docs/12-agents.md): без ключа всё идёт карточкой.
+    # Рецензент автопилота: без ключа всё идёт карточкой.
     review_model_name: str = "google/gemma-4-31b-it"
     # Генерация картинок тем же ключом OpenRouter (один баланс), модели в правилах images-1.
     # Каждая картинка стоит денег (около $0,03), расход ограничен правилами images-1

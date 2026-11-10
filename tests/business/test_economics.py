@@ -1,4 +1,4 @@
-"""Допустимая цена обращения из экономики бизнеса. docs/17-autopilot-plan.md, этап 3."""
+"""Допустимая цена обращения из экономики бизнеса."""
 
 import pytest
 from hypothesis import given

@@ -1,4 +1,4 @@
-"""`adhelper simulate`: две версии правил на истории кабинета. docs/04-autopilot.md §4."""
+"""`adhelper simulate`: две версии правил на истории кабинета."""
 
 import uuid
 from datetime import date

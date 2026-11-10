@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from adhelper.creatives.domain.checks import profile_facts
 from adhelper.creatives.domain.model import AdDraft, BusinessProfile
 
-# Вариант v4 из evals/prompts.py: правило §1 docs/12-agents.md от 2026-11-03 и весь набор
+# Вариант v4 из evals/prompts.py: правило от 2026-11-03 и весь набор
 # за один вызов. Субъективная оценка без сравнения допустима, проверяемое свойство — только
 # из профиля. Судья — модель другого производителя, чем писатель.
 JUDGE_SYSTEM = (

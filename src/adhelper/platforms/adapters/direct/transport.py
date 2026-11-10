@@ -1,4 +1,4 @@
-"""Тонкий асинхронный клиент Директ API (docs/03-integrations.md «Клиент»).
+"""Тонкий асинхронный клиент Директ API.
 
 Знает только транспорт: адреса и версии сервисов, заголовки, баллы, разбор ошибок и повтор
 того, что заведомо не применилось. Повтор изменения после сбоя связи решает журнал: он
@@ -24,7 +24,7 @@ SANDBOX_URL = "https://api-sandbox.direct.yandex.com"
 PRODUCTION_LIVE_URL = "https://api.direct.yandex.ru/live/v4/json/"
 SANDBOX_LIVE_URL = "https://api-sandbox.direct.yandex.ru/live/v4/json/"
 
-# Единая перфоманс-кампания и её группы работают только через v501 (docs/00-research.md §2).
+# Единая перфоманс-кампания и её группы работают только через v501.
 SERVICE_VERSIONS: Mapping[str, str] = {
     "campaigns": "v501",
     "adgroups": "v501",

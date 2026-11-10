@@ -44,7 +44,7 @@ from adhelper.creatives.domain.rework import ReworkRules
 logger = logging.getLogger(__name__)
 
 # Правила для новых наборов. creatives-3 (рамка писателя) прошла ворота выпуска 2026-11-05:
-# верхняя граница ошибки 0,87% при пороге 3%, docs/12-agents.md §4.
+# верхняя граница ошибки 0,87% при пороге 3%
 CURRENT_RULES = "creatives-3"
 CURRENT_SLOT_RULES = "ads-1"
 CURRENT_REWORK_RULES = "rework-1"

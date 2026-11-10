@@ -210,7 +210,7 @@ def gold(
 
 
 def upper_bound(errors: int, total: int, confidence: float = 0.95) -> float:
-    """Односторонняя верхняя граница Клоппера — Пирсона для доли ошибок, как в docs/12 §2."""
+    """Односторонняя верхняя граница Клоппера — Пирсона для доли ошибок, как в"""
     if total == 0 or errors >= total:
         return 1.0
 

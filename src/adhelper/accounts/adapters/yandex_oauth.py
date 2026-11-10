@@ -1,4 +1,4 @@
-"""Яндекс ID: вход владельца и доступ к кабинету Директа (docs/03-integrations.md «Вход»).
+"""Яндекс ID: вход владельца и доступ к кабинету Директа.
 
 Формат по документации Яндекс ID, реальным вызовом ещё не проверен (V1, T4):
 - `GET {oauth}/authorize?response_type=code&client_id&redirect_uri&scope&state&code_challenge

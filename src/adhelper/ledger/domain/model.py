@@ -26,7 +26,7 @@ class ChangeKind(StrEnum):
 
 class ChangeSource(StrEnum):
     AUTOPILOT = "autopilot"
-    # Хранитель мест объявлений: работает мимо режима автопилота (docs/05 §8).
+    # Хранитель мест объявлений: работает мимо режима автопилота.
     AD_KEEPER = "ad_keeper"
     USER = "user"
     ROLLBACK = "rollback"

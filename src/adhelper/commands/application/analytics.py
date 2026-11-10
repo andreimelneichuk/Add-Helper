@@ -1,4 +1,4 @@
-"""Аналитический агент (Analytics / Info Agent): docs/tasks/13-chat-assistant-verification.md §2.В.
+"""Аналитический агент (Analytics / Info Agent).
 
 Read-Only консультант свободного диалога:
 - Отвечает на вопросы о рекламе, метриках, эффективности объявлений и истории автопилота.

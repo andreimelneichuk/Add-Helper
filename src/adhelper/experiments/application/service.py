@@ -36,7 +36,7 @@ __all__ = [
 DATA_REASON = "data_untrusted"
 OUTSIDE_REASON = "changed_outside_service"
 OWNER_REASON = "owner_cancelled"
-# Причина выключения проигравшего: по ней хранитель освобождает место (docs/05 §8).
+# Причина выключения проигравшего: по ней хранитель освобождает место.
 LOST_TEST = "lost_test"
 SIDE_NAME = {"A": "прежний вариант", "B": "новый вариант"}
 

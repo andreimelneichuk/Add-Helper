@@ -1,4 +1,4 @@
-"""Гипотеза теста из закрытого списка и только по фактам профиля: docs/04-autopilot.md §5."""
+"""Гипотеза теста из закрытого списка и только по фактам профиля"""
 
 from adhelper.experiments.domain.model import Hypothesis, pick_hypothesis, supported_hypotheses
 

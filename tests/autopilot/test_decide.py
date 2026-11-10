@@ -1,4 +1,4 @@
-"""Предложения и ограничения: docs/04-autopilot.md §4 «Действия и ограничения»."""
+"""Предложения и ограничения."""
 
 import dataclasses
 from datetime import UTC, datetime, timedelta

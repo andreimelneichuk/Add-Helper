@@ -1,4 +1,4 @@
-"""Откат: docs/04-autopilot.md §6 и сценарий 8 из docs/07-testing-acceptance.md."""
+"""Откат и сценарий 8 ."""
 
 import uuid
 from datetime import UTC, datetime, timedelta

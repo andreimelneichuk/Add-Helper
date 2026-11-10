@@ -1,4 +1,4 @@
-"""Настройки автопилота: значения, проверка, расписание. docs/17-autopilot-plan.md, этап 1."""
+"""Настройки автопилота: значения, проверка, расписание."""
 
 from collections.abc import Sequence
 from dataclasses import replace

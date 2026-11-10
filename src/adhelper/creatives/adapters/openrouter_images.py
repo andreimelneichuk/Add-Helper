@@ -14,7 +14,7 @@ TIMEOUT_SECONDS = 120.0
 class OpenRouterImages:
     """Генерация картинок OpenRouter: `POST /api/v1/images`.
 
-    Формат сверен с документацией 2026-11-05 (docs/00-research.md §5): тело `model`, `prompt`,
+    Формат сверен с документацией 2026-11-05: тело `model`, `prompt`,
     `aspect_ratio`; ответ `data[].b64_json` и `media_type`, цена в `usage.cost`. Неудачная
     генерация не оплачивается и приходит кодом 502.
     """

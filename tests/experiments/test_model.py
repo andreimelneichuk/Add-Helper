@@ -1,4 +1,4 @@
-"""Логика A/B: docs/04-autopilot.md §5."""
+"""Логика A/B"""
 
 import random
 

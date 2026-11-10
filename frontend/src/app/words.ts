@@ -1,4 +1,4 @@
-// Словарь интерфейса: слова владельца вместо терминов площадки (docs/01-product-spec.md).
+// Словарь интерфейса: слова владельца вместо терминов площадки.
 
 export const CAMPAIGN_STATE: Record<string, { label: string; tone: "ok" | "off" | "warn" }> = {
   on: { label: "Идут показы", tone: "ok" },

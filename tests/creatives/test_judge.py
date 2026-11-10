@@ -136,7 +136,7 @@ def test_set_is_numbered_through_and_split_back_by_code() -> None:
 
 
 def test_new_rule_allows_subjective_and_blocks_checkable_and_comparisons() -> None:
-    # Правило §1 docs/12-agents.md от 2026-11-03 дословно передано судье.
+    # Правило от 2026-11-03 дословно передано судье.
     assert "«уютный»" in JUDGE_SYSTEM and "«натуральный»" in JUDGE_SYSTEM
     assert "«вкуснее, чем у других»" in JUDGE_SYSTEM
 
