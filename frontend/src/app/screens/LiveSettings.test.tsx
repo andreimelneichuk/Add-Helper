@@ -410,6 +410,23 @@ describe("план бюджета до запуска", () => {
     expect(screen.getByLabelText(/согласны на рекламу/)).not.toBeChecked();
   });
 
+  it("сделанные сервисом фото лежат в общем списке с пометкой, не занимают место своих и убираются", async () => {
+    const own = [1, 2, 3, 4].map((id) => ({ id, width: 600, height: 600, url: `/p/${id}`, source: "owner" as const }));
+    const made = { id: 9, width: 1024, height: 1024, url: "/p/9", source: "generated" as const };
+    const photos = vi.fn().mockResolvedValue({ photos: [...own, made], max: 5 });
+    const api = fakeApi({ photos } as Partial<Api>);
+    render(<Settings store={await open(api)} />);
+
+    expect(await screen.findByText("Сделано сервисом")).toBeInTheDocument();
+    expect(photos).toHaveBeenCalledWith(undefined, true);
+    // Своих 4 из 5: добавить ещё можно, хотя в списке уже 5 карточек.
+    expect(screen.getByRole("button", { name: "Добавить фото" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Убрать фото 5" }));
+
+    expect(api.archivePhoto).toHaveBeenCalledWith(9);
+  });
+
   it("подключение кабинета и обработка сбоев", async () => {
     const assign = vi.fn();
     vi.stubGlobal("location", { assign });

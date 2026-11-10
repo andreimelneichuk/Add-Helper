@@ -960,7 +960,7 @@ function Photos({ api }: { api: Api }) {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const load = useCallback(async () => setData(await api.photos()), [api]);
+  const load = useCallback(async () => setData(await api.photos(undefined, true)), [api]);
   useEffect(() => { load().catch((e: unknown) => setError(message(e))); }, [load]);
   const act = async (work: () => Promise<string>) => {
     setBusy(true);
@@ -985,7 +985,7 @@ function Photos({ api }: { api: Api }) {
   // Найти варианты автоматически по адресу профиля, но никогда не сохранять их
   // без явного выбора владельца и согласия на права/людей на снимках.
   useEffect(() => {
-    if (!data || data.photos.length >= data.max || siteLookupStarted.current === api) return;
+    if (!data || data.photos.filter((p) => p.source !== "generated").length >= data.max || siteLookupStarted.current === api) return;
     siteLookupStarted.current = api;
     let active = true;
     void api.profile().then(async (profile) => {
@@ -1048,7 +1048,9 @@ function Photos({ api }: { api: Api }) {
     });
   };
   if (!data) return <p className="ah-muted">{error ?? "Загружаю…"}</p>;
-  const full = data.photos.length >= data.max;
+  // Лимит «своих» фото не считает те, что нарисовал сервис.
+  const owned = data.photos.filter((p) => p.source !== "generated").length;
+  const full = owned >= data.max;
   return (
     <div className="set-rows">
       <p className="set-hint">Фото необязательны: если своих не будет, сервис подберёт или создаст изображение сам. До {data.max} фото салона, работ или мастеров; квадрат или кадр 4:3, от 450 точек по короткой стороне.</p>
@@ -1056,14 +1058,15 @@ function Photos({ api }: { api: Api }) {
         <ul className="set-photos" aria-label="Ваши фото">
           {data.photos.map((p, i) => (
             <li key={p.id} className="set-photo">
-              <img src={p.url} alt={`Фото ${i + 1}`} width={p.width} height={p.height} loading="lazy" />
-              <button type="button" className="ah-btn" disabled={busy} onClick={() => act(async () => { await api.archivePhoto(p.id); return "Фото убрал из подбора. Объявления, где оно уже стоит, работают дальше."; })}>Убрать фото {i + 1}</button>
+              <img src={p.url} alt={`Фото ${i + 1}`} loading="lazy" />
+              {p.source === "generated" && <span className="set-hint">Сделано сервисом</span>}
+              <button type="button" className="ah-btn" disabled={busy} onClick={() => act(async () => { await api.archivePhoto(p.id); return "Фото убрал. Объявления, где оно уже стоит, работают дальше."; })}>Убрать фото {i + 1}</button>
             </li>
           ))}
         </ul>
       )}
       {full ? (
-        <p className="set-hint">Уже {data.max} фото. Уберите одно, чтобы добавить новое.</p>
+        <p className="set-hint">Уже {data.max} своих фото. Уберите одно, чтобы добавить новое.</p>
       ) : (
         <>
           <label className="set-check">

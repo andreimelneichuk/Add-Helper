@@ -1,11 +1,13 @@
 """Фото для объявления: сделать по услуге из профиля и отправить объявление с выбранным фото."""
 
 import io
+from datetime import timedelta
 
 import httpx
 from PIL import Image
 from sqlalchemy import text
 
+from adhelper.creatives.adapters.images_sql import SqlImages
 from adhelper.creatives.adapters.rules_file import load_image_rules
 from adhelper.creatives.domain.images import GeneratedImage
 from adhelper.ledger.adapters.sql import SqlChangeRepository
@@ -317,3 +319,26 @@ async def test_ad_can_be_switched_to_a_photo_made_by_the_service(anna: Anna) -> 
     )
 
     assert queued.status_code == 202, queued.text
+
+
+async def test_photo_made_by_the_service_can_be_removed_but_still_counts_for_the_day(
+    anna: Anna,  # noqa: F811
+) -> None:
+    client, csrf, business = anna
+    base = f"/api/businesses/{business}"
+    _app(client).state.image_models = (FakeImageModel(),)
+    _app(client).state.text_model = None
+    await _profile(client, base, csrf)
+    made = (
+        await client.post(f"{base}/photos/generate", json={"service": "Маникюр"}, headers=csrf)
+    ).json()["id"]
+
+    removed = await client.post(f"{base}/photos/{made}/archive", headers=csrf)
+
+    assert removed.status_code == 200
+    listed = (await client.get(f"{base}/photos", params={"include_generated": "true"})).json()
+    assert listed["photos"] == []
+    # Убранная картинка не возвращает суточный запас: деньги за неё уже потрачены.
+    store = SqlImages(_app(client).state.sessions, business)
+    now = _app(client).state.clock()
+    assert await store.generated_since(now - timedelta(hours=24)) == 1
