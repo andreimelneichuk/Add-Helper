@@ -17,6 +17,9 @@ BASIS_POINTS = 10_000
 # Метка исхода, у которого откат уже начат: после падения воркера или недоведённого отката
 # его не оценивают заново, а доводят (docs/04-autopilot.md §6).
 ROLLBACK_STARTED = "rollback_started"
+# Метка записи журнала: откат сделал сам автопилот. Ручную отмену владельца так не помечаем,
+# и счётчик предохранителя её не считает.
+AUTO_ROLLBACK_DECISION = "outcome-rollback"
 
 
 class OutcomeVerdict(StrEnum):
@@ -85,6 +88,9 @@ class OutcomeRules:
         bad += [name for name, value in non_negative.items() if value < 0]
         if bad:
             raise ValueError(f"правила {self.version}: недопустимые значения: {', '.join(bad)}")
+        if self.window_days > 7:
+            # Окно «до» сдвинуто ровно на неделю; при большем окне оно пересеклось бы с «после».
+            raise ValueError(f"правила {self.version}: window_days больше 7")
         if self.anomaly_worse_count > self.anomaly_window:
             raise ValueError(f"правила {self.version}: anomaly_worse_count больше anomaly_window")
         if self.register_lookback_days < self.window_days + self.maturity_days:

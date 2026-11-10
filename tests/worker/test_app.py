@@ -88,8 +88,9 @@ async def test_worker_runs_money_tasks_from_real_database(
         rows = await connection.execute(
             text("SELECT task_name, status FROM procrastinate_jobs WHERE scheduled_at IS NULL")
         )
-        # Часовой автопилот ставится по часам (:20) и попадает в прогон только в это окно.
-        statuses = {name: str(status) for name, status in rows if name != "autopilot.tick"}
+        # Часовые задачи (автопилот в :20, очистка заданий) попадают в прогон только в своё окно.
+        skipped = {"autopilot.tick", "cleanup.jobs"}
+        statuses = {name: str(status) for name, status in rows if name not in skipped}
     assert statuses == {
         "budget.watch": "succeeded",
         "state.reconcile": "succeeded",

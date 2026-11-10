@@ -13,7 +13,7 @@ from adhelper.autopilot.adapters.ledgered import LedgeredActions
 from adhelper.autopilot.adapters.outcomes import SqlOutcomeStore
 from adhelper.autopilot.adapters.rules_file import load_outcome_rules
 from adhelper.autopilot.application.outcomes import OutcomeMonitor
-from adhelper.autopilot.domain.outcomes import OutcomeVerdict
+from adhelper.autopilot.domain.outcomes import AUTO_ROLLBACK_DECISION, OutcomeVerdict
 from adhelper.budget.adapters.ledgered import PlatformChangeGateway
 from adhelper.budget.domain.calendar import moscow_period, platform_date
 from adhelper.ledger.adapters.sql import PostgresAccountLock, SqlChangeRepository
@@ -128,7 +128,9 @@ class Rig:
         return (await SqlChangeRepository(self.sessions, BUSINESS).all())[0].id
 
 
-async def journal_rollbacks(sessions: Sessions, count: int, *, ago: int = 5) -> None:
+async def journal_rollbacks(
+    sessions: Sessions, count: int, *, ago: int = 5, auto: bool = True, status: str = "applied"
+) -> None:
     """Прошлые автоотмены в журнале: остановка автопилота и откат к ней.
 
     Сами остановки старше окна учёта, на оценку они не попадают.
@@ -147,15 +149,18 @@ async def journal_rollbacks(sessions: Sessions, count: int, *, ago: int = 5) -> 
             await session.execute(
                 text(
                     "INSERT INTO changes (business_id, account, source, kind, target_ref, before,"
-                    " planned, status, explanation, idempotency_key, created_at, reverts_change_id)"
+                    " planned, status, explanation, idempotency_key, created_at, reverts_change_id,"
+                    " decision_id)"
                     " VALUES (:b, 'acc', 'rollback', 'resume_ad', 'ad:x', '{}'::jsonb,"
-                    " '{}'::jsonb, 'applied', 'x', :k, :at, :orig)"
+                    " '{}'::jsonb, :status, 'x', :k, :at, :orig, :decision)"
                 ),
                 {
                     "b": BUSINESS,
                     "k": f"rollback:old-{number}",
                     "at": NOW - timedelta(days=ago),
                     "orig": original,
+                    "status": status,
+                    "decision": AUTO_ROLLBACK_DECISION if auto else None,
                 },
             )
 
@@ -601,7 +606,7 @@ async def test_evaluation_time_counts_from_the_end_of_the_window_in_moscow(
     assert row.evaluate_at == moscow_period(ready_day, 1)[0]
 
 
-async def test_demote_notice_is_sent_even_if_the_mode_was_already_changed(
+async def test_demote_notice_is_not_sent_if_the_mode_was_already_changed(
     sessions: Sessions, engine: AsyncEngine
 ) -> None:
     rig = Rig(sessions, engine, demoted=False)
@@ -613,7 +618,109 @@ async def test_demote_notice_is_sent_even_if_the_mode_was_already_changed(
 
     async with sessions() as session:
         kinds = list(await session.scalars(text("SELECT kind FROM alerts")))
-    assert kinds.count("autopilot_demoted") == 1
+    assert kinds.count("autopilot_demoted") == 0
+
+
+async def test_owner_cancellations_are_not_counted_as_auto_rollbacks(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    rig = Rig(sessions, engine)
+    await rig.pause_bad()
+    await history(sessions, after_leads_per_day=1)
+    await journal_rollbacks(sessions, 2, auto=False)  # две ручные отмены владельца
+
+    result = await rig.monitor.run("acc")
+
+    assert result.rolled_back == 1 and rig.platform.ads["ad:bad"] is True
+    assert rig.demotions == []
+
+
+async def test_rollbacks_in_flight_count_towards_the_limit(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    rig = Rig(sessions, engine)
+    await rig.pause_bad()
+    await history(sessions, after_leads_per_day=1)
+    await journal_rollbacks(sessions, 1)
+    await journal_rollbacks(sessions, 1, status="planned")  # откат ещё не дошёл до площадки
+
+    result = await rig.monitor.run("acc")
+
+    assert result.rolled_back == 0 and rig.platform.ads["ad:bad"] is False
+    assert result.demoted_reason is not None
+
+
+async def test_blocked_rollback_leaves_the_outcome_pending(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    rig = Rig(sessions, engine)
+    await rig.pause_bad()
+    await history(sessions, after_leads_per_day=1)
+    await journal_rollbacks(sessions, 2)
+
+    await rig.monitor.run("acc")
+
+    row = await outcome_row(sessions)
+    assert row.status == "pending" and row.verdict is None
+
+
+async def test_claimed_but_unprocessed_outcomes_are_released_after_a_break(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    rig = Rig(sessions, engine)
+    await rig.pause_bad()
+    await history(sessions, after_leads_per_day=1)
+    await journal_rollbacks(sessions, 2)
+    await SqlOutcomeStore(sessions, BUSINESS).register_new("acc", RULES, NOW)
+    async with sessions.begin() as session:
+        await session.execute(
+            text(
+                "INSERT INTO decision_outcomes (business_id, account, change_id, object_ref,"
+                " kind, applied_at, evaluate_at) VALUES (:b, 'acc', 999999, 'ad:good',"
+                " 'pause_ad', :at, :at)"
+            ),
+            {"b": BUSINESS, "at": APPLIED},
+        )
+
+    await rig.monitor.run("acc")
+
+    async with sessions() as session:
+        statuses = list(await session.scalars(text("SELECT status FROM decision_outcomes")))
+    assert "evaluating" not in statuses
+
+
+async def test_failed_revert_record_does_not_make_the_outcome_skipped(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    rig = Rig(sessions, engine)
+    change_id = await rig.pause_bad()
+    await history(sessions, after_leads_per_day=1)
+    async with sessions.begin() as session:
+        await session.execute(
+            text(
+                "INSERT INTO changes (business_id, account, source, kind, target_ref, before,"
+                " planned, status, explanation, idempotency_key, reverts_change_id)"
+                " VALUES (:b, 'acc', 'rollback', 'resume_ad', 'ad:bad', '{}'::jsonb,"
+                " '{}'::jsonb, 'failed', 'x', 'owner-failed', :c)"
+            ),
+            {"b": BUSINESS, "c": change_id},
+        )
+
+    result = await rig.monitor.run("acc")
+
+    assert result.verdicts == [OutcomeVerdict.WORSE]
+
+
+async def test_digest_key_is_the_moscow_date(sessions: Sessions, engine: AsyncEngine) -> None:
+    rig = Rig(sessions, engine, now=datetime(2026, 11, 10, 22, 30, tzinfo=UTC))
+
+    assert await rig.monitor.digest("acc", always=True) is True
+
+    async with sessions() as session:
+        key = await session.scalar(
+            text("SELECT details->>'key' FROM alerts WHERE kind = 'autopilot_digest'")
+        )
+    assert key is not None and key.endswith("2026-11-11")
 
 
 async def insert_user_change(sessions: Sessions, key: str, at: datetime) -> None:

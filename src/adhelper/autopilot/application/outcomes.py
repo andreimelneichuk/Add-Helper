@@ -5,6 +5,7 @@
 по числам и версионируемым правилам, языковой модели здесь нет (docs/04-autopilot.md §6).
 """
 
+import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -13,6 +14,7 @@ from typing import Any, Protocol
 
 from adhelper.autopilot.domain.explain import explain_rollback, explain_rollback_no_leads
 from adhelper.autopilot.domain.outcomes import (
+    AUTO_ROLLBACK_DECISION,
     ROLLBACK_STARTED,
     Measured,
     OutcomeResult,
@@ -24,12 +26,14 @@ from adhelper.autopilot.domain.outcomes import (
     evaluate_outcome,
 )
 from adhelper.autopilot.domain.safeguards import SafeguardState, check_safeguards
+from adhelper.budget.domain.calendar import platform_date
 from adhelper.ledger.application.rollback import RollbackStatus, rollback_change
 from adhelper.ledger.application.service import Ledger
 from adhelper.ledger.domain.model import Change, ChangeStatus
 from adhelper.ledger.domain.ports import GatewayUnavailable
 
 DAY = timedelta(days=1)
+logger = logging.getLogger(__name__)
 ROLLED_BACK = "autopilot_rolled_back"
 DEMOTED = "autopilot_demoted"
 DIGEST = "autopilot_digest"
@@ -75,6 +79,8 @@ class MonitorResult:
     rolled_back: int = 0
     frozen: bool = False
     demoted_reason: str | None = None
+    # Откат не дошёл до площадки: остальные исходы за этот тик не трогаем.
+    halted: bool = False
     verdicts: list[OutcomeVerdict] = field(default_factory=list)
 
 
@@ -118,11 +124,23 @@ class OutcomeMonitor:
             result.frozen = True
             return result
         result.registered = await self._store.register_new(account, self._rules, now)
-        for pending in await self._store.claim_due(account, now):
-            await self._evaluate(account, pending, now, result)
-            if result.demoted_reason is not None:
+        claimed = list(await self._store.claim_due(account, now))
+        for index, pending in enumerate(claimed):
+            try:
+                await self._evaluate(account, pending, now, result)
+            except BaseException:
+                # Упавший исход оставляем: откат мог начаться, его доведёт аренда. Остальные
+                # возвращаем сразу, а не после истечения аренды.
+                await self._release_rest(claimed[index + 1 :])
+                raise
+            if result.demoted_reason is not None or result.halted:
+                await self._release_rest(claimed[index + 1 :])
                 break
         return result
+
+    async def _release_rest(self, rest: Sequence[PendingOutcome]) -> None:
+        for pending in rest:
+            await self._store.release(pending.id, pending.note or "")
 
     async def _evaluate(
         self, account: str, pending: PendingOutcome, now: datetime, result: MonitorResult
@@ -183,14 +201,16 @@ class OutcomeMonitor:
         decision = check_safeguards(state, rules)
         if decision.demote_reason is not None:
             result.demoted_reason = decision.demote_reason
-            await self._demote(decision.demote_reason)
-            # Письмо не зависит от результата: режим могли уже сменить, а письмо потерять.
-            # Ключ один на исход, повтор после сбоя письмо не дублирует.
-            await self._notices.notice(
-                DEMOTED, f"demoted:{pending.change_id}", {"reason": decision.demote_reason}
-            )
+            # Письмо только если режим действительно сменился: уже выключенный «Сам» не
+            # рассылает письмо на каждый следующий исход. Ключ один на исход.
+            if await self._demote(decision.demote_reason):
+                await self._notices.notice(
+                    DEMOTED, f"demoted:{pending.change_id}", {"reason": decision.demote_reason}
+                )
         if not decision.allow_rollback:
-            return None, "хуже, но откат остановлен предохранителем"
+            # Не окончательный «хуже»: исход ждёт решения, а не теряет откат навсегда.
+            await self._store.release(pending.id, "хуже, откат остановлен предохранителем")
+            return None
         if outcome.cpl_change_bp is None:
             explanation = explain_rollback_no_leads(
                 {
@@ -209,7 +229,12 @@ class OutcomeMonitor:
             )
         # Метка до отката: упавший воркер потом доведёт начатый откат, а не оценит заново.
         await self._store.mark_rollback_started(pending.id)
-        rolled = await rollback_change(self._ledger, pending.change_id, explanation=explanation)
+        rolled = await rollback_change(
+            self._ledger,
+            pending.change_id,
+            explanation=explanation,
+            decision_id=AUTO_ROLLBACK_DECISION,
+        )
         if rolled.status is RollbackStatus.APPLIED:
             result.rolled_back += 1
             latest = await self._latest_rollback(account, pending)
@@ -217,6 +242,7 @@ class OutcomeMonitor:
             return (latest.id if latest else None), "откат сделан"
         if rolled.status is RollbackStatus.PENDING:
             await self._store.release(pending.id, ROLLBACK_STARTED)
+            result.halted = True  # площадка не отвечает: следующие откаты не начинаем
             return None
         return None, f"откат не выполнен: {rolled.status.value}"
 
@@ -275,7 +301,7 @@ class OutcomeMonitor:
         note: str,
         now: datetime,
     ) -> None:
-        await self._store.save(
+        saved = await self._store.save(
             pending.id,
             status=status,
             verdict=outcome.verdict if outcome else None,
@@ -287,6 +313,8 @@ class OutcomeMonitor:
             rules_version=self._rules.version,
             at=now,
         )
+        if not saved:
+            logger.warning("Исход %s записан другим воркером: аренда захвата потеряна", pending.id)
 
     async def digest(self, account: str, *, always: bool) -> bool:
         """Сводка за сутки. Числа считает код из журнала и исходов."""
@@ -304,4 +332,6 @@ class OutcomeMonitor:
         }
         if not always and not any(details.values()):
             return False
-        return await self._notices.notice(DIGEST, f"digest:{now.date().isoformat()}", details)
+        return await self._notices.notice(
+            DIGEST, f"digest:{platform_date(now).isoformat()}", details
+        )

@@ -27,6 +27,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from adhelper.autopilot.domain.outcomes import (
+    AUTO_ROLLBACK_DECISION,
     ROLLBACK_STARTED,
     Measured,
     OutcomeRow,
@@ -240,6 +241,7 @@ class SqlOutcomeStore:
                     select(func.count()).where(
                         CHANGES.c.business_id == self._business_id,
                         CHANGES.c.reverts_change_id == pending.change_id,
+                        CHANGES.c.status == "applied",
                     )
                 )
             )
@@ -388,23 +390,31 @@ class SqlOutcomeStore:
             return [OutcomeVerdict(value) for value in await session.scalars(statement)]
 
     async def rollbacks_since(self, account: str, since: datetime) -> int:
-        """Откаты самостоятельных действий по журналу: записи отката, применённые с `since`.
+        """Автооткаты по журналу: записи отката с меткой автопилота, созданные с `since`.
 
         Считаем по журналу, а не по строкам исходов: откат уже сделан на площадке, даже если
-        воркер упал до записи исхода.
+        воркер упал до записи исхода. Откаты в полёте (запланирован, выполняется) тоже в счёте:
+        при недоступной площадке иначе можно превысить предел. Ручные отмены владельца не
+        считаем: предохранитель про решения автопилота, а не про действия владельца.
         """
         statement = text(
             "SELECT count(*) FROM changes r JOIN changes o"
             " ON o.id = r.reverts_change_id AND o.business_id = r.business_id"
             " WHERE r.business_id = :business AND r.account = :account"
-            " AND r.source = 'rollback' AND r.status = 'applied' AND r.created_at >= :since"
+            " AND r.source = 'rollback' AND r.status IN ('planned', 'applying', 'applied')"
+            " AND r.decision_id = :decision AND r.created_at >= :since"
             " AND o.source = 'autopilot'"
         )
         async with self._sessions() as session:
             return int(
                 await session.scalar(
                     statement,
-                    {"business": self._business_id, "account": account, "since": since},
+                    {
+                        "business": self._business_id,
+                        "account": account,
+                        "since": since,
+                        "decision": AUTO_ROLLBACK_DECISION,
+                    },
                 )
                 or 0
             )

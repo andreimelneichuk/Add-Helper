@@ -19,6 +19,7 @@ INVERSE_KIND = {
     ChangeKind.RESUME: ChangeKind.PAUSE,
     ChangeKind.PAUSE_AD: ChangeKind.RESUME_AD,
     ChangeKind.RESUME_AD: ChangeKind.PAUSE_AD,
+    ChangeKind.ARCHIVE_AD: ChangeKind.ARCHIVE_AD,
     ChangeKind.SET_SCHEDULE: ChangeKind.SET_SCHEDULE,
     ChangeKind.SET_REGIONS: ChangeKind.SET_REGIONS,
 }
@@ -82,7 +83,12 @@ def _later_changes(change: Change, rows: Sequence[Change]) -> list[Change]:
     ]
 
 
-async def _revert(ledger: Ledger, change: Change, explanation: str | None = None) -> RollbackResult:
+async def _revert(
+    ledger: Ledger,
+    change: Change,
+    explanation: str | None = None,
+    decision_id: str | None = None,
+) -> RollbackResult:
     kind = INVERSE_KIND.get(change.kind)
     if kind is None or change.source is ChangeSource.EXTERNAL:
         # Остановка стражем снимается отдельным решением с проверкой бюджета, а не отменой.
@@ -102,6 +108,7 @@ async def _revert(ledger: Ledger, change: Change, explanation: str | None = None
         ),
         idempotency_key=f"rollback:{change.id}",
         reverts_change_id=change.id,
+        decision_id=decision_id,
     )
     try:
         submitted = await ledger.submit(proposed)
@@ -159,10 +166,12 @@ async def rollback_change(
     include_later: bool = False,
     overwrite_outside: bool = False,
     explanation: str | None = None,
+    decision_id: str | None = None,
 ) -> RollbackResult:
     """Откат создаёт новые записи тем же путём: политика → журнал → исполнитель → чтение.
 
     explanation — текст записи отката вместо стандартного: автооткат пишет, почему он сделан.
+    decision_id — метка записи: по ней автооткаты отличают от отмен владельца.
     """
     checked = await _check(ledger, change_id, include_later, overwrite_outside)
     if checked.status is not RollbackStatus.READY or checked.change is None:
@@ -171,7 +180,7 @@ async def rollback_change(
         result = await _revert(ledger, dependent)
         if result.status is not RollbackStatus.APPLIED:
             return result
-    return await _revert(ledger, checked.change, explanation)
+    return await _revert(ledger, checked.change, explanation, decision_id)
 
 
 def request_prefix(change: Change) -> str | None:

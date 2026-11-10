@@ -142,3 +142,9 @@ def test_zero_leads_explanation_states_the_numbers() -> None:
     )
     assert "обращений 0" in text and "8 400 ₽" in text and "200 ₽" in text
     assert "выросла" not in text
+
+
+def test_window_longer_than_a_week_is_rejected() -> None:
+    # Окно «до» сдвинуто на неделю: при большем окне оно пересеклось бы с окном «после».
+    with pytest.raises(ValueError, match="window_days"):
+        replace(RULES, window_days=8, register_lookback_days=30)
