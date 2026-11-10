@@ -62,6 +62,8 @@ class AdStatSummary:
     conversions: int
     cost_micros: int
     ctr_percent: float
+    # Объявление сейчас крутится; остановленное лучшим не называем.
+    active: bool = True
 
 
 @dataclass(frozen=True)
@@ -132,6 +134,7 @@ class AnalyticsAgent:
                     "ads": [
                         {
                             "title": ad.title,
+                            "running": ad.active,
                             "impressions": ad.impressions,
                             "clicks": ad.clicks,
                             "leads": ad.conversions,
@@ -219,8 +222,9 @@ class AnalyticsAgent:
             f"({lead_info})."
         )
 
-        if context.ads:
-            best_ad = max(context.ads, key=lambda a: (a.conversions, a.clicks))
+        running = [a for a in context.ads if a.active]
+        if running:
+            best_ad = max(running, key=lambda a: (a.conversions, a.clicks))
             if best_ad.clicks > 0:
                 reply += f" Лучше всего работает объявление «{best_ad.title}»."
 

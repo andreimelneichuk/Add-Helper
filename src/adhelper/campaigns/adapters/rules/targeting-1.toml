@@ -5,7 +5,7 @@ version = "targeting-1"
 # yandex.ru/support/direct/ru/efficiency/timetargeting, 2026-11-02. Проверка API — S12.
 min_weekly_hours = 8
 
-# Номера регионов Яндекса. Сверить со справочником Dictionaries.get GeoRegions в T5 (S12).
+# Номера регионов Яндекса: сверены со справочником Dictionaries.get GeoRegions 2026-11-10 (S12).
 [regions]
 225 = "Россия"
 1 = "Москва и область"

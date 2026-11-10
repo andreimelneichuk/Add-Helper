@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -118,3 +119,23 @@ async def test_analytics_agent_fallback_history() -> None:
     assert answer.suggested_view == "history"
     assert "Снизил дневной лимит" in answer.reply
     assert "Отключил объявление" in answer.reply
+
+
+@pytest.mark.asyncio
+async def test_analytics_agent_fallback_best_ad_skips_stopped() -> None:
+    # Лучшим не называем остановленное объявление, даже если у него больше обращений.
+    stopped = AdStatSummary(
+        id="ad0",
+        title="Старое объявление",
+        impressions=3000,
+        clicks=200,
+        conversions=30,
+        cost_micros=9_000_000_000,
+        ctr_percent=6.0,
+        active=False,
+    )
+    context = replace(CONTEXT, ads=(stopped, *CONTEXT.ads))
+    answer = await AnalyticsAgent(None).answer("как дела?", context)
+
+    assert "Старое объявление" not in answer.reply
+    assert "Маникюр с гарантией" in answer.reply

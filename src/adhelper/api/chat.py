@@ -114,6 +114,7 @@ def chat_router() -> APIRouter:
                 conversions=line.totals.conversions,
                 cost_micros=line.totals.cost,
                 ctr_percent=((ratios.ctr_bp or 0) / 100.0) if ratios else 0.0,
+                active=line.state in ("on", "moderation"),
             )
             for line, ratios in lines
         )
