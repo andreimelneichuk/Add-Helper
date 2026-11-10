@@ -1,4 +1,4 @@
-from sqlalchemy import MetaData, text
+from sqlalchemy import MetaData
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -23,8 +23,3 @@ def create_engine(settings: Settings) -> AsyncEngine:
         pool_pre_ping=True,
         connect_args={"connect_timeout": 3},
     )
-
-
-async def ping(engine: AsyncEngine) -> None:
-    async with engine.connect() as connection:
-        await connection.execute(text("SELECT 1"))

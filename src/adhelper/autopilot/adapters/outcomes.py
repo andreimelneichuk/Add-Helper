@@ -5,7 +5,7 @@
 """
 
 from collections.abc import Mapping, Sequence
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -465,7 +465,3 @@ class SqlOutcomeStore:
         )
         async with self._sessions() as session:
             return [OutcomeRow(*row) for row in await session.execute(statement)]
-
-
-def day_start(now: datetime) -> datetime:
-    return now.astimezone(UTC) - timedelta(days=1)

@@ -156,7 +156,7 @@ async def _adopt(
     csrf: dict[str, str],
     base: str,
     photos: dict[int, int],
-):  # type: ignore[no-untyped-def]
+) -> httpx.Response:
     set_id, token = await written(client, sessions)
     body = {"id": set_id, "token": token, "kept": [0, 1], "photos": photos}
     return await client.post(f"{base}/creative-sets/adopt", json=body, headers=csrf)

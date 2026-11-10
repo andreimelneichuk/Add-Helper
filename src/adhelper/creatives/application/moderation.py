@@ -8,7 +8,6 @@
 import logging
 from collections import defaultdict
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from adhelper.budget.domain.calendar import moscow_period, platform_date
@@ -44,15 +43,6 @@ LAUNCHED_KIND = "ads_launched"
 
 LedgerFor = Callable[[str], Ledger | None]
 PublisherFor = Callable[[str], AdPublisher | None]
-
-
-@dataclass(frozen=True)
-class CycleResult:
-    sent: int
-    accepted: int
-    rejected: int
-    repairs: int
-    to_owner: int
 
 
 def _create(item: Outgoing) -> ProposedChange:

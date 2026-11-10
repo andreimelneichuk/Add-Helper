@@ -9,10 +9,11 @@ import pytest
 
 from adhelper.autopilot.adapters.rules_file import load_policy_rules, load_rules
 from adhelper.autopilot.application.cycle import AccountData, AutopilotCycle
-from adhelper.autopilot.application.gate import GateFacts, PolicyGate
+from adhelper.autopilot.application.gate import PolicyGate
 from adhelper.autopilot.domain.decide import Action, ActionKind, Mode
 from adhelper.autopilot.domain.health import Window
 from adhelper.autopilot.domain.model import AdStats, CampaignStats
+from adhelper.autopilot.domain.policy import GateFacts
 from adhelper.autopilot.domain.review import Candidate, ReviewResult, nothing_passed
 
 NOW = datetime(2026, 11, 20, 12, 0, tzinfo=UTC)

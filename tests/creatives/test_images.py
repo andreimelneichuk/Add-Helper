@@ -329,6 +329,9 @@ class FakeStore:
     async def archive(self, image_id: int, now: datetime) -> bool:
         return self.images.pop(image_id, None) is not None
 
+    async def content(self, image_id: int) -> bytes | None:
+        return b"image" if image_id in self.images else None
+
     async def generated_since(self, since: datetime) -> int:
         return sum(1 for i in self.added if i.source is ImageSource.GENERATED)
 

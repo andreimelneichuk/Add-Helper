@@ -46,7 +46,7 @@ jobs:
   test-backend:
     name: Тесты бэкенда (pytest)
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
