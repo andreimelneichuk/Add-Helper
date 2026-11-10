@@ -63,7 +63,7 @@ async def test_guest_url_is_checked_before_queue(guest: Guest) -> None:
         assert words in response.json()["detail"], url
 
 
-async def test_guest_limit_is_per_address(guest: Guest, sessions: Sessions) -> None:
+async def test_guest_limit_is_per_browser(guest: Guest, sessions: Sessions) -> None:
     first = guest("203.0.113.5")
     for _ in range(RULES.max_guest_reads_per_address):
         assert (await first.post("/api/site-reads", json={"url": "nogti.ru"})).status_code == 202
@@ -75,13 +75,13 @@ async def test_guest_limit_is_per_address(guest: Guest, sessions: Sessions) -> N
     assert (await other.post("/api/site-reads", json={"url": "nogti.ru"})).status_code == 202
 
 
-async def test_ipv6_neighbours_share_one_limit(guest: Guest, sessions: Sessions) -> None:
-    # Одна сеть /64 у одного абонента: смена последних групп адреса лимит не обходит.
+async def test_ipv6_neighbours_do_not_share_browser_limit(guest: Guest, sessions: Sessions) -> None:
+    # Соседние адреса в общей /64 могут принадлежать разным людям за мобильной сетью.
     for n in range(RULES.max_guest_reads_per_address):
         client = guest(f"2001:db8:1:2::{n + 1}")
         assert (await client.post("/api/site-reads", json={"url": "nogti.ru"})).status_code == 202
     late = guest("2001:db8:1:2:ffff::9")
-    assert (await late.post("/api/site-reads", json={"url": "nogti.ru"})).status_code == 429
+    assert (await late.post("/api/site-reads", json={"url": "nogti.ru"})).status_code == 202
 
 
 async def test_form_post_from_other_site_is_not_accepted(guest: Guest) -> None:

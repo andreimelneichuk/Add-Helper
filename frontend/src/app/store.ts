@@ -167,7 +167,7 @@ export const writtenAds = (ads: WizardAd[]): Ad[] => ads.map((a, i) => ({
   facts: a.facts.length ? `Опирается на: ${a.facts.join(", ")}` : "Не опирается на факты профиля: общие слова об услуге",
 }));
 
-export const FACT_LABELS: Record<NonNullable<Fact["field"]>, string> = { niche: "Чем занимаетесь", address: "Где", service: "Услуга", feature: "Особенность" };
+export const FACT_LABELS: Record<NonNullable<Fact["field"]>, string> = { name: "Название бизнеса", niche: "Чем занимаетесь", address: "Где", service: "Услуга", feature: "Особенность" };
 /** Факты разбора в карточки шага «Профиль»: цитата остаётся рядом, чтобы владелец видел, откуда это. */
 export const siteFacts = (facts: SiteFact[]): Fact[] => facts.map((f, i) => ({
   id: `site${i}`,
@@ -299,7 +299,20 @@ export function confirmText(s: State, a: Pending): string {
 export class Store {
   state: State;
   private listeners = new Set<() => void>();
-  constructor(state: State = initialState()) { this.state = state; }
+  constructor(state: State = initialState(), restoreStartDraft = true) {
+    const draft = restoreStartDraft && state.stage === "start" ? loadDraft() : null;
+    const restored = draft?.customAds?.map((a) => ({
+      id: a.id, name: a.headline, tag: "", tagTone: "neutral" as const,
+      leads: 0, cost: 0, hook: a.headline, title: a.headline, text: a.text,
+      facts: a.facts.length ? `Опирается на: ${a.facts.join(", ")}` : "Не опирается на факты профиля: общие слова об услуге",
+    }));
+    this.state = draft ? {
+      ...state, site: draft.site, facts: draft.facts,
+      step: draft.step ?? state.step, draftOff: draft.draftOff ?? {},
+      ...(restored ? { ads: restored } : {}),
+      ...(draft.ads && draft.adSetInfo ? { adSet: { id: draft.ads.id, token: draft.ads.token, ...draft.adSetInfo } } : {}),
+    } : state;
+  }
   /** Есть — шаг «О бизнесе» читает настоящий сайт; нет — прототип на подставных фактах. */
   reader: GuestReader | null = null;
   /** Пауза между опросами разбора; воркер берёт разбор раз в минуту. */
@@ -352,6 +365,7 @@ export class Store {
       ...autopilotDraft(s),
       draftOff: s.draftOff,
       customAds: s.ads.map((a) => ({ id: a.id, headline: a.title, text: a.text, facts: a.facts ? a.facts.split(", ") : [] })),
+      ...(s.adSet ? { adSetInfo: { template: s.adSet.template, needsReview: s.adSet.needsReview, facts: s.adSet.facts } } : {}),
       ...(s.createAsNew || loadDraft()?.createAsNew ? { createAsNew: true } : {}),
       ...ads,
     });

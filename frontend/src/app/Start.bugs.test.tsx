@@ -96,6 +96,24 @@ describe("Мастер и первый запуск: регрессии (BUG-…
       expect(restored?.draftOff).toEqual({ a1: true, a2: false });
       expect(restored?.budget).toBe(25000);
     });
+
+    it("restores the generated ads and their set metadata into a fresh real store", () => {
+      saveDraft({
+        site: "salon.example",
+        facts,
+        budget: 20000,
+        step: 4,
+        ads: { id: 17, token: "set-token", kept: [0] },
+        adSetInfo: { template: true, needsReview: false, facts: "profile-snapshot" },
+        customAds: [{ id: "w0", headline: "Маникюр за 900 ₽", text: "Запишитесь", facts: ["Маникюр", "900 ₽"] }],
+      });
+
+      const restored = new Store(initialState("start"));
+      expect(restored.state.step).toBe(4);
+      expect(restored.state.ads).toMatchObject([{ id: "w0", title: "Маникюр за 900 ₽", text: "Запишитесь" }]);
+      expect(restored.state.adSet).toEqual({ id: 17, token: "set-token", template: true, needsReview: false, facts: "profile-snapshot" });
+      clearDraft();
+    });
   });
 
   describe("BUG-024: Site input placeholder", () => {

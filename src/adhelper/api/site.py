@@ -10,7 +10,7 @@ import ipaddress
 import secrets
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Header, HTTPException, Request, status
+from fastapi import APIRouter, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 from adhelper.api.cabinet import Owned, OwnedChecked, _now, _sessions
@@ -108,7 +108,7 @@ def site_router() -> APIRouter:
     return router
 
 
-def _guest_key(request: Request) -> str:
+def _guest_key(request: Request, guest_id: str | None = None) -> str:
     """Ключ лимита: сеть /24 или /64 под HMAC. Сам адрес нигде не хранится."""
     host = (
         request.headers.get("cf-connecting-ip")
@@ -123,7 +123,8 @@ def _guest_key(request: Request) -> str:
         prefix = 24 if address.version == 4 else 64
         network = str(ipaddress.ip_network(f"{address}/{prefix}", strict=False))
     secret: bytes = request.app.state.guest_secret
-    return hmac.new(secret, network.encode(), hashlib.sha256).hexdigest()
+    material = f"guest:{guest_id}" if guest_id else network
+    return hmac.new(secret, material.encode(), hashlib.sha256).hexdigest()
 
 
 def _token_hash(token: str) -> str:
@@ -136,13 +137,24 @@ def guest_site_router() -> APIRouter:
 
     # Тело только JSON: чужая страница не отправит его без предварительного запроса.
     @router.post("", status_code=status.HTTP_202_ACCEPTED)
-    async def post_guest_read(request: Request, body: SiteBody) -> dict[str, Any]:
+    async def post_guest_read(
+        request: Request, response: Response, body: SiteBody
+    ) -> dict[str, Any]:
         rules = getattr(request.app.state, "site_rules", None) or load_site_rules()
         url = _checked_url(body.url, rules)
         token = secrets.token_urlsafe(32)
+        guest_id = request.cookies.get("adhelper_guest") or secrets.token_urlsafe(32)
+        response.set_cookie(
+            "adhelper_guest",
+            guest_id,
+            max_age=30 * 86400,
+            httponly=True,
+            samesite="lax",
+            secure=request.url.scheme == "https",
+        )
         try:
             read_id = await SqlGuestSiteReads(_sessions(request)).request(
-                url, _guest_key(request), _token_hash(token), rules, _now(request)
+                url, _guest_key(request, guest_id), _token_hash(token), rules, _now(request)
             )
         except TooManyReads:
             raise HTTPException(

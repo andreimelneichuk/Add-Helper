@@ -11,6 +11,8 @@ export type StartDraft = {
   businessId?: string;
   /** Объявления, которые владелец оставил на шаге «Объявления». */
   ads?: AdsChoice;
+  /** Сведения набора для восстановления карточек после перезагрузки. */
+  adSetInfo?: { template: boolean; needsReview: boolean; facts: string };
   /** Набор объявлений не перенёсся; пользовательские правки создаются как свои объявления. */
   adoptionFailed?: boolean;
   /** Шаг мастера, на котором остановился владелец. */
@@ -162,6 +164,8 @@ export function isCityFact(value: string): boolean {
 }
 
 export function businessName(draft: StartDraft): string {
+  const explicit = draft.facts.find((f) => f.field === "name")?.value.trim();
+  if (explicit) return explicit;
   try {
     if (draft.site.trim()) return new URL(draft.site.includes("://") ? draft.site : `https://${draft.site}`).hostname.replace(/^www\./u, "");
   } catch { /* не адрес: берём вид деятельности */ }

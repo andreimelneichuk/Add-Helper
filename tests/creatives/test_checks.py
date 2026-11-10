@@ -104,6 +104,7 @@ def test_similar_drafts_are_detected() -> None:
 def test_templates_pass_their_own_checks_and_use_only_profile() -> None:
     drafts = template_drafts(PROFILE, RULES)
     assert drafts
+    assert drafts[0].headline == "Маникюр с покрытием за 1500 ₽"
     for draft in drafts:
         assert not check_draft(draft, PROFILE, RULES)
 

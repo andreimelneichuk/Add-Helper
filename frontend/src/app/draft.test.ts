@@ -110,6 +110,7 @@ describe("черновик запуска", () => {
 
   it("имя бизнеса берётся с адреса сайта, без сайта из вида деятельности", () => {
     expect(businessName(draft)).toBe("nogti.ru");
+    expect(businessName({ ...draft, site: "", facts: [{ id: "n", label: "Название бизнеса", value: "Салон Луна", source: "от вас", field: "name" }] })).toBe("Салон Луна");
     expect(businessName({ ...draft, site: "" })).toBe("Маникюр");
     expect(
       businessName({

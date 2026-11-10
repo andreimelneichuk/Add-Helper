@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from hashlib import sha256
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Header, HTTPException, Request, status
+from fastapi import APIRouter, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field, field_validator
 
 from adhelper.accounts.adapters.sql import account_states
@@ -142,7 +142,9 @@ def guest_ads_router() -> APIRouter:
 
     # Тело только JSON: чужая страница не отправит его без предварительного запроса.
     @router.post("", status_code=status.HTTP_202_ACCEPTED)
-    async def post_guest_set(request: Request, body: DraftBody) -> dict[str, Any]:
+    async def post_guest_set(
+        request: Request, response: Response, body: DraftBody
+    ) -> dict[str, Any]:
         rules = load_wizard_rules(CURRENT_WIZARD_RULES)
         profile = draft_profile(
             body.niche,
@@ -154,10 +156,19 @@ def guest_ads_router() -> APIRouter:
         if isinstance(profile, DraftProblem):
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, DRAFT_PROBLEMS[profile])
         token = secrets.token_urlsafe(32)
+        guest_id = request.cookies.get("adhelper_guest") or secrets.token_urlsafe(32)
+        response.set_cookie(
+            "adhelper_guest",
+            guest_id,
+            max_age=30 * 86400,
+            httponly=True,
+            samesite="lax",
+            secure=request.url.scheme == "https",
+        )
         try:
             set_id = await SqlWizardSets(_sessions(request)).request(
                 profile,
-                _guest_key(request),
+                _guest_key(request, guest_id),
                 _token_hash(token),
                 rules,
                 CURRENT_RULES,

@@ -105,13 +105,13 @@ def template_drafts(profile: BusinessProfile, rules: CreativeRules) -> tuple[AdD
     brand = f"«{profile.name.strip()}»" if profile.name.strip() else ""
     for service in profile.services:
         place = f"Ждём вас: {profile.address}." if profile.address else "Запишитесь онлайн."
-        candidates.append(AdDraft(f"{service.name} в {brand}" if brand else service.name, place))
         if service.price is not None:
             candidates.append(
                 AdDraft(
                     f"{service.name} за {service.price} ₽", f"{brand}. {place}" if brand else place
                 )
             )
+        candidates.append(AdDraft(f"{service.name} в {brand}" if brand else service.name, place))
         for feature in profile.features:
             candidates.append(
                 AdDraft(

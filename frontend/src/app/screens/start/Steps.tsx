@@ -57,6 +57,7 @@ function AboutStep({ store, s }: StepProps) {
 }
 
 const FACT_CATEGORIES: [NonNullable<Fact["field"]>, string][] = [
+  ["name", "Название бизнеса"],
   ["service", "Услуга"],
   ["feature", "Особенность"],
   ["address", "Адрес"],
@@ -115,9 +116,16 @@ function ProfileStep({ store, s }: StepProps) {
   const hasService = s.facts.some((f) => f.field === "service" || f.id === "prices");
   return (
     <>
+      {!s.facts.length && s.site.trim() && (
+        <p className="st-need-service-hint" role="note">
+          На этой странице не нашлось сведений об услугах. Возможно, домен припаркован или сайт не содержит прайс. Заполните профиль вручную.
+        </p>
+      )}
       {!hasService && (
         <p className="st-need-service-hint" role="note">
-          Добавьте хотя бы одну услугу: объявления пишутся по вашим услугам.
+          {s.facts.length
+            ? "Добавьте хотя бы одну услугу: объявления пишутся по вашим услугам."
+            : "Пока профиль пуст. Добавьте услугу вручную, чтобы составить объявления."}
         </p>
       )}
       <div className="st-grid-2">

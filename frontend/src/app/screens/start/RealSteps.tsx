@@ -382,6 +382,7 @@ export function RealAds({ store, s }: Props) {
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     if (!newTitle.trim() || !newText.trim()) return;
     const customAd: Ad = {
       id: `custom-${crypto.randomUUID()}`,
@@ -403,6 +404,7 @@ export function RealAds({ store, s }: Props) {
 
   const handleSaveEdit = (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     if (!editingId || !editTitle.trim() || !editText.trim()) return;
     const updated = s.ads.map((item) =>
       item.id === editingId
@@ -441,6 +443,7 @@ export function RealAds({ store, s }: Props) {
     <>
       {s.adSet?.template && <p className="ah-muted">Писатель сейчас не ответил, поэтому объявления собраны по шаблону из ваших фактов. После запуска я буду писать новые и ставить лучшие.</p>}
       {s.adSet?.needsReview && <p className="ah-muted">У вашей сферы строгие правила рекламы: перед запуском каждое объявление покажу вам на подтверждение.</p>}
+      {!chosenSaved && s.ads.length > 0 && <p className="ah-muted">«Убрать» исключает объявление из запуска, но оставляет его здесь. «Удалить» удаляет карточку из этого набора.</p>}
       {chosenSaved && s.ads.length > 0 && <p className="ah-muted">Выбор сохранён в сервисе: запуск начнётся с этих объявлений.</p>}
       {s.block && s.ads.length > 0 && <p className="ah-muted" role="alert" style={{ color: "var(--ah-bad, #e53935)" }}>{s.block}</p>}
       {s.ads.length === 0 && (
@@ -449,7 +452,7 @@ export function RealAds({ store, s }: Props) {
             <div className="st-link-title">Нет готовых объявлений</div>
             <div className="ah-muted" role="alert">
               {s.facts.some((f) => f.field === "service" || f.id === "prices")
-                ? s.block || "Лимит генераций на сегодня исчерпан. Вы можете добавить своё объявление вручную или продолжить к кабинету."
+                ? s.block || "Объявления пока не готовы. Попробуйте написать их ещё раз или добавьте свой вариант вручную."
                 : "Объявления составляются по услугам из вашего профиля. Вернитесь на шаг «Профиль» и добавьте хотя бы одну услугу."}
             </div>
           </div>

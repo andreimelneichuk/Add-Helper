@@ -70,6 +70,24 @@ describe("экран запуска", () => {
     expect(store.state.facts.find((f) => f.id === "hours")).toMatchObject({ source: "от вас" });
   });
 
+  it("добавление своего объявления не отправляет форму мастера и сохраняет карточку на шаге", async () => {
+    clearDraft();
+    const store = new Store({ ...initialState("start"), step: 4, ads: [], draftOff: {} });
+    store.writer = { writeAds: vi.fn(), adSet: vi.fn() };
+    render(<Start store={store} />);
+    const user = userEvent.setup();
+
+    await user.click(button("+ Своё объявление"));
+    await user.type(screen.getByPlaceholderText("Заголовок объявления"), "Маникюр с покрытием");
+    await user.type(screen.getByPlaceholderText("Текст вашего объявления"), "Маникюр с покрытием за 1 800 ₽");
+    await user.click(button("Добавить"));
+
+    expect(store.state.step).toBe(4);
+    expect(store.state.ads).toHaveLength(1);
+    expect(screen.getByText("Маникюр с покрытием за 1 800 ₽")).toBeInTheDocument();
+    clearDraft();
+  });
+
   it("с незавершённой правкой дальше не пройти, пустой факт не сохранить", async () => {
     const { store, user } = setup({ step: 1 });
     await user.click(button("Изменить: Акция"));

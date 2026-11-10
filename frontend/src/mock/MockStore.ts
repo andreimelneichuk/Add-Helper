@@ -2,12 +2,13 @@
 import { rub } from "../app/data";
 import type { HistoryEntry, HistoryKind, SettingKey, Situation } from "../app/data";
 import { fixtures } from "../app/fixtures";
-import { adName, budgetOf, draftAd, msg, refusalOf, shown, spentOf, Store, week } from "../app/store";
+import { adName, budgetOf, draftAd, initialState, msg, refusalOf, shown, spentOf, Store, week } from "../app/store";
 import type { Action, State } from "../app/store";
 
 let nextId = 1000;
 
 export class MockStore extends Store {
+  constructor(state: State = initialState()) { super(state, false); }
   private entry(title: string, why: string, next: string, kind: HistoryKind, undo?: { note: string; revert: NonNullable<HistoryEntry["revert"]> }): HistoryEntry {
     return { id: "n" + nextId++, kind, when: "Сейчас", title, why, next, canUndo: !!undo, undoNote: undo?.note, revert: undo?.revert, state: "Записано" };
   }
