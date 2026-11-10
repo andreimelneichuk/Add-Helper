@@ -101,15 +101,23 @@ def too_similar_to_any(draft: AdDraft, kept: Sequence[AdDraft], rules: CreativeR
 def template_drafts(profile: BusinessProfile, rules: CreativeRules) -> tuple[AdDraft, ...]:
     """Запасной набор без модели: только поля профиля, и каждый вариант проходит ту же проверку."""
     candidates: list[AdDraft] = []
+    # Имя бизнеса бывает пустым (профиль заполнен вручную): пустых кавычек в рекламе не нужно.
+    brand = f"«{profile.name.strip()}»" if profile.name.strip() else ""
     for service in profile.services:
         place = f"Ждём вас: {profile.address}." if profile.address else "Запишитесь онлайн."
-        candidates.append(AdDraft(f"{service.name} в «{profile.name}»", place))
+        candidates.append(AdDraft(f"{service.name} в {brand}" if brand else service.name, place))
         if service.price is not None:
             candidates.append(
-                AdDraft(f"{service.name} за {service.price} ₽", f"«{profile.name}». {place}")
+                AdDraft(
+                    f"{service.name} за {service.price} ₽", f"{brand}. {place}" if brand else place
+                )
             )
         for feature in profile.features:
-            candidates.append(AdDraft(service.name, f"{feature}. «{profile.name}». {place}"))
+            candidates.append(
+                AdDraft(
+                    service.name, f"{feature}. {brand}. {place}" if brand else f"{feature}. {place}"
+                )
+            )
     kept: list[AdDraft] = []
     for candidate in candidates:
         if check_draft(candidate, profile, rules):

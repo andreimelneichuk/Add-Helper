@@ -123,6 +123,18 @@ def test_templates_never_fail_checks_for_any_profile(
 STEMS = load_rules("creatives-2")
 
 
+def test_templates_without_business_name_have_no_empty_quotes() -> None:
+    # Профиль, заполненный вручную, имени может не содержать: «в «»» в рекламу не идёт.
+    profile = BusinessProfile(
+        name="", services=(Service("Тестовая стрижка", 1000),), address="Екатеринбург", features=()
+    )
+
+    drafts = template_drafts(profile, RULES)
+
+    assert drafts
+    assert all("«»" not in f"{d.headline} {d.text}" for d in drafts)
+
+
 def stem_kinds(draft: AdDraft, profile: BusinessProfile = PROFILE) -> set[ViolationKind]:
     return {violation.kind for violation in check_draft(draft, profile, STEMS)}
 
