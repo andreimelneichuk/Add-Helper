@@ -23,10 +23,15 @@ from adhelper.autopilot.adapters.transfers import SqlTransferStore
 from adhelper.autopilot.application.cycle import AutopilotCycle
 from adhelper.autopilot.application.gate import ClosedGate, Gate, PolicyGate
 from adhelper.autopilot.application.outcomes import OutcomeMonitor
-from adhelper.autopilot.application.settings import DEFAULT_SETTINGS, cycle_mode, demote, is_due
+from adhelper.autopilot.application.settings import (
+    DEFAULT_SETTINGS,
+    AutopilotMode,
+    cycle_mode,
+    demote,
+    is_due,
+)
 from adhelper.autopilot.application.transfer import finish_open_transfers
 from adhelper.autopilot.application.visits import WithVisits
-from adhelper.autopilot.domain.settings import AutopilotMode
 from adhelper.budget.adapters.ledgered import (
     LedgeredBudgetPlatform,
     PlatformChangeGateway,

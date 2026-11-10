@@ -30,8 +30,8 @@ from adhelper.commands.application.service import (
 from adhelper.creatives.adapters.sql import SqlProfiles
 from adhelper.creatives.adapters.wizard import SqlWizardAds, WizardAdItem
 from adhelper.stats.adapters.sql import SqlDashboard
+from adhelper.stats.application.facade import AdLine
 from adhelper.stats.application.overview import PLATFORM_ZONE, ads, platform_today, window
-from adhelper.stats.domain.model import AdLine
 
 
 class CommandBody(BaseModel):

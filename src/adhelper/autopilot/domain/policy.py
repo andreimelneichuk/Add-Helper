@@ -5,7 +5,8 @@
 Все пороги живут в файле `policy-N.toml`, каждое решение несёт версию и входные данные.
 """
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Any
@@ -180,3 +181,16 @@ def _money_reason(inp: PolicyInput, rules: PolicyRules) -> PolicyReason | None:
     if inp.moved_this_week + inp.amount > cap:
         return PolicyReason.WEEKLY_SHARE
     return None
+
+
+@dataclass(frozen=True)
+class GateFacts:
+    """Факты кабинета для политики: что автопилот уже сделал и чем располагает."""
+
+    changes_today: int
+    moved_this_week: int
+    data_alert: bool
+    api_points_rest: int | None
+    operating_budget: int
+    # Последнее изменение лимита кампании по журналу (рост или снижение, в том числе донором).
+    last_limit_change: Mapping[str, datetime] = field(default_factory=dict)

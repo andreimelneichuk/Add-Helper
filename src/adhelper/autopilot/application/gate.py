@@ -5,14 +5,15 @@
 """
 
 import logging
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
 from adhelper.autopilot.domain.decide import Action, ActionKind
 from adhelper.autopilot.domain.model import AccountData, CampaignStats
 from adhelper.autopilot.domain.policy import (
+    GateFacts,
     PolicyAction,
     PolicyInput,
     PolicyRules,
@@ -27,19 +28,6 @@ POLICY_ACTION = {
     ActionKind.INCREASE_LIMIT: PolicyAction.INCREASE_LIMIT,
     ActionKind.START_TEST: PolicyAction.START_TEST,
 }
-
-
-@dataclass(frozen=True)
-class GateFacts:
-    """Факты кабинета для политики: что автопилот уже сделал и чем располагает."""
-
-    changes_today: int
-    moved_this_week: int
-    data_alert: bool
-    api_points_rest: int | None
-    operating_budget: int
-    # Последнее изменение лимита кампании по журналу (рост или снижение, в том числе донором).
-    last_limit_change: Mapping[str, datetime] = field(default_factory=dict)
 
 
 class GateFactsSource(Protocol):

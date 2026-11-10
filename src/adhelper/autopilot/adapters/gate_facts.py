@@ -11,7 +11,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from adhelper.autopilot.application.gate import GateFacts
+from adhelper.autopilot.domain.policy import GateFacts
 from adhelper.budget.adapters.sql import SqlPeriodStore
 from adhelper.budget.domain.calendar import MOSCOW, platform_date
 from adhelper.ledger.adapters.sql import ChangeRow
