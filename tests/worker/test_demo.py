@@ -101,6 +101,7 @@ async def test_demo_ads_are_already_where_the_keeper_would_put_them(
         await slots.open_sets(),
         load_rules(CURRENT_RULES).max_sets_per_day,
         False,
+        False,
     )
     # Иначе первый же цикл хранителя переставит демо и закажет тексты у модели.
     assert plan.moves == () and plan.requests == ()

@@ -121,6 +121,7 @@ async def _keep(
         SLOTS,
         RULES,
         now,
+        owner_decides=False,
     )
 
 

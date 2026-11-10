@@ -31,6 +31,7 @@ from adhelper.autopilot.application.settings import (
     cycle_mode,
     demote,
     is_due,
+    owner_decides_ads,
 )
 from adhelper.autopilot.application.transfer import finish_open_transfers
 from adhelper.autopilot.application.trust import daily_report_due, effective_allowed
@@ -274,6 +275,9 @@ class Runtime:
         slot_rules = load_slot_rules(CURRENT_SLOT_RULES)
         creative_rules = load_creative_rules(CURRENT_RULES)
         for business_id in await SqlKeeperBusinesses(self.sessions).business_ids():
+            settings = (
+                await SqlAutopilotSettings(self.sessions, business_id).get() or DEFAULT_SETTINGS
+            )
             await keep_ads(
                 business_id,
                 SqlAdSlots(self.sessions, business_id),
@@ -282,6 +286,7 @@ class Runtime:
                 slot_rules,
                 creative_rules,
                 self.clock(),
+                owner_decides=owner_decides_ads(settings, auto_allowed=self.auto_allowed),
             )
 
     async def ads_moderate(self, only: UUID | None = None) -> None:

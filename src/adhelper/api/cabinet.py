@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from adhelper.accounts.application.service import BusinessNotFound
 from adhelper.api.accounts import CheckedSession, CurrentSession, Service
+from adhelper.autopilot.adapters.settings import SqlAutopilotSettings
+from adhelper.autopilot.application.settings import DEFAULT_SETTINGS, owner_decides_ads
 from adhelper.budget.adapters.rules_file import load_rules as load_budget_rules
 from adhelper.budget.adapters.sql import SqlPeriodStore
 from adhelper.budget.application.watch_cycle import confirm_balance
@@ -286,6 +288,10 @@ def cabinet_router() -> APIRouter:
             load_slot_rules(CURRENT_SLOT_RULES),
             load_creative_rules(CURRENT_RULES),
             _now(request),
+            owner_decides=owner_decides_ads(
+                await SqlAutopilotSettings(sessions, business_id).get() or DEFAULT_SETTINGS,
+                auto_allowed=bool(getattr(request.app.state, "autopilot_auto_allowed", False)),
+            ),
         )
         return {
             **(await get_profile(request, business_id)),

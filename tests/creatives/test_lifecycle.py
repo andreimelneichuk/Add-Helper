@@ -46,8 +46,11 @@ def plan(
     open_sets: frozenset[tuple[str, str]] = frozenset(),
     sets_left: int = 5,
     sensitive: bool = False,
+    owner_decides: bool = False,
 ) -> SlotPlan:
-    return plan_slots(PROFILE, campaigns, candidates, RULES, open_sets, sets_left, sensitive)
+    return plan_slots(
+        PROFILE, campaigns, candidates, RULES, open_sets, sets_left, sensitive, owner_decides
+    )
 
 
 def test_fact_sources_name_profile_fields() -> None:
@@ -115,7 +118,7 @@ def test_changed_price_stops_waiting_ads_and_asks_for_replacement() -> None:
     waiting = candidate(1, CreativeState.LAUNCH_PENDING, PRICE)
     assert is_stale(waiting, cheaper)
     result = plan_slots(
-        cheaper, [campaign(live=(NEAR, NAME))], [waiting], RULES, frozenset(), 5, False
+        cheaper, [campaign(live=(NEAR, NAME))], [waiting], RULES, frozenset(), 5, False, False
     )
     assert [(m.creative_id, m.state, m.reason) for m in result.moves] == [
         (1, CreativeState.STOPPED, "fact_changed")
@@ -141,6 +144,16 @@ def test_sensitive_niche_or_unjudged_text_waits_for_owner() -> None:
     assert unjudged.moves[0].state is CreativeState.NEEDS_OWNER
 
 
+def test_new_ad_waits_for_owner_unless_autopilot_acts_on_its_own() -> None:
+    """Режим автопилота решает, уходит ли новое объявление на место само (docs/04, docs/05 §8)."""
+    ready = [candidate(1, CreativeState.READY, PRICE)]
+    asked = plan([campaign(live=(NEAR, NAME))], ready, owner_decides=True)
+    assert asked.moves[0].state is CreativeState.NEEDS_OWNER
+    assert "ads_need_confirmation" in asked.attention
+    own = plan([campaign(live=(NEAR, NAME))], ready, owner_decides=False)
+    assert own.moves[0].state is CreativeState.LAUNCH_PENDING
+
+
 def test_waiting_for_owner_takes_a_place() -> None:
     waiting = candidate(1, CreativeState.NEEDS_OWNER, PRICE)
     result = plan([campaign(live=(NEAR, NAME))], [waiting], sensitive=True)
@@ -149,7 +162,7 @@ def test_waiting_for_owner_takes_a_place() -> None:
 
 def test_empty_profile_asks_owner_and_writes_nothing() -> None:
     empty = BusinessProfile("Лак", (), "", (), "")
-    result = plan_slots(empty, [campaign(ever=False)], [], RULES, frozenset(), 5, False)
+    result = plan_slots(empty, [campaign(ever=False)], [], RULES, frozenset(), 5, False, False)
     assert result.requests == () and result.attention == ("ads_no_profile",)
 
 

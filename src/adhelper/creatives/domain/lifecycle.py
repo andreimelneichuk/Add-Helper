@@ -243,6 +243,7 @@ def plan_slots(
     open_sets: frozenset[tuple[str, str]],
     sets_left: int,
     sensitive: bool,
+    owner_decides: bool,
 ) -> SlotPlan:
     """Что сделать за цикл: снять устаревшее, занять свободные места, заказать новые тексты.
 
@@ -281,7 +282,7 @@ def plan_slots(
             if free > 0:
                 target = (
                     CreativeState.LAUNCH_PENDING
-                    if item.auto_ok and not sensitive
+                    if item.auto_ok and not sensitive and not owner_decides
                     else CreativeState.NEEDS_OWNER
                 )
                 moves.append(Move(item.id, target, "place_free"))

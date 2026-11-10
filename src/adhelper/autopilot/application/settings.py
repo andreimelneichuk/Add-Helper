@@ -16,6 +16,7 @@ from adhelper.autopilot.domain.settings import (
     cycle_mode,
     is_due,
     next_run_at,
+    owner_decides_ads,
     validated,
 )
 from adhelper.autopilot.domain.trust import confined_envelope
@@ -34,6 +35,7 @@ __all__ = [
     "demote",
     "is_due",
     "next_run_at",
+    "owner_decides_ads",
     "report_text",
     "stop",
     "update_settings",

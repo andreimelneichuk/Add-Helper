@@ -78,6 +78,17 @@ def cycle_mode(mode: AutopilotMode, *, auto_allowed: bool) -> Mode:
     return Mode.CONFIRM
 
 
+def owner_decides_ads(settings: AutopilotSettings, *, auto_allowed: bool) -> bool:
+    """Новое объявление под свободное место запускает владелец, пока автопилот не работает сам.
+
+    Сам он работает только в «Сам», когда это разрешено и автопилот не остановлен. В «Следит»
+    и «Предлагает» объявление ждёт кнопки владельца (docs/05 §8).
+    """
+    return not (
+        auto_allowed and settings.mode is AutopilotMode.AUTO and settings.stopped_at is None
+    )
+
+
 def _slot(day: datetime, run_hour: int) -> datetime:
     return day.astimezone(MSK).replace(hour=run_hour, minute=SLOT_MINUTE, second=0, microsecond=0)
 

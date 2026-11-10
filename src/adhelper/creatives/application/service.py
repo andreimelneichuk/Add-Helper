@@ -135,6 +135,8 @@ async def keep_ads(
     creative_rules: CreativeRules,
     now: datetime,
     rework_rules: str = CURRENT_REWORK_RULES,
+    *,
+    owner_decides: bool,
 ) -> FactPlan:
     """Один цикл хранителя: снять устаревшее, занять места, заказать тексты, заменить
     работающие объявления, где факт в профиле изменился.
@@ -151,6 +153,7 @@ async def keep_ads(
         await slots.open_sets(),
         sets_left,
         profile.niche.strip().lower() in creative_rules.sensitive_niches,
+        owner_decides,
     )
     await slots.apply(plan, creative_rules.version, now)
     facts = FactPlan((), (), ())
@@ -189,12 +192,23 @@ async def refresh_after_profile(
     slot_rules: SlotRules,
     creative_rules: CreativeRules,
     now: datetime,
+    *,
+    owner_decides: bool,
 ) -> list[OutdatedAd]:
     """Владелец сохранил профиль: цикл хранителя сразу, а не через 5 минут.
 
     Возвращает объявления, которые показывают старый факт, чтобы владелец знал о них.
     """
-    facts = await keep_ads(business_id, slots, profiles, attention, slot_rules, creative_rules, now)
+    facts = await keep_ads(
+        business_id,
+        slots,
+        profiles,
+        attention,
+        slot_rules,
+        creative_rules,
+        now,
+        owner_decides=owner_decides,
+    )
     profile = await profiles.profile(business_id)
     if profile is None:
         return []
