@@ -482,12 +482,15 @@ async def _shadow(settings: Settings, business_id: uuid.UUID, limit: int) -> int
 GATES_VERSION = "gates-1"
 
 
-async def _shadow_report(settings: Settings, days: int, gates: str) -> int:
+async def _shadow_report(settings: Settings, days: int | None, gates: str) -> int:
     """Недельный отчёт теневого периода по всем кабинетам. Только чтение."""
     try:
         thresholds = load_gate_thresholds(gates)
     except (OSError, ValueError, TypeError):
         _say(f"Нет таких порогов: {gates}")
+        return 2
+    if days is not None and days < 1:
+        _say("Окно отчёта не короче одних суток")
         return 2
     try:
         async with open_runtime(settings) as runtime:
@@ -580,7 +583,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     report = commands.add_parser(
         "shadow-report", help="Недельный отчёт теневого периода: метрики, ворота этапа 9, выборка"
     )
-    report.add_argument("--days", type=int, default=7, help="За сколько суток")
+    report.add_argument(
+        "--days",
+        type=int,
+        default=None,
+        help="Скользящее окно в сутках; без него прошлая полная неделя по Москве",
+    )
     report.add_argument("--gates", default=GATES_VERSION, help="Версия порогов ворот")
     trust = commands.add_parser(
         "trust", help="Ступени доверия автопилота: показать, открыть (--grant) или закрыть"

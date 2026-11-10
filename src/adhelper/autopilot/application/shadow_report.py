@@ -4,7 +4,7 @@
 """
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Protocol
 from uuid import UUID
@@ -20,6 +20,7 @@ from adhelper.autopilot.domain.shadow_report import (
     share_bp,
     sum_metrics,
     week_seed,
+    week_start,
 )
 
 REPORT_DAYS = 7
@@ -70,21 +71,44 @@ async def build_report(
     ticks: Ticks,
     now: datetime,
     thresholds: GateThresholds,
-    days: int = REPORT_DAYS,
+    days: int | None = None,
 ) -> WeekReport:
-    end = now.replace(minute=0, second=0, microsecond=0)
-    start = end - timedelta(days=days)
+    """По умолчанию прошлая полная неделя по Москве: два запуска в одну неделю дают один отчёт.
+
+    С `days` окно скользящее, до текущего часа: для проверки «за последние N суток». Порог
+    пропущенных тиков задан на неделю и пересчитывается на длину окна (округление вверх).
+    """
+    if days is not None and days < 1:
+        raise ValueError("Окно отчёта не короче одних суток")
+    if days is None:
+        end = week_start(now)
+        start = end - timedelta(days=REPORT_DAYS)
+        seed = week_seed(start)
+        window_days = REPORT_DAYS
+    else:
+        end = now.replace(minute=0, second=0, microsecond=0)
+        start = end - timedelta(days=days)
+        seed = week_seed(now)
+        window_days = days
+    scaled = -(-thresholds.max_missed_ticks * window_days // REPORT_DAYS)
+    gate_thresholds = replace(thresholds, max_missed_ticks=scaled)
     missed = await ticks.missed(start, end)
     per_business = {b: await source.metrics(start, end) for b, source in sources.items()}
     total = sum_metrics([*per_business.values(), _ticks_only(missed)])
     pool: list[SampleLine] = []
     for source in sources.values():
         pool += await source.sample_pool(start, end)
-    seed = week_seed(now)
     chosen = set(pick_sample([line.id for line in pool], seed))
     sample = sorted((line for line in pool if line.id in chosen), key=lambda line: line.id)
     return WeekReport(
-        seed, start, end, thresholds, per_business, total, evaluate_gates(total, thresholds), sample
+        seed,
+        start,
+        end,
+        thresholds,
+        per_business,
+        total,
+        evaluate_gates(total, gate_thresholds),
+        sample,
     )
 
 
@@ -112,8 +136,9 @@ STATUS_TEXT = {
 
 def _gate_line(line: GateLine) -> str:
     if line.name == "worker":
+        shown = "данных нет" if line.value_bp is None else str(line.value_bp)
         return (
-            f"- {GATE_TEXT[line.name]}: {line.value_bp}, допустимо не больше {line.limit_bp}"
+            f"- {GATE_TEXT[line.name]}: {shown}, допустимо не больше {line.limit_bp}"
             f" ({STATUS_TEXT[line.status]})"
         )
     limit = "не больше" if line.name == "rollbacks" else "не меньше"

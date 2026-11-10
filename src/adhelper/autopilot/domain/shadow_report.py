@@ -39,6 +39,9 @@ class GateThresholds:
 
     def __post_init__(self) -> None:
         problems = []
+        # Строка "false" из файла правил была бы истиной: подтверждение только настоящим булевым.
+        if not isinstance(self.confirmed_by_owner, bool):
+            problems.append("confirmed_by_owner должен быть true или false")
         for name in ("max_rollback_share_bp", "min_accepted_share_bp"):
             if not 0 <= getattr(self, name) <= BASIS_POINTS:
                 problems.append(f"{name} вне 0..{BASIS_POINTS}")
@@ -96,7 +99,6 @@ def _line(name: str, value: int | None, limit: int, *, at_most: bool, confirmed:
 
 def evaluate_gates(metrics: WeekMetrics, thresholds: GateThresholds) -> list[GateLine]:
     confirmed = thresholds.confirmed_by_owner
-    worker_ok = metrics.ticks_missed <= thresholds.max_missed_ticks
     return [
         _line(
             "rollbacks",
@@ -112,12 +114,14 @@ def evaluate_gates(metrics: WeekMetrics, thresholds: GateThresholds) -> list[Gat
             at_most=False,
             confirmed=confirmed,
         ),
-        # Работа воркера считается без порога владельца: пропуск тика виден и так.
-        GateLine(
+        # Нет ни одного ожидаемого тика: журнал пуст или тики старше окна. «Пропущено 0» тут
+        # отсутствие данных, а не доказательство работы воркера.
+        _line(
             "worker",
-            GateStatus.OK if worker_ok else GateStatus.FAIL,
-            metrics.ticks_missed,
+            metrics.ticks_missed if metrics.ticks_expected > 0 else None,
             thresholds.max_missed_ticks,
+            at_most=True,
+            confirmed=confirmed,
         ),
     ]
 

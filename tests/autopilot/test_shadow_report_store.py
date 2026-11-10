@@ -204,3 +204,57 @@ async def test_missed_ticks_are_counted_from_the_first_tick(sessions: Sessions) 
 
 async def test_no_ticks_yet_is_not_a_miss(sessions: Sessions) -> None:
     assert await SqlTicks(sessions).missed(START, END) == (0, 0)
+
+
+async def _card(sessions: Sessions, ref: str, action: str, status: str, at: datetime) -> None:
+    await log(sessions).record("acc", ref, "borderline", action, status, {}, "autopilot-2", at)
+
+
+async def test_repeated_cards_for_one_ad_are_one_proposal(sessions: Sessions) -> None:
+    await seed(sessions)
+    for day in range(3):  # одну и ту же карточку цикл повторяет каждый день
+        await _card(
+            sessions, "ad:1", "pause_ad", "awaiting_confirmation", MID + timedelta(days=day)
+        )
+    await change(sessions, BUSINESS, "user", "pause_ad", "ad:1", MID + timedelta(days=1, hours=1))
+
+    metrics = await SqlShadowReport(sessions, BUSINESS).metrics(START, END)
+
+    assert (metrics.proposals, metrics.accepted) == (1, 1)
+
+
+async def test_autonomous_test_start_is_not_counted_as_the_owner_agreeing(
+    sessions: Sessions,
+) -> None:
+    await seed(sessions)
+    await _card(sessions, "ad:2", "start_test", "awaiting_confirmation", MID)
+    # Автопилот потом сам запустил тест: сначала «planned», потом «prepared».
+    await _card(sessions, "ad:2", "start_test", "planned", MID + timedelta(days=1))
+    await _card(sessions, "ad:2", "start_test", "prepared", MID + timedelta(days=1, minutes=1))
+
+    metrics = await SqlShadowReport(sessions, BUSINESS).metrics(START, END)
+
+    assert (metrics.proposals, metrics.accepted) == (1, 0)
+
+
+async def test_late_answer_after_the_window_is_not_acceptance(sessions: Sessions) -> None:
+    await seed(sessions)
+    await _card(sessions, "ad:2", "start_test", "awaiting_confirmation", MID)
+    await _card(sessions, "ad:2", "start_test", "prepared", MID + timedelta(days=8))
+
+    metrics = await SqlShadowReport(sessions, BUSINESS).metrics(START, END + timedelta(days=9))
+
+    assert (metrics.proposals, metrics.accepted) == (1, 0)
+
+
+async def test_worker_standing_the_whole_window_counts_every_slot_as_missed(
+    sessions: Sessions,
+) -> None:
+    ticks = SqlTicks(sessions)
+    # Воркер работал до начала окна и встал: тики были раньше, в окне ни одного.
+    for hour in range(0, 12):
+        await ticks.record(START - timedelta(days=2) + timedelta(hours=hour, minutes=20), 1)
+
+    expected, missed = await ticks.missed(START, END)
+
+    assert (expected, missed) == (168, 168)

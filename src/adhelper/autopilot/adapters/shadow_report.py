@@ -41,31 +41,49 @@ class SqlShadowReport:
     ) -> WeekMetrics:
         window = {"a": start, "z": end}
         async with self._sessions() as session:
+            # Предложение считается один раз на объявление и действие: цикл повторяет ту же
+            # карточку каждый день, и повторы раздували бы и числитель, и знаменатель.
             proposals = await self._scalar(
                 session,
-                "SELECT count(*) FROM decisions WHERE business_id = :b AND status ="
-                " 'awaiting_confirmation' AND action IS NOT NULL AND decided_at >= :a"
-                " AND decided_at < :z",
+                """
+                SELECT count(*) FROM (
+                  SELECT DISTINCT account, object_ref, action FROM decisions
+                  WHERE business_id = :b AND status = 'awaiting_confirmation'
+                    AND action IS NOT NULL AND decided_at >= :a AND decided_at < :z
+                ) t
+                """,
                 **window,
             )
+            # Принято: за ACCEPT_WINDOW после карточки владелец ответил «да» на тест (запись
+            # `prepared` без собственного запуска автопилота между ними) или сам сделал
+            # предложенное руками, по карточке или без неё. Позже окна и запуск самим
+            # автопилотом принятием не считаются.
             accepted = await self._scalar(
                 session,
                 """
-                SELECT count(*) FROM decisions p WHERE p.business_id = :b
-                  AND p.status = 'awaiting_confirmation' AND p.action IS NOT NULL
-                  AND p.decided_at >= :a AND p.decided_at < :z
-                  AND (
-                    EXISTS (SELECT 1 FROM decisions d WHERE d.business_id = p.business_id
-                      AND d.account = p.account AND d.object_ref = p.object_ref
-                      AND d.action = p.action AND d.decided_at > p.decided_at
-                      AND d.status = 'prepared')
-                    OR EXISTS (SELECT 1 FROM changes c WHERE c.business_id = p.business_id
-                      AND c.target_ref = p.object_ref AND c.source = 'user'
-                      AND c.status = 'applied' AND c.created_at > p.decided_at
-                      AND c.created_at <= p.decided_at + :win
-                      AND c.kind = CASE p.action WHEN 'pause_ad' THEN 'pause_ad'
-                        WHEN 'increase_limit' THEN 'set_limit' ELSE '' END)
-                  )
+                SELECT count(*) FROM (
+                  SELECT DISTINCT p.account, p.object_ref, p.action FROM decisions p
+                  WHERE p.business_id = :b
+                    AND p.status = 'awaiting_confirmation' AND p.action IS NOT NULL
+                    AND p.decided_at >= :a AND p.decided_at < :z
+                    AND (
+                      EXISTS (SELECT 1 FROM decisions d WHERE d.business_id = p.business_id
+                        AND d.account = p.account AND d.object_ref = p.object_ref
+                        AND d.action = p.action AND d.status = 'prepared'
+                        AND d.decided_at > p.decided_at AND d.decided_at <= p.decided_at + :win
+                        AND NOT EXISTS (SELECT 1 FROM decisions e
+                          WHERE e.business_id = p.business_id AND e.account = p.account
+                            AND e.object_ref = p.object_ref AND e.action = p.action
+                            AND e.status = 'planned'
+                            AND e.decided_at > p.decided_at AND e.decided_at <= d.decided_at))
+                      OR EXISTS (SELECT 1 FROM changes c WHERE c.business_id = p.business_id
+                        AND c.target_ref = p.object_ref AND c.source = 'user'
+                        AND c.status = 'applied' AND c.created_at > p.decided_at
+                        AND c.created_at <= p.decided_at + :win
+                        AND c.kind = CASE p.action WHEN 'pause_ad' THEN 'pause_ad'
+                          WHEN 'increase_limit' THEN 'set_limit' ELSE '' END)
+                    )
+                ) t
                 """,
                 win=ACCEPT_WINDOW,
                 **window,

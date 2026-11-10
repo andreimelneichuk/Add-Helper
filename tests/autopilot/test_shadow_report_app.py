@@ -81,3 +81,48 @@ async def test_no_businesses_still_makes_a_report() -> None:
     report = await build_report({}, Ticks(), NOW, THRESHOLDS)
 
     assert report.sample == [] and "данных нет" in "\n".join(render_text(report))
+
+
+async def test_default_window_is_the_last_full_week_in_moscow_and_stable_within_the_week() -> None:
+    a = uuid.uuid4()
+    sources = {a: Source(a, metrics(), range(1, 30))}
+    wednesday = datetime(2026, 11, 18, 12, 0, tzinfo=UTC)
+    friday = datetime(2026, 11, 20, 3, 0, tzinfo=UTC)
+
+    first = await build_report(sources, Ticks(), wednesday, THRESHOLDS)
+    second = await build_report(sources, Ticks(), friday, THRESHOLDS)
+
+    # Прошлая полная неделя по Москве: с понедельника 9.11 00:00 до понедельника 16.11 00:00.
+    assert first.start == datetime(2026, 11, 8, 21, 0, tzinfo=UTC)
+    assert first.end == datetime(2026, 11, 15, 21, 0, tzinfo=UTC)
+    assert (first.start, first.end, first.seed) == (second.start, second.end, second.seed)
+    assert [r.id for r in first.sample] == [r.id for r in second.sample]
+
+
+async def test_missed_tick_limit_scales_with_the_window() -> None:
+    a = uuid.uuid4()
+
+    class ThreeMissed:
+        async def missed(self, start: datetime, end: datetime) -> tuple[int, int]:
+            return 48, 3
+
+    confirmed = GateThresholds("gates-1", 1000, 6000, 2, True)
+    # Две недели: допустимо 4 пропуска, три в норме.
+    two = await build_report(
+        {a: Source(a, metrics(), range(1, 3))}, ThreeMissed(), NOW, confirmed, 14
+    )
+    # Трое суток: допустимо не больше 1 пропуска (2 * 3 / 7 с округлением вверх), три хуже порога.
+    three = await build_report(
+        {a: Source(a, metrics(), range(1, 3))}, ThreeMissed(), NOW, confirmed, 3
+    )
+
+    assert {g.name: g.status.value for g in two.gates}["worker"] == "ok"
+    assert {g.name: g.status.value for g in three.gates}["worker"] == "fail"
+
+
+async def test_window_must_be_at_least_one_day() -> None:
+    import pytest
+
+    for days in (0, -3):
+        with pytest.raises(ValueError):
+            await build_report({}, Ticks(), NOW, THRESHOLDS, days)

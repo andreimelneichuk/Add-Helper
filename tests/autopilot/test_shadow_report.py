@@ -75,7 +75,22 @@ def test_missed_ticks_over_limit_fail() -> None:
 def test_unconfirmed_thresholds_never_pass_the_gate() -> None:
     unconfirmed = GateThresholds("gates-1", 1000, 6000, 2, confirmed_by_owner=False)
     lines = evaluate_gates(metrics(), unconfirmed)
-    assert all(line.status is not GateStatus.OK for line in lines if line.name != "worker")
+    assert all(line.status is not GateStatus.OK for line in lines)
+    assert {line.name: line.status for line in lines}["worker"] is GateStatus.UNCONFIRMED
+
+
+def test_worker_gate_without_any_expected_tick_is_no_data_not_pass() -> None:
+    # Журнал тиков пуст или тики старше окна: «пропущено 0» тут не доказательство.
+    lines = {
+        line.name: line
+        for line in evaluate_gates(metrics(ticks_expected=0, ticks_missed=0), THRESHOLDS)
+    }
+    assert lines["worker"].status is GateStatus.NO_DATA
+
+
+def test_confirmed_flag_must_be_a_real_bool() -> None:
+    with pytest.raises(ValueError):
+        GateThresholds("gates-x", 1000, 6000, 2, "false")  # type: ignore[arg-type]
 
 
 def test_divergence_compares_per_ref_and_day() -> None:
