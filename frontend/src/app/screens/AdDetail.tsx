@@ -490,14 +490,16 @@ export function AdDetail({ store, id }: { store: Store; id: string }) {
         <Compose s={s} base={ad} useLabel="Поставить в показы" onCancel={() => setComposing(false)} onUse={(value) => store.ask({ action: "adSave", value })} />
       ) : (
         <div className="anno-grid">
-          <div className="ah-panel anno-show">
-            <div className="ah-label">Так его видит клиент</div>
-            <Preview ad={ad} hook={hook} title={title} />
-          </div>
-          <div className="anno-side">
+          <div className="anno-main">
+            <div className="ah-panel anno-show">
+              <div className="ah-label">Так его видит клиент</div>
+              <Preview ad={ad} hook={hook} title={title} />
+            </div>
             {photoApi && ad.id.includes("/") && (
               <PhotoControls api={photoApi} ad={ad} services={profileServices} disabled={off || isArchived || ad.tag === "отклонено Яндексом"} />
             )}
+          </div>
+          <div className="anno-side">
             <section className="ah-panel anno-facts">
               <div className="anno-performance">
                 <span className="ah-label">Результат объявления</span>
