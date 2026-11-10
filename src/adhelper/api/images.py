@@ -174,7 +174,10 @@ def images_router() -> APIRouter:
         found = await match_photos(store, getattr(request.app.state, "photo_labeler", None), drafts)
         base = f"/api/businesses/{business_id}/photos"
         return {
-            "matches": [{"image_id": m.image_id, "missing": m.missing} for m in found],
+            "matches": [
+                {"image_id": m.image_id, "missing": m.missing, "fallback": m.fallback}
+                for m in found
+            ],
             "photos": [
                 {
                     "id": image.id,

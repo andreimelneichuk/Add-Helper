@@ -74,7 +74,7 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
       const { matches, photos } = await live.matchPhotos(ads.map((ad) => ad.services ?? []));
       let list = photos;
       setPhotoList(list);
-      const ids: Record<number, number | null> = Object.fromEntries(matches.map((m, i) => [i, m.image_id]));
+      const ids: Record<number, number | null> = Object.fromEntries(matches.map((m, i) => [i, m.image_id ?? m.fallback ?? null]));
       setPhotoIds({ ...ids });
       const missing = [...new Set(matches.flatMap((m) => (m.image_id === null && m.missing ? [m.missing] : [])))];
       for (const service of missing) {

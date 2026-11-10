@@ -75,8 +75,10 @@ class Candidate:
 @dataclass(frozen=True)
 class Match:
     image_id: int | None
-    # Услуга, для которой подходящего фото нет и можно сделать сцену; None — делать нечего.
+    # Услуга, для которой фото именно этой услуги нет и стоит нарисовать сцену; None — не нужно.
     missing: str | None
+    # Общее фото заведения на случай, если сцену сделать не вышло (предел, сбой генератора).
+    fallback: int | None = None
 
 
 def _least_used(photos: Sequence[Candidate], used: Counter[int]) -> Candidate:
@@ -84,17 +86,25 @@ def _least_used(photos: Sequence[Candidate], used: Counter[int]) -> Candidate:
 
 
 def match_drafts(drafts: Sequence[Sequence[str]], photos: Sequence[Candidate]) -> list[Match]:
-    """Фото своей услуги, иначе общее, иначе пусто с названием услуги для новой сцены."""
+    """Фото своей услуги; нет его — просим сцену по услуге, а общее фото держим про запас."""
     used: Counter[int] = Counter()
     found: list[Match] = []
     for services in drafts:
         fitting = [c for c in photos if c.subject in services]
         general = [c for c in photos if c.subject == GENERAL]
-        pool = fitting or general
-        if pool:
-            chosen = _least_used(pool, used)
+        if fitting:
+            chosen = _least_used(fitting, used)
             used[chosen.image_id] += 1
             found.append(Match(chosen.image_id, None))
+        elif not services:
+            # Услуги в объявлении нет (адрес, акция): рисовать нечего, берём общее, если оно есть.
+            if general:
+                chosen = _least_used(general, used)
+                used[chosen.image_id] += 1
+                found.append(Match(chosen.image_id, None))
+            else:
+                found.append(Match(None, None))
         else:
-            found.append(Match(None, services[0] if services else None))
+            spare = _least_used(general, used).image_id if general else None
+            found.append(Match(None, services[0], spare))
     return found

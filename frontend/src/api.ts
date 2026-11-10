@@ -380,7 +380,7 @@ export function createApi(businessId: string, csrf: string) {
     photos: (init?: RequestInit, includeGenerated = false) => request<Photos>(`${base}/photos${includeGenerated ? "?include_generated=true" : ""}`, init),
     // Фото к каждому черновику по смыслу: модель называет тему фото, выбирает код. Денег не тратит.
     matchPhotos: (drafts: string[][]) =>
-      request<{ matches: { image_id: number | null; missing: string | null }[]; photos: Photo[] }>(
+      request<{ matches: { image_id: number | null; missing: string | null; fallback?: number | null }[]; photos: Photo[] }>(
         `${base}/photos/match`,
         { method: "POST", body: JSON.stringify({ drafts: drafts.map((services) => ({ services })) }) },
         csrf,

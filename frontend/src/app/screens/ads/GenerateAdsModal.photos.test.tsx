@@ -81,6 +81,21 @@ describe("фото к сгенерированным объявлениям", ()
     expect(adoptAds).toHaveBeenCalledWith({ id: 5, token: "t", kept: [0, 1] });
   });
 
+  it("при отказе генерации остаётся общее фото заведения, если оно есть", async () => {
+    const matchPhotos = vi.fn(async () => ({
+      matches: [{ image_id: null, missing: "Маникюр", fallback: 9 }, { image_id: 7, missing: null }],
+      photos: [photo(7), photo(9)],
+    }));
+    const generatePhoto = vi.fn(async () => { throw new Error("Сегодня уже сделано 3 фото."); });
+    const { adoptAds } = await run({ matchPhotos, generatePhoto } as Partial<Api>);
+
+    expect(await screen.findByText(/Сегодня уже сделано 3 фото\./)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: /Добавить выбранные/ })).toBeEnabled());
+    await userEvent.click(screen.getByRole("button", { name: /Добавить выбранные/ }));
+
+    expect(adoptAds).toHaveBeenCalledWith({ id: 5, token: "t", kept: [0, 1], photos: { 0: 9, 1: 7 } });
+  });
+
   it("владелец может снять или сменить фото у одного объявления", async () => {
     const matchPhotos = vi.fn(async () => ({
       matches: [{ image_id: 7, missing: null }, { image_id: 7, missing: null }],

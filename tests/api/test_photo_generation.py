@@ -297,7 +297,7 @@ async def test_without_a_vision_model_nothing_is_guessed(anna: Anna) -> None:  #
         f"{base}/photos/match", json={"drafts": [{"services": ["Маникюр"]}]}, headers=csrf
     )
 
-    assert found.json()["matches"] == [{"image_id": None, "missing": "Маникюр"}]
+    assert found.json()["matches"] == [{"image_id": None, "missing": "Маникюр", "fallback": None}]
 
 
 async def test_ad_can_be_switched_to_a_photo_made_by_the_service(anna: Anna) -> None:  # noqa: F811

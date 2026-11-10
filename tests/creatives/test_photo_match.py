@@ -57,12 +57,17 @@ def test_least_used_fitting_photo_is_taken_and_owner_comes_first() -> None:
     assert [m.image_id for m in found] == [3, 4, 5, 3]
 
 
-def test_general_photo_is_used_only_when_no_photo_fits_the_service() -> None:
+def test_scene_is_asked_for_a_service_without_its_own_photo_and_general_is_kept_spare() -> None:
     photos = [Candidate(1, GENERAL, True), Candidate(2, "Маникюр", True), Candidate(3, UNFIT, True)]
 
-    found = match_drafts([("Маникюр",), ("Стрижка",), ()], photos)
+    found = match_drafts([("Маникюр",), ("Стрижка",)], photos)
 
-    assert found == [Match(2, None), Match(1, None), Match(1, None)]
+    assert found == [Match(2, None), Match(None, "Стрижка", 1)]
+
+
+def test_draft_without_a_service_takes_a_general_photo_or_nothing() -> None:
+    assert match_drafts([()], [Candidate(1, GENERAL, True)]) == [Match(1, None)]
+    assert match_drafts([()], [Candidate(3, UNFIT, True)]) == [Match(None, None)]
 
 
 def test_missing_service_is_named_so_a_scene_can_be_made() -> None:
