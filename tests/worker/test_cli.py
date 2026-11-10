@@ -329,3 +329,13 @@ async def test_shadow_report_command_prints_the_week_and_changes_nothing(
     out = capsys.readouterr().out
     assert "Отчёт теневого периода" in out and "Ворота этапа 9" in out
     assert await cli._shadow_report(migrated, 7, "gates-nope") == 2
+
+
+async def test_trust_command_refuses_a_step_out_of_order_and_shows_the_ladder(
+    migrated: Settings, engine: AsyncEngine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert await cli._trust(migrated, BUSINESS, "shift_limit", None) == 2
+    assert "Отказ" in capsys.readouterr().out
+    assert await cli._trust(migrated, BUSINESS, None, None) == 0
+    out = capsys.readouterr().out
+    assert "открыто: pause_ad" in out and "закрыто: shift_limit" in out

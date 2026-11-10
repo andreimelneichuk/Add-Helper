@@ -5,8 +5,8 @@
 """
 
 import logging
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Protocol
 
@@ -20,6 +20,7 @@ from adhelper.autopilot.domain.policy import (
     check_policy,
 )
 from adhelper.autopilot.domain.review import Candidate, Reviewer, nothing_passed
+from adhelper.autopilot.domain.trust import narrowed_value
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ class Gate(Protocol):
         data: AccountData,
         allowed: frozenset[ActionKind] | None,
         now: datetime,
+        envelope: Mapping[str, int] | None = None,
     ) -> dict[str, GateNote]: ...
 
 
@@ -63,6 +65,7 @@ class ClosedGate:
         data: AccountData,
         allowed: frozenset[ActionKind] | None,
         now: datetime,
+        envelope: Mapping[str, int] | None = None,
     ) -> dict[str, GateNote]:
         note = {"policy_version": "unavailable", "held_by": "gate_error"}
         return {a.ref: GateNote(True, dict(note)) for a in actions if not a.needs_confirmation}
@@ -83,12 +86,17 @@ class PolicyGate:
         data: AccountData,
         allowed: frozenset[ActionKind] | None,
         now: datetime,
+        envelope: Mapping[str, int] | None = None,
     ) -> dict[str, GateNote]:
         """Ключ — `ref` действия. Действия без `needs_confirmation` проверяются здесь."""
         version = {"policy_version": self._rules.version}
         todo = [action for action in actions if not action.needs_confirmation]
         if not todo:
             return {}
+        rules = self._narrowed(envelope or {})
+        if rules is None:
+            # Рамка кабинета «ноль изменений»: самостоятельных действий нет, только карточки.
+            return {a.ref: GateNote(True, version | {"held_by": "daily_limit"}) for a in todo}
         try:
             facts = await self._facts.load(account, now)
             # Пустой набор разрешений не значит «всё»: всё разрешено только при `None`.
@@ -104,7 +112,7 @@ class PolicyGate:
         for action in todo:
             try:
                 inp = self._input(action, data, facts, permitted, now, changes, moved)
-                decision = check_policy(inp, self._rules)
+                decision = check_policy(inp, rules)
             except Exception as error:
                 logger.warning("Политика не посчитана: %s", type(error).__name__)
                 self._put(notes, action.ref, GateNote(True, version | {"held_by": "gate_error"}))
@@ -140,6 +148,14 @@ class PolicyGate:
             for action in passed:
                 self._put(notes, action.ref, GateNote(False, version | {"review": "off"}))
         return notes
+
+    def _narrowed(self, envelope: Mapping[str, int]) -> PolicyRules | None:
+        """Правила, суженные рамкой кабинета; None, если рамка запрещает любые изменения."""
+        changes = narrowed_value(self._rules.max_changes_per_day, envelope, "max_changes_per_day")
+        if changes < 1:
+            return None
+        move = narrowed_value(self._rules.max_weekly_move_bp, envelope, "max_weekly_move_bp")
+        return replace(self._rules, max_changes_per_day=changes, max_weekly_move_bp=move)
 
     @staticmethod
     def _put(notes: dict[str, GateNote], ref: str, note: GateNote) -> None:

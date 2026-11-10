@@ -19,11 +19,15 @@ from adhelper.accounts.adapters.sql import logins_of_business
 from adhelper.autopilot.adapters.data import SqlHistory, autopilot_accounts
 from adhelper.autopilot.adapters.rules_file import load_gate_thresholds, load_policy_rules
 from adhelper.autopilot.adapters.rules_file import load_rules as load_autopilot_rules
+from adhelper.autopilot.adapters.settings import SqlAutopilotSettings
 from adhelper.autopilot.adapters.shadow_report import SqlShadowReport
 from adhelper.autopilot.adapters.sql import LoggedDecision, SqlDecisionLog
 from adhelper.autopilot.adapters.ticks import SqlTicks
+from adhelper.autopilot.adapters.trust import SqlTrustFacts
+from adhelper.autopilot.application.settings import DEFAULT_SETTINGS
 from adhelper.autopilot.application.shadow_report import build_report, render_text
 from adhelper.autopilot.application.simulator import Difference, compare
+from adhelper.autopilot.application.trust import CLASS_WORDS, GrantDenied, TrustClass, grant, revoke
 from adhelper.budget.adapters.rules_file import load_rules as load_budget_rules
 from adhelper.budget.application.emergency import StopReport, stop_account
 from adhelper.business.adapters.browser import browser_starts
@@ -500,6 +504,37 @@ async def _shadow_report(settings: Settings, days: int, gates: str) -> int:
     return 0
 
 
+async def _trust(
+    settings: Settings, business_id: uuid.UUID, grant_class: str | None, revoke_class: str | None
+) -> int:
+    """Ступени доверия автопилота: показать, открыть или закрыть. Только владелец проекта."""
+    try:
+        async with open_runtime(settings) as runtime:
+            store = SqlAutopilotSettings(runtime.sessions, business_id)
+            now = runtime.clock()
+            try:
+                if grant_class:
+                    await grant(
+                        store,
+                        SqlTrustFacts(runtime.sessions, business_id),
+                        TrustClass(grant_class),
+                        now,
+                    )
+                elif revoke_class:
+                    await revoke(store, TrustClass(revoke_class), now)
+            except GrantDenied as denied:
+                _say(f"Отказ: {denied}")
+                return 2
+            current = await store.get()
+    except (SQLAlchemyError, OSError) as error:
+        _say(f"База недоступна: {type(error).__name__}")
+        return 1
+    opened = (current or DEFAULT_SETTINGS).granted
+    for item in TrustClass:
+        _say(f"{'открыто' if item in opened else 'закрыто'}: {item.value} ({CLASS_WORDS[item]})")
+    return 0
+
+
 async def _sync_stats(settings: Settings) -> int:
     try:
         async with open_runtime(settings) as runtime:
@@ -547,6 +582,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     report.add_argument("--days", type=int, default=7, help="За сколько суток")
     report.add_argument("--gates", default=GATES_VERSION, help="Версия порогов ворот")
+    trust = commands.add_parser(
+        "trust", help="Ступени доверия автопилота: показать, открыть (--grant) или закрыть"
+    )
+    trust.add_argument("--business", type=uuid.UUID, required=True)
+    classes = [item.value for item in TrustClass]
+    trust.add_argument("--grant", choices=classes, help="Открыть класс действий")
+    trust.add_argument("--revoke", choices=classes, help="Закрыть класс и всё выше")
     args = parser.parse_args(argv)
 
     settings = Settings()
@@ -560,6 +602,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return asyncio.run(_shadow(settings, args.business, args.limit))
     if args.command == "shadow-report":
         return asyncio.run(_shadow_report(settings, args.days, args.gates))
+    if args.command == "trust":
+        return asyncio.run(_trust(settings, args.business, args.grant, args.revoke))
     if args.command == "simulate":
         unknown = [v for v in (args.rules, args.against) if not _known_rules(v)]
         if unknown:

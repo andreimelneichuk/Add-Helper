@@ -328,3 +328,36 @@ async def test_recent_decrease_counts_for_the_interval() -> None:
     )
     assert notes["c1"].held is True
     assert notes["c1"].notes["held_by"] == "auto_strategy_interval"
+
+
+BAD2 = AdStats("ad:bad2", "c2", "g2", TARGET * 5, 0, 30, True)
+GOOD2 = AdStats("ad:good2", "c2", "g2", TARGET * 10, 20, 30, True)
+
+
+async def run_with_envelope(envelope: Mapping[str, int] | None) -> tuple[Log, Actions]:
+    log, actions = Log(), Actions()
+    c = cycle(gate(), log, actions, [BAD, GOOD, BAD2, GOOD2])
+    await c.run("acc", TARGET, Mode.AUTO, ALL, envelope)
+    return log, actions
+
+
+async def test_cabinet_envelope_narrows_the_daily_limit() -> None:
+    # По правилам policy-1 можно три изменения в сутки; рамка кабинета оставляет одно.
+    _, wide = await run_with_envelope(None)
+    assert sorted(wide.paused) == ["ad:bad", "ad:bad2"]
+    log, narrow = await run_with_envelope({"max_changes_per_day": 1})
+    assert len(narrow.paused) == 1
+    held = [row for row in log.rows if row[1] == "pause_ad" and row[2] == "awaiting_confirmation"]
+    assert len(held) == 1 and held[0][3]["held_by"] == "daily_limit"
+
+
+async def test_envelope_never_widens_the_policy() -> None:
+    _, actions = await run_with_envelope({"max_changes_per_day": 50})
+    assert len(actions.paused) == 2
+
+
+async def test_zero_changes_in_the_envelope_means_cards_only() -> None:
+    log, actions = await run_with_envelope({"max_changes_per_day": 0})
+    assert actions.paused == []
+    held = [row for row in log.rows if row[1] == "pause_ad"]
+    assert held and all(row[2] == "awaiting_confirmation" for row in held)

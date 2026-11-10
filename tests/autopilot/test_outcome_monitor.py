@@ -742,3 +742,32 @@ async def insert_user_change(sessions: Sessions, key: str, at: datetime) -> None
             ),
             {"b": BUSINESS, "k": key, "at": at},
         )
+
+
+async def test_auto_rollback_closes_the_next_trust_step(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    """Гейт этапа 9 на песочнице: искусственное ухудшение → автооткат → ступень не открыть."""
+    from dataclasses import replace
+
+    from adhelper.autopilot.adapters.settings import SqlAutopilotSettings
+    from adhelper.autopilot.adapters.trust import SqlTrustFacts
+    from adhelper.autopilot.application.trust import GrantDenied, grant
+    from adhelper.autopilot.domain.settings import DEFAULT_SETTINGS, AutopilotMode
+    from adhelper.autopilot.domain.trust import GrantRefusal, TrustClass
+
+    store = SqlAutopilotSettings(sessions, BUSINESS)
+    started = datetime.now(UTC) - timedelta(days=8)
+    await store.save(replace(DEFAULT_SETTINGS, mode=AutopilotMode.AUTO, auto_since=started), [])
+    rig = Rig(sessions, engine)
+    await rig.pause_bad()
+    await history(sessions, after_leads_per_day=1)
+    facts = SqlTrustFacts(sessions, BUSINESS)
+    assert await facts.failures_since(started) == 0
+
+    await rig.monitor.run("acc")
+
+    assert await facts.failures_since(started) == 1
+    with pytest.raises(GrantDenied) as denied:
+        await grant(store, facts, TrustClass.SHIFT_LIMIT, datetime.now(UTC))
+    assert denied.value.refusal is GrantRefusal.HAD_FAILURES

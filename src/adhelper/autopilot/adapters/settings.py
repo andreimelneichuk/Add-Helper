@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from adhelper.autopilot.domain.decide import ActionKind
 from adhelper.autopilot.domain.settings import AutopilotMode, AutopilotSettings, Cadence
+from adhelper.autopilot.domain.trust import TrustClass
 
 SETTINGS = table(
     "autopilot_settings",
@@ -34,6 +35,9 @@ SETTINGS = table(
     column("envelope", JSONB),
     column("stopped_at", DateTime(timezone=True)),
     column("last_run_at", DateTime(timezone=True)),
+    column("granted_classes", JSONB),
+    column("granted_at", DateTime(timezone=True)),
+    column("auto_since", DateTime(timezone=True)),
     column("updated_at", DateTime(timezone=True)),
 )
 LOG = table(
@@ -61,6 +65,9 @@ def _settings(row: Any) -> AutopilotSettings:
         envelope=dict(row.envelope),
         stopped_at=row.stopped_at,
         last_run_at=row.last_run_at,
+        granted=frozenset(TrustClass(item) for item in row.granted_classes),
+        granted_at=row.granted_at,
+        auto_since=row.auto_since,
     )
 
 
@@ -73,6 +80,9 @@ def _values(settings: AutopilotSettings) -> dict[str, Any]:
         "envelope": dict(settings.envelope),
         "stopped_at": settings.stopped_at,
         "last_run_at": settings.last_run_at,
+        "granted_classes": sorted(item.value for item in settings.granted),
+        "granted_at": settings.granted_at,
+        "auto_since": settings.auto_since,
     }
 
 
@@ -109,7 +119,7 @@ class SqlAutopilotSettings:
         statement = (
             update(SETTINGS)
             .where(SETTINGS.c.business_id == self._business_id, SETTINGS.c.mode == "auto")
-            .values(mode="confirm", updated_at=func.now())
+            .values(mode="confirm", auto_since=None, updated_at=func.now())
         )
         async with self._sessions() as session, session.begin():
             changed = getattr(await session.execute(statement), "rowcount", 0)

@@ -29,6 +29,7 @@ from adhelper.autopilot.application.settings import (
     stop,
     update_settings,
 )
+from adhelper.autopilot.application.trust import effective_allowed
 from adhelper.business.adapters.sql import SqlLeadGoal
 
 AUTO_REFUSED = "Режим «Сам» ещё не разрешён: сейчас автопилот только следит или предлагает"
@@ -82,6 +83,10 @@ async def _view(request: Request, business_id: UUID) -> dict[str, Any]:
     return {
         "mode": settings.mode.value,
         "allowed_actions": sorted(kind.value for kind in settings.allowed_actions),
+        # Что владелец проекта уже открыл кабинету; остальное только предлагается (этап 9).
+        "granted_actions": sorted(
+            kind.value for kind in effective_allowed(frozenset(ActionKind), settings.granted)
+        ),
         "cadence": settings.cadence.value,
         "run_hour": settings.run_hour,
         "envelope": dict(settings.envelope),
@@ -153,7 +158,9 @@ def autopilot_router() -> APIRouter:
             resume=body.resume,
         )
         try:
-            await update_settings(store, patch, auto_allowed=_auto_allowed(request))
+            await update_settings(
+                store, patch, auto_allowed=_auto_allowed(request), now=_now(request)
+            )
         except AutoNotAllowed:
             raise HTTPException(status.HTTP_409_CONFLICT, AUTO_REFUSED) from None
         except SettingsError as error:

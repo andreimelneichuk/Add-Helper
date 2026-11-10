@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Protocol
 
 from adhelper.autopilot.domain.decide import ActionKind
@@ -18,6 +18,7 @@ from adhelper.autopilot.domain.settings import (
     next_run_at,
     validated,
 )
+from adhelper.autopilot.domain.trust import FIRST_CABINET_ENVELOPE
 
 # HTTP-слой и воркер берут эти имена здесь, а не из домена.
 __all__ = [
@@ -84,12 +85,23 @@ def _lines(before: AutopilotSettings, after: AutopilotSettings) -> list[str]:
     if after.allowed_actions != before.allowed_actions:
         lines.append("Изменил, что автопилот вправе делать сам")
     if after.envelope != before.envelope:
-        lines.append("Изменил рамки автопилота")
+        narrowed = after.mode is AutopilotMode.AUTO and before.mode is not AutopilotMode.AUTO
+        lines.append(
+            "Поставил узкие рамки: одно изменение в сутки и до 5% бюджета в неделю"
+            if narrowed and not before.envelope
+            else "Изменил рамки автопилота"
+        )
     return lines
 
 
-async def update_settings(store: Store, patch: Patch, *, auto_allowed: bool) -> AutopilotSettings:
-    """Применяет изменения. Остановка снимается только явным resume, не сменой расписания."""
+async def update_settings(
+    store: Store, patch: Patch, *, auto_allowed: bool, now: datetime | None = None
+) -> AutopilotSettings:
+    """Применяет изменения. Остановка снимается только явным resume, не сменой расписания.
+
+    Первое включение «Сам» на кабинете начинает отсчёт ежедневного отчёта (`auto_since`) и,
+    если рамок нет, ставит узкие по умолчанию. Выход из «Сам» отсчёт сбрасывает.
+    """
     before = await store.get() or DEFAULT_SETTINGS
     if patch.mode is AutopilotMode.AUTO and not auto_allowed:
         raise AutoNotAllowed
@@ -102,6 +114,15 @@ async def update_settings(store: Store, patch: Patch, *, auto_allowed: bool) -> 
         envelope=before.envelope if patch.envelope is None else patch.envelope,
         stopped_at=None if patch.resume else before.stopped_at,
     )
+    if after.mode is AutopilotMode.AUTO and before.mode is not AutopilotMode.AUTO:
+        narrow = {} if after.envelope else dict(FIRST_CABINET_ENVELOPE)
+        after = replace(
+            after,
+            auto_since=now or datetime.now(UTC),
+            envelope=after.envelope or narrow,
+        )
+    elif after.mode is not AutopilotMode.AUTO:
+        after = replace(after, auto_since=None)
     validated(after)
     lines = _lines(before, after)
     if after != before:

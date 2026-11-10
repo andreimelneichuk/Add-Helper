@@ -399,3 +399,79 @@ async def test_hourly_tick_is_journaled_once_per_hour(
     async with engine.connect() as connection:
         count = await connection.scalar(text("SELECT count(*) FROM autopilot_ticks"))
     assert count == 1
+
+
+async def test_auto_cabinet_acts_only_inside_granted_classes_and_envelope(
+    sessions: Sessions, engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Владелец кабинета отметил рост лимита, но владелец проекта его не открыл: нельзя."""
+    from adhelper.autopilot.application.cycle import AutopilotCycle
+    from adhelper.autopilot.domain.decide import ActionKind
+
+    await _borderline(sessions)
+    ticked = frozenset(ActionKind)
+    envelope = {"max_changes_per_day": 1}
+    await SqlAutopilotSettings(sessions, BUSINESS).save(
+        replace(
+            DEFAULT_SETTINGS,
+            mode=AutopilotMode.AUTO,
+            allowed_actions=ticked,
+            envelope=envelope,
+            auto_since=NOW,
+        ),
+        [],
+    )
+    seen: dict[str, Any] = {}
+    real_run = AutopilotCycle.run
+
+    async def spy(self: AutopilotCycle, account: str, target: int, mode: Any, *rest: Any) -> None:
+        seen["rest"] = rest
+        await real_run(self, account, target, mode, *rest)
+
+    monkeypatch.setattr(AutopilotCycle, "run", spy)
+    worker = runtime(sessions, engine, {BUSINESS})
+    worker.auto_allowed = True
+
+    await worker.autopilot_run()
+
+    allowed, passed_envelope = seen["rest"]
+    assert allowed == {ActionKind.PAUSE_AD, ActionKind.START_TEST}
+    assert passed_envelope == envelope
+
+
+async def test_daily_report_is_sent_only_in_the_first_14_days_of_auto(
+    sessions: Sessions, engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from adhelper.autopilot.application.outcomes import OutcomeMonitor
+
+    await _borderline(sessions)
+    calls: list[bool] = []
+
+    async def digest(self: OutcomeMonitor, account: str, *, always: bool) -> bool:
+        calls.append(always)
+        return False
+
+    monkeypatch.setattr(OutcomeMonitor, "digest", digest)
+    store = SqlAutopilotSettings(sessions, BUSINESS)
+    worker = runtime(sessions, engine, {BUSINESS})
+    worker.auto_allowed = True
+    await store.save(
+        replace(DEFAULT_SETTINGS, mode=AutopilotMode.AUTO, auto_since=NOW - timedelta(days=3)), []
+    )
+    await worker.autopilot_run()
+    worker.clock = lambda: NOW + timedelta(days=12)  # 15 суток от включения
+    await worker.autopilot_run()
+
+    assert calls == [True, False]
+
+
+async def test_header_stop_keeps_an_auto_cabinet_quiet(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    """Выключатель в шапке работает и в «Сам»: остановленный кабинет не разбирается."""
+    from adhelper.autopilot.application.settings import stop
+
+    worker = await _auto_worker(sessions, engine)
+    await stop(SqlAutopilotSettings(sessions, BUSINESS), NOW)
+    assert await worker.autopilot_run() == 0
+    assert await _decision(sessions) is None

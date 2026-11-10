@@ -124,6 +124,7 @@ class AutopilotCycle:
         target: int,
         mode: Mode,
         allowed: frozenset[ActionKind] | None = None,
+        envelope: Mapping[str, int] | None = None,
     ) -> None:
         """`allowed` — что вправе сделать сам режим «Сам»; остальное только предлагается."""
         now = self._clock()
@@ -175,7 +176,9 @@ class AutopilotCycle:
             for action in plan.actions
         ]
         screened = (
-            await self._gate.screen(account, planned, data, allowed, now) if self._gate else {}
+            await self._gate.screen(account, planned, data, allowed, now, envelope)
+            if self._gate
+            else {}
         )
         for action in planned:
             note = screened.get(action.ref)

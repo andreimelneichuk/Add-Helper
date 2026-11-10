@@ -32,6 +32,7 @@ from adhelper.autopilot.application.settings import (
     is_due,
 )
 from adhelper.autopilot.application.transfer import finish_open_transfers
+from adhelper.autopilot.application.trust import daily_report_due, effective_allowed
 from adhelper.autopilot.application.visits import WithVisits
 from adhelper.budget.adapters.ledgered import (
     LedgeredBudgetPlatform,
@@ -567,14 +568,22 @@ class Runtime:
                 continue
             mode = cycle_mode(settings.mode, auto_allowed=self.auto_allowed and monitored)
             goal = await self.autopilot_goal(business_id, goal)
+            # Лестница доверия: сам цикл делает только открытое владельцем проекта и отмеченное
+            # владельцем кабинета, в узких рамках кабинета (этап 9).
             await self.autopilot_cycle(business_id, account).run(
-                account, goal, mode, settings.allowed_actions
+                account,
+                goal,
+                mode,
+                effective_allowed(settings.allowed_actions, settings.granted),
+                settings.envelope,
             )
             # Слот закрывается сразу после разбора: сбой на следующем кабинете его не открывает.
             await SqlAutopilotSettings(self.sessions, business_id).mark_run(settings, now)
             try:
                 await self.autopilot_monitor(business_id, account).digest(
-                    account, always=settings.mode is AutopilotMode.AUTO
+                    account,
+                    always=settings.mode is AutopilotMode.AUTO
+                    and daily_report_due(settings.auto_since, now),
                 )
             except Exception as error:
                 logger.warning("Сводка автопилота не отправлена: %s", type(error).__name__)

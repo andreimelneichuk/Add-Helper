@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta, timezone
 from enum import StrEnum
 
 from adhelper.autopilot.domain.decide import ActionKind, Mode
+from adhelper.autopilot.domain.trust import START_CLASSES, TrustClass
 
 MSK = timezone(timedelta(hours=3))
 SLOT_MINUTE = 20
@@ -46,6 +47,12 @@ class AutopilotSettings:
     envelope: Mapping[str, int] = field(default_factory=dict)
     stopped_at: datetime | None = None
     last_run_at: datetime | None = None
+    # Лестница доверия (этап 9): классы, которые открыл владелец проекта, и когда открыта
+    # последняя ступень. Владелец кабинета их сменить не может. docs/17-autopilot-plan.md.
+    granted: frozenset[TrustClass] = START_CLASSES
+    granted_at: datetime | None = None
+    # Когда кабинет начал работать сам: от этого дня считаются 14 суток ежедневного отчёта.
+    auto_since: datetime | None = None
 
 
 DEFAULT_SETTINGS = AutopilotSettings()
