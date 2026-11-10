@@ -58,7 +58,7 @@ class CycleResult:
 def _create(item: Outgoing) -> ProposedChange:
     return ProposedChange(
         account=item.account,
-        source=ChangeSource.AUTOPILOT,
+        source=ChangeSource.AD_KEEPER,
         kind=ChangeKind.CREATE_AD,
         target_ref=f"{NEW_AD_PREFIX}{ad_marker(item.creative_id)}",
         planned={
@@ -127,7 +127,7 @@ async def _pause_replaced(
         await ledger.submit(
             ProposedChange(
                 account=account,
-                source=ChangeSource.AUTOPILOT,
+                source=ChangeSource.AD_KEEPER,
                 kind=ChangeKind.PAUSE_AD,
                 target_ref=f"{AD_PREFIX}{ad_id}",
                 planned={"active": False},

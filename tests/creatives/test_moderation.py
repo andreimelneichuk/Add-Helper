@@ -45,7 +45,7 @@ from adhelper.ledger.adapters.sql import PostgresAccountLock, SqlChangeRepositor
 from adhelper.ledger.application.owner import set_ad_active
 from adhelper.ledger.application.rollback import RollbackStatus, rollback_change
 from adhelper.ledger.application.service import Ledger
-from adhelper.ledger.domain.model import ChangeKind, ChangeStatus
+from adhelper.ledger.domain.model import ChangeKind, ChangeSource, ChangeStatus
 from adhelper.platforms.adapters.gateway import RoutingGateway
 from tests.budget.fake_platform import FakePlatform, Fault
 from tests.creatives.test_service import FakeAttention, FakeModel
@@ -214,6 +214,21 @@ async def test_placed_ad_is_sent_through_ledger_once_and_goes_live_after_accept(
     assert (await stand.ad_states())[published.ad_id] == "on"
     assert (await stand.creatives())[0]["state"] == "running"
     assert stand.attention.open == set()
+
+
+async def test_keeper_changes_are_not_written_as_autopilot(stand: Stand) -> None:
+    """Подбор объявлений идёт мимо режима автопилота и в его разделе истории не показывается."""
+    creative = await stand.place("Маникюр за 1500 ₽ у дома", replaces="9001")
+    await stand.send()
+    (published,) = stand.platform.published.values()
+    stand.platform.accept(published.ad_id)
+    await stand.check()
+    await stand.check()
+    created = await stand.ledger.changes_on_target("lak", f"newad:ahc-{creative}")
+    stopped = await stand.ledger.changes_on_target("lak", "ad:9001")
+    sources = {c.source for c in [*created, *stopped]}
+    assert created and stopped
+    assert sources == {ChangeSource.AD_KEEPER}
 
 
 async def test_lost_reply_is_finished_by_reading_not_by_second_create(stand: Stand) -> None:

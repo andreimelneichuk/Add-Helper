@@ -16,7 +16,7 @@ UNDOABLE = frozenset(
     {"set_limit", "resume", "pause_ad", "resume_ad", "set_schedule", "set_regions"}
 )
 # Чьи действия напоминаем: свои и сервиса. Изменения из кабинета и сами отмены — нет.
-ACTORS = frozenset({"autopilot", "user", "experiment"})
+ACTORS = frozenset({"autopilot", "ad_keeper", "user", "experiment"})
 ASKED = "Вы попросили."
 UNDO_HINT = "Отменить можно в истории."
 ACTION_TITLE = {

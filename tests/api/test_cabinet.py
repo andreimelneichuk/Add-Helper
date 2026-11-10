@@ -559,6 +559,24 @@ async def test_history_merges_changes_and_decisions(
     assert [(line["source"], line["kind"]) for line in body] == [("autopilot", "keep")]
 
 
+async def test_history_does_not_show_cycles_where_autopilot_did_nothing(
+    anna: tuple[httpx.AsyncClient, str, uuid.UUID], sessions: Sessions
+) -> None:
+    client, _, business_id = anna
+    async with sessions.begin() as session:
+        for verdict in ("low_data", "efficient"):
+            await session.execute(
+                text(
+                    "INSERT INTO decisions (business_id, account, object_ref, verdict, action,"
+                    " status, inputs, rules_version, decided_at)"
+                    " VALUES (:b, 'anna-direct', 'ad:1', :v, NULL, 'no_action', '{}',"
+                    " 'autopilot-1', :t)"
+                ),
+                {"b": business_id, "v": verdict, "t": NOW - timedelta(days=1)},
+            )
+    assert (await client.get(f"/api/businesses/{business_id}/history")).json() == []
+
+
 async def test_history_does_not_show_shadow_decisions_of_autopilot_3(
     anna: tuple[httpx.AsyncClient, str, uuid.UUID], sessions: Sessions
 ) -> None:

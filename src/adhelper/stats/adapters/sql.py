@@ -739,7 +739,12 @@ class SqlDashboard:
         decisions = (
             select(DECISIONS)
             # Теневые записи autopilot-3 не действия: владельцу они не показываются.
-            .where(DECISIONS.c.business_id == self._business_id, DECISIONS.c.status != "shadow")
+            .where(
+                DECISIONS.c.business_id == self._business_id,
+                DECISIONS.c.status != "shadow",
+                # Цикл, где автопилот ничего не делал, действием не считается.
+                DECISIONS.c.status != "no_action",
+            )
             .order_by(DECISIONS.c.decided_at.desc(), DECISIONS.c.id.desc())
             .limit(limit)
         )
