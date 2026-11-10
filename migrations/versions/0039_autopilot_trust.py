@@ -33,6 +33,9 @@ def upgrade() -> None:
     op.add_column(
         "autopilot_settings", sa.Column("auto_since", sa.DateTime(timezone=True), nullable=True)
     )
+    # Кабинеты, уже включённые в «Сам», не остаются без начала отсчёта: иначе ежедневное письмо
+    # первых 14 суток перестало бы приходить, а ступень нельзя было бы открыть.
+    op.execute("UPDATE autopilot_settings SET auto_since = updated_at WHERE mode = 'auto'")
 
 
 def downgrade() -> None:
