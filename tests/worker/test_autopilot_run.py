@@ -380,3 +380,22 @@ async def test_auto_falls_back_to_confirm_while_data_is_untrusted(
     assert await worker.autopilot_run() == 1
     decision = await SqlDecisionLog(sessions, BUSINESS).latest("acc", "ad:1")
     assert decision is not None and decision.status in {"awaiting_confirmation", "protect_only"}
+
+
+async def test_hourly_tick_is_journaled_once_per_hour(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    from sqlalchemy import text
+
+    await _borderline(sessions)
+    worker = runtime(sessions, engine, {BUSINESS})
+    await worker.autopilot_run()
+    await worker.autopilot_run()
+    async with engine.connect() as connection:
+        rows = (await connection.execute(text("SELECT slot, accounts FROM autopilot_ticks"))).all()
+    assert [r.slot for r in rows] == [NOW.replace(minute=0)]
+    # Ручной разбор одного кабинета в журнал часовых тиков не пишет.
+    await worker.autopilot_run(only=BUSINESS)
+    async with engine.connect() as connection:
+        count = await connection.scalar(text("SELECT count(*) FROM autopilot_ticks"))
+    assert count == 1

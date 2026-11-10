@@ -19,6 +19,7 @@ from adhelper.autopilot.adapters.rules_file import load_rules as load_autopilot_
 from adhelper.autopilot.adapters.settings import SqlAutopilotSettings, settings_of_businesses
 from adhelper.autopilot.adapters.sql import SqlDecisionLog
 from adhelper.autopilot.adapters.tests import SqlTestPlanner
+from adhelper.autopilot.adapters.ticks import SqlTicks
 from adhelper.autopilot.adapters.transfers import SqlTransferStore
 from adhelper.autopilot.application.cycle import AutopilotCycle
 from adhelper.autopilot.application.gate import ClosedGate, Gate, PolicyGate
@@ -578,6 +579,12 @@ class Runtime:
             except Exception as error:
                 logger.warning("Сводка автопилота не отправлена: %s", type(error).__name__)
             done += 1
+        if only is None:
+            # Журнал тиков нужен отчёту этапа 8; сбой записи не должен мешать разбору.
+            try:
+                await SqlTicks(self.sessions).record(now, done)
+            except Exception as error:
+                logger.warning("Тик автопилота не записан: %s", type(error).__name__)
         return done
 
     async def notifications_send(self) -> None:
