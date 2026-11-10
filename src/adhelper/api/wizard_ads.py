@@ -169,7 +169,7 @@ def guest_ads_router() -> APIRouter:
             raise HTTPException(
                 status.HTTP_429_TOO_MANY_REQUESTS,
                 "С вашего устройства (IP-сети) объявления сегодня писали уже"
-                f" {rules.max_guest_sets_per_address} раза."
+                f" {rules.max_guest_sets_per_address} раз."
                 " Оставьте те, что есть, или попробуйте завтра",
             ) from None
         except TooManyGuestSets:
