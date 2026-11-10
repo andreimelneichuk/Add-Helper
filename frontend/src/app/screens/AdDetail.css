@@ -50,3 +50,6 @@
   .anno-publish-picker > .ah-btn { flex: 1 1 100%; }
   .anno-publish-cancel { margin-left: 0; }
 }
+.anno-publish-photo { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.anno-publish-photo .anno-photo-list button[aria-pressed="true"] { outline: 2px solid var(--accent); }
+.anno-photo-make, .anno-photo-upload { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }

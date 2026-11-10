@@ -21,6 +21,7 @@ from adhelper.budget.application.owner import (
 from adhelper.budget.application.preflight import StoredPeriodPreflight
 from adhelper.campaigns.adapters.rules_file import load_targeting_rules
 from adhelper.campaigns.application.targeting import TARGETING_PREFIX, vitrine_patch
+from adhelper.creatives.adapters.images_sql import SqlImages
 from adhelper.creatives.adapters.moderation_sql import SqlModeration
 from adhelper.creatives.adapters.wizard import SqlWizardAds
 from adhelper.creatives.application.moderation import follow_owner
@@ -125,6 +126,9 @@ def _ledger(
             publisher=platform,
             registry=platform,
             advertiser=advertiser,
+            # Объявление с фото: исполнитель сам загрузит картинку и запомнит её номер.
+            images=SqlImages(sessions, business_id),
+            uploader=platform,
         ),
         lock=PostgresAccountLock(request.app.state.engine),
         max_attempts=MAX_CHANGE_ATTEMPTS,

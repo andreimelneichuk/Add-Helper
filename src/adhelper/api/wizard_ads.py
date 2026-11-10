@@ -19,6 +19,7 @@ from adhelper.api.cabinet import Owned, OwnedChecked, _now, _sessions
 from adhelper.api.control import _ledger
 from adhelper.api.site import _guest_key, _token_hash
 from adhelper.campaigns.application.launch import generate_keywords
+from adhelper.creatives.adapters.images_sql import SqlImages
 from adhelper.creatives.adapters.rules_file import load_wizard_rules
 from adhelper.creatives.adapters.sql import SqlProfiles
 from adhelper.creatives.adapters.wizard import (
@@ -27,6 +28,7 @@ from adhelper.creatives.adapters.wizard import (
     TooManyGuestSets,
     TooManySets,
 )
+from adhelper.creatives.application.images import draft_services
 from adhelper.creatives.application.service import CURRENT_RULES
 from adhelper.creatives.application.wizard import (
     CURRENT_WIZARD_RULES,
@@ -74,6 +76,8 @@ class AdoptBody(BaseModel):
     id: int
     token: str = Field(min_length=1, max_length=200)
     kept: list[int] = Field(max_length=MAX_KEPT)
+    # Номер черновика → фото из библиотеки бизнеса; черновики без записи идут без фото.
+    photos: dict[int, int] = Field(default_factory=dict, max_length=MAX_KEPT)
 
 
 class WizardAdBody(BaseModel):
@@ -104,6 +108,8 @@ class WizardAdArchiveBody(BaseModel):
 
 class WizardAdPublishBody(BaseModel):
     grouping: str = Field(default="services", pattern="^(services|general)$")
+    # Фото из библиотеки бизнеса (своё или сделанное сервисом); None — объявление без картинки.
+    image_id: int | None = Field(default=None, ge=1)
 
 
 def _draft(draft: WizardDraft) -> dict[str, Any]:
@@ -111,6 +117,8 @@ def _draft(draft: WizardDraft) -> dict[str, Any]:
         "headline": draft.headline,
         "text": draft.text,
         "facts": [source.label for source in draft.sources],
+        # Услуги, на которые опирается текст: по ним подбирается фото.
+        "services": list(draft_services(draft.sources)),
     }
 
 
@@ -205,7 +213,19 @@ def wizard_ads_router() -> APIRouter:
                 status.HTTP_422_UNPROCESSABLE_CONTENT,
                 "Оставьте хотя бы одно объявление из написанных",
             )
-        if not await sets.adopt(body.id, token_hash, business_id, kept):
+        if body.photos:
+            active = {
+                image.id for image in await SqlImages(_sessions(request), business_id).active()
+            }
+            if (
+                any(index not in kept for index in body.photos)
+                or not set(body.photos.values()) <= active
+            ):
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    "Фото не найдено или уже убрано. Выберите другое или оставьте без фото",
+                )
+        if not await sets.adopt(body.id, token_hash, business_id, kept, body.photos):
             raise HTTPException(status.HTTP_409_CONFLICT, "Объявления ещё пишутся")
         return {"kept": len(kept)}
 
@@ -232,6 +252,7 @@ def wizard_ads_router() -> APIRouter:
                 "submitted": item.submitted,
                 "publication_status": item.publication_status,
                 "services": list(item.services),
+                "image_id": item.image_id,
             }
             for item in items
         ]
@@ -296,6 +317,21 @@ def wizard_ads_router() -> APIRouter:
             raise HTTPException(status.HTTP_409_CONFLICT, "Объявление отключено или в архиве")
 
         sessions = _sessions(request)
+        image_sha: str | None = None
+        # Явный выбор владельца (в том числе «без фото») сильнее фото, записанного в черновике.
+        wanted_image = body.image_id if "image_id" in body.model_fields_set else item.image_id
+        if wanted_image is not None:
+            chosen = next(
+                (
+                    image
+                    for image in await SqlImages(sessions, business_id).active()
+                    if image.id == wanted_image
+                ),
+                None,
+            )
+            if chosen is None:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Фото не найдено или уже убрано")
+            image_sha = chosen.sha256
         repo = SqlChangeRepository(sessions, business_id)
         connected = [
             login
@@ -360,10 +396,12 @@ def wizard_ads_router() -> APIRouter:
                 "href": str(plan.get("href") or ""),
                 "group_name": group_name,
                 "keywords": list(keywords),
+                # Картинка по нашему SHA-256: исполнитель загрузит её и сверит по номеру площадки.
+                **({"image": image_sha} if image_sha else {}),
             },
             explanation=(
                 f"Отправил объявление «{item.headline}» в группу «{group_name}» "
-                "на проверку Яндексу."
+                f"{'с фото ' if image_sha else ''}на проверку Яндексу."
                 " Лимит кампании не меняется; показы начнутся после одобрения."
             ),
             idempotency_key=f"wizard-publish:{business_id.hex}:{idx_str}:{marker}",

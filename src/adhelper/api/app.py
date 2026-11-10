@@ -217,6 +217,32 @@ def create_app(
         settings.text_model_project,
     )
     app.state.text_model = app.state.command_model
+    from adhelper.creatives.adapters.openrouter_images import build_image_model
+    from adhelper.creatives.adapters.photo_vision import OpenAiVision
+    from adhelper.creatives.adapters.rules_file import load_image_rules
+
+    # Фото смотрит та же модель, что пишет тексты: она принимает картинки. Без ключа фото
+    # к объявлениям по смыслу не подбираются.
+    key = settings.text_model_api_key
+    app.state.photo_labeler = (
+        OpenAiVision(settings.text_model_base_url, key, settings.text_model_name)
+        if key is not None and key.get_secret_value() and settings.text_model_name
+        else None
+    )
+    # Генерация фото по просьбе владельца: тот же набор моделей, что у воркера.
+    image_rules = load_image_rules()
+    app.state.image_models = (
+        tuple(
+            model
+            for model in (
+                build_image_model(settings.text_model_base_url, settings.text_model_api_key, name)
+                for name in (image_rules.model, image_rules.fallback_model)
+            )
+            if model is not None
+        )
+        if settings.image_generation
+        else ()
+    )
     from adhelper.commands.application.tool_agent import build_tool_agent
 
     app.state.tool_agent = build_tool_agent(

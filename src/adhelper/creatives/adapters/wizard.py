@@ -1,6 +1,6 @@
 """Наборы мастера до входа и выбор владельца после входа. Миграция 0018."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import UUID
@@ -17,6 +17,7 @@ from adhelper.creatives.domain.model import (
     SetStatus,
     WizardRules,
 )
+from adhelper.creatives.domain.photo_match import services_of
 from adhelper.creatives.domain.wizard import FactSource, WizardDraft, WizardSet, with_sources
 from adhelper.ledger.adapters.sql import ChangeRow
 from adhelper.ledger.domain.model import ChangeKind, ChangeStatus
@@ -126,7 +127,12 @@ class SqlWizardSets:
         return None if row is None else _view(row)
 
     async def adopt(
-        self, set_id: int, token_hash: str, business_id: UUID, kept: Sequence[int]
+        self,
+        set_id: int,
+        token_hash: str,
+        business_id: UUID,
+        kept: Sequence[int],
+        photos: Mapping[int, int] | None = None,
     ) -> bool:
         """Готовый набор переходит в бизнес с выбором владельца.
 
@@ -150,7 +156,21 @@ class SqlWizardSets:
                     created_at=func.now(),
                 )
             )
-            return bool(result.rowcount)  # type: ignore[attr-defined]
+            if not result.rowcount:  # type: ignore[attr-defined]
+                return False
+            if photos:
+                # Фото живёт в самом черновике: так оно идёт за текстом при правках и публикации.
+                row = await session.scalar(
+                    select(CreativeSetRow).where(CreativeSetRow.id == set_id).with_for_update()
+                )
+                if row is not None:
+                    drafts = [dict(d) for d in (row.drafts or [])]
+                    for index, image_id in photos.items():
+                        if 0 <= index < len(drafts):
+                            drafts[index]["image_id"] = image_id
+                    row.drafts = drafts
+                    flag_modified(row, "drafts")
+            return True
 
     async def ready(self, set_id: int, token_hash: str, business_id: UUID) -> WizardSet | None:
         """Набор, который этот бизнес может забрать: ещё гостевой или уже его."""
@@ -177,6 +197,7 @@ class WizardAdItem:
     archived: bool = False
     submitted: bool = False
     publication_status: str | None = None
+    image_id: int | None = None
 
 
 class SqlWizardAds:
@@ -300,21 +321,14 @@ class SqlWizardAds:
                     headline=d.headline,
                     text=d.text,
                     facts=facts,
-                    services=tuple(
-                        dict.fromkeys(
-                            (
-                                source.key.removeprefix("service:")
-                                if source.key.startswith("service:")
-                                else source.key.removeprefix("price:").rsplit(":", 1)[0]
-                            )
-                            for source in d.sources
-                            if source.key.startswith("service:") or source.key.startswith("price:")
-                        )
-                    ),
+                    services=services_of(d.sources),
                     active=is_active,
                     archived=is_archived,
                     submitted=is_submitted,
                     publication_status=item_publication_status,
+                    image_id=(
+                        int(raw["image_id"]) if isinstance(raw.get("image_id"), int) else None
+                    ),
                 )
             )
         return items

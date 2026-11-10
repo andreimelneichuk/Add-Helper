@@ -181,7 +181,7 @@ export type SiteRead = {
 };
 
 /** Объявление писателя в мастере: facts — на какие поля черновика оно опирается. */
-export type WizardAd = { id?: string; headline: string; text: string; facts: string[]; services?: string[]; active?: boolean; archived?: boolean; submitted?: boolean; publication_status?: "pending" | "submitted" | null };
+export type WizardAd = { id?: string; headline: string; text: string; facts: string[]; services?: string[]; active?: boolean; archived?: boolean; submitted?: boolean; publication_status?: "pending" | "submitted" | null; image_id?: number | null };
 export type AdSet = {
   id: number;
   status: "queued" | "running" | "ready" | "failed";
@@ -196,7 +196,8 @@ export type AdSet = {
 /** Черновик профиля для писателя: только подтверждённые владельцем факты. */
 export type AdDraftProfile = Omit<Profile, "website"> & { force?: boolean; variants?: number };
 /** Выбор владельца в мастере: какой набор и какие объявления из него оставить. */
-export type AdsChoice = { id: number; token: string; kept: number[] };
+/** photos: номер черновика → фото из библиотеки; без записи объявление идёт без фото. */
+export type AdsChoice = { id: number; token: string; kept: number[]; photos?: Record<number, number> };
 
 export type Business = { id: string; name: string };
 export type AdAccount = {
@@ -260,7 +261,7 @@ export type BudgetPortfolio = { mode: "separate" | "shared"; rubles: number | nu
 export type PortfolioSaved = { mode: "separate" | "shared"; rubles: number | null; shares: { business_id: string; rubles: number }[] };
 
 /** Своё фото владельца: уже приведено к требованиям Яндекса, без метаданных. */
-export type Photo = { id: number; width: number; height: number; url: string };
+export type Photo = { id: number; width: number; height: number; url: string; source?: "owner" | "generated" };
 export type Photos = { photos: Photo[]; max: number };
 export type SiteImage = { url: string; preview: string };
 
@@ -376,7 +377,17 @@ export function createApi(businessId: string, csrf: string) {
     attachAccount: (login: string) =>
       request<AdAccount>(`${base}/accounts/attach`, { method: "POST", body: JSON.stringify({ login }) }, csrf),
     balance: (login: string) => request<AccountBalance>(`${base}/accounts/${part(login)}/balance`),
-    photos: (init?: RequestInit) => request<Photos>(`${base}/photos`, init),
+    photos: (init?: RequestInit, includeGenerated = false) => request<Photos>(`${base}/photos${includeGenerated ? "?include_generated=true" : ""}`, init),
+    // Фото к каждому черновику по смыслу: модель называет тему фото, выбирает код. Денег не тратит.
+    matchPhotos: (drafts: string[][]) =>
+      request<{ matches: { image_id: number | null; missing: string | null }[]; photos: Photo[] }>(
+        `${base}/photos/match`,
+        { method: "POST", body: JSON.stringify({ drafts: drafts.map((services) => ({ services })) }) },
+        csrf,
+      ),
+    // Фото по услуге из профиля: платный вызов генератора, сервер держит суточный предел.
+    generatePhoto: (service: string) =>
+      request<{ id: number; url: string; source: "generated" }>(`${base}/photos/generate`, { method: "POST", body: JSON.stringify({ service }) }, csrf),
     photoUrl: (id: number) => `${base}/photos/${id}`,
     // Файл уходит телом запроса как есть: сервер сам проверит и обработает его.
     uploadPhoto: (file: Blob, consent: boolean) =>
@@ -428,8 +439,8 @@ export function createApi(businessId: string, csrf: string) {
       request<{ status: string; active: boolean }>(`${base}/wizard-ads/${part(id)}/state`, { method: "POST", body: JSON.stringify({ active }) }, csrf),
     archiveWizardAd: (id: string, archived: boolean = true) =>
       request<{ status: string; archived: boolean }>(`${base}/wizard-ads/${part(id)}/archive`, { method: "POST", body: JSON.stringify({ archived }) }, csrf),
-    publishWizardAd: (id: string, grouping: "services" | "general") =>
-      request<{ status: "applied" | "pending" | "refused"; group: string; text: string | null }>(`${base}/wizard-ads/${part(id)}/publish`, { method: "POST", body: JSON.stringify({ grouping }) }, csrf),
+    publishWizardAd: (id: string, grouping: "services" | "general", imageId?: number | null) =>
+      request<{ status: "applied" | "pending" | "refused"; group: string; text: string | null }>(`${base}/wizard-ads/${part(id)}/publish`, { method: "POST", body: JSON.stringify({ grouping, ...(imageId !== undefined ? { image_id: imageId } : {}) }) }, csrf),
     deleteWizardAd: (id: string) =>
       request<{ status: string }>(`${base}/wizard-ads/${part(id)}`, { method: "DELETE" }, csrf),
     archiveAd: (account: string, adId: string, requestId: string) =>

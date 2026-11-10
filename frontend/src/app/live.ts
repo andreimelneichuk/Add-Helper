@@ -202,6 +202,7 @@ async function loadAds(api: Api) {
             title: w.headline,
             text: w.text,
             facts: Array.isArray(w.facts) ? w.facts.join(", ") : "",
+            ...(w.image_id ? { photo: api.photoUrl(w.image_id), photoId: w.image_id } : {}),
           }];
         })];
       }
@@ -522,7 +523,7 @@ export class LiveStore extends Store {
         if (!this.api.publishWizardAd) throw new Error("Не удалось отправить объявление. Обновите страницу и попробуйте ещё раз.");
         const ad = s.ads.find((x) => x.id === a.value);
         if (!ad) throw new Error("Объявление уже изменилось. Обновите страницу.");
-        const result = await this.api.publishWizardAd(a.value, a.grouping);
+        const result = await this.api.publishWizardAd(a.value, a.grouping, a.imageId);
         if (result.status === "refused") return result.text ?? "Яндекс не принял объявление. Подробности доступны в истории.";
         return result.status === "pending"
           ? `Запрос на публикацию «${ad.name}» записан. Яндекс ещё применяет его.`

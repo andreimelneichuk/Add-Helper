@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { createGuestApi } from "../../../api";
+import { createGuestApi, type Photo } from "../../../api";
 import type { Ad } from "../../data";
 import { liveApi, type LiveStore } from "../../live";
 import { usePollingTask } from "../../polling";
@@ -17,6 +17,7 @@ type GeneratedItem = {
   headline: string;
   text: string;
   facts: string[];
+  services?: string[];
 };
 
 export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalProps) {
@@ -48,6 +49,11 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
   const [error, setError] = useState<string | null>(null);
   const [generated, setGenerated] = useState<GeneratedItem[] | null>(null);
   const [selectedIndices, setSelectedIndices] = useState<number[]>([0, 1]);
+  // Фото к черновикам: номер черновика → номер фото; null — без фото.
+  const [photoIds, setPhotoIds] = useState<Record<number, number | null>>({});
+  const [photoList, setPhotoList] = useState<Photo[]>([]);
+  const [photoBusy, setPhotoBusy] = useState("");
+  const [photoNote, setPhotoNote] = useState("");
   const [adSetMeta, setAdSetMeta] = useState<{ id: number; token: string } | null>(null);
 
   // Окно закрыли: опрос набора и его запрос прекращаем, чтобы не спрашивать сервис впустую.
@@ -57,6 +63,46 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
   }, [isOpen, poller]);
 
   if (!isOpen) return null;
+
+  /** Фото к каждому объявлению по смыслу: модель называет тему фото, выбирает код. Сцену рисуем
+   *  только для услуги, к которой подходящего фото нет, и не больше одной на услугу. */
+  const assignPhotos = async (live: NonNullable<typeof api>, ads: GeneratedItem[]) => {
+    setPhotoBusy("Смотрю фото и подбираю к каждому объявлению подходящее…");
+    setPhotoNote("");
+    setPhotoIds({});
+    try {
+      const { matches, photos } = await live.matchPhotos(ads.map((ad) => ad.services ?? []));
+      let list = photos;
+      setPhotoList(list);
+      const ids: Record<number, number | null> = Object.fromEntries(matches.map((m, i) => [i, m.image_id]));
+      setPhotoIds({ ...ids });
+      const missing = [...new Set(matches.flatMap((m) => (m.image_id === null && m.missing ? [m.missing] : [])))];
+      for (const service of missing) {
+        setPhotoBusy(`Для «${service}» подходящего фото нет. Рисую сцену, это занимает до минуты…`);
+        try {
+          const made = await live.generatePhoto(service);
+          list = [...list.filter((p) => p.id !== made.id), { id: made.id, url: made.url, width: 1024, height: 1024, source: "generated" }];
+          matches.forEach((m, i) => { if (m.image_id === null && m.missing === service) ids[i] = made.id; });
+          setPhotoList(list);
+          setPhotoIds({ ...ids });
+        } catch (e: unknown) {
+          setPhotoNote(`${e instanceof Error ? e.message : "Не получилось сделать фото."} Остальные объявления можно добавить без фото или выбрать фото вручную.`);
+          break;
+        }
+      }
+      setPhotoList(list);
+    } catch (e: unknown) {
+      setPhotoNote(`${e instanceof Error ? e.message : "Не удалось подобрать фото."} Объявления можно добавить без фото.`);
+    } finally {
+      setPhotoBusy("");
+    }
+  };
+
+  const nextPhoto = (index: number) => {
+    const choices: (number | null)[] = [null, ...photoList.map((p) => p.id)];
+    const at = choices.indexOf(photoIds[index] ?? null);
+    setPhotoIds((prev) => ({ ...prev, [index]: choices[(at + 1) % choices.length] ?? null }));
+  };
 
   /** Набор по профилю бизнеса: никаких запасных шаблонов, при сбое только причина. */
   const generateLive = async (live: NonNullable<typeof api>) => {
@@ -86,6 +132,7 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
       setGenerated(set.ads);
       setSelectedIndices(set.ads.map((_, i) => i));
       setStatusText("");
+      void assignPhotos(live, set.ads);
       return;
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Не получилось написать объявления. Попробуйте ещё раз.");
@@ -155,7 +202,8 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
       if (api) {
         // В кабинете объявления живут на сервере: показываем их только после того, как сервис их принял.
         if (!adSetMeta) throw new Error("Набор объявлений не найден. Напишите варианты ещё раз.");
-        await api.adoptAds({ id: adSetMeta.id, token: adSetMeta.token, kept: selectedIndices });
+        const photos = Object.fromEntries(selectedIndices.flatMap((i) => (photoIds[i] ? [[i, photoIds[i]!]] : [])));
+        await api.adoptAds({ id: adSetMeta.id, token: adSetMeta.token, kept: selectedIndices, ...(Object.keys(photos).length ? { photos } : {}) });
         const n = selectedIndices.length;
         store.set({ notice: `Добавил ${n} ${n === 1 ? "объявление" : "объявления"} к запуску.` });
         await (store as LiveStore).refresh();
@@ -329,6 +377,8 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
             <p className="ah-muted">
               Вот варианты, которые написал ИИ. Отметьте те, которые хотите отправить в показы:
             </p>
+            {live && photoBusy && <p className="ah-muted" role="status">{photoBusy}</p>}
+            {live && photoNote && <p className="ah-muted" role="status">{photoNote}</p>}
 
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {generated.map((item, idx) => {
@@ -355,7 +405,19 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
                         style={{ width: 18, height: 18, accentColor: "var(--accent)", cursor: "pointer" }}
                       />
                     </div>
+                    {live && photoIds[idx] && (
+                      <img
+                        src={photoList.find((p) => p.id === photoIds[idx])?.url}
+                        alt={`Фото к варианту ${idx + 1}`}
+                        style={{ width: 96, height: 96, objectFit: "cover", borderRadius: 10, marginBottom: 8, display: "block" }}
+                      />
+                    )}
                     <p style={{ margin: 0, fontSize: "14px", color: "var(--ink)" }}>{item.text}</p>
+                    {live && photoList.length > 0 && !photoBusy && (
+                      <button type="button" className="ah-btn" style={{ marginTop: 8 }} onClick={(e) => { e.stopPropagation(); nextPhoto(idx); }}>
+                        {photoIds[idx] ? "Другое фото" : "Добавить фото"}
+                      </button>
+                    )}
                     {item.facts.length > 0 && (
                       <span className="ah-muted" style={{ fontSize: "12px", display: "block", marginTop: 6 }}>
                         Факты: {item.facts.join(", ")}
@@ -381,7 +443,7 @@ export function GenerateAdsModal({ isOpen, onClose, store }: GenerateAdsModalPro
                 type="button"
                 className="ah-btn ah-btn-primary"
                 onClick={handleSaveToAds}
-                disabled={busy || selectedIndices.length === 0}
+                disabled={busy || !!photoBusy || selectedIndices.length === 0}
               >
                 {busy ? "Сохраняю…" : `Добавить выбранные (${selectedIndices.length})`}
               </button>

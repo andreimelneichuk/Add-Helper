@@ -71,6 +71,98 @@ function PhotoControls({ api, ad, disabled }: { api: Api; ad: Ad; disabled: bool
   );
 }
 
+/** Фото для нового объявления: своё, сделанное по услуге или без картинки. Выбор за владельцем. */
+export function PublishPhoto({ api, services, value, onChange, disabled }: { api: Api; services: string[]; value: number | null; onChange: (id: number | null) => void; disabled: boolean }) {
+  const [photos, setPhotos] = useState<Photo[] | null>(null);
+  const [service, setService] = useState(services[0] ?? "");
+  const [file, setFile] = useState<File | null>(null);
+  const [consent, setConsent] = useState(false);
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    void api.photos(undefined, true).then((result) => { if (active) setPhotos(result.photos); }, (e: unknown) => {
+      if (active) { setPhotos([]); setError(e instanceof Error ? e.message : "Не удалось загрузить фото бизнеса."); }
+    });
+    return () => { active = false; };
+  }, [api]);
+  const add = (photo: Photo) => { setPhotos((prev) => [...(prev ?? []).filter((x) => x.id !== photo.id), photo]); onChange(photo.id); };
+  const generate = async () => {
+    if (!service || busy) return;
+    setBusy("Рисую фото по услуге «" + service + "». Это занимает до минуты…");
+    setError("");
+    try {
+      const made = await api.generatePhoto(service);
+      add({ id: made.id, url: made.url, width: 1024, height: 1024, source: "generated" });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не получилось сделать фото. Попробуйте позже.");
+    } finally {
+      setBusy("");
+    }
+  };
+  const upload = async () => {
+    if (!file || !consent || busy) return;
+    setBusy("Загружаю фото…");
+    setError("");
+    try {
+      const saved = await api.uploadPhoto(file, consent);
+      add({ id: saved.id, url: saved.url, width: 1024, height: 1024, source: "owner" });
+      setFile(null);
+      setConsent(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не получилось загрузить фото.");
+    } finally {
+      setBusy("");
+    }
+  };
+  const locked = disabled || !!busy;
+  return (
+    <div className="anno-publish-photo" role="group" aria-label="Фото для объявления">
+      <strong>Фото в объявлении</strong>
+      <p className="ah-muted">Выберите своё фото, загрузите новое или попросите нарисовать сцену по услуге. Текст на картинку не накладывается. Без фото объявление пойдёт одним текстом.</p>
+      <ul className="anno-photo-list" aria-label="Фото для объявления">
+        <li>
+          <button type="button" className="ah-btn" aria-pressed={value === null} disabled={locked} onClick={() => onChange(null)}>Без фото</button>
+        </li>
+        {(photos ?? []).map((photo, index) => (
+          <li key={photo.id}>
+            <img src={photo.url} alt={photo.source === "generated" ? `Фото от сервиса ${index + 1}` : `Своё фото ${index + 1}`} />
+            <button type="button" className="ah-btn" aria-pressed={value === photo.id} disabled={locked} onClick={() => onChange(photo.id)}>
+              {value === photo.id ? "Выбрано" : photo.source === "generated" ? "Взять фото сервиса" : "Взять своё фото"}
+            </button>
+          </li>
+        ))}
+      </ul>
+      {services.length > 0 && (
+        <div className="anno-photo-make">
+          <div className="ah-label">Сделать фото по услуге</div>
+          <div className="ah-chips">
+            {services.map((name) => (
+              <button key={name} type="button" className="ah-chip" aria-pressed={service === name} disabled={locked} onClick={() => setService(name)}>{name}</button>
+            ))}
+          </div>
+          <button type="button" className="ah-btn" disabled={locked || !service} onClick={() => void generate()}>Сделать фото</button>
+          <p className="ah-muted">Сцена рисуется без надписей, цен и людей крупным планом. Не больше 3 новых фото в сутки.</p>
+        </div>
+      )}
+      <div className="anno-photo-upload">
+        <input id="anno-publish-file" type="file" accept="image/*" className="anno-compose-file" disabled={locked} onChange={(e) => { setFile(e.target.files?.[0] ?? null); setConsent(false); }} />
+        <label className="ah-btn" htmlFor="anno-publish-file">Загрузить своё</label>
+        {file && <span className="ah-muted anno-compose-name">{file.name}</span>}
+        {file && (
+          <label className="anno-compose-consent">
+            <input type="checkbox" checked={consent} disabled={locked} onChange={(e) => setConsent(e.target.checked)} />
+            <span>На фото нет людей или у них есть согласие</span>
+          </label>
+        )}
+        {file && <button type="button" className="ah-btn" disabled={locked || !consent} onClick={() => void upload()}>Добавить фото</button>}
+      </div>
+      {busy && <p className="ah-muted" role="status">{busy}</p>}
+      {error && <p className="ah-error" role="alert">{error}</p>}
+    </div>
+  );
+}
+
 function Preview({ ad, hook, title, label }: { ad: Ad; hook: string; title: string; label?: string }) {
   return (
     <section className="anno-preview" aria-label={label ?? "Как увидит клиент"}>
@@ -282,21 +374,24 @@ export function AdDetail({ store, id }: { store: Store; id: string }) {
   const [composing, setComposing] = useState(false);
   const [editing, setEditing] = useState(false);
   const [publishOptions, setPublishOptions] = useState(false);
+  const [publishPhoto, setPublishPhoto] = useState<number | null>(ad.photoId ?? null);
   const [editTitle, setEditTitle] = useState(ad.title);
   const [editText, setEditText] = useState(ad.text);
 
   // Подтверждённый вариант уже стал объявлением: форма больше не нужна.
   useEffect(() => {
     setComposing(false);
+    setPublishPhoto(ad.photoId ?? null);
     setEditing(false);
     setEditTitle(ad.title);
     setEditText(ad.text);
-  }, [ad.title, ad.text, ad.hook]);
+  }, [ad.title, ad.text, ad.hook, ad.photoId]);
 
   const events = s.hist.filter((h) => h.about === id || h.title.includes(`«${name}»`));
   const action = off ? "Включить" : "Отключить";
   const status = isArchived ? ad.tag : off ? "Отключено" : ad.tag;
   const photoApi = (store as Store & { api?: Api }).api;
+  const profileServices = [...new Set((s.live?.rawProfile?.services ?? []).map((x) => x.name.trim()).filter(Boolean))];
 
   return (
     <div className="anno-screen">
@@ -405,8 +500,9 @@ export function AdDetail({ store, id }: { store: Store; id: string }) {
                               <strong>Как добавить в кампанию?</strong>
                               <p className="ah-muted">Выберите, по каким группам услуг показывать это объявление.</p>
                             </div>
-                            <button type="button" className="ah-btn ah-btn-primary" disabled={!!working} onClick={() => store.ask({ action: "adPublish", value: id, grouping: "services" })}>Разбить по услугам</button>
-                            <button type="button" className="ah-btn" disabled={!!working} onClick={() => store.ask({ action: "adPublish", value: id, grouping: "general" })}>Одна общая группа</button>
+                            {photoApi && <PublishPhoto api={photoApi} services={profileServices} value={publishPhoto} onChange={setPublishPhoto} disabled={!!working} />}
+                            <button type="button" className="ah-btn ah-btn-primary" disabled={!!working} onClick={() => store.ask({ action: "adPublish", value: id, grouping: "services", imageId: publishPhoto })}>Разбить по услугам</button>
+                            <button type="button" className="ah-btn" disabled={!!working} onClick={() => store.ask({ action: "adPublish", value: id, grouping: "general", imageId: publishPhoto })}>Одна общая группа</button>
                             <button type="button" className="ah-btn anno-publish-cancel" disabled={!!working} onClick={() => setPublishOptions(false)}>Назад</button>
                           </div>
                         )}

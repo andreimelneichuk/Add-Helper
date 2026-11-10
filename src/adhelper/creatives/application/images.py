@@ -5,10 +5,12 @@
 не держит объявление: оно уходит без картинки, деньги и показы от этого не зависят.
 """
 
+import asyncio
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from enum import StrEnum
 
 from adhelper.creatives.domain.images import (
     PROMPT_SCHEMA,
@@ -29,6 +31,15 @@ from adhelper.creatives.domain.images import (
     prompt_request,
 )
 from adhelper.creatives.domain.model import ModelUnavailable, TextModel
+from adhelper.creatives.domain.photo_match import (
+    UNFIT,
+    Candidate,
+    Match,
+    PhotoLabeler,
+    SourceLike,
+    match_drafts,
+    services_of,
+)
 from adhelper.creatives.domain.ports import Outgoing
 
 logger = logging.getLogger(__name__)
@@ -75,6 +86,11 @@ def previewable(raw: bytes, prepare: Prepare) -> bytes | None:
 async def owner_photos(store: ImageStore) -> Sequence[StoredImage]:
     """Свои фото владельца в подборе, по порядку добавления."""
     return await store.active(ImageSource.OWNER)
+
+
+async def generated_photos(store: ImageStore) -> Sequence[StoredImage]:
+    """Фото, сделанные сервисом по просьбе владельца: выбрать их можно, автоподбор их не берёт."""
+    return await store.active(ImageSource.GENERATED)
 
 
 async def write_scene(
@@ -161,3 +177,82 @@ async def attach_images(
             used.append(chosen)
             attached += 1
     return attached
+
+
+class GenerateProblem(StrEnum):
+    DISABLED = "disabled"
+    LIMIT = "limit"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True)
+class GeneratedPhoto:
+    image_id: int | None
+    problem: GenerateProblem | None = None
+
+
+async def generate_photo(
+    store: ImageStore,
+    niche: str,
+    topic: str,
+    writer: TextModel | None,
+    generators: Sequence[ImageModel],
+    prepare: Prepare,
+    rules: ImageRules,
+    now: datetime,
+) -> GeneratedPhoto:
+    """Сцена по просьбе владельца для одной услуги. Тот же суточный лимит, что у автопилота."""
+    if not generators:
+        return GeneratedPhoto(None, GenerateProblem.DISABLED)
+    if await store.generated_since(now - DAY) >= rules.generated_per_day:
+        return GeneratedPhoto(None, GenerateProblem.LIMIT)
+    scene = await write_scene(writer, niche, topic, "", rules)
+    made = await generate_scene(generators, scene, prepare, rules)
+    if made is None:
+        return GeneratedPhoto(None, GenerateProblem.UNAVAILABLE)
+    prepared, model, cost = made
+    image_id = await store.add(
+        NewImage(
+            prepared,
+            ImageSource.GENERATED,
+            rules.version,
+            consent=True,
+            prompt=scene.text,
+            prompt_source=scene.source,
+            model=model,
+            cost_micro_usd=cost,
+        ),
+        now,
+    )
+    return GeneratedPhoto(image_id)
+
+
+# Смотрим не больше стольких свежих фото: свои (до 5) и несколько сделанных сервисом.
+MAX_LABELED = 8
+
+
+def draft_services(sources: Sequence[SourceLike]) -> tuple[str, ...]:
+    """Услуги профиля, на которых держится объявление (для подбора фото)."""
+    return tuple(services_of(sources))
+
+
+async def match_photos(
+    store: ImageStore,
+    labeler: PhotoLabeler | None,
+    drafts: Sequence[Sequence[str]],
+) -> list[Match]:
+    """Фото к каждому объявлению по смыслу: модель называет тему фото, выбирает код."""
+    services = list(dict.fromkeys(name for draft in drafts for name in draft))
+    images = sorted(await store.active(), key=lambda image: -image.id)[:MAX_LABELED]
+
+    async def look(image: StoredImage) -> Candidate | None:
+        if labeler is None or not services:
+            return None
+        data = await store.content(image.id)
+        subject = await labeler.subject(data, services) if data else None
+        if subject is None or subject == UNFIT:
+            return None
+        return Candidate(image.id, subject, image.source is ImageSource.OWNER)
+
+    seen = await asyncio.gather(*(look(image) for image in images))
+    return match_drafts(drafts, [found for found in seen if found is not None])
