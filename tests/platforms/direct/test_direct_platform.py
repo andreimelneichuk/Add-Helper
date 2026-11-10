@@ -342,7 +342,10 @@ async def test_recorded_write_run_on_real_cabinet() -> None:
     verdicts = await platform.moderation(ACCOUNT, [*found.ad_ids, ad.ad_id])
     assert {v.state for v in verdicts} == {ModerationState.MODERATION}
     await platform.set_ad_active(ACCOUNT, f"ad:{found.ad_ids[0]}", False)
-    assert await platform.read_ad(ACCOUNT, f"ad:{found.ad_ids[0]}") == {"active": False}
+    assert await platform.read_ad(ACCOUNT, f"ad:{found.ad_ids[0]}") == {
+        "active": False,
+        "archived": False,
+    }
     await platform.pause_campaigns(ACCOUNT, [campaign_id])
     assert (await platform.read_campaigns(ACCOUNT))[0].active is False
     assert (await platform.fetch_spend(ACCOUNT)).reported == 0
@@ -776,9 +779,9 @@ async def test_ad_suspend_and_resume(platform: DirectPlatform, direct: FakeDirec
     await _launched(platform, direct)
     ref = f"ad:{min(direct.ads)}"
     await platform.set_ad_active(ACCOUNT, ref, False)
-    assert await platform.read_ad(ACCOUNT, ref) == {"active": False}
+    assert await platform.read_ad(ACCOUNT, ref) == {"active": False, "archived": False}
     await platform.set_ad_active(ACCOUNT, ref, True)
-    assert await platform.read_ad(ACCOUNT, ref) == {"active": True}
+    assert await platform.read_ad(ACCOUNT, ref) == {"active": True, "archived": False}
 
 
 @pytest.mark.parametrize(
@@ -849,7 +852,7 @@ async def test_recorded_ad_with_image_on_real_cabinet() -> None:
     ad = await platform.find_ad(ACCOUNT, marker)
     assert ad is not None and ad.image_hash == first and ad.group_id == "5820622013"
     await platform.set_ad_active(ACCOUNT, f"ad:{ad.ad_id}", False)
-    assert await platform.read_ad(ACCOUNT, f"ad:{ad.ad_id}") == {"active": False}
+    assert await platform.read_ad(ACCOUNT, f"ad:{ad.ad_id}") == {"active": False, "archived": False}
     assert replay.entries == []
     await client.aclose()
 

@@ -53,6 +53,7 @@ class FakePlatform:
         self.stats_frozen_at: datetime | None = None
         self.faults: list[Fault] = []
         self.ads: dict[str, bool] = {}
+        self.archived: dict[str, bool] = {}
         # Объявление → его группа на площадке.
         self.groups: dict[str, str] = {}
         # Отчёт по объявлениям и запросы к нему: (кабинет, кампании, с, по).
@@ -115,7 +116,13 @@ class FakePlatform:
 
     async def read_ad(self, account: str, ad_ref: str) -> dict[str, bool]:
         self._check_fault("read_ad", after_apply=False)
-        return {"active": self.ads[ad_ref]} if ad_ref in self.ads else {}
+        if ad_ref not in self.ads:
+            return {}
+        return {"active": self.ads[ad_ref], "archived": self.archived.get(ad_ref, False)}
+
+    async def set_ad_archived(self, account: str, ad_ref: str, archived: bool) -> None:
+        self._check_fault("set_ad_archived", after_apply=False)
+        self.archived[ad_ref] = archived
 
     async def set_ad_active(self, account: str, ad_ref: str, active: bool) -> None:
         self._check_fault("set_ad_active", after_apply=False)

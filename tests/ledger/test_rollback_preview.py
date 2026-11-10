@@ -85,7 +85,7 @@ async def test_preview_sees_change_made_in_cabinet(sessions: Sessions, engine: A
     preview = await preview_rollback(ledger, original)
 
     assert preview.status is RollbackStatus.CHANGED_OUTSIDE
-    assert preview.actual == {"active": True}
+    assert preview.actual == {"active": True, "archived": False}
 
 
 async def test_preview_of_reverted_change(sessions: Sessions, engine: AsyncEngine) -> None:

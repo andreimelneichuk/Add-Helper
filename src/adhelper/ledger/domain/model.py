@@ -10,6 +10,9 @@ class ChangeKind(StrEnum):
     RESUME = "resume"
     PAUSE_AD = "pause_ad"
     RESUME_AD = "resume_ad"
+    # Архив объявления в самой площадке: остановленное объявление уходит из списка. Отмена
+    # возвращает его из архива остановленным; включает его только отдельное действие.
+    ARCHIVE_AD = "archive_ad"
     SET_SCHEDULE = "set_schedule"
     SET_REGIONS = "set_regions"
     # Новая кампания запуска. Отмены нет: созданное останавливают паузой, а не удалением.

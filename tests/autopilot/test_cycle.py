@@ -119,8 +119,8 @@ async def test_pause_goes_through_journal_and_reads_result(
     change = (await SqlChangeRepository(sessions, BUSINESS).all())[0]
     assert change.kind is ChangeKind.PAUSE_AD
     assert change.source is ChangeSource.AUTOPILOT
-    assert change.before == {"active": True}
-    assert change.after == {"active": False}
+    assert change.before == {"active": True, "archived": False}
+    assert change.after == {"active": False, "archived": False}
     assert change.status is ChangeStatus.APPLIED
 
 

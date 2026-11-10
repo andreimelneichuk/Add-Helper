@@ -46,6 +46,8 @@ def _restored(change: Change, regions: Mapping[int, str]) -> str:
         return "Объявление снова включится и разделит бюджет с другими."
     if change.kind is ChangeKind.RESUME_AD:
         return "Объявление снова выключится, его деньги получат другие."
+    if change.kind is ChangeKind.ARCHIVE_AD:
+        return "Объявление вернётся из архива остановленным: включить его можно отдельно."
     if change.kind is ChangeKind.RESUME:
         return "Показы снова остановятся, заявок с рекламы не будет."
     if change.kind is ChangeKind.SET_SCHEDULE and "schedule" in before:

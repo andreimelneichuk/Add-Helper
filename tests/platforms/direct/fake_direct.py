@@ -223,6 +223,16 @@ class FakeDirect:
             self.ads[ad_id]["State"] = "SUSPENDED"
         return {"SuspendResults": [{"Id": i} for i in params["SelectionCriteria"]["Ids"]]}
 
+    def _ads_archive(self, params: dict[str, Any]) -> dict[str, Any]:
+        for ad_id in params["SelectionCriteria"]["Ids"]:
+            self.ads[ad_id]["State"] = "ARCHIVED"
+        return {"ArchiveResults": [{"Id": i} for i in params["SelectionCriteria"]["Ids"]]}
+
+    def _ads_unarchive(self, params: dict[str, Any]) -> dict[str, Any]:
+        for ad_id in params["SelectionCriteria"]["Ids"]:
+            self.ads[ad_id]["State"] = "SUSPENDED"
+        return {"UnarchiveResults": [{"Id": i} for i in params["SelectionCriteria"]["Ids"]]}
+
     def _ads_resume(self, params: dict[str, Any]) -> dict[str, Any]:
         for ad_id in params["SelectionCriteria"]["Ids"]:
             self.ads[ad_id]["State"] = "ON"

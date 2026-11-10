@@ -751,13 +751,21 @@ class DirectPlatform:
         found = await self._ads(account, {"Ids": [ad_id]})
         if not found:
             return {}
-        return {"active": found[0].get("State") not in STOPPED_AD_STATES}
+        state = found[0].get("State")
+        return {"active": state not in STOPPED_AD_STATES, "archived": state == "ARCHIVED"}
 
     async def set_ad_active(self, account: str, ad_ref: str, active: bool) -> None:
         ad_id = int(ad_ref.removeprefix("ad:"))
         method = "resume" if active else "suspend"
         result = await self._call(account, "ads", method, {"SelectionCriteria": {"Ids": [ad_id]}})
         check_results(result.get("ResumeResults" if active else "SuspendResults") or [])
+
+    async def set_ad_archived(self, account: str, ad_ref: str, archived: bool) -> None:
+        ad_id = int(ad_ref.removeprefix("ad:"))
+        method = "archive" if archived else "unarchive"
+        result = await self._call(account, "ads", method, {"SelectionCriteria": {"Ids": [ad_id]}})
+        key = "ArchiveResults" if archived else "UnarchiveResults"
+        check_results(result.get(key) or [])
 
     async def _moderate(self, account: str, ads: Sequence[Mapping[str, Any]]) -> None:
         drafts = [int(ad["Id"]) for ad in ads if ad.get("Status") == "DRAFT"]

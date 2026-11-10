@@ -200,7 +200,10 @@ class RoutingGateway:
                 await self._apply_client(account, kind, planned)
                 return
             if target_ref.startswith(AD_PREFIX):
-                await self._ads.set_ad_active(account, target_ref, planned["active"])
+                if kind is ChangeKind.ARCHIVE_AD:
+                    await self._ads.set_ad_archived(account, target_ref, planned["archived"])
+                else:
+                    await self._ads.set_ad_active(account, target_ref, planned["active"])
                 return
             if target_ref.startswith(TARGETING_PREFIX):
                 await self._apply_targeting(account, kind, target_ref, planned)

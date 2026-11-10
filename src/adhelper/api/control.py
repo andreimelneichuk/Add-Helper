@@ -26,7 +26,7 @@ from adhelper.creatives.adapters.wizard import SqlWizardAds
 from adhelper.creatives.application.moderation import follow_owner
 from adhelper.ledger.adapters.sql import PostgresAccountLock, SqlChangeRepository
 from adhelper.ledger.application.consequences import consequence
-from adhelper.ledger.application.owner import AD_PREFIX, set_ad_active
+from adhelper.ledger.application.owner import AD_PREFIX, archive_ad, set_ad_active
 from adhelper.ledger.application.rollback import (
     Change,
     RollbackStatus,
@@ -345,6 +345,9 @@ def control_router() -> APIRouter:
         if done == "pending":
             return {"status": "pending"}
 
+        # Остановка подтверждена: просим архив и у площадки. Если она его не приняла,
+        # объявление всё равно остановлено, у нас оно в архиве, а попытка осталась в журнале.
+        await archive_ad(ledger, account, ad_id, view.ad.title, body.request_id)
         dashboard = SqlDashboard(_sessions(request), business_id)
         await dashboard.note_ad_state(account, ad_id, "archived")
         await follow_owner(

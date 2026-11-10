@@ -657,7 +657,10 @@ async def test_platform_ad_archive_stops_platform_and_notes_archived_state(
     assert done.status_code == 200
     assert done.json() == {"status": "applied"}
     assert platform.ads["ad:11"] is False
-    assert ("user", "pause_ad", "applied") in await _rows(sessions, business)
+    assert platform.archived["ad:11"] is True
+    rows = await _rows(sessions, business)
+    assert ("user", "pause_ad", "applied") in rows
+    assert ("user", "archive_ad", "applied") in rows
 
     async with sessions() as session:
         ad_state = (
@@ -775,7 +778,10 @@ async def test_platform_ad_archive_waits_for_confirmed_stop(
     done = await client.post(url, headers=csrf, json={"request_id": "archive-retry-with-new-id"})
     assert done.json() == {"status": "applied"}
     assert platform.ads["ad:11"] is False
-    assert await _rows(sessions, business) == [("user", "pause_ad", "applied")]
+    assert await _rows(sessions, business) == [
+        ("user", "pause_ad", "applied"),
+        ("user", "archive_ad", "applied"),
+    ]
     async with sessions() as session:
         state = await session.scalar(
             text("SELECT state FROM ads WHERE business_id = :b AND ad_id = '11'"),

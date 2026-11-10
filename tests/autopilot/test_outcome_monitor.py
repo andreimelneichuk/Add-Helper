@@ -180,7 +180,10 @@ async def test_real_worsening_rolls_back_through_the_journal(
     rows = await SqlChangeRepository(sessions, BUSINESS).all()
     rollback = next(row for row in rows if row.reverts_change_id == change_id)
     assert rollback.source is ChangeSource.ROLLBACK and rollback.kind is ChangeKind.RESUME_AD
-    assert rollback.before == {"active": False} and rollback.after == {"active": True}
+    assert rollback.before == {"active": False, "archived": False} and rollback.after == {
+        "active": True,
+        "archived": False,
+    }
     assert "выросла на" in rollback.explanation and "₽" in rollback.explanation
     async with sessions() as session:
         row = (

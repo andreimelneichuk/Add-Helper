@@ -99,7 +99,7 @@ async def test_pause_is_reverted_by_new_record(sessions: Sessions, engine: Async
     assert [row.kind for row in rows] == [ChangeKind.PAUSE_AD, ChangeKind.RESUME_AD]
     assert rows[0].status is ChangeStatus.APPLIED
     assert rows[1].source is ChangeSource.ROLLBACK
-    assert rows[1].before == {"active": False}
+    assert rows[1].before == {"active": False, "archived": False}
     assert "нельзя вернуть" in rows[1].explanation
 
 
@@ -296,3 +296,34 @@ async def test_scenario_8_long_chain_reverts_strictly_newest_first(
     assert platform.campaigns["c1"].limit == 500_000_000
     rows = await SqlChangeRepository(sessions, BUSINESS).all()
     assert [row.reverts_change_id for row in rows[3:]] == [third, second, first]
+
+
+def archive(ref: str = "ad:1", archived: bool = True) -> ProposedChange:
+    return ProposedChange(
+        "acc",
+        ChangeSource.USER,
+        ChangeKind.ARCHIVE_AD,
+        ref,
+        {"archived": archived},
+        "В архив",
+        f"archive:{ref}:{archived}",
+    )
+
+
+async def test_archive_ad_goes_through_ledger_and_rolls_back(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    platform = platform_with()
+    ledger = make(platform, sessions, engine)
+    await done(ledger, pause())
+    original = await done(ledger, archive())
+
+    assert platform.archived["ad:1"] is True
+    row = (await SqlChangeRepository(sessions, BUSINESS).all())[-1]
+    assert row.kind is ChangeKind.ARCHIVE_AD and row.status is ChangeStatus.APPLIED
+    assert row.before == {"active": False, "archived": False}
+
+    result = await rollback_change(ledger, original)
+
+    assert result.status is RollbackStatus.APPLIED
+    assert platform.archived["ad:1"] is False

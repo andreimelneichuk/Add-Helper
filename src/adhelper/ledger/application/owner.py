@@ -8,6 +8,53 @@ AD_PREFIX = "ad:"
 OwnerResult = Literal["applied", "pending", "failed"]
 
 
+async def archive_ad(
+    ledger: Ledger, account: str, ad_id: str, title: str, request_id: str
+) -> OwnerResult | None:
+    """Архив объявления в самой площадке, после остановки. Тот же путь через журнал."""
+    target_ref = f"{AD_PREFIX}{ad_id}"
+    key = f"owner-archive:{request_id}"
+    rows = await ledger.changes_on_target(account, target_ref)
+    done = next((row for row in rows if row.idempotency_key == key), None)
+    if done is not None and done.status is ChangeStatus.APPLIED:
+        return "applied"
+    try:
+        change = next(
+            (
+                row
+                for row in rows
+                if row.source is ChangeSource.USER
+                and row.kind is ChangeKind.ARCHIVE_AD
+                and row.status in {ChangeStatus.PLANNED, ChangeStatus.APPLYING}
+            ),
+            None,
+        )
+        if change is None:
+            current = await ledger.read_target(account, target_ref)
+            if current.get("archived") is True:
+                return "applied"
+            change = await ledger.submit(
+                ProposedChange(
+                    account=account,
+                    source=ChangeSource.USER,
+                    kind=ChangeKind.ARCHIVE_AD,
+                    target_ref=target_ref,
+                    planned={"archived": True},
+                    explanation=f"Убрал «{title}» в архив: вы попросили.",
+                    idempotency_key=key,
+                )
+            )
+        await ledger.execute_pending(account)
+    except GatewayUnavailable:
+        return None
+    status = await ledger.status_of(change.id)
+    if status is ChangeStatus.APPLIED:
+        return "applied"
+    if status in {ChangeStatus.PLANNED, ChangeStatus.APPLYING}:
+        return "pending"
+    return "failed"
+
+
 async def set_ad_active(
     ledger: Ledger, account: str, ad_id: str, title: str, active: bool, request_id: str
 ) -> OwnerResult | None:
