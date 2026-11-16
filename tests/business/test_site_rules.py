@@ -224,6 +224,8 @@ def test_site_4_assigns_city_to_profile_address() -> None:
     prompt = load_site_rules().system_prompt
     assert "Город записывай в address" in prompt
     assert "город, район, метро и ориентир — отдельные feature" not in prompt
+    assert "не пытайся перечислить весь ассортимент" in prompt
+    assert "цена допустима только у service" in prompt
 
 
 def test_site_4_keeps_city_only_as_profile_address() -> None:
