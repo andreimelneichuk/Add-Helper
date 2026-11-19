@@ -22,6 +22,10 @@ def test_noscript_and_old_counter_are_found() -> None:
     assert find_counters('<img src="https://mc.yandex.ru/watch/1234567?ut=noindex">') == (1234567,)
     old = "try { window.yaCounter7654321 = new Ya.Metrika({id:7654321}); } catch(e) {}"
     assert find_counters(old) == (7654321,)
+    tag_js = '<script async src="https://mc.yandex.ru/metrika/tag.js?id=54127669"></script>'
+    assert find_counters(tag_js) == (54127669,)
+    nuxt_cfg = "<script>window.__NUXT__={config:{public:{yandexMetric:95375303}}}</script>"
+    assert find_counters(nuxt_cfg) == (95375303,)
     both = SNIPPET + "<script>ym(11111111,'init',{})</script>"
     assert find_counters(both) == (98765432, 11111111)
 

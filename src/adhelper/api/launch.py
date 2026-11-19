@@ -114,8 +114,14 @@ def _check_view(check: StoredTagCheck | None) -> dict[str, Any] | None:
         "status": check.status.value,
         "url": check.url,
         "counters": list(check.counters),
+        "counter_names": {str(k): v for k, v in check.counter_names.items()},
         "problem": check.problem,
     }
+
+
+def _format_counter(number: int, names: dict[int, str]) -> str:
+    label = names.get(number)
+    return f"{number} ({label})" if label else str(number)
 
 
 async def _site(request: Request, business_id: Any) -> str:
@@ -139,9 +145,13 @@ def _counter_item(has_profile: bool, site: str, check: StoredTagCheck | None) ->
             "Код Метрики ещё не проверен; запуск возможен, "
             "но обращения на сайте могут не учитываться"
         )
-    if check.status is TagStatus.FOUND:
-        numbers = ", ".join(str(n) for n in check.counters)
-        return True, f"Код Метрики на сайте есть, счётчик {numbers}"
+    if check.status is TagStatus.FOUND and check.counters:
+        if len(check.counters) == 1:
+            formatted = _format_counter(check.counters[0], check.counter_names)
+            return True, f"Код Метрики на сайте есть, счётчик {formatted}"
+        primary = _format_counter(check.counters[0], check.counter_names)
+        rest = ", ".join(_format_counter(n, check.counter_names) for n in check.counters[1:])
+        return True, f"Код Метрики на сайте есть, основной счётчик {primary}, резервные: {rest}"
     if check.status in (TagStatus.QUEUED, TagStatus.RUNNING):
         return True, (
             "Проверяю код Метрики на сайте; запуск возможен, обращения могут не учитываться"
@@ -250,6 +260,100 @@ def launch_router() -> APIRouter:
                 "Сегодня сайт проверяли уже много раз. Попробуйте завтра",
             ) from None
         return {"check": _check_view(await checks.latest()), "site": url}
+
+    @router.put("/tag-check")
+    async def put_tag_check(
+        request: Request,
+        business_id: OwnedChecked,
+        raw: Annotated[dict[str, Any], Body()],
+    ) -> dict[str, Any]:
+        raw_counters = raw.get("counters")
+        if not isinstance(raw_counters, list):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "Передайте список счётчиков Метрики",
+            )
+        raw_names = raw.get("counter_names")
+        names: dict[int, str] = {}
+        if isinstance(raw_names, dict):
+            for key, val in raw_names.items():
+                if isinstance(val, str):
+                    try:
+                        names[int(str(key).strip())] = val
+                    except ValueError:
+                        continue
+        numbers: list[int] = []
+        primary_id: int | None = None
+        raw_primary = raw.get("primary")
+        if isinstance(raw_primary, (int, str)) and not isinstance(raw_primary, bool):
+            try:
+                primary_id = int(str(raw_primary).strip())
+            except ValueError:
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    "Номер основного счётчика должен состоять из цифр",
+                ) from None
+        for item in raw_counters:
+            if isinstance(item, dict):
+                raw_id = item.get("id")
+                if isinstance(raw_id, bool) or not isinstance(raw_id, (int, str)):
+                    raise HTTPException(
+                        status.HTTP_422_UNPROCESSABLE_CONTENT,
+                        "Номер счётчика Метрики должен состоять из 5–12 цифр",
+                    )
+                try:
+                    num = int(str(raw_id).strip())
+                except ValueError:
+                    raise HTTPException(
+                        status.HTTP_422_UNPROCESSABLE_CONTENT,
+                        "Номер счётчика Метрики должен состоять из 5–12 цифр",
+                    ) from None
+                numbers.append(num)
+                item_name = item.get("name")
+                if isinstance(item_name, str):
+                    names[num] = item_name
+                if item.get("primary") is True and primary_id is None:
+                    primary_id = num
+            elif not isinstance(item, bool) and isinstance(item, (int, str)):
+                try:
+                    num = int(str(item).strip())
+                except ValueError:
+                    raise HTTPException(
+                        status.HTTP_422_UNPROCESSABLE_CONTENT,
+                        "Номер счётчика Метрики должен состоять из 5–12 цифр",
+                    ) from None
+                numbers.append(num)
+            else:
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    "Номер счётчика Метрики должен состоять из 5–12 цифр",
+                )
+        if primary_id is not None:
+            if primary_id not in numbers:
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    "Основной счётчик должен входить в список счётчиков",
+                )
+            numbers = [primary_id, *[n for n in numbers if n != primary_id]]
+        found = await SqlProfiles(_sessions(request), business_id).get()
+        raw_site = found[1].strip() if found else ""
+        if not raw_site:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "Добавьте адрес сайта в профиле бизнеса, чтобы привязать счётчик Метрики",
+            )
+        url, problem = check_url(raw_site, load_site_rules())
+        if problem is not None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, URL_PROBLEMS[problem])
+        checks = SqlTagChecks(_sessions(request), business_id)
+        try:
+            saved = await checks.save_manual(url, numbers, names, load_tag_rules(), _now(request))
+        except ValueError as error:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                str(error),
+            ) from None
+        return {"check": _check_view(saved), "site": url}
 
     async def readiness(
         request: Request, business_id: Any

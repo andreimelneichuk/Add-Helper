@@ -7,7 +7,7 @@ from sqlalchemy import text
 
 from adhelper.budget.domain.limits import CampaignBudget
 from adhelper.business.adapters.rules_file import load_tag_rules
-from adhelper.business.adapters.tag_checks import SqlTagCheckQueue
+from adhelper.business.adapters.tag_checks import SqlTagCheckQueue, SqlTagChecks
 from adhelper.business.application.tag import run_tag_checks
 from adhelper.platforms.adapters.direct.geo_regions import GeoRegionChoice
 from tests.accounts.fake_provider import FakeProvider
@@ -549,3 +549,85 @@ async def test_launch_blocks_when_city_is_not_found(
     result = await client.post(f"{base}/launch", headers={"X-CSRF-Token": csrf})
     assert result.status_code == 409, result.text
     assert platform.create_calls == 0
+
+
+async def test_manual_counters_with_names_and_primary_selection(
+    anna: Anna,  # noqa: F811
+    sessions: Sessions,
+    provider: FakeProvider,
+) -> None:
+    client, csrf, business_id = anna
+    base = f"/api/businesses/{business_id}"
+    headers = {"X-CSRF-Token": csrf}
+    await _make_ready(client, csrf, business_id, sessions, provider, check_counter=False)
+
+    # Автопоиск не нашёл счётчик (например, он в GTM).
+    await client.post(f"{base}/tag-check", headers=headers)
+    await _worker(sessions, [])
+    initial = (await client.get(f"{base}/tag-check")).json()["check"]
+    assert (initial["status"], initial["counters"]) == ("missing", [])
+
+    # Некорректный номер отклоняется.
+    bad = await client.put(
+        f"{base}/tag-check",
+        json={"counters": [{"id": 123, "name": "Короткий"}]},
+        headers=headers,
+    )
+    assert bad.status_code == 422
+
+    # Владелец вручную указывает два счётчика, называет их и выбирает второй основным.
+    saved = await client.put(
+        f"{base}/tag-check",
+        json={
+            "counters": [
+                {"id": 54127669, "name": "Виджет записи", "primary": False},
+                {"id": 88291024, "name": "Сайт доставки", "primary": True},
+            ]
+        },
+        headers=headers,
+    )
+    assert saved.status_code == 200, saved.text
+    check_data = saved.json()["check"]
+    assert check_data["status"] == "found"
+    assert check_data["counters"] == [88291024, 54127669]
+    assert check_data["counter_names"] == {
+        "88291024": "Сайт доставки",
+        "54127669": "Виджет записи",
+    }
+    assert await SqlTagChecks(sessions, business_id).counter() == "88291024"
+
+    # Повторная автопроверка страницы с GTM (включая ручную правку во время queued)
+    # не затирает вручную введённые счётчики и названия, а новый найденный добавляет резервным.
+    await client.post(f"{base}/tag-check", headers=headers)
+    during_queue = await client.put(
+        f"{base}/tag-check",
+        json={
+            "counters": [
+                {"id": 88291024, "name": "Сайт доставки", "primary": True},
+                {"id": 54127669, "name": "Виджет записи", "primary": False},
+            ]
+        },
+        headers=headers,
+    )
+    assert during_queue.status_code == 200
+    await _worker(sessions, [99887766])
+    after_recheck = (await client.get(f"{base}/tag-check")).json()["check"]
+    assert after_recheck["status"] == "found"
+    assert after_recheck["counters"] == [88291024, 54127669, 99887766]
+    assert after_recheck["counter_names"] == {
+        "88291024": "Сайт доставки",
+        "54127669": "Виджет записи",
+    }
+
+    # В сводке готовности виден основной и резервные счётчики, а в Директ уходят все.
+    ready = (await client.get(f"{base}/launch-check")).json()
+    counter_item = next(item for item in ready["items"] if item["key"] == "counter")
+    assert "основной счётчик 88291024 (Сайт доставки)" in counter_item["text"]
+    assert "54127669 (Виджет записи)" in counter_item["text"]
+
+    platform = FakePlatform([], NOW)
+    _with_platform(client, platform)
+    launched = await client.post(f"{base}/launch", headers=headers)
+    assert launched.status_code == 200, launched.text
+    campaign = next(iter(platform.created.values())).campaign
+    assert campaign.counters == (88291024, 54127669, 99887766)

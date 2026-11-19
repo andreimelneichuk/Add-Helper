@@ -270,16 +270,34 @@ export function RealCode({ store, s }: Props) {
   const api = store.wizard;
   const [view, setView] = useState<TagCheckView | null>(null);
   const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [newId, setNewId] = useState("");
+  const [newName, setNewName] = useState("");
+  const [namesDraft, setNamesDraft] = useState<Record<string, string>>({});
   const check = view?.check && view.check.url === view.site ? view.check : null;
   const waiting = check?.status === "queued" || check?.status === "running";
   useEffect(() => {
     if (!api) return;
-    api.tagCheck().then(setView, (e: unknown) => setStatus(say(e)));
+    api.tagCheck().then(
+      (next) => {
+        setView(next);
+        setNamesDraft((prev) => ({ ...(next.check?.counter_names ?? {}), ...prev }));
+      },
+      (e: unknown) => setStatus(say(e)),
+    );
   }, [api]);
   // Пока проверка в очереди, спрашиваем сервис снова: воркер берёт её раз в минуту.
   useEffect(() => {
     if (!api || !waiting) return;
-    const timer = window.setTimeout(() => { api.tagCheck().then(setView, (e: unknown) => setStatus(say(e))); }, store.waitMs);
+    const timer = window.setTimeout(() => {
+      api.tagCheck().then(
+        (next) => {
+          setView(next);
+          setNamesDraft((prev) => ({ ...(next.check?.counter_names ?? {}), ...prev }));
+        },
+        (e: unknown) => setStatus(say(e)),
+      );
+    }, store.waitMs);
     return () => window.clearTimeout(timer);
   }, [api, waiting, view, store.waitMs]);
   useEffect(() => { store.set({ metrica: !!view && (!view.site || check?.status === "found") }); }, [view, check, store]);
@@ -290,9 +308,71 @@ export function RealCode({ store, s }: Props) {
   const letter = `Здравствуйте! Поставьте, пожалуйста, на сайт ${view.site} код счётчика Яндекс Метрики на все страницы. Без него реклама не увидит заявки и звонки.`;
   const run = () => {
     setStatus("");
-    api?.requestTagCheck().then(setView, (e: unknown) => setStatus(say(e)));
+    api?.requestTagCheck().then(
+      (next) => {
+        setView(next);
+        setNamesDraft((prev) => ({ ...(next.check?.counter_names ?? {}), ...prev }));
+      },
+      (e: unknown) => setStatus(say(e)),
+    );
   };
   const copy = () => { void navigator.clipboard?.writeText(letter).catch(() => undefined); store.set({ codeCopied: true }); };
+  const counters = check?.counters ?? [];
+  const currentItems = (overrideNames: Record<string, string> = namesDraft) =>
+    counters.map((id, idx) => ({
+      id,
+      name: (overrideNames[String(id)] ?? "").trim() || undefined,
+      primary: idx === 0,
+    }));
+  const saveCounters = async (
+    items: { id: number; name?: string; primary?: boolean }[],
+    clearNew = false,
+  ) => {
+    if (busy || !api?.saveTagCheck) return;
+    setBusy(true);
+    setStatus("");
+    try {
+      const next = await api.saveTagCheck(items);
+      setView(next);
+      setNamesDraft(next.check?.counter_names ?? {});
+      if (clearNew) {
+        setNewId("");
+        setNewName("");
+      }
+    } catch (e) {
+      setStatus(say(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const addCounter = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleaned = newId.trim();
+    if (!/^\d{5,12}$/.test(cleaned)) {
+      setStatus("Номер счётчика Метрики должен состоять из 5–12 цифр");
+      return;
+    }
+    const id = Number(cleaned);
+    const trimmedName = newName.trim();
+    const nextNames = { ...namesDraft, ...(trimmedName ? { [String(id)]: trimmedName } : {}) };
+    const existing = currentItems(nextNames).filter((item) => item.id !== id);
+    const list =
+      existing.length === 0
+        ? [{ id, name: trimmedName || undefined, primary: true }]
+        : [...existing, { id, name: trimmedName || undefined, primary: false }];
+    void saveCounters(list, true);
+  };
+  const makePrimary = (targetId: number) => {
+    void saveCounters(currentItems().map((item) => ({ ...item, primary: item.id === targetId })));
+  };
+  const removeCounter = (targetId: number) => {
+    const remaining = currentItems().filter((item) => item.id !== targetId);
+    const first = remaining[0];
+    if (first && !remaining.some((item) => item.primary)) {
+      remaining[0] = { ...first, primary: true };
+    }
+    void saveCounters(remaining);
+  };
   const found = check?.status === "found";
   return (
     <div className="st-link">
@@ -303,9 +383,83 @@ export function RealCode({ store, s }: Props) {
         </div>
         {status && <p className="st-letter">{status}</p>}
         {s.codeCopied && !found && <p className="st-letter">{letter}</p>}
+        {counters.length > 0 && (
+          <div style={{ marginTop: "10px" }}>
+            {counters.length > 1 && (
+              <p className="ah-muted" style={{ marginBottom: "6px" }}>
+                В Директ передаются все счётчики из списка, а заявки автопилот сверяет по основному.
+              </p>
+            )}
+            <ul className="st-ready">
+              {counters.map((id, idx) => {
+                const isPrimary = idx === 0;
+                const draftVal = namesDraft[String(id)] ?? "";
+                const savedVal = check?.counter_names?.[String(id)] ?? "";
+                return (
+                  <li key={id} className="is-ok" style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
+                    <strong>{id}</strong>
+                    <span className="ah-muted">{isPrimary ? "Основной" : "Резервный"}</span>
+                    {api?.saveTagCheck && (
+                      <>
+                        <input
+                          type="text"
+                          className="ah-input"
+                          aria-label={`Название счётчика ${id}`}
+                          placeholder="Название (например, Сайт доставки)"
+                          value={draftVal}
+                          onChange={(e) => setNamesDraft((prev) => ({ ...prev, [String(id)]: e.target.value }))}
+                          style={{ maxWidth: "220px" }}
+                        />
+                        {draftVal.trim() !== savedVal.trim() && (
+                          <button type="button" className="ah-btn" disabled={busy} onClick={() => void saveCounters(currentItems())}>
+                            Сохранить название
+                          </button>
+                        )}
+                        {!isPrimary && (
+                          <button type="button" className="ah-btn" disabled={busy} onClick={() => makePrimary(id)}>
+                            Сделать основным
+                          </button>
+                        )}
+                        <button type="button" className="ah-btn" disabled={busy} onClick={() => removeCounter(id)}>
+                          Убрать
+                        </button>
+                      </>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+        {api?.saveTagCheck && (
+          <form onSubmit={addCounter} style={{ marginTop: "10px", display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
+            <input
+              type="text"
+              inputMode="numeric"
+              className="ah-input"
+              aria-label="Номер счётчика Метрики"
+              placeholder="Номер счётчика (например, 54127669)"
+              value={newId}
+              onChange={(e) => setNewId(e.target.value)}
+              style={{ maxWidth: "240px" }}
+            />
+            <input
+              type="text"
+              className="ah-input"
+              aria-label="Название нового счётчика"
+              placeholder="Название (необязательно)"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              style={{ maxWidth: "220px" }}
+            />
+            <button type="submit" className="ah-btn" disabled={busy || waiting || !newId.trim()}>
+              Добавить счётчик
+            </button>
+          </form>
+        )}
       </div>
       <div className="st-link-actions">
-        <button type="button" className={found ? "ah-btn st-link-done" : "ah-btn ah-btn-primary"} disabled={waiting} onClick={run}>{found ? "Проверить снова" : "Проверить установку"}</button>
+        <button type="button" className={found ? "ah-btn st-link-done" : "ah-btn ah-btn-primary"} disabled={waiting || busy} onClick={run}>{found ? "Проверить снова" : "Проверить установку"}</button>
         {!found && <button type="button" className="ah-btn" onClick={copy}>{s.codeCopied ? "Письмо скопировано" : "Скопировать письмо разработчику"}</button>}
       </div>
     </div>

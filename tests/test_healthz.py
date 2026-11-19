@@ -1,3 +1,5 @@
+import contextlib
+from collections.abc import Iterator
 from pathlib import Path
 
 import httpx
@@ -137,26 +139,47 @@ async def test_big_body_is_refused_before_the_handler(settings: Settings) -> Non
     assert small.status_code != 413
 
 
-async def test_spa_prevents_path_traversal(settings: Settings) -> None:
-    app = create_app(settings)
-    transport = httpx.ASGITransport(app=app)
+@contextlib.contextmanager
+def _ensure_frontend_dist() -> Iterator[None]:
+    dist_dir = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+    index_file = dist_dir / "index.html"
+    created_dir = not dist_dir.exists()
+    created_index = not index_file.exists()
+    if created_index:
+        dist_dir.mkdir(parents=True, exist_ok=True)
+        index_file.write_text("<!doctype html><title>Ad Helper</title>", encoding="utf-8")
     try:
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            # Нормальный роут SPA отдаёт HTML
-            start = await client.get("/start")
-            assert start.status_code == 200
-            assert "text/html" in start.headers.get("content-type", "")
-            # После выкладки страница должна перечитываться, иначе браузер покажет старый интерфейс.
-            assert start.headers.get("cache-control") == "no-cache"
-
-            # Попытки выхода за границы frontend/dist не должны отдавать целевой файл
-            traversal = await client.get("/../../pyproject.toml")
-            assert "[project]" not in traversal.text
-
-            encoded = await client.get("/%2e%2e/%2e%2e/pyproject.toml")
-            assert "[project]" not in encoded.text
+        yield
     finally:
-        await app.state.engine.dispose()
+        if created_index and index_file.exists():
+            index_file.unlink()
+        if created_dir and dist_dir.exists():
+            with contextlib.suppress(OSError):
+                dist_dir.rmdir()
+
+
+async def test_spa_prevents_path_traversal(settings: Settings) -> None:
+    with _ensure_frontend_dist():
+        app = create_app(settings)
+        transport = httpx.ASGITransport(app=app)
+        try:
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                # Нормальный роут SPA отдаёт HTML
+                start = await client.get("/start")
+                assert start.status_code == 200
+                assert "text/html" in start.headers.get("content-type", "")
+                # После выкладки страница должна перечитываться,
+                # иначе браузер покажет старый интерфейс.
+                assert start.headers.get("cache-control") == "no-cache"
+
+                # Попытки выхода за границы frontend/dist не должны отдавать целевой файл
+                traversal = await client.get("/../../pyproject.toml")
+                assert "[project]" not in traversal.text
+
+                encoded = await client.get("/%2e%2e/%2e%2e/pyproject.toml")
+                assert "[project]" not in encoded.text
+        finally:
+            await app.state.engine.dispose()
 
 
 def test_guest_key_prefers_platform_headers() -> None:

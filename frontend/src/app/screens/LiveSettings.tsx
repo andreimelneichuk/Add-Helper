@@ -42,9 +42,14 @@ function MetricaSettings({ api }: { api: Api }) {
   const [view, setView] = useState<TagCheckView | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [newId, setNewId] = useState("");
+  const [newName, setNewName] = useState("");
+  const [namesDraft, setNamesDraft] = useState<Record<string, string>>({});
   const load = useCallback(async () => {
     try {
-      setView(await api.tagCheck());
+      const next = await api.tagCheck();
+      setView(next);
+      setNamesDraft((prev) => ({ ...(next.check?.counter_names ?? {}), ...prev }));
       setError("");
     } catch (e) {
       setError(message(e));
@@ -70,7 +75,9 @@ function MetricaSettings({ api }: { api: Api }) {
     setBusy(true);
     setError("");
     try {
-      setView(await api.requestTagCheck());
+      const next = await api.requestTagCheck();
+      setView(next);
+      setNamesDraft((prev) => ({ ...(next.check?.counter_names ?? {}), ...prev }));
     } catch (e) {
       setError(message(e));
     } finally {
@@ -78,12 +85,79 @@ function MetricaSettings({ api }: { api: Api }) {
     }
   };
 
+  const saveCounters = async (
+    items: { id: number; name?: string; primary?: boolean }[],
+    clearNew = false,
+  ) => {
+    if (busy || !api.saveTagCheck) return;
+    setBusy(true);
+    setError("");
+    try {
+      const next = await api.saveTagCheck(items);
+      setView(next);
+      setNamesDraft(next.check?.counter_names ?? {});
+      if (clearNew) {
+        setNewId("");
+        setNewName("");
+      }
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const counters = check?.counters ?? [];
+  const currentItems = (overrideNames: Record<string, string> = namesDraft) =>
+    counters.map((id, idx) => ({
+      id,
+      name: (overrideNames[String(id)] ?? "").trim() || undefined,
+      primary: idx === 0,
+    }));
+
+  const addCounter = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleaned = newId.trim();
+    if (!/^\d{5,12}$/.test(cleaned)) {
+      setError("Номер счётчика Метрики должен состоять из 5–12 цифр");
+      return;
+    }
+    const id = Number(cleaned);
+    const trimmedName = newName.trim();
+    const nextNames = { ...namesDraft, ...(trimmedName ? { [String(id)]: trimmedName } : {}) };
+    const existing = currentItems(nextNames).filter((item) => item.id !== id);
+    const list =
+      existing.length === 0
+        ? [{ id, name: trimmedName || undefined, primary: true }]
+        : [...existing, { id, name: trimmedName || undefined, primary: false }];
+    void saveCounters(list, true);
+  };
+
+  const makePrimary = (targetId: number) => {
+    const items = currentItems().map((item) => ({ ...item, primary: item.id === targetId }));
+    void saveCounters(items);
+  };
+
+  const removeCounter = (targetId: number) => {
+    const remaining = currentItems().filter((item) => item.id !== targetId);
+    const first = remaining[0];
+    if (first && !remaining.some((item) => item.primary)) {
+      remaining[0] = { ...first, primary: true };
+    }
+    void saveCounters(remaining);
+  };
+
+  const saveName = (targetId: number) => {
+    void saveCounters(currentItems());
+    void targetId;
+  };
+
   let status = "Загружаю состояние проверки…";
   if (view && !view.site) status = "Добавьте адрес сайта в профиле бизнеса, чтобы проверить установленный код. Запустить рекламу можно и без Метрики.";
   else if (waiting) status = "Проверяю сайт. Обычно это занимает до минуты.";
   else if (check?.status === "found") status = `Код найден, счётчик ${check.counters.join(", ")}.`;
-  else if (check?.status === "missing") status = "Код Метрики на главной странице не найден. Если он установлен через Google Tag Manager, эта проверка его не увидит.";
-  else if (check?.status === "failed") status = "Сайт не открылся при проверке. Попробуйте ещё раз позже.";
+  else if (check?.status === "missing") status = "Код Метрики на главной странице не найден. Если он установлен через Google Tag Manager, эта проверка его не увидит — укажите номер счётчика вручную.";
+  else if (check?.status === "failed") status = "Сайт не открылся при проверке. Попробуйте ещё раз позже или укажите номер счётчика вручную.";
   else if (view?.site) status = "Код ещё не проверяли. Проверка необязательна для запуска рекламы.";
 
   return (
@@ -97,6 +171,76 @@ function MetricaSettings({ api }: { api: Api }) {
           {busy || waiting ? "Проверяю…" : error ? "Попробовать снова" : check ? "Проверить снова" : "Проверить установку"}
         </button>
       </div>
+      {counters.length > 0 && (
+        <div className="set-counters" aria-label="Счётчики Метрики">
+          {counters.length > 1 && (
+            <p className="set-hint">
+              В Директ передаются все счётчики из списка, а заявки и визиты автопилот сверяет по основному.
+            </p>
+          )}
+          <ul className="st-ready">
+            {counters.map((id, idx) => {
+              const isPrimary = idx === 0;
+              const draftVal = namesDraft[String(id)] ?? "";
+              const savedVal = check?.counter_names?.[String(id)] ?? "";
+              return (
+                <li key={id} className="is-ok" style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
+                  <strong>{id}</strong>
+                  <span className="ah-muted">{isPrimary ? "Основной" : "Резервный"}</span>
+                  <input
+                    type="text"
+                    className="ah-input"
+                    aria-label={`Название счётчика ${id}`}
+                    placeholder="Название (например, Сайт доставки)"
+                    value={draftVal}
+                    onChange={(e) => setNamesDraft((prev) => ({ ...prev, [String(id)]: e.target.value }))}
+                    style={{ maxWidth: "240px" }}
+                  />
+                  {draftVal.trim() !== savedVal.trim() && (
+                    <button type="button" className="ah-btn" disabled={busy} onClick={() => saveName(id)}>
+                      Сохранить название
+                    </button>
+                  )}
+                  {!isPrimary && (
+                    <button type="button" className="ah-btn" disabled={busy} onClick={() => makePrimary(id)}>
+                      Сделать основным
+                    </button>
+                  )}
+                  <button type="button" className="ah-btn" disabled={busy} onClick={() => removeCounter(id)}>
+                    Убрать
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+      {view?.site && (
+        <form className="set-actions" onSubmit={addCounter} style={{ marginTop: "12px", display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
+          <input
+            type="text"
+            inputMode="numeric"
+            className="ah-input"
+            aria-label="Номер счётчика Метрики"
+            placeholder="Номер счётчика (например, 54127669)"
+            value={newId}
+            onChange={(e) => setNewId(e.target.value)}
+            style={{ maxWidth: "240px" }}
+          />
+          <input
+            type="text"
+            className="ah-input"
+            aria-label="Название нового счётчика"
+            placeholder="Название (необязательно)"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            style={{ maxWidth: "240px" }}
+          />
+          <button type="submit" className="ah-btn" disabled={busy || waiting || !newId.trim()}>
+            Добавить счётчик
+          </button>
+        </form>
+      )}
     </section>
   );
 }

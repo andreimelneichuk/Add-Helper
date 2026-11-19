@@ -61,6 +61,16 @@ export function fakeApi(over: Partial<Api> = {}) {
     saveMarking: vi.fn(async (body: { kind: "legal" | "ip" | "person"; inn: string; name: string }) => ({ saved: { kind: body.kind, inn: `••••${body.inn.slice(-4)}`, name: body.name, phone: null, okved: null } })),
     tagCheck: vi.fn(async () => ({ check: null, site: "" })),
     requestTagCheck: vi.fn(async () => ({ check: null, site: "" })),
+    saveTagCheck: vi.fn(async (counters: { id: number; name?: string; primary?: boolean }[]) => ({
+      check: {
+        status: counters.length ? "found" : "missing",
+        url: "https://salon.ru/",
+        counters: counters.map((c) => c.id),
+        counter_names: Object.fromEntries(counters.filter((c) => c.name).map((c) => [String(c.id), c.name!])),
+        problem: null,
+      },
+      site: "https://salon.ru/",
+    })),
     launchCheck: vi.fn(async () => ({ items: [], ready: false, launch_available: false, launch_text: "" })),
     startLaunch: vi.fn(async () => ({ status: "done" as const, campaigns: [], text: "" })),
     saveBudgetPlan: vi.fn(async (rubles: number) => ({ rubles })),

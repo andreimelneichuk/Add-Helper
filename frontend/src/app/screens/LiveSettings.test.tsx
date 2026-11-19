@@ -27,6 +27,38 @@ describe("настройки на настоящих данных", () => {
     expect(api.requestTagCheck).toHaveBeenCalledOnce();
   });
 
+  it("позволяет добавить счётчики вручную, назвать их и выбрать основной", async () => {
+    const api = fakeApi({
+      profile: vi.fn(async () => ({ services: [{ name: "Маникюр", price: 1200 }], address: "Москва", features: [], niche: "", website: "salon.ru" })),
+      tagCheck: vi.fn(async () => ({
+        check: { status: "missing" as const, url: "https://salon.ru/", counters: [], counter_names: {}, problem: null },
+        site: "https://salon.ru/",
+      })),
+    } as Partial<Api>);
+    render(<Settings store={await open(api)} />);
+    const metrica = screen.getByRole("region", { name: "Код статистики на сайте" });
+    expect(await within(metrica).findByText(/Google Tag Manager/)).toBeInTheDocument();
+
+    await userEvent.type(within(metrica).getByLabelText("Номер счётчика Метрики"), "54127669");
+    await userEvent.type(within(metrica).getByLabelText("Название нового счётчика"), "Виджет записи");
+    await userEvent.click(within(metrica).getByRole("button", { name: "Добавить счётчик" }));
+    expect(api.saveTagCheck).toHaveBeenLastCalledWith([{ id: 54127669, name: "Виджет записи", primary: true }]);
+
+    await userEvent.type(within(metrica).getByLabelText("Номер счётчика Метрики"), "88291024");
+    await userEvent.type(within(metrica).getByLabelText("Название нового счётчика"), "Сайт доставки");
+    await userEvent.click(within(metrica).getByRole("button", { name: "Добавить счётчик" }));
+    expect(api.saveTagCheck).toHaveBeenLastCalledWith([
+      { id: 54127669, name: "Виджет записи", primary: true },
+      { id: 88291024, name: "Сайт доставки", primary: false },
+    ]);
+
+    await userEvent.click(within(metrica).getByRole("button", { name: "Сделать основным" }));
+    expect(api.saveTagCheck).toHaveBeenLastCalledWith([
+      { id: 54127669, name: "Виджет записи", primary: false },
+      { id: 88291024, name: "Сайт доставки", primary: true },
+    ]);
+  });
+
   it("правка профиля уходит в API и перечитывает данные экранов", async () => {
     const api = fakeApi();
     render(<Settings store={await open(api)} />);

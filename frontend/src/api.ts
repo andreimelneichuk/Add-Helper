@@ -419,6 +419,8 @@ export function createApi(businessId: string, csrf: string) {
     stopAutopilot: () => request<AutopilotView>(`${base}/autopilot/stop`, { method: "POST" }, csrf),
     tagCheck: (init?: RequestInit) => request<TagCheckView>(`${base}/tag-check`, init),
     requestTagCheck: () => request<TagCheckView>(`${base}/tag-check`, { method: "POST" }, csrf),
+    saveTagCheck: (counters: TagCounterInput[]) =>
+      request<TagCheckView>(`${base}/tag-check`, { method: "PUT", body: JSON.stringify({ counters }) }, csrf),
     launchCheck: (init?: RequestInit) => request<LaunchCheck>(`${base}/launch-check`, init),
     chooseLaunchRegion: (region_id: number) =>
       request<LaunchGeoRegion>(`${base}/launch-region`, { method: "POST", body: JSON.stringify({ region_id }) }, csrf),
@@ -508,7 +510,14 @@ export type AdvertiserKind = "legal" | "ip" | "person";
 export type MarkingInput = { kind: AdvertiserKind; inn: string; name: string; phone?: string; okved?: string };
 /** ИНН и телефон приходят только с последними цифрами. */
 export type MarkingView = { kind: AdvertiserKind; inn: string; name: string; phone: string | null; okved: string | null };
-export type TagCheck = { status: "queued" | "running" | "found" | "missing" | "failed"; url: string; counters: number[]; problem: string | null };
+export type TagCounterInput = { id: number; name?: string; primary?: boolean };
+export type TagCheck = {
+  status: "queued" | "running" | "found" | "missing" | "failed";
+  url: string;
+  counters: number[];
+  counter_names?: Record<string, string>;
+  problem: string | null;
+};
 export type EconomicsView = {
   check_rubles: number | null;
   /** Средний чек посчитан по ценам услуг из профиля, а не назван владельцем. */
