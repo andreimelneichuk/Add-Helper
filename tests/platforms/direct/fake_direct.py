@@ -5,6 +5,7 @@
 """
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -196,8 +197,33 @@ class FakeDirect:
     def _ads_add(self, params: dict[str, Any]) -> dict[str, Any]:
         results: list[dict[str, Any]] = []
         for item in params["Ads"]:
-            if len(item["TextAd"]["Title"]) > 56:
+            title = str(item["TextAd"]["Title"])
+            text = str(item["TextAd"]["Text"])
+            if len(title) > 56:
                 results.append({"Errors": [{"Code": 5001, "Message": "Длина заголовка"}]})
+                continue
+            if len(text) > 81:
+                results.append({"Errors": [{"Code": 5001, "Message": "Длина текста"}]})
+                continue
+            if re.search(
+                r"[±≈≠≤≥÷~•\U00010000-\U0010ffff\u2600-\u27bf\u2b00-\u2bff\ufe00-\ufe0f]",
+                title + text,
+            ):
+                results.append(
+                    {
+                        "Errors": [
+                            {
+                                "Code": 5002,
+                                "Message": "Используются недопустимые символы",
+                                "Details": (
+                                    "В поле Text можно использовать только буквы латинского, "
+                                    "турецкого, русского, украинского, белорусского или "
+                                    "казахского алфавита, цифры и знаки пунктуации"
+                                ),
+                            }
+                        ]
+                    }
+                )
                 continue
             ad_id = self._id()
             group = self.groups[item["AdGroupId"]]

@@ -747,6 +747,75 @@ async def test_rejected_ad_text_is_a_platform_refusal(
         await platform.create_campaign(ACCOUNT, long)
 
 
+def test_sanitize_direct_text_removes_forbidden_math_and_emojis() -> None:
+    from adhelper.campaigns.domain.launch import sanitize_direct_text
+
+    assert (
+        sanitize_direct_text("Закажите Чеддер на Урале ±964 г / 32 шт: 699 ₽.")
+        == "Закажите Чеддер на Урале 964 г / 32 шт: 699 ₽."
+    )
+    assert (
+        sanitize_direct_text("В меню есть Зачетный сет ±1208 г / 48 шт.")
+        == "В меню есть Зачетный сет 1208 г / 48 шт."
+    )
+    assert sanitize_direct_text("Скидка ± 10 %") == "Скидка 10 %"
+    assert sanitize_direct_text("Вес 500±50 г, точность 10±2%") == "Вес 500-50 г, точность 10-2%"
+    assert sanitize_direct_text("Вкусные суши 🍣 за 500 ₽ ⭐") == "Вкусные суши за 500 ₽"
+    assert (
+        sanitize_direct_text("Вес ≈500 г, длина ≤ 20 см, ширина ≥ 10 см, 10÷2, 5×5, • пункт")
+        == "Вес 500 г, длина < 20 см, ширина > 10 см, 10/2, 5x5, - пункт"
+    )
+    # Замена знаков сравнения не увеличивает длину строки
+    sample = "Длина ≤ 20 см"
+    sanitized = sanitize_direct_text(sample)
+    assert len(sanitized) <= len(sample)
+    # Очистка переносов строк и пробелов перед знаками препинания
+    assert sanitize_direct_text("Текст с переносом\r\nи пробелом перед точкой .") == (
+        "Текст с переносом и пробелом перед точкой."
+    )
+
+
+async def test_ad_with_plus_minus_is_sanitized_and_accepted_by_direct(
+    platform: DirectPlatform, direct: FakeDirect
+) -> None:
+    with_symbols = launch()
+    with_symbols = NewCampaign(
+        **{
+            **with_symbols.__dict__,
+            "ads": (
+                NewAd("Повод для заказа", "Закажите Чеддер на Урале ±964 г / 32 шт: 699 ₽."),
+                NewAd("Что попробовать сегодня?", "В меню есть Зачетный сет ±1208 г / 48 шт."),
+            ),
+        }
+    )
+    # NewAd очищает текст уже при создании
+    assert with_symbols.ads[0].text == "Закажите Чеддер на Урале 964 г / 32 шт: 699 ₽."
+    assert with_symbols.ads[1].text == "В меню есть Зачетный сет 1208 г / 48 шт."
+
+    # План создания содержит уже чистый текст
+    planned_ads = with_symbols.planned()["ads"]
+    assert "±" not in planned_ads[0]["text"]
+    assert "±" not in planned_ads[1]["text"]
+
+    await platform.create_campaign(ACCOUNT, with_symbols)
+    assert len(direct.ads) == 2
+    for ad in direct.ads.values():
+        text = ad["TextAd"]["Text"]
+        assert "±" not in text
+        assert "964 г" in text or "1208 г" in text
+
+    # Повторный вызов (идемпотентность / доделывание после сбоя) не дублирует объявления
+    await platform.create_campaign(ACCOUNT, with_symbols)
+    assert len(direct.ads) == 2
+
+    # find_campaign возвращает те же объявления, что были запланированы
+    found = await platform.find_campaign(ACCOUNT, with_symbols.marker)
+    assert found is not None
+    assert len(found.campaign.ads) == 2
+    assert found.campaign.ads[0].text == with_symbols.ads[0].text
+    assert found.campaign.ads[1].text == with_symbols.ads[1].text
+
+
 # --- Объявления ---
 
 

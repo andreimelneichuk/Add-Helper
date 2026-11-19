@@ -56,12 +56,46 @@ class UnregisteredAdvertiserError(Exception):
     """Попытка запустить рекламу без подтверждённых реквизитов рекламодателя (ИНН)."""
 
 
+def sanitize_direct_text(raw: str) -> str:
+    """Очищает заголовок или текст объявления от символов, запрещённых в Директе (ошибка 5002).
+
+    Убирает математические знаки (±, ≈, ≠), эмодзи и нормализует пробелы.
+    Префиксный символ ± опускается («±964 г» -> «964 г»).
+    Инфиксный символ ± между числами превращается в диапазон («500±50 г» -> «500-50 г»).
+    Символы сравнения ≤ и ≥ заменяются на одиночные < и > (без удлинения строки).
+    """
+    if not raw:
+        return ""
+    cleaned = raw.replace("\u00a0", " ")
+    cleaned = re.sub(r"[\r\n\t]+", " ", cleaned)
+    cleaned = re.sub(r"(\d)\s*±\s*(\d)", r"\1-\2", cleaned)
+    cleaned = re.sub(r"±\s*", "", cleaned)
+    cleaned = re.sub(r"[≈≠~]", "", cleaned)
+    cleaned = (
+        cleaned.replace("≤", "<")
+        .replace("≥", ">")
+        .replace("÷", "/")
+        .replace("×", "x")
+        .replace("•", "-")
+    )
+    cleaned = re.sub(r"[\ufe00-\ufe0f]", "", cleaned)
+    cleaned = re.sub(r"[\U00010000-\U0010ffff]", "", cleaned)
+    cleaned = re.sub(r"[\u2600-\u27bf\u2b00-\u2bff]", "", cleaned)
+    cleaned = re.sub(r" +", " ", cleaned)
+    cleaned = re.sub(r" +([.,!?:;])", r"\1", cleaned)
+    return cleaned.strip()
+
+
 @dataclass(frozen=True)
 class NewAd:
     headline: str
     text: str
     group: str = "Общие услуги"
     keywords: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "headline", sanitize_direct_text(self.headline))
+        object.__setattr__(self, "text", sanitize_direct_text(self.text))
 
 
 @dataclass(frozen=True)

@@ -17,7 +17,13 @@ from zoneinfo import ZoneInfo
 from adhelper.budget.domain.limits import CampaignBudget, LimitChange, LimitDecision
 from adhelper.budget.domain.ports import CampaignStrategy, PlatformUnavailable
 from adhelper.budget.domain.watch import SpendSnapshot
-from adhelper.campaigns.domain.launch import LAUNCH_PREFIX, NewAd, NewCampaign, Placement
+from adhelper.campaigns.domain.launch import (
+    LAUNCH_PREFIX,
+    NewAd,
+    NewCampaign,
+    Placement,
+    sanitize_direct_text,
+)
 from adhelper.campaigns.domain.ports import CreatedCampaign, Targeting
 from adhelper.campaigns.domain.targeting import Schedule
 from adhelper.platforms.adapters.direct.geo_regions import GeoRegionChoice, resolve_city_choices
@@ -58,6 +64,8 @@ SIDES = ("Search", "Network")
 SERVING_OFF = "SERVING_OFF"
 # Сети по стратегии поиска: бюджет один, он у поиска.
 NETWORK_DEFAULT = "NETWORK_DEFAULT"
+
+
 # Директ берёт до 10 кампаний в отборе объявлений и групп.
 CAMPAIGN_CHUNK = 10
 CAMPAIGN_TYPE_KEYS = {"UNIFIED_CAMPAIGN": "UnifiedCampaign", "TEXT_CAMPAIGN": "TextCampaign"}
@@ -876,8 +884,8 @@ class DirectPlatform:
                     {
                         "AdGroupId": group_id,
                         "TextAd": {
-                            "Title": title,
-                            "Text": text,
+                            "Title": sanitize_direct_text(title),
+                            "Text": sanitize_direct_text(text),
                             "Href": href,
                             "Mobile": "NO",
                             **image,
@@ -1267,7 +1275,10 @@ class DirectPlatform:
 
         existing_ads = await self._ads_of_campaigns(account, [campaign_id])
         present = {
-            (str((ad.get("TextAd") or {}).get("Title")), str((ad.get("TextAd") or {}).get("Text")))
+            (
+                sanitize_direct_text(str((ad.get("TextAd") or {}).get("Title"))),
+                sanitize_direct_text(str((ad.get("TextAd") or {}).get("Text"))),
+            )
             for ad in existing_ads
             if ad.get("State") != "ARCHIVED"
         }
@@ -1302,7 +1313,7 @@ class DirectPlatform:
 
         href = mark_href(campaign.href, campaign.marker)
         for ad in campaign.ads:
-            if (ad.headline, ad.text) in present:
+            if (sanitize_direct_text(ad.headline), sanitize_direct_text(ad.text)) in present:
                 continue
             label = (ad.group.strip() or "Общие услуги")[:180]
             named_prefix = f"AH {label} "
