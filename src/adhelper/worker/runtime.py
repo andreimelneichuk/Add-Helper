@@ -10,6 +10,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from adhelper.accounts.adapters.crypto import AesGcmCipher
+from adhelper.accounts.adapters.sql import account_states
+from adhelper.accounts.application.service import AccountState
 from adhelper.autopilot.adapters.data import SqlAutopilotData, autopilot_accounts
 from adhelper.autopilot.adapters.gate_facts import SqlGateFacts
 from adhelper.autopilot.adapters.ledgered import LedgeredActions
@@ -66,8 +68,9 @@ from adhelper.business.adapters.rules_file import load_site_rules, load_tag_rule
 from adhelper.business.adapters.site_reads import SqlSiteReadQueue
 from adhelper.business.adapters.tag_checks import SqlTagCheckQueue, SqlTagChecks
 from adhelper.business.application.economics import confirmed_goal_micros
-from adhelper.business.application.site import run_site_reads
+from adhelper.business.application.site import check_url, run_site_reads
 from adhelper.business.application.tag import run_tag_checks
+from adhelper.campaigns.application.targeting import change_counters
 from adhelper.config import Settings
 from adhelper.creatives.adapters.factory import build_text_model
 from adhelper.creatives.adapters.images_sql import SqlImages
@@ -132,7 +135,7 @@ from adhelper.notifications.application.service import (
 )
 from adhelper.platforms.adapters.direct.factory import build_direct_platforms, yandex_provider
 from adhelper.platforms.adapters.gateway import RoutingGateway
-from adhelper.stats.adapters.sql import SqlReportStats, report_accounts
+from adhelper.stats.adapters.sql import SqlDashboard, SqlReportStats, report_accounts
 
 logger = logging.getLogger(__name__)
 
@@ -279,11 +282,49 @@ class Runtime:
             )
 
     async def site_tag_check(self) -> None:
+        queue = SqlTagCheckQueue(self.sessions)
+        site_rules = load_site_rules()
+
+        async def sync_found(check_id: int) -> None:
+            finished = await queue.get_finished(check_id)
+            if finished is None:
+                return
+            business_id, url, counters = finished
+            if not counters:
+                return
+            found = await SqlProfiles(self.sessions, business_id).get()
+            raw_site = found[1].strip() if found else ""
+            normalized, problem = check_url(raw_site, site_rules) if raw_site else ("", None)
+            if problem is not None or normalized != url:
+                return
+            dashboard = SqlDashboard(self.sessions, business_id)
+            accounts = await account_states(self.sessions, business_id)
+            connected = [login for login, state in accounts if state is AccountState.CONNECTED]
+            for login in connected:
+                if self.platform_for(business_id, login) is None:
+                    continue
+                from_dash = [cid for _, cid, _ in await dashboard.targetings(login)]
+                from_changes = await SqlChangeRepository.campaign_ids_for(
+                    self.sessions, business_id, login
+                )
+                campaign_ids = list(dict.fromkeys([*from_dash, *from_changes]))
+                if not campaign_ids:
+                    continue
+                req_id = f"autotag-{check_id}-{'-'.join(str(c) for c in counters)}"
+                await change_counters(
+                    self.ledger_for(business_id, login),
+                    login,
+                    campaign_ids,
+                    counters,
+                    req_id,
+                )
+
         await run_tag_checks(
-            SqlTagCheckQueue(self.sessions),
-            SafeFetcher(load_site_rules()),
+            queue,
+            SafeFetcher(site_rules),
             load_tag_rules(),
             self.clock,
+            on_finished=sync_found,
         )
 
     async def ads_keep(self) -> None:

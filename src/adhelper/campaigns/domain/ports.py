@@ -8,6 +8,8 @@ from adhelper.campaigns.domain.targeting import Schedule
 
 # Цель записи журнала о показе: отдельно от бюджета кампании, у них разная история.
 TARGETING_PREFIX = "targeting:"
+# Цель записи журнала о счётчиках Метрики кампании.
+COUNTERS_PREFIX = "counters:"
 
 
 @dataclass(frozen=True)
@@ -19,7 +21,7 @@ class Targeting:
 
 
 class TargetingControl(Protocol):
-    """Расписание и регионы кампании. Формат площадки остаётся в адаптере.
+    """Расписание, регионы и счётчики Метрики кампании. Формат площадки остаётся в адаптере.
 
     Сбой связи адаптер сообщает исключением площадки; применилось ли действие, тогда неизвестно.
     """
@@ -28,6 +30,10 @@ class TargetingControl(Protocol):
     async def set_schedule(self, account: str, campaign_id: str, schedule: Schedule) -> None: ...
     async def set_regions(
         self, account: str, campaign_id: str, regions: tuple[int, ...]
+    ) -> None: ...
+    async def read_counters(self, account: str, campaign_id: str) -> tuple[int, ...] | None: ...
+    async def set_counters(
+        self, account: str, campaign_id: str, counters: tuple[int, ...]
     ) -> None: ...
 
 

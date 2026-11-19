@@ -631,3 +631,55 @@ async def test_manual_counters_with_names_and_primary_selection(
     assert launched.status_code == 200, launched.text
     campaign = next(iter(platform.created.values())).campaign
     assert campaign.counters == (88291024, 54127669, 99887766)
+
+
+async def test_updating_counters_after_launch_syncs_existing_campaigns_via_ledger(
+    anna: Anna,  # noqa: F811
+    sessions: Sessions,
+    provider: FakeProvider,
+) -> None:
+    client, csrf, business_id = anna
+    base = f"/api/businesses/{business_id}"
+    headers = {"X-CSRF-Token": csrf}
+    await _make_ready(client, csrf, business_id, sessions, provider, check_counter=False)
+    platform = FakePlatform([], NOW)
+    _with_platform(client, platform)
+
+    # Запуск без счётчика создаёт кампанию с пустым CounterIds.
+    launched = await client.post(f"{base}/launch", headers=headers)
+    assert launched.status_code == 200, launched.text
+    created = next(iter(platform.created.values()))
+    assert created.campaign.counters == ()
+
+    # Владелец позже добавляет счётчики в настройках -> они уходят в кампанию через журнал.
+    updated = await client.put(
+        f"{base}/tag-check",
+        json={
+            "counters": [
+                {"id": 95375303, "name": "Общий Роллстар", "primary": True},
+                {"id": 109077778, "name": "Екатеринбург", "primary": False},
+            ]
+        },
+        headers=headers,
+    )
+    assert updated.status_code == 200, updated.text
+    after_update = next(iter(platform.created.values()))
+    assert after_update.campaign.counters == (95375303, 109077778)
+    async with sessions() as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT kind, status, target_ref, before, after FROM changes "
+                    "WHERE business_id = :b AND kind = 'set_counters'"
+                ),
+                {"b": business_id},
+            )
+        ).first()
+    assert row is not None
+    assert (row.kind, row.status, row.target_ref) == (
+        "set_counters",
+        "applied",
+        f"counters:{created.campaign_id}",
+    )
+    assert row.before == {"counters": []}
+    assert row.after == {"counters": [95375303, 109077778]}

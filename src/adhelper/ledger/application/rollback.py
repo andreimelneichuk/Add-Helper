@@ -22,6 +22,7 @@ INVERSE_KIND = {
     ChangeKind.ARCHIVE_AD: ChangeKind.ARCHIVE_AD,
     ChangeKind.SET_SCHEDULE: ChangeKind.SET_SCHEDULE,
     ChangeKind.SET_REGIONS: ChangeKind.SET_REGIONS,
+    ChangeKind.SET_COUNTERS: ChangeKind.SET_COUNTERS,
 }
 # Запись журнала нужна HTTP-слою, который сам домен не импортирует.
 __all__ = [
@@ -38,7 +39,7 @@ __all__ = [
 ]
 # Просьбы владельца, которые расходятся по направлениям: ключ «вид:запрос:направление».
 # Изменения автопилота сюда не входят: каждое из них — своё решение.
-REQUEST_PREFIXES = ("schedule:", "regions:", "owner:", "owner-resume:")
+REQUEST_PREFIXES = ("schedule:", "regions:", "counters:", "owner:", "owner-resume:")
 OPEN_OR_DONE = {ChangeStatus.PLANNED, ChangeStatus.APPLYING, ChangeStatus.APPLIED}
 EXHAUSTED = "attempts_exhausted"
 

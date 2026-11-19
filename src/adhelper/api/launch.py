@@ -8,6 +8,7 @@ import logging
 import re
 from dataclasses import replace
 from typing import Annotated, Any
+from uuid import uuid4
 
 from fastapi import APIRouter, Body, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -54,8 +55,10 @@ from adhelper.campaigns.application.launch import (
     preview,
     region_of,
 )
+from adhelper.campaigns.application.targeting import change_counters
 from adhelper.creatives.adapters.sql import SqlProfiles
 from adhelper.creatives.adapters.wizard import SqlWizardAds
+from adhelper.ledger.adapters.sql import SqlChangeRepository
 from adhelper.platforms.adapters.direct.transport import DirectGeoRegionAmbiguous
 from adhelper.stats.adapters.sql import SqlDashboard
 
@@ -166,6 +169,35 @@ def _counter_item(has_profile: bool, site: str, check: StoredTagCheck | None) ->
 
 def _store(request: Request, business_id: Any) -> SqlMarking:
     return SqlMarking(_sessions(request), business_id, request.app.state.cipher)
+
+
+async def _sync_campaign_counters(
+    request: Request, business_id: Any, counters: tuple[int, ...]
+) -> None:
+    sessions = _sessions(request)
+    dashboard = SqlDashboard(sessions, business_id)
+    accounts = await account_states(sessions, business_id)
+    connected = [login for login, state in accounts if state is AccountState.CONNECTED]
+    req_id = uuid4().hex
+    for login in connected:
+        platform = request.app.state.platform_for(business_id, login)
+        if platform is None:
+            continue
+        from_dash = [cid for _, cid, _ in await dashboard.targetings(login)]
+        from_changes = await SqlChangeRepository.campaign_ids_for(sessions, business_id, login)
+        campaign_ids = list(dict.fromkeys([*from_dash, *from_changes]))
+        if not campaign_ids:
+            continue
+        try:
+            await change_counters(
+                _ledger(request, business_id, platform),
+                login,
+                campaign_ids,
+                counters,
+                req_id,
+            )
+        except Exception as error:
+            logger.warning("Не удалось обновить счётчики кампаний: %s", type(error).__name__)
 
 
 def launch_router() -> APIRouter:
@@ -353,6 +385,7 @@ def launch_router() -> APIRouter:
                 status.HTTP_422_UNPROCESSABLE_CONTENT,
                 str(error),
             ) from None
+        await _sync_campaign_counters(request, business_id, saved.counters)
         return {"check": _check_view(saved), "site": url}
 
     async def readiness(

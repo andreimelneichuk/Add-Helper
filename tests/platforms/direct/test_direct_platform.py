@@ -897,6 +897,9 @@ async def test_schedule_and_regions_read_back_as_set(
     await platform.set_schedule(ACCOUNT, campaign_id, schedule)
     await platform.set_regions(ACCOUNT, campaign_id, (2, 213))
     assert await platform.read_targeting(ACCOUNT, campaign_id) == Targeting(schedule, (2, 213))
+    assert await platform.read_counters(ACCOUNT, campaign_id) == (1234567,)
+    await platform.set_counters(ACCOUNT, campaign_id, (95375303, 109077778))
+    assert await platform.read_counters(ACCOUNT, campaign_id) == (95375303, 109077778)
 
 
 def test_schedule_items_format() -> None:

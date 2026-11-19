@@ -13,7 +13,15 @@ from adhelper.stats.domain.model import AlertLine, HistoryLine, TestLine, TestOf
 MICROS_PER_RUB = 1_000_000
 # Что владелец может отменить из истории: совпадает с откатом журнала.
 UNDOABLE = frozenset(
-    {"set_limit", "resume", "pause_ad", "resume_ad", "set_schedule", "set_regions"}
+    {
+        "set_limit",
+        "resume",
+        "pause_ad",
+        "resume_ad",
+        "set_schedule",
+        "set_regions",
+        "set_counters",
+    }
 )
 # Чьи действия напоминаем: свои и сервиса. Изменения из кабинета и сами отмены — нет.
 ACTORS = frozenset({"autopilot", "ad_keeper", "user", "experiment"})
@@ -26,6 +34,7 @@ ACTION_TITLE = {
     "resume_ad": "Включил объявление",
     "set_schedule": "Изменил время показов",
     "set_regions": "Изменил регион показов",
+    "set_counters": "Обновил счётчик Метрики",
 }
 
 

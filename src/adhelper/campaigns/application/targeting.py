@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-from adhelper.campaigns.domain.ports import TARGETING_PREFIX
+from adhelper.campaigns.domain.ports import COUNTERS_PREFIX, TARGETING_PREFIX
 from adhelper.campaigns.domain.targeting import (
     Schedule,
     TargetingRules,
@@ -29,12 +29,14 @@ from adhelper.ledger.domain.ports import GatewayUnavailable
 
 # Типы домена нужны HTTP-слою, который сам домен не импортирует.
 __all__ = [
+    "COUNTERS_PREFIX",
     "TARGETING_PREFIX",
     "DisplaySummary",
     "Schedule",
     "TargetingResult",
     "TargetingRules",
     "TargetingStatus",
+    "change_counters",
     "change_regions",
     "change_schedule",
     "describe_regions",
@@ -114,6 +116,71 @@ async def change_regions(
     )
 
 
+async def change_counters(
+    ledger: Ledger,
+    account: str,
+    campaign_ids: Sequence[str],
+    counters: Sequence[int],
+    request_id: str,
+) -> TargetingResult:
+    if not campaign_ids:
+        return TargetingResult(TargetingStatus.NO_CAMPAIGNS)
+    clean = [int(c) for c in dict.fromkeys(counters)]
+    planned = {"counters": clean}
+    explanation = (
+        f"Привязал счётчик Метрики {', '.join(str(c) for c in clean)} к направлению. {UNDO}"
+        if clean
+        else f"Отвязал счётчик Метрики от направления. {UNDO}"
+    )
+    result = TargetingResult(TargetingStatus.APPLIED, planned=planned)
+    submitted: list[tuple[str, Change]] = []
+    active_statuses = {ChangeStatus.PLANNED, ChangeStatus.APPLYING, ChangeStatus.APPLIED}
+    for campaign_id in campaign_ids:
+        target_ref = f"{COUNTERS_PREFIX}{campaign_id}"
+        key = f"counters:{request_id}:{campaign_id}"
+        rows = await ledger.changes_on_target(account, target_ref)
+        if any(r.idempotency_key == key and r.status is ChangeStatus.APPLIED for r in rows):
+            result.applied.append(campaign_id)
+            continue
+        active = [r for r in rows if r.status in active_statuses]
+        if active and active[-1].planned.get("counters") == clean:
+            last = active[-1]
+            if last.status is ChangeStatus.APPLIED:
+                result.applied.append(campaign_id)
+            else:
+                submitted.append((campaign_id, last))
+            continue
+        try:
+            change = await ledger.submit(
+                ProposedChange(
+                    account=account,
+                    source=ChangeSource.USER,
+                    kind=ChangeKind.SET_COUNTERS,
+                    target_ref=target_ref,
+                    planned=planned,
+                    explanation=explanation,
+                    idempotency_key=key,
+                )
+            )
+        except GatewayUnavailable:
+            result.failed.append(campaign_id)
+            continue
+        submitted.append((campaign_id, change))
+    if submitted:
+        await ledger.execute_pending(account)
+    for campaign_id, change in submitted:
+        if await ledger.status_of(change.id) is ChangeStatus.APPLIED:
+            result.applied.append(campaign_id)
+        else:
+            result.failed.append(campaign_id)
+    order = {campaign_id: index for index, campaign_id in enumerate(campaign_ids)}
+    result.applied.sort(key=order.__getitem__)
+    result.failed.sort(key=order.__getitem__)
+    if result.failed:
+        result.status = TargetingStatus.UNCONFIRMED
+    return result
+
+
 async def _apply(
     ledger: Ledger,
     account: str,
@@ -122,13 +189,14 @@ async def _apply(
     planned: Mapping[str, Any],
     explanation: str,
     key_prefix: str,
+    target_prefix: str = TARGETING_PREFIX,
 ) -> TargetingResult:
     if not campaign_ids:
         return TargetingResult(TargetingStatus.NO_CAMPAIGNS)
     result = TargetingResult(TargetingStatus.APPLIED, planned=dict(planned))
     submitted: list[tuple[str, Change]] = []
     for campaign_id in campaign_ids:
-        target_ref = f"{TARGETING_PREFIX}{campaign_id}"
+        target_ref = f"{target_prefix}{campaign_id}"
         key = f"{key_prefix}:{campaign_id}"
         # Индекс журнала держит ключ только у незавершённых записей, поэтому готовую ищем сами.
         rows = await ledger.changes_on_target(account, target_ref)

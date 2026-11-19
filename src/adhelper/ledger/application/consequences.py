@@ -56,6 +56,13 @@ def _restored(change: Change, regions: Mapping[int, str]) -> str:
     if change.kind is ChangeKind.SET_REGIONS and isinstance(before.get("regions"), list):
         names = ", ".join(regions.get(r, str(r)) for r in before["regions"])
         return f"Вернётся прежний регион показа: {names}."
+    if change.kind is ChangeKind.SET_COUNTERS and isinstance(before.get("counters"), list):
+        prev = ", ".join(str(c) for c in before["counters"])
+        return (
+            f"Вернутся прежние счётчики Метрики: {prev}."
+            if prev
+            else "Счётчики Метрики отвяжутся от направления."
+        )
     return "Вернётся прежнее значение."
 
 

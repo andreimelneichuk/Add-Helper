@@ -15,6 +15,7 @@ class ChangeKind(StrEnum):
     ARCHIVE_AD = "archive_ad"
     SET_SCHEDULE = "set_schedule"
     SET_REGIONS = "set_regions"
+    SET_COUNTERS = "set_counters"
     # Новая кампания запуска. Отмены нет: созданное останавливают паузой, а не удалением.
     CREATE_CAMPAIGN = "create_campaign"
     # Новое объявление в работающей кампании: замена, ремонт после отказа или место в направлении.

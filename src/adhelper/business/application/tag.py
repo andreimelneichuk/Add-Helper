@@ -1,7 +1,7 @@
 """Проверка кода Метрики: воркер скачивает главную страницу, код ищет номер счётчика."""
 
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from typing import Protocol
 
@@ -51,6 +51,7 @@ async def run_tag_checks(
     rules: TagRules,
     clock: Callable[[], datetime],
     limit: int = 10,
+    on_finished: Callable[[int], Awaitable[None]] | None = None,
 ) -> int:
     done = 0
     for _ in range(limit):
@@ -65,5 +66,10 @@ async def run_tag_checks(
             logger.error("Проверка кода %s: %s", check_id, type(error).__name__)
             continue
         await queue.finish(check_id, result, clock())
+        if on_finished is not None:
+            try:
+                await on_finished(check_id)
+            except Exception as error:
+                logger.warning("Синхронизация счётчика %s: %s", check_id, type(error).__name__)
         done += 1
     return done

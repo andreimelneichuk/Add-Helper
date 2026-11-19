@@ -314,6 +314,19 @@ class SqlTagCheckQueue:
                 )
             )
 
+    async def get_finished(self, check_id: int) -> tuple[UUID, str, tuple[int, ...]] | None:
+        async with self._sessions() as session:
+            row = (
+                await session.execute(
+                    select(CHECKS.c.business_id, CHECKS.c.url, CHECKS.c.counters)
+                    .where(CHECKS.c.id == check_id, CHECKS.c.status == TagStatus.FOUND.value)
+                    .limit(1)
+                )
+            ).first()
+        if row is None:
+            return None
+        return UUID(str(row.business_id)), str(row.url), tuple(int(c) for c in (row.counters or ()))
+
 
 def _to_stored(row: Any) -> StoredTagCheck:
     counters = tuple(int(n) for n in (row.counters or ()))

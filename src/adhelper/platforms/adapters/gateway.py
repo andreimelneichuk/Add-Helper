@@ -4,6 +4,7 @@ from typing import Any
 from adhelper.budget.domain.ports import PlatformRejected, PlatformUnavailable
 from adhelper.campaigns.domain.launch import LAUNCH_PREFIX, NewCampaign
 from adhelper.campaigns.domain.ports import (
+    COUNTERS_PREFIX,
     TARGETING_PREFIX,
     CampaignLauncher,
     TargetingControl,
@@ -162,6 +163,12 @@ class RoutingGateway:
                     "schedule": found.schedule.as_planned(),
                     "regions": list(found.regions),
                 }
+            if target_ref.startswith(COUNTERS_PREFIX):
+                campaign_id = target_ref.removeprefix(COUNTERS_PREFIX)
+                counters = await self._targeting_control().read_counters(account, campaign_id)
+                if counters is None:
+                    return {}
+                return {"counters": list(counters)}
         except PlatformUnavailable as error:
             raise GatewayUnavailable(str(error)) from error
         return await self._campaigns.read(account, target_ref)
@@ -207,6 +214,14 @@ class RoutingGateway:
                 return
             if target_ref.startswith(TARGETING_PREFIX):
                 await self._apply_targeting(account, kind, target_ref, planned)
+                return
+            if target_ref.startswith(COUNTERS_PREFIX):
+                if kind is not ChangeKind.SET_COUNTERS:
+                    raise ValueError(f"{kind} не меняет счётчики Метрики")
+                campaign_id = target_ref.removeprefix(COUNTERS_PREFIX)
+                await self._targeting_control().set_counters(
+                    account, campaign_id, tuple(int(c) for c in planned["counters"])
+                )
                 return
             await self._campaigns.apply(account, kind, target_ref, planned)
         except PlatformRejected as error:

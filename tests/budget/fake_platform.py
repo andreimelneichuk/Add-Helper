@@ -147,6 +147,24 @@ class FakePlatform:
         self.targeting[campaign_id] = replace(current, regions=regions)
         self._check_fault("set_regions", after_apply=True)
 
+    async def read_counters(self, account: str, campaign_id: str) -> tuple[int, ...] | None:
+        self._check_fault("read_counters", after_apply=False)
+        for created in self.created.values():
+            if created.campaign_id == campaign_id:
+                return created.campaign.counters
+        if campaign_id not in self.campaigns:
+            return None
+        return ()
+
+    async def set_counters(self, account: str, campaign_id: str, counters: tuple[int, ...]) -> None:
+        self._check_fault("set_counters", after_apply=False)
+        for marker, created in list(self.created.items()):
+            if created.campaign_id == campaign_id:
+                self.created[marker] = replace(
+                    created, campaign=replace(created.campaign, counters=counters)
+                )
+        self._check_fault("set_counters", after_apply=True)
+
     async def find_campaign(self, account: str, marker: str) -> CreatedCampaign | None:
         self._check_fault("find_campaign", after_apply=False)
         return self.created.get(marker)

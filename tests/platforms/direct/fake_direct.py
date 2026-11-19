@@ -134,15 +134,18 @@ class FakeDirect:
                 campaign["TimeTargeting"] = item["TimeTargeting"]
             for key in ("UnifiedCampaign", "TextCampaign"):
                 if key in item:
-                    strategy = campaign[key]["BiddingStrategy"]
-                    for side, update in item[key]["BiddingStrategy"].items():
-                        merged = dict(strategy[side])
-                        for param, value in update.items():
-                            if isinstance(value, dict):
-                                merged[param] = {**merged.get(param, {}), **value}
-                            else:
-                                merged[param] = value
-                        strategy[side] = merged
+                    if "CounterIds" in item[key]:
+                        campaign[key]["CounterIds"] = item[key]["CounterIds"]
+                    if "BiddingStrategy" in item[key]:
+                        strategy = campaign[key]["BiddingStrategy"]
+                        for side, update in item[key]["BiddingStrategy"].items():
+                            merged = dict(strategy[side])
+                            for param, value in update.items():
+                                if isinstance(value, dict):
+                                    merged[param] = {**merged.get(param, {}), **value}
+                                else:
+                                    merged[param] = value
+                            strategy[side] = merged
             results.append({"Id": item["Id"]})
         return {"UpdateResults": results}
 

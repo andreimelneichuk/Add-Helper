@@ -1162,6 +1162,36 @@ class DirectPlatform:
         )
         check_results(result.get("UpdateResults") or [])
 
+    async def read_counters(self, account: str, campaign_id: str) -> tuple[int, ...] | None:
+        found = await self._campaigns(account, [int(campaign_id)])
+        if not found:
+            return None
+        key = CAMPAIGN_TYPE_KEYS.get(str(found[0].get("Type"))) or "UnifiedCampaign"
+        items = ((found[0].get(key) or {}).get("CounterIds") or {}).get("Items") or []
+        return tuple(int(c) for c in items)
+
+    async def set_counters(self, account: str, campaign_id: str, counters: tuple[int, ...]) -> None:
+        found = await self._campaigns(account, [int(campaign_id)])
+        if not found:
+            raise DirectRejected(None, f"campaign {campaign_id} not found")
+        key = CAMPAIGN_TYPE_KEYS.get(str(found[0].get("Type"))) or "UnifiedCampaign"
+        result = await self._call(
+            account,
+            "campaigns",
+            "update",
+            {
+                "Campaigns": [
+                    {
+                        "Id": int(campaign_id),
+                        key: {
+                            "CounterIds": {"Items": list(counters)} if counters else None,
+                        },
+                    }
+                ]
+            },
+        )
+        check_results(result.get("UpdateResults") or [])
+
     # --- Запуск ---
 
     async def _launch_campaign(self, account: str, marker: str) -> Mapping[str, Any] | None:
