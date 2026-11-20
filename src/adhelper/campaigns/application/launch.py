@@ -21,6 +21,7 @@ from adhelper.campaigns.domain.keywords import (
     KEYWORDS_EXPANSION_SCHEMA,
     KEYWORDS_EXPANSION_SYSTEM,
     generate_keywords,
+    negative_keywords,
     parse_synonyms_response,
 )
 from adhelper.campaigns.domain.launch import (
@@ -70,6 +71,7 @@ __all__ = [
     "generate_keywords",
     "launch",
     "launch_state",
+    "negative_keywords",
     "preview",
     "region_of",
 ]
@@ -92,6 +94,7 @@ class LaunchInputs:
     address: str
     counters: tuple[int, ...]
     keywords: tuple[str, ...] = ()
+    negative_keywords: tuple[str, ...] = ()
     region_id: int | None = None
     city_name: str = ""
 
@@ -145,6 +148,7 @@ def _plan(key: str, inputs: LaunchInputs, period: BudgetPeriod, rules: LaunchRul
         rules,
         keywords=inputs.keywords,
         region_id=inputs.region_id,
+        negative_keywords=inputs.negative_keywords,
     )
 
 

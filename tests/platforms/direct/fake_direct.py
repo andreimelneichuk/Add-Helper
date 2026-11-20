@@ -12,6 +12,15 @@ from typing import Any
 import httpx
 
 UNITS = "10/159990/160000"
+
+
+def _negatives(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Директ хранит минус-слова по алфавиту: повтор не должен слать то же самое снова."""
+    if not value:
+        return value
+    return {"Items": sorted(value.get("Items") or [])}
+
+
 PASSIVE = {"SERVING_OFF", "NETWORK_DEFAULT"}
 
 
@@ -119,6 +128,7 @@ class FakeDirect:
                     "BiddingStrategy": item["UnifiedCampaign"]["BiddingStrategy"],
                     "CounterIds": item["UnifiedCampaign"].get("CounterIds"),
                 },
+                "NegativeKeywords": _negatives(item.get("NegativeKeywords")),
             }
             results.append({"Id": campaign_id})
         return {"AddResults": results}
@@ -132,6 +142,8 @@ class FakeDirect:
                 continue
             if "TimeTargeting" in item:
                 campaign["TimeTargeting"] = item["TimeTargeting"]
+            if "NegativeKeywords" in item:
+                campaign["NegativeKeywords"] = _negatives(item["NegativeKeywords"])
             for key in ("UnifiedCampaign", "TextCampaign"):
                 if key in item:
                     if "CounterIds" in item[key]:

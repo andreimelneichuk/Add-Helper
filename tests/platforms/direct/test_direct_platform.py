@@ -259,6 +259,16 @@ class Replay(httpx.AsyncBaseTransport):
         for image in body.get("params", {}).get("AdImages", []):
             data = base64.b64decode(image["ImageData"])
             image["ImageData"] = "sha256:" + hashlib.sha256(data).hexdigest()
+        # Записи до 2026-11-20 не просили минус-слова кампании: поле добавлено позже.
+        fields = body.get("params", {}).get("FieldNames")
+        recorded_fields = entry["request"].get("params", {}).get("FieldNames")
+        if (
+            fields
+            and recorded_fields is not None
+            and "NegativeKeywords" in fields
+            and "NegativeKeywords" not in recorded_fields
+        ):
+            fields.remove("NegativeKeywords")
         # Записи до 2026-11-05 вечера не просили AdImageHash: поле добавлено позже.
         names = body.get("params", {}).get("TextAdFieldNames")
         recorded = entry["request"].get("params", {}).get("TextAdFieldNames")
@@ -721,6 +731,46 @@ async def test_launch_reads_back_exactly_the_plan(
     assert budget[side]["WbMaximumClicks"]["CustomPeriodBudget"]["AutoContinue"] == "NO"
     follows = "NETWORK_DEFAULT" if placement is Placement.ALL else "SERVING_OFF"
     assert budget[other] == {"BiddingStrategyType": follows}
+
+
+async def test_launch_sends_negative_keywords(platform: DirectPlatform, direct: FakeDirect) -> None:
+    campaign = launch()
+    campaign = NewCampaign(**{**campaign.__dict__, "negative_keywords": ("рецепт", "вакансии")})
+
+    await platform.create_campaign(ACCOUNT, campaign)
+
+    stored = next(iter(direct.campaigns.values()))
+    assert stored["NegativeKeywords"] == {"Items": ["вакансии", "рецепт"]}
+    found = await platform.find_campaign(ACCOUNT, "ah-k1-1")
+    assert found is not None
+    assert sorted(found.campaign.negative_keywords) == ["вакансии", "рецепт"]
+
+
+async def test_launch_adds_negative_keywords_to_an_existing_campaign(
+    platform: DirectPlatform, direct: FakeDirect
+) -> None:
+    await platform.create_campaign(ACCOUNT, launch())
+    campaign = launch()
+    campaign = NewCampaign(**{**campaign.__dict__, "negative_keywords": ("рецепт",)})
+
+    await platform.create_campaign(ACCOUNT, campaign)
+
+    stored = next(iter(direct.campaigns.values()))
+    assert stored["NegativeKeywords"] == {"Items": ["рецепт"]}
+    assert "campaigns.update" in direct.calls
+
+
+async def test_launch_does_not_repeat_the_same_negative_keywords(
+    platform: DirectPlatform, direct: FakeDirect
+) -> None:
+    campaign = launch()
+    campaign = NewCampaign(**{**campaign.__dict__, "negative_keywords": ("рецепт", "вакансии")})
+    await platform.create_campaign(ACCOUNT, campaign)
+    updates = direct.calls.count("campaigns.update")
+
+    await platform.create_campaign(ACCOUNT, campaign)
+
+    assert direct.calls.count("campaigns.update") == updates
 
 
 async def test_launch_retry_finishes_without_duplicates(

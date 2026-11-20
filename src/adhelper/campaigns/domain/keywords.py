@@ -41,17 +41,117 @@ STOP_WORDS = frozenset(
     }
 )
 
-# Коммерческие модификаторы для формирования целевых запросов
-INTENT_MODIFIERS = (
-    "цена",
-    "стоимость",
-    "записаться",
-    "запись",
-    "рядом",
-    "недорого",
-    "отзывы",
+# Общие коммерческие уточнения: подходят любому бизнесу.
+UNIVERSAL_MODIFIERS = ("цена", "стоимость", "недорого", "рядом", "отзывы")
+
+# Салонам и мастерам: запись и есть покупка.
+SALON_MODIFIERS = ("салон", "записаться", "запись")
+
+# Доставке еды: заказ и доставка, а не визит в салон.
+DELIVERY_MODIFIERS = ("доставка", "заказать")
+
+SALON_WORDS = (
     "салон",
+    "красот",
+    "парикмахер",
+    "барбер",
+    "маникюр",
+    "педикюр",
+    "бров",
+    "ресниц",
+    "косметолог",
+    "массаж",
+    "эпиляц",
+    "визаж",
+    "стрижк",
 )
+
+DELIVERY_WORDS = (
+    "доставк",
+    "еда",
+    "еды",
+    "общепит",
+    "кафе",
+    "ресторан",
+    "пицц",
+    "суши",
+    "роллы",
+)
+
+# Единицы измерения из названий товаров: «сет 1208 г / 48 шт» — это вес и количество,
+# а не часть названия. В поисковую фразу они не идут.
+UNIT_WORDS = frozenset(
+    {"г", "гр", "кг", "мл", "л", "шт", "см", "мм", "уп", "порц", "порция", "кал"}
+)
+
+# Слова, которые приводят не покупателей, а читателей и соискателей.
+BASIC_NEGATIVE = (
+    "бесплатно",
+    "своими руками",
+    "работа",
+    "вакансии",
+    "обучение",
+    "курсы",
+    "авито",
+    "юла",
+    "скачать",
+    "фото",
+    "видео",
+)
+
+DELIVERY_NEGATIVE = (
+    *BASIC_NEGATIVE,
+    "рецепт",
+    "рецепты",
+    "как приготовить",
+    "приготовление",
+    "калории",
+    "калорийность",
+    "состав",
+    "оптом",
+    "франшиза",
+)
+
+SALON_NEGATIVE = (*BASIC_NEGATIVE, "сделать самой", "пошагово", "схема")
+
+
+def _mentions(niche: str, words: tuple[str, ...]) -> bool:
+    """Ищет слово или основу слова целиком, а не внутри другого: «победа» — не еда."""
+    padded = f" {re.sub(r'[^\w]+', ' ', niche.casefold()).strip()} "
+    return any(f" {word}" in padded for word in words)
+
+
+def _modifiers_for(niche: str) -> tuple[str, ...]:
+    """Уточнения по нише. Неизвестная ниша получает только общие слова.
+
+    «Салон» и «записаться» у доставки еды собирают мусорные запросы, поэтому ниша
+    выбирает их явно, а не получает по умолчанию.
+    """
+    if _mentions(niche, DELIVERY_WORDS):
+        return UNIVERSAL_MODIFIERS + DELIVERY_MODIFIERS
+    if _mentions(niche, SALON_WORDS):
+        return UNIVERSAL_MODIFIERS + SALON_MODIFIERS
+    return UNIVERSAL_MODIFIERS
+
+
+def negative_keywords(niche: str) -> tuple[str, ...]:
+    """Минус-слова кампании: что отсечь, чтобы бюджет не уходил читателям."""
+    if _mentions(niche, DELIVERY_WORDS):
+        return DELIVERY_NEGATIVE
+    if _mentions(niche, SALON_WORDS):
+        return SALON_NEGATIVE
+    return BASIC_NEGATIVE
+
+
+def _with_modifier(base: str, modifier: str, city: str = "") -> str:
+    if modifier in ("записаться", "запись"):
+        phrase = f"{modifier} на {base}"
+    elif modifier in ("доставка", "заказать"):
+        phrase = f"{modifier} {base}"
+    else:
+        phrase = f"{base} {modifier}"
+    return f"{phrase} {city}".strip()
+
 
 KEYWORDS_EXPANSION_SYSTEM = (
     "Ты — специалист по контекстной рекламе в Яндекс Директе.\n"
@@ -148,7 +248,7 @@ def _clean_service_name(name: str) -> str:
     # Удаляем знаки препинания и спецсимволы
     text = re.sub(r"[^\w\s-]", " ", text)
     # Нормализуем пробелы
-    words = [w for w in text.split() if w not in STOP_WORDS]
+    words = [w for w in text.split() if w not in STOP_WORDS and w not in UNIT_WORDS]
     # Ограничиваем базовое название услуги максимум 3 словами
     return " ".join(words[:3])
 
@@ -186,6 +286,7 @@ def generate_keywords(
     При include_autotargeting=True первым элементом возвращается `---autotargeting`.
     """
     detected_city = (city or _extract_city(address)).lower().strip()
+    modifiers = _modifiers_for(niche)
     results: list[str] = []
     seen: set[str] = set()
 
@@ -218,23 +319,17 @@ def generate_keywords(
             add(city_phrase)
             service_added += 1
 
-            for mod in INTENT_MODIFIERS:
+            for mod in modifiers:
                 if service_added >= max_per_service:
                     break
-                if mod in ("записаться", "запись"):
-                    add(f"{mod} на {base} {detected_city}")
-                else:
-                    add(f"{base} {mod} {detected_city}")
+                add(_with_modifier(base, mod, detected_city))
                 service_added += 1
 
         # 2. Коммерческие запросы без города (для локального радиуса / поиска)
-        for mod in INTENT_MODIFIERS:
+        for mod in modifiers:
             if service_added >= max_per_service:
                 break
-            if mod in ("записаться", "запись"):
-                add(f"{mod} на {base}")
-            else:
-                add(f"{base} {mod}")
+            add(_with_modifier(base, mod))
             service_added += 1
 
     # Если услуг не было, но указана ниша — добавляем общие запросы ниши

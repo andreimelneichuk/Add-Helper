@@ -52,6 +52,7 @@ from adhelper.campaigns.application.launch import (
     generate_keywords,
     launch,
     launch_state,
+    negative_keywords,
     preview,
     region_of,
 )
@@ -517,6 +518,7 @@ def launch_router() -> APIRouter:
             href=site,
             address=address,
             counters=tuple(counters),
+            negative_keywords=tuple(negative_keywords(found[0].niche)),
         )
         launch_rules = load_launch_rules()
         mentioned_cities = {

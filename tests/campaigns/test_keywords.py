@@ -5,6 +5,7 @@ from adhelper.campaigns.domain.keywords import (
     AUTOTARGETING_KEYWORD,
     STOP_WORDS,
     generate_keywords,
+    negative_keywords,
     parse_synonyms_response,
 )
 from adhelper.creatives.domain.model import ModelReply, ModelUnavailable, Service
@@ -172,3 +173,59 @@ async def test_expand_keywords_with_model_failure_fallback(
     assert keywords[0] == AUTOTARGETING_KEYWORD
     assert "стрижка волос казань" in keywords
     assert "обрезано лимитом модели" in caplog.text
+
+
+def test_delivery_keywords_use_delivery_words_not_salon() -> None:
+    """Доставка еды: «доставка» и «заказать», а не «салон» и «записаться»."""
+    services = [Service("Чеддер на Урале 964 г / 32 шт", 699)]
+    keywords = generate_keywords(services, niche="доставка еды", city="Екатеринбург")
+
+    assert "доставка чеддер на урале екатеринбург" in keywords
+    assert "заказать чеддер на урале екатеринбург" in keywords
+    assert not any("салон" in k or "запис" in k for k in keywords)
+
+
+def test_weight_and_pieces_do_not_become_part_of_the_phrase() -> None:
+    services = [Service("Зачетный сет ±1208 г / 48 шт", 869)]
+    keywords = generate_keywords(services, niche="доставка еды", city="Екатеринбург")
+
+    assert "зачетный сет екатеринбург" in keywords
+    assert not any(" сет г" in k or " шт" in k for k in keywords)
+
+
+def test_salon_keywords_keep_salon_words() -> None:
+    services = [Service("Маникюр")]
+    keywords = generate_keywords(services, niche="салон красоты", city="Пермь")
+
+    assert "маникюр салон пермь" in keywords
+    assert "записаться на маникюр пермь" in keywords
+
+
+def test_niche_is_matched_by_whole_word() -> None:
+    """«Победа» не содержит «еда»: ниша ищется словом, а не подстрокой."""
+    keywords = generate_keywords([Service("Ремонт")], niche="Победа", city="Москва")
+
+    assert not any("доставка" in k for k in keywords)
+
+
+def test_unknown_niche_does_not_add_salon_words() -> None:
+    """Неизвестная ниша — только общие слова: чужие «салон» и «запись» хуже молчания."""
+    keywords = generate_keywords([Service("Ремонт холодильников")], city="Тюмень")
+
+    assert not any("салон" in k or "запис" in k for k in keywords)
+
+
+def test_delivery_negative_keywords_filter_recipes_and_jobs() -> None:
+    negatives = negative_keywords("доставка еды")
+
+    assert "рецепт" in negatives
+    assert "как приготовить" in negatives
+    assert "вакансии" in negatives
+    assert "франшиза" in negatives
+
+
+def test_unknown_niche_has_basic_negative_keywords() -> None:
+    negatives = negative_keywords("")
+
+    assert "бесплатно" in negatives
+    assert "вакансии" in negatives

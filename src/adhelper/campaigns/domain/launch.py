@@ -110,6 +110,8 @@ class NewCampaign:
     counters: tuple[int, ...]
     ads: tuple[NewAd, ...]
     keywords: tuple[str, ...] = ()
+    # Минус-слова кампании: отсекают запросы, которые не приводят покупателей.
+    negative_keywords: tuple[str, ...] = ()
 
     @property
     def target_ref(self) -> str:
@@ -137,6 +139,7 @@ class NewCampaign:
         }
         if self.keywords:
             data["keywords"] = list(self.keywords)
+        data["negative_keywords"] = list(self.negative_keywords)
         return data
 
     @staticmethod
@@ -160,6 +163,7 @@ class NewCampaign:
                 for a in planned["ads"]
             ),
             keywords=tuple(str(k) for k in planned.get("keywords", ())),
+            negative_keywords=tuple(str(k) for k in planned.get("negative_keywords", ())),
         )
 
 
@@ -206,6 +210,7 @@ def plan_launch(
     rules: LaunchRules,
     keywords: Sequence[str] = (),
     region_id: int | None = None,
+    negative_keywords: Sequence[str] = (),
 ) -> LaunchPlan:
     if not ads:
         return LaunchPlan((), LaunchProblem.NO_ADS)
@@ -245,6 +250,7 @@ def plan_launch(
             counters=tuple(counters),
             ads=chosen,
             keywords=tuple(keywords),
+            negative_keywords=tuple(negative_keywords),
         )
         for index, placement in enumerate(placements)
     )

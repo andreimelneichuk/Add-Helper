@@ -102,6 +102,22 @@ def test_planned_survives_the_journal() -> None:
     assert NewCampaign.from_planned(campaign.marker, campaign.planned()) == campaign
 
 
+def test_negative_keywords_survive_the_journal() -> None:
+    [campaign] = plan_launch(
+        "k1",
+        "Роллстар",
+        _period(20_000),
+        ADS,
+        "https://rollstar.ru/ekb/",
+        "Екатеринбург",
+        (),
+        RULES,
+        negative_keywords=("рецепт", "вакансии"),
+    ).campaigns
+    assert campaign.negative_keywords == ("рецепт", "вакансии")
+    assert NewCampaign.from_planned(campaign.marker, campaign.planned()) == campaign
+
+
 @given(
     rubles=st.integers(min_value=0, max_value=10_000_000),
     reserve_bp=st.integers(min_value=0, max_value=10_000),

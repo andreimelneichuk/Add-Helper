@@ -405,7 +405,15 @@ class DirectPlatform:
             "get",
             {
                 "SelectionCriteria": criteria,
-                "FieldNames": ["Id", "Name", "Type", "State", "Status", *extra],
+                "FieldNames": [
+                    "Id",
+                    "Name",
+                    "Type",
+                    "State",
+                    "Status",
+                    "NegativeKeywords",
+                    *extra,
+                ],
                 "UnifiedCampaignFieldNames": ["BiddingStrategy", "CounterIds"],
                 "TextCampaignFieldNames": ["BiddingStrategy", "CounterIds"],
             },
@@ -1224,6 +1232,7 @@ class DirectPlatform:
             "Items"
         ) or []
         text_ads = [ad.get("TextAd") or {} for ad in ads]
+        negatives = ((campaign.get("NegativeKeywords") or {}).get("Items")) or []
         restored = NewCampaign(
             marker=marker,
             name=str(campaign["Name"]),
@@ -1234,6 +1243,7 @@ class DirectPlatform:
             href=unmark_href(str(text_ads[0].get("Href") or ""))[0] if text_ads else "",
             counters=tuple(int(c) for c in counters),
             ads=tuple(NewAd(str(t.get("Title") or ""), str(t.get("Text") or "")) for t in text_ads),
+            negative_keywords=tuple(str(item) for item in negatives),
         )
         return CreatedCampaign(str(campaign_id), restored, tuple(str(ad["Id"]) for ad in ads))
 
@@ -1267,24 +1277,40 @@ class DirectPlatform:
             unified: dict[str, Any] = {"BiddingStrategy": self._strategy_for(campaign, start)}
             if campaign.counters:
                 unified["CounterIds"] = {"Items": list(campaign.counters)}
+            payload: dict[str, Any] = {
+                "Name": campaign.name,
+                "StartDate": start.isoformat(),
+                "EndDate": last_day_of(campaign.ends_at).isoformat(),
+                "UnifiedCampaign": unified,
+            }
+            if campaign.negative_keywords:
+                payload["NegativeKeywords"] = {"Items": list(campaign.negative_keywords)}
             result = await self._call(
                 account,
                 "campaigns",
                 "add",
-                {
-                    "Campaigns": [
-                        {
-                            "Name": campaign.name,
-                            "StartDate": start.isoformat(),
-                            "EndDate": last_day_of(campaign.ends_at).isoformat(),
-                            "UnifiedCampaign": unified,
-                        }
-                    ]
-                },
+                {"Campaigns": [payload]},
             )
             campaign_id = check_results(result.get("AddResults") or [])[0]
         else:
             campaign_id = int(existing["Id"])
+            if campaign.negative_keywords:
+                current = ((existing.get("NegativeKeywords") or {}).get("Items")) or []
+                if sorted(str(item) for item in current) != sorted(campaign.negative_keywords):
+                    # Кампания уже создана прошлым запуском: минус-слова досылаем отдельно.
+                    await self._call(
+                        account,
+                        "campaigns",
+                        "update",
+                        {
+                            "Campaigns": [
+                                {
+                                    "Id": campaign_id,
+                                    "NegativeKeywords": {"Items": list(campaign.negative_keywords)},
+                                }
+                            ]
+                        },
+                    )
         groups = await self._groups(account, campaign_id)
         if not groups:
             result = await self._call(
