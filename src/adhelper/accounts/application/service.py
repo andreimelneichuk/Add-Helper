@@ -54,7 +54,8 @@ FLOW_TTL = timedelta(minutes=10)
 SESSION_TTL = timedelta(days=30)
 REFRESH_MARGIN = timedelta(minutes=5)
 LOGIN_SCOPES = ("login:info", "login:email")
-CONNECT_SCOPES = ("direct:api", "login:info")
+# Метрика нужна, чтобы отличать обращения от просмотров и читать визиты с рекламы.
+CONNECT_SCOPES = ("direct:api", "login:info", "metrika:read")
 DIRECT_PLATFORM = "yandex_direct"
 # Токен, выданный вручную, живёт около года и не обновляется: срок берём с запасом.
 MANUAL_TOKEN_LIFETIME = timedelta(days=330)

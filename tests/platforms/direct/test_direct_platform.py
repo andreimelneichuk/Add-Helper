@@ -1032,6 +1032,23 @@ async def test_reports_count_only_lead_goals_when_the_counter_is_known(
     await client.aclose()
 
 
+async def test_reports_stop_when_metrika_goals_are_unavailable(
+    direct: FakeDirect,
+) -> None:
+    """Нет доступа к целям — отчёт не сохраняем: иначе цена обращения посчитает просмотры."""
+
+    async def goals(account: str) -> list[int]:
+        raise PlatformUnavailable("metrika status 403")
+
+    client = DirectHttpClient(transport=direct.transport(), sleep=_no_sleep)
+    platform = DirectPlatform(client, _token, lambda: NOW, goals_for=goals)
+    direct.report_rows = [("2026-11-09", "101", 57_550_000)]
+
+    with pytest.raises(PlatformUnavailable):
+        await platform.campaign_days(ACCOUNT, ["101"], date(2026, 11, 9), date(2026, 11, 9))
+    await client.aclose()
+
+
 async def test_reports_without_goals_do_not_send_a_goal_filter(
     platform: DirectPlatform, direct: FakeDirect
 ) -> None:

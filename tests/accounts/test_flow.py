@@ -128,6 +128,22 @@ async def test_login_connect_and_list_account(browser: Browser, provider: FakePr
     assert [(a["login"], a["state"]) for a in listed] == [("anna-direct", "connected")]
 
 
+async def test_connect_asks_for_metrika_read(browser: Browser, provider: FakeProvider) -> None:
+    """Без прав Метрики не прочитать цели и визиты: счётчик найдётся, а отчёты встанут."""
+    client = browser()
+    csrf = await _login(client, provider, ANNA)
+    business_id = await _business(client, csrf)
+
+    start = await client.post(
+        f"/api/businesses/{business_id}/accounts/connect", headers={"X-CSRF-Token": csrf}
+    )
+
+    assert start.status_code == 200
+    scopes = _query(start.json()["authorize_url"])["scope"].split()
+    assert "direct:api" in scopes
+    assert "metrika:read" in scopes
+
+
 async def test_session_cookie_is_protected(browser: Browser, provider: FakeProvider) -> None:
     client = browser()
     start = await client.get("/api/auth/yandex/login")
