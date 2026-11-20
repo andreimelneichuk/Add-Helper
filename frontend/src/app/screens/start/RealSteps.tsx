@@ -374,6 +374,28 @@ export function RealCode({ store, s }: Props) {
     void saveCounters(remaining);
   };
   const found = check?.status === "found";
+  const cityCounters = check?.city_counters ?? {};
+  const defaultCity = check?.default_city_id ?? null;
+  const defaultCityKey = defaultCity === null
+    ? null
+    : Object.keys(cityCounters).find((cityId) => Number(cityId) === Number(defaultCity)) ?? null;
+  const defaultCounter = defaultCityKey === null ? null : cityCounters[defaultCityKey] ?? null;
+  const detected = Object.entries(cityCounters)
+    .map(([cityId, id]) => ({ cityId, id }))
+    .filter((item) => !counters.includes(item.id))
+    .sort((a, b) => {
+      const byDefault = Number(b.cityId === defaultCityKey) - Number(a.cityId === defaultCityKey);
+      return byDefault || a.id - b.id;
+    })
+    .filter((item, index, all) => all.findIndex((other) => other.id === item.id) === index);
+  const addDetected = (id: number, makeItPrimary: boolean) => {
+    const base = currentItems().filter((item) => item.id !== id);
+    const named = { id, name: (namesDraft[String(id)] ?? "").trim() || undefined };
+    const items = makeItPrimary
+      ? [{ ...named, primary: true }, ...base.map((item) => ({ ...item, primary: false }))]
+      : [...base, { ...named, primary: base.length === 0 }];
+    void saveCounters(items);
+  };
   return (
     <div className="st-link">
       <div className="st-link-text">
@@ -429,6 +451,28 @@ export function RealCode({ store, s }: Props) {
                 );
               })}
             </ul>
+          </div>
+        )}
+        {api?.saveTagCheck && !waiting && detected.length > 0 && (
+          <div role="group" aria-label="Счётчики городов на сайте" style={{ marginTop: "10px" }}>
+            <p className="ah-muted" style={{ marginBottom: "6px" }}>
+              {defaultCounter !== null
+                ? `На сайте есть отдельные счётчики для городов. Основной город сайта считает счётчик ${defaultCounter}. Если реклама идёт по нему, сделайте его основным: тогда визиты и заявки посчитаются по городу.`
+                : "На сайте есть отдельные счётчики для городов. Добавьте тот, по которому идёт реклама."}
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+              {detected.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="ah-btn"
+                  disabled={busy}
+                  onClick={() => addDetected(item.id, item.cityId === defaultCityKey)}
+                >
+                  {item.cityId === defaultCityKey ? `Сделать основным ${item.id}` : `Добавить ${item.id}`}
+                </button>
+              ))}
+            </div>
           </div>
         )}
         {api?.saveTagCheck && (

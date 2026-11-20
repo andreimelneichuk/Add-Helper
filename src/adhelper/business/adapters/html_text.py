@@ -6,7 +6,7 @@ from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from adhelper.business.domain.ports import FetchedPage, Link
-from adhelper.business.domain.tag import find_counters
+from adhelper.business.domain.tag import find_city_counters, find_counters, find_default_city_id
 
 SKIP = frozenset({"script", "style", "noscript", "template", "svg", "iframe", "head", "object"})
 BLOCK = frozenset(
@@ -138,7 +138,13 @@ def page_from_html(url: str, html: str, markers: Sequence[str] = ()) -> FetchedP
             seen.add(target)
             links.append(Link(target, _clean("".join(text))))
     return FetchedPage(
-        url, "\n".join(lines), tuple(links), find_counters(html), find_builders(html, markers)
+        url,
+        "\n".join(lines),
+        tuple(links),
+        counters=find_counters(html),
+        city_counters=find_city_counters(html),
+        default_city_id=find_default_city_id(html),
+        builders=find_builders(html, markers),
     )
 
 

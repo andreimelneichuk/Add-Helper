@@ -11,7 +11,9 @@ from adhelper.business.domain.tag import (
     TagResult,
     TagRules,
     TagStatus,
+    find_city_counters,
     find_counters,
+    find_default_city_id,
 )
 
 __all__ = [
@@ -20,7 +22,9 @@ __all__ = [
     "TagRules",
     "TagStatus",
     "check_tag",
+    "find_city_counters",
     "find_counters",
+    "find_default_city_id",
     "run_tag_checks",
 ]
 
@@ -41,8 +45,17 @@ async def check_tag(url: str, fetcher: SiteFetcher) -> TagResult:
     except SiteUnavailable as error:
         return TagResult(TagStatus.FAILED, problem=error.problem.value)
     if page.counters:
-        return TagResult(TagStatus.FOUND, tuple(page.counters))
-    return TagResult(TagStatus.MISSING)
+        return TagResult(
+            TagStatus.FOUND,
+            tuple(page.counters),
+            city_counters=page.city_counters,
+            default_city_id=page.default_city_id,
+        )
+    return TagResult(
+        TagStatus.MISSING,
+        city_counters=page.city_counters,
+        default_city_id=page.default_city_id,
+    )
 
 
 async def run_tag_checks(

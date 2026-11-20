@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol
@@ -42,6 +42,10 @@ class FetchedPage:
     builders: tuple[str, ...] = ()
     # Адреса картинок из разметки после скриптов: кандидаты в фото для объявлений.
     images: tuple[str, ...] = ()
+    # Региональные счётчики сайта: id города на сайте -> номер счётчика ("1" -> 109077778).
+    city_counters: dict[str, int] = field(default_factory=dict)
+    # Город сайта по умолчанию (`defaultCityId`): его счётчик и есть счётчик основного города.
+    default_city_id: str | None = None
 
 
 class SiteFetcher(Protocol):

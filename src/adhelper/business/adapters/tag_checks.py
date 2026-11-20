@@ -1,3 +1,4 @@
+import contextlib
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta
 from typing import Any
@@ -40,6 +41,8 @@ CHECKS = table(
     column("attempts", Integer),
     column("counters", ARRAY(BigInteger)),
     column("counter_names", JSONB),
+    column("city_counters", JSONB),
+    column("default_city_id", Text),
     column("problem", Text),
     column("rules_version", Text),
     column("created_at", DateTime(timezone=True)),
@@ -82,7 +85,12 @@ class SqlTagChecks:
                 raise TooManyChecks
             prev = (
                 await session.execute(
-                    select(CHECKS.c.counters, CHECKS.c.counter_names)
+                    select(
+                        CHECKS.c.counters,
+                        CHECKS.c.counter_names,
+                        CHECKS.c.city_counters,
+                        CHECKS.c.default_city_id,
+                    )
                     .where(
                         mine,
                         CHECKS.c.url == url,
@@ -98,6 +106,11 @@ class SqlTagChecks:
                 if prev is not None and isinstance(prev.counter_names, dict)
                 else {}
             )
+            prev_city_counters = (
+                prev.city_counters
+                if prev is not None and isinstance(prev.city_counters, dict)
+                else {}
+            )
             new_id = await session.scalar(
                 insert(CHECKS)
                 .values(
@@ -105,6 +118,8 @@ class SqlTagChecks:
                     url=url,
                     counters=prev_counters,
                     counter_names=prev_names,
+                    city_counters=prev_city_counters,
+                    default_city_id=prev.default_city_id if prev is not None else None,
                     rules_version=rules.version,
                     created_at=now,
                 )
@@ -133,6 +148,7 @@ class SqlTagChecks:
         counter_names: Mapping[int, str] | None,
         rules: TagRules,
         now: datetime,
+        city_counters: Mapping[str, int] | None = None,
     ) -> StoredTagCheck:
         """Сохраняет список счётчиков (первый — основной) и их названия без сетевой проверки."""
         clean_counters, clean_names = normalize_manual_counters(counters, counter_names)
@@ -153,6 +169,14 @@ class SqlTagChecks:
                     .limit(1)
                 )
             ).first()
+            kept_city_counters: dict[str, Any] = {}
+            kept_city_id: str | None = None
+            if latest_row is not None and latest_row.url == url:
+                if isinstance(latest_row.city_counters, dict):
+                    kept_city_counters = latest_row.city_counters
+                kept_city_id = latest_row.default_city_id
+            # Ручная правка счётчиков не должна стирать найденные счётчики городов.
+            city_json = {str(k): int(v) for k, v in (city_counters or kept_city_counters).items()}
             if (
                 latest_row is not None
                 and latest_row.url == url
@@ -165,6 +189,7 @@ class SqlTagChecks:
                         status=status.value,
                         counters=list(clean_counters),
                         counter_names=names_json,
+                        city_counters=city_json,
                         problem=None,
                         finished_at=now,
                     )
@@ -179,6 +204,8 @@ class SqlTagChecks:
                         status=status.value,
                         counters=list(clean_counters),
                         counter_names=names_json,
+                        city_counters=city_json,
+                        default_city_id=kept_city_id,
                         problem=None,
                         rules_version=rules.version,
                         created_at=now,
@@ -195,6 +222,8 @@ class SqlTagChecks:
             problem=None,
             finished_at=now,
             counter_names=clean_names,
+            city_counters=city_json,
+            default_city_id=kept_city_id,
         )
 
     async def counter(self) -> str | None:
@@ -266,7 +295,13 @@ class SqlTagCheckQueue:
             )
             prev = (
                 await session.execute(
-                    select(CHECKS.c.id, CHECKS.c.counters, CHECKS.c.counter_names)
+                    select(
+                        CHECKS.c.id,
+                        CHECKS.c.counters,
+                        CHECKS.c.counter_names,
+                        CHECKS.c.city_counters,
+                        CHECKS.c.default_city_id,
+                    )
                     .where(
                         CHECKS.c.business_id == current.business_id,
                         CHECKS.c.url == current.url,
@@ -279,13 +314,19 @@ class SqlTagCheckQueue:
             ).first()
             merged_counters = list(result.counters)[:MAX_COUNTERS]
             merged_names: dict[str, str] = {}
+            merged_city_counters: dict[str, int] = dict(result.city_counters)
+            merged_city_id = result.default_city_id
             status = result.status
             target_ids = [check_id]
             if prev is not None:
                 if int(prev.id) > check_id:
                     target_ids.append(int(prev.id))
+                merged_city_id = merged_city_id or prev.default_city_id
                 prev_counters = [int(n) for n in (prev.counters or [])]
                 raw_names = prev.counter_names if isinstance(prev.counter_names, dict) else {}
+                prev_city_counters = (
+                    prev.city_counters if isinstance(prev.city_counters, dict) else {}
+                )
                 if result.status in (TagStatus.FOUND, TagStatus.MISSING) and prev_counters:
                     merged_counters = list(prev_counters)
                     for number in result.counters:
@@ -299,6 +340,13 @@ class SqlTagCheckQueue:
                     for number in merged_counters
                     if str(number) in raw_names and str(raw_names[str(number)]).strip()
                 }
+                # Города только добавляются: пропавший с сайта город и его город по умолчанию
+                # остаются в истории, как и счётчики в `counters`. Убрать их можно ручной правкой.
+                if prev_city_counters:
+                    merged_city_counters = {
+                        **prev_city_counters,
+                        **merged_city_counters,
+                    }
             await session.execute(
                 update(CHECKS)
                 .where(
@@ -309,6 +357,8 @@ class SqlTagCheckQueue:
                     status=status.value,
                     counters=merged_counters,
                     counter_names=merged_names,
+                    city_counters=merged_city_counters,
+                    default_city_id=merged_city_id,
                     problem=result.problem if status is not TagStatus.FOUND else None,
                     finished_at=now,
                 )
@@ -331,17 +381,25 @@ class SqlTagCheckQueue:
 def _to_stored(row: Any) -> StoredTagCheck:
     counters = tuple(int(n) for n in (row.counters or ()))
     raw_names = row.counter_names if isinstance(row.counter_names, dict) else {}
+    raw_city_counters = row.city_counters if isinstance(row.city_counters, dict) else {}
     names: dict[int, str] = {}
     for number in counters:
         val = raw_names.get(str(number))
         if isinstance(val, str) and val.strip():
             names[number] = val.strip()
+    city_counters: dict[str, int] = {}
+    for key, val in raw_city_counters.items():
+        if isinstance(val, (int, str)):
+            with contextlib.suppress(ValueError, TypeError):
+                city_counters[str(key)] = int(val)
     return StoredTagCheck(
-        int(row.id),
-        str(row.url),
-        TagStatus(row.status),
-        counters,
-        row.problem,
-        row.finished_at,
-        names,
+        id=int(row.id),
+        url=str(row.url),
+        status=TagStatus(row.status),
+        counters=counters,
+        problem=row.problem,
+        finished_at=row.finished_at,
+        counter_names=names,
+        city_counters=city_counters,
+        default_city_id=row.default_city_id,
     )

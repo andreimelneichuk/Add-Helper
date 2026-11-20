@@ -66,6 +66,38 @@ async def test_tag_check_finds_counter_on_profile_site(
     assert (await client.post(base)).status_code == 403
 
 
+async def test_worker_keeps_regional_counters_for_owner(
+    anna: Anna,  # noqa: F811
+    sessions: Sessions,
+) -> None:
+    """Счётчики городов из конфига сайта доходят до владельца вместе с городом по умолчанию."""
+    client, csrf, business_id = anna
+    base = f"/api/businesses/{business_id}/tag-check"
+    headers = {"X-CSRF-Token": csrf}
+    await _profile(client, csrf, business_id, "https://rollstar.ru/ekb/")
+    assert (await client.post(base, headers=headers)).status_code == 202
+    pages = Pages([95375303], {"1": 109077778, "3": 109077486}, "1")
+    assert await run_tag_checks(SqlTagCheckQueue(sessions), pages, TAG_RULES, lambda: NOW) == 1
+
+    check = (await client.get(base)).json()["check"]
+    assert check["status"] == "found"
+    assert check["counters"] == [95375303]
+    assert check["city_counters"] == {"1": 109077778, "3": 109077486}
+    assert check["default_city_id"] == "1"
+
+    # Ручная правка счётчиков не стирает найденные счётчики городов и город по умолчанию.
+    saved = await client.put(
+        base,
+        json={"counters": [{"id": 109077778, "name": "Екатеринбург", "primary": True}]},
+        headers=headers,
+    )
+    assert saved.status_code == 200, saved.text
+    after = saved.json()["check"]
+    assert after["counters"] == [109077778]
+    assert after["city_counters"] == {"1": 109077778, "3": 109077486}
+    assert after["default_city_id"] == "1"
+
+
 async def test_missing_code_and_daily_limit(anna: Anna, sessions: Sessions) -> None:  # noqa: F811
     client, csrf, business_id = anna
     base = f"/api/businesses/{business_id}/tag-check"

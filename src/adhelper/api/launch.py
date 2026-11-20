@@ -118,6 +118,8 @@ def _check_view(check: StoredTagCheck | None) -> dict[str, Any] | None:
         "url": check.url,
         "counters": list(check.counters),
         "counter_names": {str(k): v for k, v in check.counter_names.items()},
+        "city_counters": {str(k): int(v) for k, v in check.city_counters.items()},
+        "default_city_id": check.default_city_id,
         "problem": check.problem,
     }
 

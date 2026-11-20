@@ -516,6 +516,10 @@ export type TagCheck = {
   url: string;
   counters: number[];
   counter_names?: Record<string, string>;
+  /** Счётчики отдельных городов с сайта: id города на сайте -> номер счётчика. */
+  city_counters?: Record<string, number>;
+  /** Город сайта по умолчанию: его счётчик считает визиты основного города. */
+  default_city_id?: string | null;
   problem: string | null;
 };
 export type EconomicsView = {

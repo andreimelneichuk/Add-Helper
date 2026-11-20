@@ -304,7 +304,16 @@ class ChromiumRenderer:
             len(texts) - 1 - len(shadows),
         )
         images = tuple(image_urls("\n".join([html, *shadows]), page.url))
-        return FetchedPage(found.url, text, found.links, found.counters, found.builders, images)
+        return FetchedPage(
+            found.url,
+            text,
+            found.links,
+            counters=found.counters,
+            city_counters=found.city_counters,
+            default_city_id=found.default_city_id,
+            builders=found.builders,
+            images=images,
+        )
 
     async def _route(self, route: Route, page: Page, budget: _Budget) -> None:
         request = route.request

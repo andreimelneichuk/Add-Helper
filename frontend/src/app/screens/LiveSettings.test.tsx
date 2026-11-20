@@ -59,6 +59,34 @@ describe("настройки на настоящих данных", () => {
     ]);
   });
 
+  it("предлагает счётчик основного города сайта и ставит его основным", async () => {
+    const check = {
+      status: "found" as const,
+      url: "https://rollstar.ru/ekb/",
+      counters: [95375303],
+      counter_names: {},
+      city_counters: { "1": 109077778, "3": 109077486 },
+      default_city_id: "1",
+      problem: null,
+    };
+    const api = fakeApi({
+      profile: vi.fn(async () => ({ services: [], address: "Екатеринбург", features: [], niche: "", website: "rollstar.ru/ekb/" })),
+      tagCheck: vi.fn(async () => ({ check, site: "https://rollstar.ru/ekb/" })),
+    } as Partial<Api>);
+    render(<Settings store={await open(api)} />);
+    const metrica = screen.getByRole("region", { name: "Код статистики на сайте" });
+    expect(await within(metrica).findByText(/Основной город сайта считает счётчик 109077778/)).toBeInTheDocument();
+
+    const group = within(metrica).getByRole("group", { name: "Счётчики городов на сайте" });
+    // Основной счётчик сам не переставляется: только по нажатию владельца.
+    expect(api.saveTagCheck).not.toHaveBeenCalled();
+    await userEvent.click(within(group).getByRole("button", { name: "Сделать основным 109077778" }));
+    expect(api.saveTagCheck).toHaveBeenLastCalledWith([
+      { id: 109077778, primary: true },
+      { id: 95375303, primary: false },
+    ]);
+  });
+
   it("правка профиля уходит в API и перечитывает данные экранов", async () => {
     const api = fakeApi();
     render(<Settings store={await open(api)} />);
