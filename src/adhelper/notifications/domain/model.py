@@ -9,6 +9,9 @@ NOTICES = frozenset(
     {"ads_launched", "autopilot_rolled_back", "autopilot_demoted", "autopilot_digest"}
 )
 
+# Метрика не дала цели счётчика: обращения считаются по всем целям, цена обращения занижена.
+METRIKA_GOALS_ALERT = "metrika_goals_unavailable"
+
 
 class Channel(StrEnum):
     EMAIL = "email"

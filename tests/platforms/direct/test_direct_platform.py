@@ -13,7 +13,7 @@ from hypothesis import strategies as st
 
 from adhelper.budget.adapters.ledgered import PlatformChangeGateway
 from adhelper.budget.domain.limits import LimitChange
-from adhelper.budget.domain.ports import PlatformUnavailable
+from adhelper.budget.domain.ports import GoalsUnavailable, PlatformUnavailable
 from adhelper.campaigns.domain.launch import NewAd, NewCampaign, Placement
 from adhelper.campaigns.domain.ports import Targeting
 from adhelper.campaigns.domain.targeting import Schedule
@@ -1035,7 +1035,7 @@ async def test_reports_count_only_lead_goals_when_the_counter_is_known(
 async def test_reports_stop_when_metrika_goals_are_unavailable(
     direct: FakeDirect,
 ) -> None:
-    """Нет доступа к целям — отчёт не сохраняем: иначе цена обращения посчитает просмотры."""
+    """Нет доступа к целям — отчёт с целями не строим, но и не прячем причину."""
 
     async def goals(account: str) -> list[int]:
         raise PlatformUnavailable("metrika status 403")
@@ -1044,8 +1044,28 @@ async def test_reports_stop_when_metrika_goals_are_unavailable(
     platform = DirectPlatform(client, _token, lambda: NOW, goals_for=goals)
     direct.report_rows = [("2026-11-09", "101", 57_550_000)]
 
-    with pytest.raises(PlatformUnavailable):
+    with pytest.raises(GoalsUnavailable):
         await platform.campaign_days(ACCOUNT, ["101"], date(2026, 11, 9), date(2026, 11, 9))
+    await client.aclose()
+
+
+async def test_reports_without_goals_after_owner_agrees_to_all_goals(
+    direct: FakeDirect,
+) -> None:
+    """После отказа Метрики считаем по всем целям: отчёт есть, фильтра целей нет."""
+
+    async def goals(account: str) -> list[int]:
+        raise AssertionError("цели не должны запрашиваться повторно")
+
+    client = DirectHttpClient(transport=direct.transport(), sleep=_no_sleep)
+    platform = DirectPlatform(client, _token, lambda: NOW, goals_for=goals)
+    platform.skip_goals = True
+    direct.report_rows = [("2026-11-09", "101", 57_550_000)]
+
+    rows = await platform.campaign_days(ACCOUNT, ["101"], date(2026, 11, 9), date(2026, 11, 9))
+
+    assert rows
+    assert "Goals" not in direct.requests[-1]["body"]["params"]
     await client.aclose()
 
 

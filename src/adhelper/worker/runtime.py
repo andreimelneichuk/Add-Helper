@@ -61,6 +61,7 @@ from adhelper.budget.application.facade import (
 )
 from adhelper.budget.application.preflight import StoredPeriodPreflight
 from adhelper.budget.application.watch_cycle import run_watch_cycle
+from adhelper.budget.domain.ports import GoalsUnavailable
 from adhelper.business.adapters.browser import ChromiumRenderer
 from adhelper.business.adapters.economics import SqlEconomics
 from adhelper.business.adapters.fetcher import SafeFetcher
@@ -133,6 +134,7 @@ from adhelper.notifications.application.service import (
     deliver_pending,
     handle_telegram_updates,
 )
+from adhelper.notifications.domain.model import METRIKA_GOALS_ALERT
 from adhelper.platforms.adapters.direct.factory import build_direct_platforms, yandex_provider
 from adhelper.platforms.adapters.gateway import RoutingGateway
 from adhelper.stats.adapters.sql import SqlDashboard, SqlReportStats, report_accounts
@@ -410,7 +412,9 @@ class Runtime:
             sent += await send_launch_summary(store, notices, day)
         return sent
 
-    def autopilot_cycle(self, business_id: UUID, account: str) -> AutopilotCycle:
+    def autopilot_cycle(
+        self, business_id: UUID, account: str, goals_problem: bool = False
+    ) -> AutopilotCycle:
         rules = load_autopilot_rules(CURRENT_AUTOPILOT_RULES)
         data: Any = SqlAutopilotData(self.sessions, business_id, rules)
         platform = self.platform_for(business_id, account)
@@ -440,24 +444,29 @@ class Runtime:
             shadow_rules = None
         # Не прочитали политику — ворота закрыты: без них действие шло бы мимо политики.
         gate: Gate
-        try:
-            gate = PolicyGate(
-                load_policy_rules(CURRENT_POLICY_RULES),
-                SqlGateFacts(
-                    self.sessions,
-                    business_id,
-                    SqlPeriodStore(self.sessions),
-                    lambda login: self.api_points(login),
-                ),
-                ModelReviewer(self.review_model),
-            )
-        except Exception as error:
-            logger.error(
-                "Правила %s не загружены, ворота закрыты: %s",
-                CURRENT_POLICY_RULES,
-                type(error).__name__,
-            )
+        if goals_problem:
+            # Цели счётчика недоступны, цена обращения занижена: денег по таким числам
+            # не касаемся, пока владелец не вернёт доступ.
             gate = ClosedGate()
+        else:
+            try:
+                gate = PolicyGate(
+                    load_policy_rules(CURRENT_POLICY_RULES),
+                    SqlGateFacts(
+                        self.sessions,
+                        business_id,
+                        SqlPeriodStore(self.sessions),
+                        lambda login: self.api_points(login),
+                    ),
+                    ModelReviewer(self.review_model),
+                )
+            except Exception as error:
+                logger.error(
+                    "Правила %s не загружены, ворота закрыты: %s",
+                    CURRENT_POLICY_RULES,
+                    type(error).__name__,
+                )
+                gate = ClosedGate()
         return AutopilotCycle(
             data,
             SqlDecisionLog(self.sessions, business_id),
@@ -613,8 +622,40 @@ class Runtime:
             )
         return saved
 
+    async def _sync_reports(
+        self, platform: Any, business_id: UUID, account: str, since: Any, until: Any
+    ) -> int:
+        campaign_ids = await platform.managed_campaign_ids(account)
+        if not campaign_ids:
+            logger.info(
+                "Direct report sync skipped business=%s account=%s reason=no_managed_campaigns",
+                business_id,
+                account,
+            )
+            return 0
+        campaign_inventory, ad_inventory = await platform.inventory(account, campaign_ids)
+        await SqlReportStats(self.sessions, business_id).sync_inventory(
+            account, campaign_inventory, ad_inventory
+        )
+        campaign_rows = await platform.campaign_days(account, campaign_ids, since, until)
+        ad_rows = await platform.ad_days(account, campaign_ids, since, until)
+        account_saved = await SqlReportStats(self.sessions, business_id).save(
+            account, campaign_rows, ad_rows
+        )
+        logger.info(
+            "Direct report sync business=%s account=%s campaign_ids=%s "
+            "campaign_rows=%d ad_rows=%d saved=%d",
+            business_id,
+            account,
+            ",".join(campaign_ids),
+            len(campaign_rows),
+            len(ad_rows),
+            account_saved,
+        )
+        return account_saved
+
     async def stats_sync(self, only: UUID | None = None) -> int:
-        """Refresh campaign and ad reports for every connected Direct business."""
+        """Обновить отчёты по кампаниям и объявлениям. Возвращает число сохранённых строк."""
         saved = 0
         today = platform_date(self.clock())
         since, until = today - timedelta(days=364), today
@@ -624,36 +665,29 @@ class Runtime:
             platform = self.platform_for(business_id, account)
             if platform is None:
                 continue
+            alerts = SqlAlerts(self.sessions, business_id)
             try:
-                campaign_ids = await platform.managed_campaign_ids(account)
-                if not campaign_ids:
-                    logger.info(
-                        "Direct report sync skipped business=%s account=%s "
-                        "reason=no_managed_campaigns",
-                        business_id,
-                        account,
-                    )
-                    continue
-                campaign_inventory, ad_inventory = await platform.inventory(account, campaign_ids)
-                await SqlReportStats(self.sessions, business_id).sync_inventory(
-                    account, campaign_inventory, ad_inventory
-                )
-                campaign_rows = await platform.campaign_days(account, campaign_ids, since, until)
-                ad_rows = await platform.ad_days(account, campaign_ids, since, until)
-                account_saved = await SqlReportStats(self.sessions, business_id).save(
-                    account, campaign_rows, ad_rows
-                )
-                saved += account_saved
-                logger.info(
-                    "Direct report sync business=%s account=%s campaign_ids=%s "
-                    "campaign_rows=%d ad_rows=%d saved=%d",
+                saved += await self._sync_reports(platform, business_id, account, since, until)
+                await alerts.resolve(METRIKA_GOALS_ALERT)
+            except GoalsUnavailable:
+                # Цели не прочитали: считаем по всем, но говорим об этом и не даём
+                # автопилоту трогать деньги по заниженной цене обращения.
+                await alerts.raise_alert(METRIKA_GOALS_ALERT, {"account": account})
+                logger.warning(
+                    "Метрика не отдала цели счётчика: business=%s account=%s, "
+                    "отчёт без фильтра целей",
                     business_id,
                     account,
-                    ",".join(campaign_ids),
-                    len(campaign_rows),
-                    len(ad_rows),
-                    account_saved,
                 )
+                platform.skip_goals = True
+                try:
+                    saved += await self._sync_reports(platform, business_id, account, since, until)
+                except PlatformUnavailable as error:
+                    logger.warning(
+                        "Direct report sync failed for account=%s: %s",
+                        account,
+                        type(error).__name__,
+                    )
             except PlatformUnavailable as error:
                 logger.warning(
                     "Direct report sync failed for account=%s: %s", account, type(error).__name__
@@ -716,7 +750,10 @@ class Runtime:
             goal = await self.autopilot_goal(business_id, goal)
             # Лестница доверия: сам цикл делает только открытое владельцем проекта и отмеченное
             # владельцем кабинета, в узких рамках кабинета (этап 9).
-            await self.autopilot_cycle(business_id, account).run(
+            goals_problem = (
+                METRIKA_GOALS_ALERT in await SqlAlerts(self.sessions, business_id).open_kinds()
+            )
+            await self.autopilot_cycle(business_id, account, goals_problem=goals_problem).run(
                 account,
                 goal,
                 mode,

@@ -15,7 +15,7 @@ from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
 from adhelper.budget.domain.limits import CampaignBudget, LimitChange, LimitDecision
-from adhelper.budget.domain.ports import CampaignStrategy, PlatformUnavailable
+from adhelper.budget.domain.ports import CampaignStrategy, GoalsUnavailable, PlatformUnavailable
 from adhelper.budget.domain.watch import SpendSnapshot
 from adhelper.campaigns.domain.launch import (
     LAUNCH_PREFIX,
@@ -311,6 +311,8 @@ class DirectPlatform:
         goals_for: Callable[[str], Awaitable[Sequence[int]]] | None = None,
     ) -> None:
         self._goals_for = goals_for
+        # Отчёт без целей: считать по всем целям счётчика, включая просмотры.
+        self.skip_goals = False
         self._client = client
         self._token_for = token_for
         self._clock = clock
@@ -333,6 +335,8 @@ class DirectPlatform:
         return await self._client.call(account, token, service, method, params)
 
     async def _goal_filter(self, account: str) -> dict[str, Any]:
+        if self.skip_goals:
+            return {}
         goals = await self._lead_goals(account)
         return {"Goals": goals} if goals else {}
 
@@ -343,9 +347,9 @@ class DirectPlatform:
         try:
             return list(await self._goals_for(account))
         except PlatformUnavailable as error:
-            # Без списка целей служебную цель от обращения не отличить. Тихо взять все цели
-            # значило бы исказить число и цену обращения, поэтому отчёт не сохраняем.
-            raise DirectError(None, "metrika goals unavailable") from error
+            # Без списка целей служебную цель от обращения не отличить. Работать вслепую
+            # можно, но цена обращения будет занижена, поэтому решает вызывающий код.
+            raise GoalsUnavailable("metrika goals unavailable") from error
 
     async def _report(self, account: str, definition: dict[str, Any]) -> list[dict[str, str]]:
         # Директ кэширует отчёт по имени: одно имя — одно определение.
