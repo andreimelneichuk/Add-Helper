@@ -576,6 +576,7 @@ function DisplayForm({ api, store }: { api: Api; store: LiveStore }) {
       </div>
       <div role="group" aria-label="Когда показывать">
         <div className="ah-label">Когда показывать</div>
+        <p className="set-hint">Часы — по московскому времени. Если бизнес в другом городе, показы сдвинутся на разницу с Москвой.</p>
         {!noCampaigns && <p className="set-hint">Сейчас: {display.schedule_text ?? "у направлений разное время или Яндекс его ещё не передал"}.</p>}
         <div className="set-options">
           {DAY_NAMES.map((name, d) => (

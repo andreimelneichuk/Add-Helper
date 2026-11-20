@@ -380,6 +380,12 @@ describe("где и когда показывать", () => {
     expect(within(block).queryByRole("button", { name: "Москва" })).not.toBeInTheDocument();
   });
 
+  it("говорит, что часы показов считаются по Москве", async () => {
+    render(<Settings store={await open(fakeApi())} />);
+    const block = await screen.findByRole("region", { name: "Где и когда показывать" });
+    expect(within(block).getByText(/по московскому времени/)).toBeInTheDocument();
+  });
+
   it("расписание, которое Яндекс не примет, отправить нельзя", async () => {
     render(<Settings store={await open(fakeApi())} />);
     const block = await screen.findByRole("region", { name: "Где и когда показывать" });
