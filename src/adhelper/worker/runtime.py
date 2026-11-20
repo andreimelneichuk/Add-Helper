@@ -26,7 +26,12 @@ from adhelper.autopilot.adapters.ticks import SqlTicks
 from adhelper.autopilot.adapters.transfers import SqlTransferStore
 from adhelper.autopilot.application.budgets import WithBudgets
 from adhelper.autopilot.application.cycle import AutopilotCycle
-from adhelper.autopilot.application.gate import ClosedGate, Gate, PolicyGate
+from adhelper.autopilot.application.gate import (
+    ClosedGate,
+    Gate,
+    GoalsUnknownGate,
+    PolicyGate,
+)
 from adhelper.autopilot.application.outcomes import OutcomeMonitor
 from adhelper.autopilot.application.raise_limit import (
     CARD,
@@ -55,13 +60,13 @@ from adhelper.budget.adapters.ledgered import (
 from adhelper.budget.adapters.rules_file import load_rules
 from adhelper.budget.adapters.sql import SqlPeriodStore
 from adhelper.budget.application.facade import (
+    GoalsUnavailable,
     PlatformUnavailable,
     burn_from_history,
     platform_date,
 )
 from adhelper.budget.application.preflight import StoredPeriodPreflight
 from adhelper.budget.application.watch_cycle import run_watch_cycle
-from adhelper.budget.domain.ports import GoalsUnavailable
 from adhelper.business.adapters.browser import ChromiumRenderer
 from adhelper.business.adapters.economics import SqlEconomics
 from adhelper.business.adapters.fetcher import SafeFetcher
@@ -131,10 +136,10 @@ from adhelper.notifications.adapters.smtp import SmtpSender
 from adhelper.notifications.adapters.sql import SqlAlerts, SqlOutbox, SqlTelegramLinks
 from adhelper.notifications.adapters.telegram import TelegramApi
 from adhelper.notifications.application.service import (
+    METRIKA_GOALS_ALERT,
     deliver_pending,
     handle_telegram_updates,
 )
-from adhelper.notifications.domain.model import METRIKA_GOALS_ALERT
 from adhelper.platforms.adapters.direct.factory import build_direct_platforms, yandex_provider
 from adhelper.platforms.adapters.gateway import RoutingGateway
 from adhelper.stats.adapters.sql import SqlDashboard, SqlReportStats, report_accounts
@@ -444,29 +449,28 @@ class Runtime:
             shadow_rules = None
         # Не прочитали политику — ворота закрыты: без них действие шло бы мимо политики.
         gate: Gate
-        if goals_problem:
-            # Цели счётчика недоступны, цена обращения занижена: денег по таким числам
-            # не касаемся, пока владелец не вернёт доступ.
+        try:
+            gate = PolicyGate(
+                load_policy_rules(CURRENT_POLICY_RULES),
+                SqlGateFacts(
+                    self.sessions,
+                    business_id,
+                    SqlPeriodStore(self.sessions),
+                    lambda login: self.api_points(login),
+                ),
+                ModelReviewer(self.review_model),
+            )
+        except Exception as error:
+            logger.error(
+                "Правила %s не загружены, ворота закрыты: %s",
+                CURRENT_POLICY_RULES,
+                type(error).__name__,
+            )
             gate = ClosedGate()
-        else:
-            try:
-                gate = PolicyGate(
-                    load_policy_rules(CURRENT_POLICY_RULES),
-                    SqlGateFacts(
-                        self.sessions,
-                        business_id,
-                        SqlPeriodStore(self.sessions),
-                        lambda login: self.api_points(login),
-                    ),
-                    ModelReviewer(self.review_model),
-                )
-            except Exception as error:
-                logger.error(
-                    "Правила %s не загружены, ворота закрыты: %s",
-                    CURRENT_POLICY_RULES,
-                    type(error).__name__,
-                )
-                gate = ClosedGate()
+        if goals_problem:
+            # Цели счётчика недоступны: цена обращения занижена. Оставляем только паузы,
+            # которые снижают расход; лимиты и тесты не трогаем.
+            gate = GoalsUnknownGate(gate)
         return AutopilotCycle(
             data,
             SqlDecisionLog(self.sessions, business_id),

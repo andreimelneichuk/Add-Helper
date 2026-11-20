@@ -9,7 +9,7 @@ import pytest
 
 from adhelper.autopilot.adapters.rules_file import load_policy_rules, load_rules
 from adhelper.autopilot.application.cycle import AccountData, AutopilotCycle
-from adhelper.autopilot.application.gate import PolicyGate
+from adhelper.autopilot.application.gate import GoalsUnknownGate, PolicyGate
 from adhelper.autopilot.domain.decide import Action, ActionKind, Mode
 from adhelper.autopilot.domain.health import Window
 from adhelper.autopilot.domain.model import AdStats, CampaignStats
@@ -374,3 +374,33 @@ async def test_start_test_is_not_sent_to_the_reviewer_but_pause_is() -> None:
     notes = await gate(reviewer=reviewer).screen("acc", [test, pause], data, None, NOW)
     assert [c.kind for batch in reviewer.seen for c in batch] == ["pause_ad"]
     assert not notes["ad:good"].held and notes["ad:good"].notes["review"] == "not_needed"
+
+
+class _RecordingGate:
+    def __init__(self) -> None:
+        self.allowed: frozenset[ActionKind] | None = None
+
+    async def screen(
+        self,
+        account: str,
+        actions: Sequence[Action],
+        data: AccountData,
+        allowed: frozenset[ActionKind] | None,
+        now: datetime,
+        envelope: Mapping[str, int] | None = None,
+    ) -> dict[str, Any]:
+        self.allowed = allowed
+        return {}
+
+
+async def test_goals_unknown_gate_leaves_only_safe_pauses() -> None:
+    """Без целей Метрики самостоятельной остаётся только пауза: она снижает расход."""
+    inner = _RecordingGate()
+    gate = GoalsUnknownGate(inner)
+    data = AccountData([], [], HEALTHY, BASELINE, False, False)
+
+    await gate.screen("acc", (), data, ALL, NOW)
+    assert inner.allowed == frozenset({ActionKind.PAUSE_AD})
+
+    await gate.screen("acc", (), data, frozenset(), NOW)
+    assert inner.allowed == frozenset()

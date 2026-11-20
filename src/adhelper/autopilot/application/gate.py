@@ -74,6 +74,29 @@ class ClosedGate:
 # Действия, которые смотрит рецензент: те, что гасят показ или двигают деньги.
 REVIEWED_KINDS = frozenset({ActionKind.PAUSE_AD, ActionKind.INCREASE_LIMIT})
 
+# Цели Метрики недоступны: цена обращения занижена. Пауза объявления только снижает
+# расход, поэтому её оставляем; лимиты и новые тесты — нет.
+SAFE_WHEN_GOALS_UNKNOWN = frozenset({ActionKind.PAUSE_AD})
+
+
+class GoalsUnknownGate:
+    """Сужает самостоятельные действия, когда Метрика не отдала цели счётчика."""
+
+    def __init__(self, inner: Gate) -> None:
+        self._inner = inner
+
+    async def screen(
+        self,
+        account: str,
+        actions: Sequence[Action],
+        data: AccountData,
+        allowed: frozenset[ActionKind] | None,
+        now: datetime,
+        envelope: Mapping[str, int] | None = None,
+    ) -> dict[str, GateNote]:
+        narrowed = SAFE_WHEN_GOALS_UNKNOWN if allowed is None else allowed & SAFE_WHEN_GOALS_UNKNOWN
+        return await self._inner.screen(account, actions, data, narrowed, now, envelope)
+
 
 class PolicyGate:
     def __init__(

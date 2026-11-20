@@ -12,7 +12,15 @@ from datetime import datetime, timedelta
 from uuid import UUID
 
 from adhelper.notifications.domain.messages import compose
-from adhelper.notifications.domain.model import NOTICES, Channel, Message, next_attempt
+from adhelper.notifications.domain.model import (
+    METRIKA_GOALS_ALERT as METRIKA_GOALS_ALERT,
+)
+from adhelper.notifications.domain.model import (
+    NOTICES,
+    Channel,
+    Message,
+    next_attempt,
+)
 from adhelper.notifications.domain.ports import (
     MoneySource,
     Outbox,

@@ -254,6 +254,20 @@ async def test_working_cycle_has_the_policy_gate(sessions: Sessions, engine: Asy
     assert cycle._gate._rules.version == "policy-1"
 
 
+async def test_goals_problem_leaves_the_gate_open_for_pauses(
+    sessions: Sessions, engine: AsyncEngine
+) -> None:
+    """Без целей Метрики ворота не закрыты целиком: пауза объявления остаётся безопасной."""
+    from adhelper.autopilot.application.gate import GoalsUnknownGate, PolicyGate
+
+    cycle = runtime(sessions, engine, {BUSINESS}).autopilot_cycle(
+        BUSINESS, "acc", goals_problem=True
+    )
+
+    assert isinstance(cycle._gate, GoalsUnknownGate)
+    assert isinstance(cycle._gate._inner, PolicyGate)
+
+
 async def test_broken_policy_file_closes_the_gate_instead_of_opening_it(
     sessions: Sessions, engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
