@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AdAccount, Api, Business, Channels as ChannelsData, Display, Photos as PhotosData, Profile, SiteImage, SiteFact, SiteRead, TagCheckView } from "../../api";
 import { rub } from "../data";
+import { cityAdvice, mainCityName, withMainCityFirst } from "../metricaCity";
 import { MICROS_PER_RUBLE } from "../money";
 import * as v from "valibot";
 import { PriceSchema, planProblem } from "../schemas";
@@ -152,28 +153,17 @@ function MetricaSettings({ api }: { api: Api }) {
     void targetId;
   };
 
-  const cityCounters = check?.city_counters ?? {};
-  const defaultCity = check?.default_city_id ?? null;
-  const defaultCityKey = defaultCity === null
-    ? null
-    : Object.keys(cityCounters).find((cityId) => Number(cityId) === Number(defaultCity)) ?? null;
-  const defaultCounter = defaultCityKey === null ? null : cityCounters[defaultCityKey] ?? null;
-  const detected = Object.entries(cityCounters)
-    .map(([cityId, id]) => ({ cityId, id }))
-    .filter((item) => !counters.includes(item.id))
-    .sort((a, b) => {
-      const byDefault = Number(b.cityId === defaultCityKey) - Number(a.cityId === defaultCityKey);
-      return byDefault || a.id - b.id;
-    })
-    .filter((item, index, all) => all.findIndex((other) => other.id === item.id) === index);
+  const advice = cityAdvice(
+    check?.city_counters ?? {},
+    check?.default_city_id ?? null,
+    counters,
+  );
 
-  const addDetected = (id: number, makeItPrimary: boolean) => {
-    const base = currentItems().filter((item) => item.id !== id);
-    const named = { id, name: (namesDraft[String(id)] ?? "").trim() || undefined };
-    const items = makeItPrimary
-      ? [{ ...named, primary: true }, ...base.map((item) => ({ ...item, primary: false }))]
-      : [...base, { ...named, primary: base.length === 0 }];
-    void saveCounters(items);
+  const addMainCityCounter = () => {
+    const id = advice.mainCounter;
+    if (id === null) return;
+    const name = mainCityName(namesDraft, check?.counter_names ?? {}, id);
+    void saveCounters(withMainCityFirst(currentItems(), id, name));
   };
 
   let status = "Загружаю состояние проверки…";
@@ -239,26 +229,14 @@ function MetricaSettings({ api }: { api: Api }) {
           </ul>
         </div>
       )}
-      {!waiting && detected.length > 0 && (
-        <div className="set-counters" role="group" aria-label="Счётчики городов на сайте">
-          <p className="set-hint">
-            {defaultCounter !== null
-              ? `На сайте есть отдельные счётчики для городов. Основной город сайта считает счётчик ${defaultCounter}. Если реклама идёт по нему, сделайте его основным: тогда визиты и заявки посчитаются по городу.`
-              : "На сайте есть отдельные счётчики для городов. Добавьте тот, по которому идёт реклама."}
-          </p>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-            {detected.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className="ah-btn"
-                disabled={busy}
-                onClick={() => addDetected(item.id, item.cityId === defaultCityKey)}
-              >
-                {item.cityId === defaultCityKey ? `Сделать основным ${item.id}` : `Добавить ${item.id}`}
-              </button>
-            ))}
-          </div>
+      {!waiting && (advice.canUseMainCity || advice.hasOtherCities) && (
+        <div className="set-counters" role="group" aria-label="Счётчики отдельных городов">
+          <p className="set-hint">{advice.text}</p>
+          {advice.canUseMainCity && (
+            <button type="button" className="ah-btn" disabled={busy} onClick={addMainCityCounter}>
+              Считать визиты по моему городу
+            </button>
+          )}
         </div>
       )}
       {view?.site && (

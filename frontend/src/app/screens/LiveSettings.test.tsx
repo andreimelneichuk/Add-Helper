@@ -64,6 +64,63 @@ describe("настройки на настоящих данных", () => {
       status: "found" as const,
       url: "https://rollstar.ru/ekb/",
       counters: [95375303],
+      counter_names: { "95375303": "Общий" },
+      city_counters: { "1": 109077778, "3": 109077486 },
+      default_city_id: "1",
+      problem: null,
+    };
+    const api = fakeApi({
+      profile: vi.fn(async () => ({ services: [], address: "Екатеринбург", features: [], niche: "", website: "rollstar.ru/ekb/" })),
+      tagCheck: vi.fn(async () => ({ check, site: "https://rollstar.ru/ekb/" })),
+    } as Partial<Api>);
+    render(<Settings store={await open(api)} />);
+    const metrica = screen.getByRole("region", { name: "Код статистики на сайте" });
+    expect(await within(metrica).findByText(/отдельный счётчик для вашего города/)).toBeInTheDocument();
+
+    const group = within(metrica).getByRole("group", { name: "Счётчики отдельных городов" });
+    // Владельцу показываем действие, а не код счётчика.
+    expect(group).not.toHaveTextContent("109077778");
+    expect(api.saveTagCheck).not.toHaveBeenCalled();
+    await userEvent.click(within(group).getByRole("button", { name: "Считать визиты по моему городу" }));
+    expect(api.saveTagCheck).toHaveBeenLastCalledWith([
+      { id: 109077778, name: "Мой город", primary: true },
+      { id: 95375303, name: "Общий", primary: false },
+    ]);
+  });
+
+  it("сохраняет название, набранное для городского счётчика", async () => {
+    const check = {
+      status: "found" as const,
+      url: "https://rollstar.ru/ekb/",
+      counters: [95375303, 109077778],
+      counter_names: {},
+      city_counters: { "1": 109077778 },
+      default_city_id: "1",
+      problem: null,
+    };
+    const api = fakeApi({
+      profile: vi.fn(async () => ({ services: [], address: "Екатеринбург", features: [], niche: "", website: "rollstar.ru/ekb/" })),
+      tagCheck: vi.fn(async () => ({ check, site: "https://rollstar.ru/ekb/" })),
+    } as Partial<Api>);
+    render(<Settings store={await open(api)} />);
+    const metrica = screen.getByRole("region", { name: "Код статистики на сайте" });
+    const name = await within(metrica).findByLabelText("Название счётчика 109077778");
+    await userEvent.type(name, "Городской");
+    await userEvent.click(
+      within(within(metrica).getByRole("group", { name: "Счётчики отдельных городов" }))
+        .getByRole("button", { name: "Считать визиты по моему городу" }),
+    );
+    expect(api.saveTagCheck).toHaveBeenLastCalledWith([
+      { id: 109077778, name: "Городской", primary: true },
+      { id: 95375303, primary: false },
+    ]);
+  });
+
+  it("когда город уже основной, подсказки нет", async () => {
+    const check = {
+      status: "found" as const,
+      url: "https://rollstar.ru/ekb/",
+      counters: [109077778, 95375303],
       counter_names: {},
       city_counters: { "1": 109077778, "3": 109077486 },
       default_city_id: "1",
@@ -75,16 +132,51 @@ describe("настройки на настоящих данных", () => {
     } as Partial<Api>);
     render(<Settings store={await open(api)} />);
     const metrica = screen.getByRole("region", { name: "Код статистики на сайте" });
-    expect(await within(metrica).findByText(/Основной город сайта считает счётчик 109077778/)).toBeInTheDocument();
+    expect(await within(metrica).findByLabelText("Название счётчика 109077778")).toBeInTheDocument();
+    expect(within(metrica).queryByRole("group", { name: "Счётчики отдельных городов" })).toBeNull();
+  });
 
-    const group = within(metrica).getByRole("group", { name: "Счётчики городов на сайте" });
-    // Основной счётчик сам не переставляется: только по нажатию владельца.
-    expect(api.saveTagCheck).not.toHaveBeenCalled();
-    await userEvent.click(within(group).getByRole("button", { name: "Сделать основным 109077778" }));
-    expect(api.saveTagCheck).toHaveBeenLastCalledWith([
-      { id: 109077778, primary: true },
-      { id: 95375303, primary: false },
-    ]);
+  it("без счётчиков на сайте не утверждает, что визиты уже считаются по общему", async () => {
+    const check = {
+      status: "missing" as const,
+      url: "https://rollstar.ru/ekb/",
+      counters: [],
+      counter_names: {},
+      city_counters: { "1": 109077778 },
+      default_city_id: "1",
+      problem: null,
+    };
+    const api = fakeApi({
+      profile: vi.fn(async () => ({ services: [], address: "Екатеринбург", features: [], niche: "", website: "rollstar.ru/ekb/" })),
+      tagCheck: vi.fn(async () => ({ check, site: "https://rollstar.ru/ekb/" })),
+    } as Partial<Api>);
+    render(<Settings store={await open(api)} />);
+    const metrica = screen.getByRole("region", { name: "Код статистики на сайте" });
+    expect(await within(metrica).findByText(/Добавьте его — по нему будем считать визиты и заявки/)).toBeInTheDocument();
+    expect(within(metrica).queryByText(/по общему/)).toBeNull();
+  });
+
+  it("когда сайт не сообщает основной город, объясняет без кнопок и кодов", async () => {
+    const check = {
+      status: "found" as const,
+      url: "https://salon.ru/",
+      counters: [95375303],
+      counter_names: {},
+      city_counters: { "1": 109077778, "3": 109077486 },
+      default_city_id: null,
+      problem: null,
+    };
+    const api = fakeApi({
+      profile: vi.fn(async () => ({ services: [], address: "Москва", features: [], niche: "", website: "salon.ru" })),
+      tagCheck: vi.fn(async () => ({ check, site: "https://salon.ru/" })),
+    } as Partial<Api>);
+    render(<Settings store={await open(api)} />);
+    const metrica = screen.getByRole("region", { name: "Код статистики на сайте" });
+    const group = await within(metrica).findByRole("group", { name: "Счётчики отдельных городов" });
+    expect(group).toHaveTextContent("какой из них ваш, сайт не сообщает");
+    expect(within(group).queryByRole("button")).toBeNull();
+    expect(group).not.toHaveTextContent("109077778");
+    expect(group).not.toHaveTextContent("109077486");
   });
 
   it("правка профиля уходит в API и перечитывает данные экранов", async () => {
