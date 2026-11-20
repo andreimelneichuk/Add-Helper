@@ -47,7 +47,7 @@ from adhelper.campaigns.application.launch import (
     LaunchStatus,
     NewAd,
     UnregisteredAdvertiserError,
-    expand_keywords_with_model,
+    expand_campaign_keywords_with_model,
     failure_message,
     generate_keywords,
     launch,
@@ -631,16 +631,6 @@ def launch_router() -> APIRouter:
         if preflight.problem is not None:
             items.append(_plan_item(preflight, inputs.city_name))
             return items, None, login
-        model = getattr(request.app.state, "text_model", None) or getattr(
-            request.app.state, "command_model", None
-        )
-        keywords = await expand_keywords_with_model(
-            model=model,
-            services=found[0].services,
-            niche=found[0].niche,
-            address=found[0].address,
-        )
-        inputs = replace(inputs, keywords=keywords)
         planned = preview(inputs, launch_rules, budget_rules, now)
         items.append(_plan_item(planned, inputs.city_name))
         return items, inputs if planned.problem is None else None, login
@@ -709,6 +699,17 @@ def launch_router() -> APIRouter:
                 status.HTTP_409_CONFLICT,
                 f"Запустить пока нельзя: {missing[0] if missing else 'не хватает данных'}",
             )
+        # Фразы и минус-слова пишет модель один раз на запуск: проверка готовности
+        # остаётся бесплатной и не дёргает её на каждое обновление экрана.
+        found = await SqlProfiles(_sessions(request), business_id).get()
+        if found:
+            model = getattr(request.app.state, "text_model", None) or getattr(
+                request.app.state, "command_model", None
+            )
+            expanded = await expand_campaign_keywords_with_model(
+                model, found[0].services, found[0].niche, found[0].address
+            )
+            inputs = _with_model_keywords(inputs, expanded)
         platform = request.app.state.platform_for(business_id, inputs.account)
         if platform is None:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, LAUNCH_LATER)
@@ -746,6 +747,27 @@ def launch_router() -> APIRouter:
         return await _answer(request, business_id, inputs.account, result)
 
     return router
+
+
+def _with_model_keywords(inputs: LaunchInputs, expanded: Any) -> LaunchInputs:
+    """Подставляет фразы модели в объявления: у каждого объявления свои услуги."""
+    ads = []
+    for ad in inputs.ads:
+        names = [part.strip() for part in ad.group.split(" + ") if part.strip()]
+        phrases: list[str] = []
+        for name in names:
+            phrases.extend(expanded.phrases.get(name, ()))
+        if phrases:
+            ads.append(replace(ad, keywords=tuple(dict.fromkeys(phrases))))
+        else:
+            ads.append(ad)
+    union = tuple(dict.fromkeys(p for items in expanded.phrases.values() for p in items))
+    return replace(
+        inputs,
+        ads=tuple(ads),
+        keywords=union or inputs.keywords,
+        negative_keywords=expanded.negatives or inputs.negative_keywords,
+    )
 
 
 def _plan_item(planned: LaunchPlan, city_name: str = "") -> dict[str, Any]:

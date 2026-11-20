@@ -4,8 +4,10 @@ from adhelper.campaigns.application.launch import expand_keywords_with_model
 from adhelper.campaigns.domain.keywords import (
     AUTOTARGETING_KEYWORD,
     STOP_WORDS,
+    expand_campaign_keywords_with_model,
     generate_keywords,
     negative_keywords,
+    parse_campaign_keywords_response,
     parse_synonyms_response,
 )
 from adhelper.creatives.domain.model import ModelReply, ModelUnavailable, Service
@@ -229,3 +231,78 @@ def test_unknown_niche_has_basic_negative_keywords() -> None:
 
     assert "бесплатно" in negatives
     assert "вакансии" in negatives
+
+
+def test_model_keywords_are_filtered_by_the_code() -> None:
+    reply = """{
+        "services": [
+            {
+                "service": "Чеддер на Урале",
+                "phrases": [
+                    "чеддер на урале",
+                    "заказать чеддер на урале",
+                    "чеддер 964 ₽",
+                    "чеддер своими руками",
+                    "салон чеддер"
+                ]
+            },
+            {
+                "service": "Зачетный сет",
+                "phrases": ["зачетный сет", "заказать зачетный сет"]
+            }
+        ],
+        "negatives": ["рецепт", "работа", "сет", "как приготовить", "цена 699"]
+    }"""
+
+    parsed = parse_campaign_keywords_response(
+        reply, ["Чеддер на Урале", "Зачетный сет", "Просто, но со вкусом"]
+    )
+
+    assert parsed.phrases["Чеддер на Урале"] == (
+        "чеддер на урале",
+        "заказать чеддер на урале",
+        "салон чеддер",
+    )
+    assert parsed.phrases["Зачетный сет"] == ("зачетный сет", "заказать зачетный сет")
+    # «сет» — слово из названия услуги: минус-слово отсекло бы спрос.
+    assert "сет" not in parsed.negatives
+    assert "цена 699" not in parsed.negatives
+    assert "рецепт" in parsed.negatives
+
+
+@pytest.mark.anyio
+async def test_model_generates_phrases_and_negatives() -> None:
+    reply = """{
+        "services": [
+            {
+                "service": "Чеддер на Урале",
+                "phrases": ["чеддер на урале", "заказать чеддер на урале"]
+            }
+        ],
+        "negatives": ["рецепт", "вакансии"]
+    }"""
+    model = FakeTextModel(ModelReply(text=reply, tokens=80))
+
+    expanded = await expand_campaign_keywords_with_model(
+        model, [Service("Чеддер на Урале", 699)], niche="доставка еды", address="Екатеринбург"
+    )
+
+    assert expanded.phrases["Чеддер на Урале"] == (
+        "чеддер на урале",
+        "заказать чеддер на урале",
+    )
+    assert "рецепт" in expanded.negatives
+    assert "как приготовить" in expanded.negatives  # запасной набор тоже остаётся
+
+
+@pytest.mark.anyio
+async def test_model_failure_falls_back_to_deterministic_negatives() -> None:
+    model = FakeTextModel(ModelUnavailable("length", tokens=700))
+
+    expanded = await expand_campaign_keywords_with_model(
+        model, [Service("Роллы", 299)], niche="доставка еды"
+    )
+
+    assert expanded.phrases == {}
+    assert "рецепт" in expanded.negatives
+    assert "вакансии" in expanded.negatives

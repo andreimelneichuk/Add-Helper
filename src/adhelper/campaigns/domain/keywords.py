@@ -7,7 +7,8 @@
 
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 AUTOTARGETING_KEYWORD = "---autotargeting"
@@ -188,6 +189,173 @@ KEYWORDS_EXPANSION_SCHEMA: dict[str, object] = {
     },
     "required": ["synonyms"],
 }
+
+
+CAMPAIGN_KEYWORDS_SYSTEM = (
+    "Ты — специалист по контекстной рекламе в Яндекс Директе.\n"
+    "Для каждой услуги или товара малого бизнеса собери поисковые фразы, как люди\n"
+    "ищут это в Яндексе, и минус-слова, которые отсекают не покупателей.\n"
+    "Правила для фраз:\n"
+    "- 1–4 слова, только строчные буквы; можно добавить город.\n"
+    "- Без цен, скидок, цифр и валюты.\n"
+    "- Без названий брендов-конкурентов и обещаний результата.\n"
+    "- Без слов: бесплатно, даром, своими руками, скачать, обучение, вакансии,\n"
+    "  курсы, авито, юла, фото, видео.\n"
+    "Правила для минус-слов:\n"
+    "- 1–3 слова, только строчные буквы, без цифр и валюты.\n"
+    "- Не включай слова, из которых состоит название услуги: иначе отсечёшь спрос.\n"
+    "Верни JSON строго по схеме."
+)
+
+CAMPAIGN_KEYWORDS_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {
+        "services": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "service": {"type": "string"},
+                    "phrases": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["service", "phrases"],
+            },
+        },
+        "negatives": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["services", "negatives"],
+}
+
+
+@dataclass(frozen=True)
+class CampaignKeywords:
+    """Фразы по услугам и минус-слова кампании из ответа модели."""
+
+    phrases: Mapping[str, tuple[str, ...]]
+    negatives: tuple[str, ...]
+
+
+def _reply_json(reply_text: str) -> object:
+    cleaned = (reply_text or "").strip()
+    cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+    cleaned = re.sub(r"\s*```$", "", cleaned)
+    try:
+        return json.loads(cleaned)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        cleaned = re.sub(r",\s*([\]\}])", r"\1", cleaned)
+        try:
+            return json.loads(cleaned)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return None
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"[a-zа-яё0-9]+", text.casefold())
+
+
+def _valid_phrase(raw: object) -> str | None:
+    text = " ".join(str(raw).casefold().split())
+    if not text or len(text) > 80:
+        return None
+    words = _words(text)
+    if not 1 <= len(words) <= 5:
+        return None
+    if any(any(ch.isdigit() for ch in word) for word in words):
+        return None
+    if any(word in STOP_WORDS or word in UNIT_WORDS for word in words):
+        return None
+    return text
+
+
+def _valid_negative(raw: object, service_words: set[str]) -> str | None:
+    text = " ".join(str(raw).casefold().split())
+    if not text or len(text) > 60:
+        return None
+    words = _words(text)
+    if not 1 <= len(words) <= 3:
+        return None
+    if any(any(ch.isdigit() for ch in word) for word in words):
+        return None
+    if any(word in service_words for word in words):
+        return None
+    return text
+
+
+def parse_campaign_keywords_response(reply_text: str, services: Sequence[str]) -> CampaignKeywords:
+    """Разбирает фразы и минус-слова модели; всё неподходящее отбрасывает код."""
+    data = _reply_json(reply_text)
+    if not isinstance(data, dict):
+        return CampaignKeywords({}, ())
+    by_name = {name.casefold(): name for name in services}
+    by_normalized = {" ".join(_words(name)): name for name in services}
+    service_words = {word for name in services for word in _words(name) if len(word) >= 3}
+    phrases: dict[str, tuple[str, ...]] = {}
+    raw_services = data.get("services")
+    if isinstance(raw_services, list):
+        for item in raw_services:
+            if not isinstance(item, dict):
+                continue
+            raw_name = str(item.get("service") or "").strip()
+            canonical = by_name.get(raw_name.casefold()) or by_normalized.get(
+                " ".join(_words(raw_name))
+            )
+            if canonical is None:
+                continue
+            found: list[str] = []
+            raw_phrases = item.get("phrases")
+            if isinstance(raw_phrases, list):
+                for raw in raw_phrases:
+                    phrase = _valid_phrase(raw)
+                    if phrase is not None and phrase not in found:
+                        found.append(phrase)
+            if found:
+                phrases[canonical] = tuple(found)
+    negatives: list[str] = []
+    raw_negatives = data.get("negatives")
+    if isinstance(raw_negatives, list):
+        for raw in raw_negatives:
+            negative = _valid_negative(raw, service_words)
+            if negative is not None and negative not in negatives:
+                negatives.append(negative)
+    return CampaignKeywords(phrases, tuple(negatives[:30]))
+
+
+async def expand_campaign_keywords_with_model(
+    model: object | None,
+    services: Sequence[object],
+    niche: str = "",
+    address: str = "",
+    max_per_service: int = 15,
+    max_negatives: int = 30,
+) -> CampaignKeywords:
+    """Фразы и минус-слова от модели; при сбое — детерминированный запасной набор."""
+    fallback = negative_keywords(niche)
+    names = [getattr(item, "name", str(item)) for item in services]
+    names = [name for name in names if name.strip()]
+    if model is None or not names:
+        return CampaignKeywords({}, fallback)
+    prompt = "\n".join(
+        [
+            f"Ниша: {niche or 'услуги'}",
+            f"Город: {address or 'не указан'}",
+            "Услуги или товары:",
+            *[f"- {name}" for name in names[:20]],
+            "Дай по 8–12 фраз на каждую услугу и 10–20 минус-слов.",
+        ]
+    )
+    try:
+        reply = await model.complete_json(  # type: ignore[attr-defined]
+            CAMPAIGN_KEYWORDS_SYSTEM,
+            prompt,
+            CAMPAIGN_KEYWORDS_SCHEMA,
+            max_tokens=700,
+        )
+        parsed = parse_campaign_keywords_response(reply.text, names)
+    except Exception:
+        return CampaignKeywords({}, fallback)
+    limited = {name: tuple(items[:max_per_service]) for name, items in parsed.phrases.items()}
+    negatives = tuple(dict.fromkeys([*parsed.negatives, *fallback]))[:max_negatives]
+    return CampaignKeywords(limited, negatives)
 
 
 def parse_synonyms_response(reply_text: str) -> list[str]:
