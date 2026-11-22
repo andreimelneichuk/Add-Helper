@@ -731,6 +731,8 @@ def launch_router() -> APIRouter:
             return Advertiser(found.kind.value, found.inn, found.name, found.phone, found.okved)
 
         current = await advertiser()
+        if current is not None:
+            await _remember_marking(marking_store, current)
         try:
             result = await launch(
                 SqlLaunches(_sessions(request), business_id),
@@ -747,6 +749,26 @@ def launch_router() -> APIRouter:
         return await _answer(request, business_id, inputs.account, result)
 
     return router
+
+
+async def _remember_marking(store: SqlMarking, advertiser: Advertiser) -> None:
+    """Сохраняет прочитанную из Директа маркировку: следующий запуск не зависит от чтения."""
+    try:
+        problem = await save_marking(
+            store,
+            Marking(
+                AdvertiserKind(advertiser.kind),
+                advertiser.inn,
+                advertiser.name,
+                advertiser.phone,
+                advertiser.okved,
+            ),
+        )
+    except Exception as error:
+        logger.warning("Маркировка не сохранена: %s", type(error).__name__)
+        return
+    if problem is not None:
+        logger.warning("Маркировка не сохранена: %s", problem)
 
 
 def _with_model_keywords(inputs: LaunchInputs, expanded: Any) -> LaunchInputs:

@@ -760,16 +760,19 @@ async def test_launch_adds_negative_keywords_to_an_existing_campaign(
     assert "campaigns.update" in direct.calls
 
 
-async def test_negative_keywords_update_rejection_fails_the_launch(
+async def test_negative_keywords_update_rejection_does_not_block_the_launch(
     platform: DirectPlatform, direct: FakeDirect
 ) -> None:
-    """Отказ Директа на обновлении минус-слов роняет весь запуск, а не только их."""
+    """Отказ на минус-словах не мешает объявлениям: они лишь сужают показы."""
     await platform.create_campaign(ACCOUNT, launch())
     direct.request_errors["campaigns.update"] = 5000
     campaign = NewCampaign(**{**launch().__dict__, "negative_keywords": ("рецепт",)})
 
-    with pytest.raises(DirectRejected):
-        await platform.create_campaign(ACCOUNT, campaign)
+    await platform.create_campaign(ACCOUNT, campaign)
+
+    assert "campaigns.update" in direct.calls
+    stored = next(iter(direct.campaigns.values()))
+    assert stored["NegativeKeywords"] is None
 
 
 async def test_launch_does_not_repeat_the_same_negative_keywords(
@@ -814,13 +817,13 @@ def test_sanitize_direct_text_removes_forbidden_math_and_emojis() -> None:
 
     assert (
         sanitize_direct_text("Закажите Чеддер на Урале ±964 г / 32 шт: 699 ₽.")
-        == "Закажите Чеддер на Урале 964 г / 32 шт: 699 ₽."
+        == "Закажите Чеддер на Урале около 964 г / 32 шт: 699 ₽."
     )
     assert (
         sanitize_direct_text("В меню есть Зачетный сет ±1208 г / 48 шт.")
-        == "В меню есть Зачетный сет 1208 г / 48 шт."
+        == "В меню есть Зачетный сет около 1208 г / 48 шт."
     )
-    assert sanitize_direct_text("Скидка ± 10 %") == "Скидка 10 %"
+    assert sanitize_direct_text("Скидка ± 10 %") == "Скидка около 10 %"
     assert sanitize_direct_text("Вес 500±50 г, точность 10±2%") == "Вес 500-50 г, точность 10-2%"
     assert sanitize_direct_text("Вкусные суши 🍣 за 500 ₽ ⭐") == "Вкусные суши за 500 ₽"
     assert (
@@ -851,8 +854,8 @@ async def test_ad_with_plus_minus_is_sanitized_and_accepted_by_direct(
         }
     )
     # NewAd очищает текст уже при создании
-    assert with_symbols.ads[0].text == "Закажите Чеддер на Урале 964 г / 32 шт: 699 ₽."
-    assert with_symbols.ads[1].text == "В меню есть Зачетный сет 1208 г / 48 шт."
+    assert with_symbols.ads[0].text == ("Закажите Чеддер на Урале около 964 г / 32 шт: 699 ₽.")
+    assert with_symbols.ads[1].text == ("В меню есть Зачетный сет около 1208 г / 48 шт.")
 
     # План создания содержит уже чистый текст
     planned_ads = with_symbols.planned()["ads"]

@@ -1298,19 +1298,29 @@ class DirectPlatform:
                 current = ((existing.get("NegativeKeywords") or {}).get("Items")) or []
                 if sorted(str(item) for item in current) != sorted(campaign.negative_keywords):
                     # Кампания уже создана прошлым запуском: минус-слова досылаем отдельно.
-                    await self._call(
-                        account,
-                        "campaigns",
-                        "update",
-                        {
-                            "Campaigns": [
-                                {
-                                    "Id": campaign_id,
-                                    "NegativeKeywords": {"Items": list(campaign.negative_keywords)},
-                                }
-                            ]
-                        },
-                    )
+                    # Их отказ не повод не запускать объявления: они лишь сужают показы.
+                    try:
+                        await self._call(
+                            account,
+                            "campaigns",
+                            "update",
+                            {
+                                "Campaigns": [
+                                    {
+                                        "Id": campaign_id,
+                                        "NegativeKeywords": {
+                                            "Items": list(campaign.negative_keywords)
+                                        },
+                                    }
+                                ]
+                            },
+                        )
+                    except DirectError as error:
+                        logger.warning(
+                            "Минус-слова кампании %s не обновлены: %s",
+                            campaign_id,
+                            type(error).__name__,
+                        )
         groups = await self._groups(account, campaign_id)
         if not groups:
             result = await self._call(

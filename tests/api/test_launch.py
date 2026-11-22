@@ -748,3 +748,25 @@ def test_model_keywords_replace_deterministic_ad_phrases() -> None:
 
     assert result.ads[0].keywords == ("чеддер на урале", "заказать чеддер на урале")
     assert result.negative_keywords == ("рецепт",)
+
+
+async def test_launch_remembers_the_advertiser_read_from_direct() -> None:
+    from adhelper.accounts.application.marking import Marking
+    from adhelper.api.launch import _remember_marking
+    from adhelper.campaigns.application.launch import Advertiser as LaunchAdvertiser
+
+    class Store:
+        def __init__(self) -> None:
+            self.saved: Marking | None = None
+
+        async def save(self, marking: Marking) -> None:
+            self.saved = marking
+
+    store = Store()
+    await _remember_marking(
+        store,  # type: ignore[arg-type]
+        LaunchAdvertiser("legal", LEGAL_INN, "ООО «Ноготки»", None, "96.02"),
+    )
+
+    assert store.saved is not None
+    assert store.saved.inn == LEGAL_INN
