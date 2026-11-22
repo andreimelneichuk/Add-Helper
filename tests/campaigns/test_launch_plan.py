@@ -133,3 +133,20 @@ def test_limits_never_exceed_operating_budget(rubles: int, reserve_bp: int) -> N
         assert all(c.limit % MICROS == 0 for c in plan.campaigns)
     else:
         assert plan.campaigns == ()
+
+
+def test_all_campaigns_share_the_same_site_link() -> None:
+    """Один адрес сайта на все кампании: глубоких ссылок на товар или категорию нет."""
+    plan = plan_launch(
+        "k1",
+        "Роллстар",
+        _period(100_000),
+        ADS,
+        "https://rollstar.ru/ekb/",
+        "Екатеринбург",
+        (),
+        RULES,
+    )
+
+    assert plan.problem is None
+    assert {campaign.href for campaign in plan.campaigns} == {"https://rollstar.ru/ekb/"}

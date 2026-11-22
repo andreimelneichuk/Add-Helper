@@ -760,6 +760,18 @@ async def test_launch_adds_negative_keywords_to_an_existing_campaign(
     assert "campaigns.update" in direct.calls
 
 
+async def test_negative_keywords_update_rejection_fails_the_launch(
+    platform: DirectPlatform, direct: FakeDirect
+) -> None:
+    """Отказ Директа на обновлении минус-слов роняет весь запуск, а не только их."""
+    await platform.create_campaign(ACCOUNT, launch())
+    direct.request_errors["campaigns.update"] = 5000
+    campaign = NewCampaign(**{**launch().__dict__, "negative_keywords": ("рецепт",)})
+
+    with pytest.raises(DirectRejected):
+        await platform.create_campaign(ACCOUNT, campaign)
+
+
 async def test_launch_does_not_repeat_the_same_negative_keywords(
     platform: DirectPlatform, direct: FakeDirect
 ) -> None:

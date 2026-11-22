@@ -715,3 +715,36 @@ async def test_updating_counters_after_launch_syncs_existing_campaigns_via_ledge
     )
     assert row.before == {"counters": []}
     assert row.after == {"counters": [95375303, 109077778]}
+
+
+def test_model_keywords_replace_deterministic_ad_phrases() -> None:
+    from adhelper.api.launch import _with_model_keywords
+    from adhelper.campaigns.application.launch import LaunchInputs
+    from adhelper.campaigns.domain.keywords import CampaignKeywords
+    from adhelper.campaigns.domain.launch import NewAd
+
+    inputs = LaunchInputs(
+        title="Роллстар",
+        account="acc",
+        monthly=100_000 * MICROS,
+        ads=(
+            NewAd(
+                "Заголовок",
+                "Текст",
+                group="Чеддер на Урале + Зачетный сет",
+                keywords=("старая фраза",),
+            ),
+        ),
+        href="https://rollstar.ru/ekb/",
+        address="Екатеринбург",
+        counters=(),
+    )
+    expanded = CampaignKeywords(
+        {"Чеддер на Урале": ("чеддер на урале", "заказать чеддер на урале")},
+        ("рецепт",),
+    )
+
+    result = _with_model_keywords(inputs, expanded)
+
+    assert result.ads[0].keywords == ("чеддер на урале", "заказать чеддер на урале")
+    assert result.negative_keywords == ("рецепт",)
