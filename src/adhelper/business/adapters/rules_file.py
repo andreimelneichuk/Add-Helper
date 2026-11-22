@@ -50,7 +50,7 @@ def load_site_rules(version: str = CURRENT_SITE_RULES) -> SiteRules:
     )
 
 
-CURRENT_TAG_RULES = "tag-1"
+CURRENT_TAG_RULES = "tag-2"
 
 
 def load_tag_rules(version: str = CURRENT_TAG_RULES) -> TagRules:

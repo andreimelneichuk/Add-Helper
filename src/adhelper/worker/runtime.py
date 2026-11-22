@@ -72,7 +72,11 @@ from adhelper.business.adapters.economics import SqlEconomics
 from adhelper.business.adapters.fetcher import SafeFetcher
 from adhelper.business.adapters.rules_file import load_site_rules, load_tag_rules
 from adhelper.business.adapters.site_reads import SqlSiteReadQueue
-from adhelper.business.adapters.tag_checks import SqlTagCheckQueue, SqlTagChecks
+from adhelper.business.adapters.tag_checks import (
+    SqlTagCheckQueue,
+    SqlTagChecks,
+    TooManyChecks,
+)
 from adhelper.business.application.economics import confirmed_goal_micros
 from adhelper.business.application.site import check_url, run_site_reads
 from adhelper.business.application.tag import run_tag_checks
@@ -291,6 +295,7 @@ class Runtime:
     async def site_tag_check(self) -> None:
         queue = SqlTagCheckQueue(self.sessions)
         site_rules = load_site_rules()
+        tag_rules = load_tag_rules()
 
         async def sync_found(check_id: int) -> None:
             finished = await queue.get_finished(check_id)
@@ -326,10 +331,22 @@ class Runtime:
                     req_id,
                 )
 
+        # Проверки старой версии правил сами не обновятся: ставим их заново.
+        # Иначе исправленный парсер не доходит до уже проверенных сайтов.
+        for business_id, url in await queue.stale_sites(tag_rules.version):
+            normalized, problem = check_url(url, site_rules)
+            if problem is not None or not normalized:
+                continue
+            try:
+                await SqlTagChecks(self.sessions, business_id).request(
+                    normalized, tag_rules, self.clock()
+                )
+            except TooManyChecks:
+                continue
         await run_tag_checks(
             queue,
             SafeFetcher(site_rules),
-            load_tag_rules(),
+            tag_rules,
             self.clock,
             on_finished=sync_found,
         )

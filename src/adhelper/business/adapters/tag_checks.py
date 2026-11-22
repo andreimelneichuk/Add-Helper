@@ -13,6 +13,7 @@ from sqlalchemy import (
     Uuid,
     and_,
     column,
+    exists,
     func,
     insert,
     or_,
@@ -50,6 +51,11 @@ CHECKS = table(
     column("finished_at", DateTime(timezone=True)),
 )
 BUSINESSES = table("businesses", column("id", Uuid))
+PROFILES = table(
+    "business_profiles",
+    column("business_id", Uuid),
+    column("website", Text),
+)
 WAITING = (TagStatus.QUEUED.value, TagStatus.RUNNING.value)
 DAY = timedelta(days=1)
 
@@ -246,6 +252,22 @@ class SqlTagCheckQueue:
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
+
+    async def stale_sites(self, version: str) -> list[tuple[UUID, str]]:
+        """Сайты, у которых нет проверки текущей версии и нет ждущей проверки."""
+        current = exists(
+            select(CHECKS.c.id).where(
+                CHECKS.c.business_id == PROFILES.c.business_id,
+                or_(CHECKS.c.status.in_(WAITING), CHECKS.c.rules_version == version),
+            )
+        )
+        async with self._sessions() as session:
+            rows = await session.execute(
+                select(PROFILES.c.business_id, PROFILES.c.website)
+                .where(PROFILES.c.website != "")
+                .where(~current)
+            )
+            return [(row.business_id, str(row.website)) for row in rows]
 
     async def claim(
         self, now: datetime, stale_before: datetime, max_attempts: int
